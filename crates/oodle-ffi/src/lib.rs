@@ -1,11 +1,22 @@
 //! Dynamically loads a real, RAD-authored Oodle compression DLL (`OodleLZ_Decompress`) and wraps
 //! it behind a safe API. Deliberately does NOT vendor or reimplement Oodle's algorithm (e.g.
 //! `powzix/ooz`, seven years stale with no formal license) -- this crate only ever calls a
-//! genuine binary the caller supplies, sourced from any RAD-licensed game that ships one loose
-//! (PoE2 itself statically links Oodle into its own exe and ships no loose `oo2core*.dll` --
-//! confirmed both by this project's own search of a real PoE2 install and independently, by two
-//! unrelated PoE2-modding projects' own notes: `EsintisiYeter/poe2-turkce-yama` and
-//! `rocky6777/poe2-polish-patch`).
+//! genuine binary the caller supplies.
+//!
+//! Sourcing one turned out harder than the architecture plan anticipated: PoE2 statically links
+//! Oodle into its own exe (confirmed both by this project's own search of a real PoE2 install
+//! and independently, by two unrelated PoE2-modding projects' own notes:
+//! `EsintisiYeter/poe2-turkce-yama` and `rocky6777/poe2-polish-patch`), and so, it turned out
+//! empirically, does the plan's own suggested fallback (Warframe) as of its current build --
+//! confirmed by fully installing and launching it and finding no loose `oo2core*.dll` anywhere
+//! on the machine, plus a string reference to `OodleLZ_Decompress` (but not `oo2core`) inside
+//! `Warframe.x64.exe` itself. The DLL this crate is tested against instead comes from
+//! `WorkingRobot/OodleUE`'s `Engine/Source/Programs/Shared/EpicGames.Oodle/Sdk/2.9.10/win/redist/
+//! oo2core_9_win64.dll` -- Epic's own explicitly-labeled "Distributable Binaries" mirror of the
+//! Oodle SDK bundled with Unreal Engine (Epic owns RAD/Oodle outright and licenses it free for
+//! UE use), not extracted from any installed game. Genuine, RAD-authored, byte-identical to what
+//! a real game would load -- confirmed via its PE export table (`OodleLZ_Decompress` present,
+//! undecorated) -- just sourced from Epic's own redistribution instead of a game install.
 //!
 //! The DLL path is a runtime parameter, never bundled or hardcoded here -- see
 //! `crates/data-pipeline` for the one caller that supplies it today. This is the bottom of the
@@ -162,10 +173,24 @@ impl OodleDecompressor {
 mod tests {
     use super::*;
 
-    /// Decompresses a real Oodle-Kraken-compressed file (`powzix/ooz`'s own public `xml.kraken`
-    /// test fixture, from the Silesia compression corpus -- public-domain-ish benchmark text,
-    /// not PoE data, so no PoE-specific licensing question attaches to it) and asserts the
-    /// output matches the corresponding uncompressed reference byte-for-byte.
+    /// Decompresses a real Oodle-Kraken-compressed file and asserts the output matches the
+    /// corresponding uncompressed reference byte-for-byte.
+    ///
+    /// The fixture is the Silesia compression corpus's `xml` file (public-domain-ish benchmark
+    /// text, not PoE data -- no PoE-specific licensing question attaches to it), compressed with
+    /// `OodleLZ_Compress` by *this exact* DLL rather than reusing `powzix/ooz`'s own public
+    /// `xml.kraken` testdata file. That substitution was forced by a real, empirically-confirmed
+    /// finding: `powzix/ooz`'s testdata (committed to that repo years ago) decompresses to
+    /// `OODLELZ_FAILED` against a current (SDK 2.9.10) `oo2core_9_win64.dll` under every
+    /// fuzzSafe/checkCRC/threadPhase combination tried -- Kraken's on-disk bitstream sub-format
+    /// evolved across SDK generations even though the compressor's name/id (8) didn't change, so
+    /// old pre-compressed corpora aren't guaranteed forward-compatible with a newer decoder. A
+    /// self-consistent compress-then-decompress roundtrip against the same real DLL (verified
+    /// separately, not part of this repo) confirmed this crate's FFI binding itself is correct;
+    /// only the stale external fixture was the problem. Regenerate this fixture (same recipe:
+    /// `OodleLZ_Compress` the committed `xml` plaintext, `OodleLZ_CompressionLevel_Optimal2`,
+    /// verify the roundtrip, commit the result) if a future Oodle major-version bump ever makes
+    /// it stop decoding too.
     ///
     /// Needs a real `oo2core_*_win64.dll` to run, supplied via `ODLE_TEST_DLL_PATH` -- loading a
     /// real Windows PE DLL only succeeds on an actual Windows host regardless of this env var

@@ -528,4 +528,65 @@ mod tests {
         assert_eq!(rows[1].values, vec![Value::I32(i32::from_le_bytes(row1))]);
         assert_eq!(rows[2].values, vec![Value::I32(i32::from_le_bytes(row2))]);
     }
+
+    /// Parses a real, committed `.datc64` file: PoE2's actual `BetrayalRanks` table (4 rows, 4
+    /// plain-string/i32 columns -- small enough to commit whole rather than needing to trim),
+    /// extracted from a real game install during the architecture plan's step 6 validation spike
+    /// (see `crates/data-pipeline/SPIKE_FINDINGS.md`). No live share or network needed to run
+    /// this test -- the bytes and the schema slice needed to parse them are both committed.
+    #[test]
+    fn parses_a_real_committed_datc64_fixture() {
+        let table = SchemaTable {
+            valid_for: 3,
+            name: "BetrayalRanks".to_owned(),
+            columns: vec![
+                column("Id", ColumnType::String, false, false),
+                column("Text", ColumnType::String, false, false),
+                column("Level", ColumnType::I32, false, false),
+                column("RankImage", ColumnType::String, false, false),
+            ],
+            tags: vec![],
+        };
+
+        let raw: &[u8] = include_bytes!("../tests/fixtures/BetrayalRanks.datc64");
+        let rows = parse_table(&table, raw).expect("parse_table should succeed on real game data");
+
+        assert_eq!(rows.len(), 4);
+        assert_eq!(
+            rows[0].values,
+            vec![
+                Value::String("None".into()),
+                Value::String("".into()),
+                Value::I32(0),
+                Value::String("".into()),
+            ]
+        );
+        assert_eq!(
+            rows[1].values,
+            vec![
+                Value::String("Rank1".into()),
+                Value::String("Sergeant".into()),
+                Value::I32(3),
+                Value::String("Art/2DArt/UIImages/InGame/Betrayal/RankIcon1Stars".into()),
+            ]
+        );
+        assert_eq!(
+            rows[2].values,
+            vec![
+                Value::String("Rank2".into()),
+                Value::String("Lieutenant".into()),
+                Value::I32(2),
+                Value::String("Art/2DArt/UIImages/InGame/Betrayal/RankIcon2Stars".into()),
+            ]
+        );
+        assert_eq!(
+            rows[3].values,
+            vec![
+                Value::String("Rank3".into()),
+                Value::String("Captain".into()),
+                Value::I32(1),
+                Value::String("Art/2DArt/UIImages/InGame/Betrayal/RankIcon3Stars".into()),
+            ]
+        );
+    }
 }

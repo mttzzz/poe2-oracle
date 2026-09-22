@@ -1322,8 +1322,11 @@ dependencies = [
 name = "data-pipeline"
 version = "0.0.0"
 dependencies = [
+ "anyhow",
+ "oodle-ffi",
  "poe-bundle",
  "poe-dat",
+ "serde_json",
 ]
 
 [[package]]
@@ -4418,6 +4421,9 @@ dependencies = [
 [[package]]
 name = "poe2-domain"
 version = "0.0.0"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "poe2-oracle"
