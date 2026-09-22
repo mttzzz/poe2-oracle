@@ -1,0 +1,24 @@
+
+xwininfo: Window id: 0x400001 " (failure in conversion from UTF8_STRING to ANSI_X3.4-1968)"
+
+  Absolute upper-left X:  442
+  Absolute upper-left Y:  160
+  Relative upper-left X:  442
+  Relative upper-left Y:  160
+  Width: 400
+  Height: 480
+  Depth: 32
+  Visual: 0x40
+  Visual Class: TrueColor
+  Border width: 0
+  Class: InputOutput
+  Colormap: 0x400002 (not installed)
+  Bit Gravity State: ForgetGravity
+  Window Gravity State: NorthWestGravity
+  Backing Store State: NotUseful
+  Save Under State: no
+  Map State: IsViewable
+  Override Redirect State: no
+  Corners:  +442+160  -438+160  -438-160  +442-160
+  -geometry 400x480+442+160
+

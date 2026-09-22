@@ -34,3 +34,11 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 futures = "0.3"
 anyhow = "1"
+
+[dev-dependencies]
+# Diagnostic-only: GPUI/gpui_wgpu log through the standard `log` facade
+# (`log::warn!`/`log::error!` in gpui_wgpu's device-lost/surface/adapter-fallback paths); without
+# an installed logger backend those calls are silently dropped. Installed explicitly in each
+# example's `main()` via `env_logger::init()` so `RUST_LOG=debug` surfaces real GPU diagnostics
+# under the headless Xvfb harness.
+env_logger = "0.11"

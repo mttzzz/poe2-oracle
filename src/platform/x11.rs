@@ -42,6 +42,11 @@ pub struct X11Overlay {
 }
 
 impl X11Overlay {
+    /// The raw X11 window id this overlay operates on.
+    pub fn window_id(&self) -> u32 {
+        self.window
+    }
+
     /// Resolves `handle`'s X11 window id and opens a dedicated connection to `$DISPLAY` to
     /// operate on it. Call this only after the window has actually been created (e.g. from
     /// inside the `cx.open_window` callback) -- a handle requested any earlier has no platform
