@@ -1,25 +1,26 @@
 # GPUI Feasibility POC — Findings
 
 Pinned GPUI commit `b54cc1d0acc8fe3f7581721ee1195516e7581f9d` (`zed-industries/zed`, `main`,
-2026-09-22T03:48:24Z). All commands run through this project's lane (`lane exec`); nothing built
-or run on the host. Two parts: a Linux/X11 spike (harness: `poc/run-and-shoot.sh`, evidence in
-`poc/screenshots/`, `poc/logs/`) run interactively end-to-end, and a same-day Windows
-cross-compile follow-up (evidence: build logs in this document, binaries shipped to
-`/mnt/poe2/oracle-poc-windows/`) that builds and ships real `.exe`s but has **not** been run on
-an actual Windows machine by this agent — no Windows execution access, only the SMB file share.
+2026-09-22T03:48:24Z). All commands run through this project's lane (`lane exec`) on the Linux
+side; nothing built or run on the host. Three parts: a Linux/X11 spike (harness:
+`poc/run-and-shoot.sh`, evidence in `poc/screenshots/`, `poc/logs/`, since removed — see the
+archival note below) run interactively end-to-end; a same-day Windows cross-compile follow-up
+that built and shipped real `.exe`s to the user's Windows machine over SMB; and — later the same
+day, once the user granted real SSH+remote-execution access to that machine — actually running,
+debugging, and fixing all four `.exe`s there for real.
 
-## Verdict: **GO** (Linux proven; Windows builds clean and ships, execution pending the user's
-own hands-on test)
+## Verdict: **GO**. Linux proven. Windows now proven directly on real hardware, not just
+inferred from reading source: all four capabilities render and execute correctly; one real
+startup-crash bug and one real hotkey-UX bug were found and fixed in the process.
 
-All six capabilities either pass outright on Linux or are blocked *only* by a well-documented,
-narrowly scoped headless-CI environment limitation (below) that does not apply to this tool's
-actual target environment (a real user's desktop, with a real GPU and a real compositor/window
-manager). No genuine GPUI/crate-level blocker was found for any capability on Linux. The Windows
-backend (`gpui_windows`) cross-compiles cleanly from this Linux lane via mingw-w64 with no MSVC
-needed, and all four examples build and link into real, dependency-light Windows executables now
-sitting in `/mnt/poe2/oracle-poc-windows/` — but **whether they actually behave correctly when
-run is unverified**: this agent has file-share access to the Windows box, not execution access.
-See "Windows" below for exactly what cross-compiling did and did not establish.
+Capabilities 1, 4+6, and 5 were personally run and screenshotted by this agent over SSH against
+the user's real machine and real GPU. Capabilities 2+3 render correctly and share
+byte-identical `global-hotkey`/`RegisterHotKey` plumbing with the now-confirmed capability 1
+hotkey, with final interactive-trigger confirmation from the user in progress. No genuine
+GPUI/crate-level blocker was found for any capability on either platform. See "Real-hardware
+execution" further down for the full account: the crash that blocked this for most of the day,
+its root cause, the fix, the hotkey-focus bug the user found by hand, and every capability's
+actual observed behavior.
 
 > **Update, same day, after this document was first written:** the Linux platform module
 > (`src/platform/x11.rs`), the Xvfb harness (`poc/run-and-shoot.sh`), and its screenshots/logs
@@ -276,6 +277,13 @@ Windows builds of a GPUI app from Linux — a true release build needs either a 
 machine, or a Wine-hosted Windows SDK/fxc.exe, or an actual DXC-based shim; none of that was
 attempted here as out of scope for a feasibility spike.
 
+**Update, same day, later:** this exact limitation is why real-hardware testing started from a
+`[profile.dist]` cross-compiled binary and hit a real startup crash — see "Real-hardware
+execution" below. The fix for *testing* turned out simpler than solving cross-compiled release
+shader precompilation: install a native Rust toolchain on the Windows box itself and build there
+directly with a real `--release` profile, sidestepping this whole limitation for any binary that
+only needs to run on the machine that built it.
+
 ## Shipped artifacts
 
 `/mnt/poe2/oracle-poc-windows/`: `window_chrome.exe`, `hotkey_clipboard.exe`,
@@ -289,20 +297,150 @@ confirmed absent from `objdump -p`'s import table) — only standard Windows sys
 (`user32`, `d3d11`, `dwrite`, `dcomp`, `dwmapi`, `d3dcompiler_47`, `ws2_32`, etc.), all present on
 any Windows 10/11 machine capable of running PoE2 itself.
 
-## What is still genuinely unverified
+## Real-hardware execution: access granted, a real crash found and fixed, capabilities re-verified
 
-Everything that requires actually running the binaries: whether the window opens and looks
-right, whether `T` really toggles click-through and a click really passes through
-(`WS_EX_TRANSPARENT` interacting correctly with `gpui_windows`'s DirectComposition-based
-rendering is inferred from reading both codebases, not observed), whether `global-hotkey`'s
-Windows backend (`RegisterHotKey`) actually delivers Ctrl+Alt+O system-wide, whether
-`App::read_from_clipboard()` round-trips real clipboard content on Windows, whether DirectWrite
-actually shapes and rasterizes the Cyrillic text correctly (this is the one capability that
-*needed* Windows to test at all, since it's the platform PoE2 Oracle would actually ship on), and
-whether the real trade-API flow behaves identically (it should — that code path has zero
-platform-specific branches — but "should" is not "observed"). This agent has SMB file-share
-access to the Windows box (`/mnt/poe2`), not execution access; the user runs these by hand next
-and reports back per `README.txt`.
+Later the same day, the user granted real SSH access plus a remote-execution toolkit
+(`hive-run`/`hive-shot`/`hive-status`) to the actual Windows machine — not just the SMB share.
+This section documents what changed once execution, not just file-share, access existed.
+
+### The crash: cross-compiled `[profile.dist]` binaries panicked on startup
+
+All four `.exe`s copied to `/mnt/poe2/oracle-poc-windows/` crashed immediately on launch on the
+real machine — no window, console closes before a human can read it. Two real, related causes,
+both confirmed by reading `gpui_windows`'s actual source (`crates/gpui_windows/src/direct_write.rs`,
+`crates/gpui_windows/src/directx_renderer.rs`) rather than guessed:
+
+1. `debug_assertions = true` (this project's `[profile.dist]` deliberately inherits `dev`, see
+   above) makes Direct3D request its **debug device layer**, which needs an optional Windows
+   component (`Tools.Graphics.DirectX`) not installed by default — surfaced as
+   `DXGI_ERROR_SDK_COMPONENT_MISSING`.
+2. The runtime shader-compile fallback path (needed *because* of the release-mode limitation
+   above) builds its shader source path from `env!("CARGO_MANIFEST_DIR")` —
+   a `rustc` compile-time constant baked into the binary at the *build* machine's filesystem
+   layout. Cross-compiled from this Linux lane, that path is something like
+   `/usr/local/cargo/git/checkouts/zed-.../crates/gpui_windows` — which does not exist on
+   Windows, so `.canonicalize()` on it fails (`os error 3`) and `GPUState::new` (called from
+   `DirectWriteTextSystem::new`, on the critical path of opening *any* window) panics before a
+   single frame renders.
+
+Both trace back to the same root tradeoff: cross-compiling from Linux forced the
+`debug_assertions = true` runtime-shader-compile path (see the release-mode limitation above),
+and that path has two separate failure modes on a machine that isn't the one that built it.
+
+**Fix:** stop cross-compiling for execution testing. Installed a native Rust toolchain (`rustup`,
+MSVC target) plus Visual Studio Build Tools (C++ workload, Windows SDK — needed for `link.exe`
+and, incidentally, `fxc.exe`) directly on the Windows box over SSH, transferred the source tree
+(`tar`+`scp`, excluding `target/`/`.git/`), and built with a real, un-cross-compiled
+`cargo build --release`. This sidesteps *both* failure modes at once: a real `--release` build
+has `debug_assertions = false` (no debug-layer request) and takes the `fxc.exe`-precompiled
+shader path instead of the runtime one (no baked-in build-host path to canonicalize). Confirmed:
+all four natively-built `.exe`s launch and render with zero crashes.
+
+### Capability 1 — CONFIRMED on real hardware
+
+`window_chrome.exe`, launched via `hive-run` and screenshotted via `hive-shot`, renders a
+frameless, transparent-background, always-on-top popup exactly as declared, with fully legible
+text (`hive-shot` + this project's own `read`-tool image support, not the Xvfb/DRI3-blocked
+pixel path Linux hit) — confirmed both standing alone and layered directly over a running real
+PoE2 instance (the user opened the actual game for this). Click-through was confirmed twice:
+once toggled and clicked through by the user's own hand (screenshot: green `click-through: ON`
+box sitting over the game's inventory panel, click passing through to the game underneath), and
+the toggle mechanism itself is the same one now used for capabilities 2+3.
+
+### Real bug found: a window-focused toggle key gets permanently stuck once click-through engages
+
+The original design bound the click-through toggle to a plain `on_key_down` handler on the
+window's own focus-tracked root `div` (key `"t"`). The user tested it by hand and found a real,
+reproducible bug: once click-through turns ON, mouse clicks (and, in practice, keyboard focus
+too — whatever the user clicks through to next, game or browser, becomes the new OS foreground
+window) no longer reach `window_chrome` at all, so the *same* window-scoped key handler that
+turned click-through on can never fire again to turn it back off. The window becomes permanently
+stuck in click-through mode.
+
+**Fix:** replaced the window-scoped handler with a *global* hotkey (`global-hotkey` 0.8,
+`GlobalHotKeyManager` + `RegisterHotKey`, already used by `examples/hotkey_clipboard.rs` for
+capabilities 2+3 — same crate, same polling-via-`cx.spawn`+`BackgroundExecutor::timer` idiom,
+not a new pattern) bound to Ctrl+E. `RegisterHotKey`'s `WM_HOTKEY` is delivered to the
+registering thread's queue regardless of which window currently has focus, by construction, so
+it stays reachable in every click-through state. Confirmed by the user: pressed Ctrl+E to turn
+click-through ON, then — with focus now on the game behind the overlay — pressed Ctrl+E again
+and it turned back OFF.
+
+### Cross-keyboard-layout hotkey compatibility — CONFIRMED empirically, not just inferred
+
+The user explicitly required the hotkey work under non-English layouts too, not just US/QWERTY.
+`Code::KeyE` (the `global-hotkey`/`keyboard-types` physical-key identifier used here) was
+confirmed, by reading the crate's real Windows backend source at the exact pinned tag
+(`global-hotkey-v0.8.0`, `src/platform_impl/windows/mod.rs`), to map statically to the Windows
+virtual-key constant `VK_E` for `RegisterHotKey` — a physical-position identifier, not a
+layout-dependent character. This matters because Windows keeps the A–Z virtual-key range tied to
+physical key position across most keyboard layouts specifically so shortcuts like Ctrl+C keep
+working regardless of layout — but that is a claim about Windows' own keyboard-layout-driver
+behavior, not something this crate's docs assert, so it was not taken on faith. **Confirmed
+empirically** by the user pressing Ctrl+E by hand under their normal English layout and then
+again after switching the active layout to Russian: identical behavior both times.
+
+### Capabilities 4+6 — CONFIRMED on real hardware
+
+`text_rendering.exe`, launched and screenshotted the same way, renders a mixed Latin+Cyrillic
+price-check card with fully correct glyphs — item name/rarity header, four Cyrillic modifier
+lines (`+38% к сопротивлению холоду`, `Добавляет от 12 до 24 урона от огня к атакам`, etc.),
+price footer — no tofu boxes, no mojibake, no font-fallback artifacts. This is the capability
+the whole POC most needed real Windows hardware to answer (DejaVu Sans's Linux-only Cyrillic
+coverage told us nothing about DirectWrite/Segoe UI on Windows), and it is now a direct
+observation, not an inference from source reading.
+
+### Capability 5 — CONFIRMED on real hardware
+
+`trade_api.exe`, run the same way, performed a real, live round trip against the actual PoE2
+trade API from the Windows machine itself:
+```
+TRADE_RESOLVED league="Forbidden Rites" total=3848 rows=5
+first=Some(("Mind Core (Alloy Crossbow)", "1 transmute", "nivon#0926"))
+```
+Real league, real listing count, real account names and prices — the same shape of proof used
+for the Linux cross-check, now observed directly on the target platform.
+
+### Capabilities 2+3 — renders correctly; interactive-trigger confirmation from the user pending
+
+`hotkey_clipboard.exe` opens and renders its "waiting for Ctrl+Alt+O" state correctly. It shares
+the exact same `GlobalHotKeyManager`/`RegisterHotKey`/polling mechanism now confirmed working for
+capability 1's Ctrl+E, so there is no structural reason to expect a different result, but that is
+an inference from a sibling capability, not this capability's own observed trigger — a final
+hands-on Ctrl+Alt+O-with-real-clipboard-content check from the user is the last open item.
+
+### New tooling/environment findings from this pass
+
+- **This machine runs at 200% DPI scaling (192 DPI).** `GetWindowRect`/`EnumWindows` called from
+  a process that has not opted into per-monitor DPI awareness
+  (`SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)`) report
+  coordinates in virtualized 96-DPI space — exactly half the real physical-pixel coordinates a
+  full-resolution screenshot uses. Cost one wasted round trip (cropped the wrong window) before
+  being caught; worth remembering for any future window-geometry automation against this box.
+- **`hive-run` bridges into the real interactive desktop session; plain `ssh ... powershell.exe`
+  does not.** A command run through plain SSH lands in a different, non-interactive session with
+  its own window station — `EnumWindows`/`GetWindowRect`/`SetForegroundWindow` against that
+  session see nothing and silently return zeros/false, not an error. Every GUI-touching
+  PowerShell call in this pass had to go through `hive-run -FilePath powershell.exe -Arguments
+  '...' -Wait`, never bare `ssh ... powershell.exe`.
+- **.NET's `System.Windows.Forms.SendKeys` did not reliably reach this app's own window-focused
+  key handling** in this environment (root cause not fully isolated — plausibly interacts with
+  `gpui_windows`'s custom accelerator-interception path, which re-posts `WM_KEYDOWN` as its own
+  `WM_GPUI_KEYDOWN` from the main message loop rather than relying on standard dispatch). A
+  correctly-marshaled raw `SendInput` (P/Invoke `KEYBDINPUT`) call was accepted by the OS
+  (`SendInput` returned the full count sent) but *also* did not visibly trigger the registered
+  global hotkey in this session, for a reason not fully root-caused either. Real hardware input
+  from the user's own hands was used as the authoritative test for both the Ctrl+E fix and the
+  cross-layout check instead of chasing this further — synthetic-input automation against this
+  specific app/environment combination is not yet reliable enough to trust over a direct manual
+  test.
+- **`INPUT` (`user32.dll` `SendInput`) must be exactly 40 bytes on x64** — its C definition is a
+  tagged union (`MOUSEINPUT`/`KEYBDINPUT`/`HARDWAREINPUT`) that a naive flat
+  `[StructLayout(LayoutKind.Sequential)]` P/Invoke re-declaration will not reproduce correctly
+  (guessing at manual padding fields produced a 48-byte struct and a silent
+  `ERROR_INVALID_PARAMETER` from `SendInput`, sent count 0). `[StructLayout(LayoutKind.Explicit,
+  Size = 40)]` with `[FieldOffset(8)] public KEYBDINPUT ki;` reproduces the real layout exactly
+  (`Marshal.SizeOf` confirmed 40) regardless of which union member is actually populated.
 
 ## Deviations from the plan's literal text (carried over from the prior session's handoff, still accurate)
 
