@@ -1,11 +1,15 @@
 # Контракт дорожки для этого проекта.
 #
 # Единственное решение здесь — секция [image]: общий lanes/runner:1 (node/bun/chromium) не несёт
-# Rust-тулчейн и headless-X11/GPU-стек, которые нужны GPUI-приложению и его examples. Свой образ
-# на базе rust:1-bookworm с Xvfb + Mesa lavapipe (software Vulkan) вместо этого.
+# Rust-тулчейн, нужный этому воркспейсу. Свой образ на базе rust:1-bookworm вместо этого:
+# mingw-w64 (кросс-компиляция под x86_64-pc-windows-gnu — единственная целевая платформа, см.
+# POC_FINDINGS.md) плюс компоненты rustfmt/clippy для CI-гейта (шаг 9 архитектурного плана).
+# Более ранняя ревизия этого файла упоминала Xvfb + Mesa lavapipe для Linux/X11-спайка; тот
+# спайк и его платформенный модуль удалены тем же днём (см. POC_FINDINGS.md, "archival note") —
+# проект целится только в Windows, второй платформенный бэкенд не поддерживается.
 #
 # Нет [install]: у Cargo нет отдельного шага установки зависимостей — они тянутся при первом
-# `cargo build`/`cargo run --example`. Нет [dev]: у этого POC нет dev-сервера.
+# `cargo build`/`cargo run --example`. Нет [dev]: у этого проекта нет dev-сервера.
 
 [image]
 ref = "build:lanes/runner.Dockerfile"

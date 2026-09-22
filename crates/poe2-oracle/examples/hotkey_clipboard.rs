@@ -8,12 +8,15 @@
 //! Clipboard is read through GPUI's own native `App::read_from_clipboard()`, not `arboard` --
 //! see `POC_FINDINGS.md`'s deviation notes.
 
+use global_hotkey::{
+    GlobalHotKeyEvent, GlobalHotKeyManager,
+    hotkey::{Code, HotKey, Modifiers},
+};
 use gpui::{
     App, Bounds, Context, Render, SharedString, Window, WindowBounds, div, prelude::*, px, rgb,
     size,
 };
 use gpui_platform::application;
-use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, hotkey::{Code, HotKey, Modifiers}};
 use std::time::Duration;
 
 struct HotkeyClipboard {

@@ -76,7 +76,10 @@ impl WindowChrome {
             return;
         };
         if let Err(err) = overlay.set_click_through(self.click_through) {
-            eprintln!("window_chrome: set_click_through({}) failed: {err:?}", self.click_through);
+            eprintln!(
+                "window_chrome: set_click_through({}) failed: {err:?}",
+                self.click_through
+            );
         }
     }
 }
@@ -112,7 +115,11 @@ impl Render for WindowChrome {
             .bg(bg)
             .text_color(rgb(0xffffff))
             .child(div().text_lg().child(SharedString::from(state_text)))
-            .child(div().text_sm().child("Press Ctrl+E to toggle click-through"))
+            .child(
+                div()
+                    .text_sm()
+                    .child("Press Ctrl+E to toggle click-through"),
+            )
     }
 }
 
@@ -160,20 +167,23 @@ fn main() {
             let weak = view.downgrade();
             cx.spawn(async move |cx| {
                 loop {
-                    if let Ok(event) = GlobalHotKeyEvent::receiver().try_recv() {
-                        if event.id() == toggle_hotkey.id() && event.state() == HotKeyState::Pressed {
-                            let Some(view) = weak.upgrade() else { return };
-                            view.update(cx, |state, cx| {
-                                state.click_through = !state.click_through;
-                                state.apply_click_through();
-                                // Observable, harness-greppable proof independent of screenshot
-                                // capture.
-                                println!("CLICK_THROUGH_STATE={}", state.click_through);
-                                cx.notify();
-                            });
-                        }
+                    if let Ok(event) = GlobalHotKeyEvent::receiver().try_recv()
+                        && event.id() == toggle_hotkey.id()
+                        && event.state() == HotKeyState::Pressed
+                    {
+                        let Some(view) = weak.upgrade() else { return };
+                        view.update(cx, |state, cx| {
+                            state.click_through = !state.click_through;
+                            state.apply_click_through();
+                            // Observable, harness-greppable proof independent of screenshot
+                            // capture.
+                            println!("CLICK_THROUGH_STATE={}", state.click_through);
+                            cx.notify();
+                        });
                     }
-                    cx.background_executor().timer(Duration::from_millis(30)).await;
+                    cx.background_executor()
+                        .timer(Duration::from_millis(30))
+                        .await;
                 }
             })
             .detach();

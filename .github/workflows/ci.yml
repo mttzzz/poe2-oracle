@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-test-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The project's own lane runner image (lanes/runner.Dockerfile): rust:1-bookworm plus the
+      # mingw-w64 cross toolchain for x86_64-pc-windows-gnu (this project's only ship target) and
+      # the rustfmt/clippy components. Built fresh here rather than pulled from a registry --
+      # this is a small project with no image-publishing infra, and a from-Dockerfile build is
+      # the standard, boring way to use a custom CI environment without one.
+      - name: Build runner image
+        run: docker build -f lanes/runner.Dockerfile -t poe2-oracle-runner .
+
+      # Cargo's registry/git cache and the target dir live inside the container by default; both
+      # are redirected into the checked-out workspace (mounted into the container below) so
+      # actions/cache can persist them across runs on the host side.
+      - name: Cache cargo registry and build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            .ci-cargo-home
+            target
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-
+
+      # --user matches the container process's uid/gid to the host runner's, so cargo can write
+      # to the bind-mounted workspace/target dirs regardless of the image's own baked-in `runner`
+      # user (uid 1000) -- avoids permission mismatches against whatever uid actually owns the
+      # actions/checkout'd files here.
+      #
+      # Ordered fastest/cheapest-to-fail first: a trivial `cargo fmt` miss shouldn't burn CI time
+      # on the expensive cross-compile step. Clippy and test both run in two passes because
+      # `poe2-oracle` is the one crate with real platform-gated code
+      # (`src/platform/win32.rs`, `#[cfg(target_os = "windows")]`) that one of its own examples
+      # (`window_chrome.rs`) imports unconditionally: building it natively on this Linux runner
+      # fails to resolve the `windows`-only module, not because of a real bug, so it's excluded
+      # from the native passes and covered instead by the windows-gnu build step below (which
+      # builds every example, `window_chrome` included, for the real target). `cargo test`
+      # otherwise runs natively (Linux), not cross-compiled -- GPUI's gpui_linux backend builds
+      # and runs directly on this runner, and cross-compiled Windows binaries can't execute here
+      # anyway (no Wine). It also never touches poe-bundle's tests/live_share.rs (gated behind
+      # the `live-share` feature, off by default) or a real Oodle DLL (oodle-ffi's own test
+      # skips cleanly without ODLE_TEST_DLL_PATH) -- both need LAN access to the real PoE2
+      # install, unavailable from a hosted CI runner.
+      - name: cargo fmt / clippy / test / build (windows-gnu)
+        run: |
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            -v "$PWD":/workspace -w /workspace \
+            -e CARGO_HOME=/workspace/.ci-cargo-home \
+            -e HOME=/workspace/.ci-cargo-home \
+            poe2-oracle-runner \
+            bash -c '
+              set -euo pipefail
+              cargo fmt --all -- --check
+              cargo clippy --workspace --all-targets --exclude poe2-oracle -- -D warnings
+              cargo clippy -p poe2-oracle --all-targets --target x86_64-pc-windows-gnu -- -D warnings
+              cargo test --workspace --exclude poe2-oracle
+              cargo test -p poe2-oracle --lib --example trade_api --example hotkey_clipboard --example text_rendering
+              cargo build --workspace --target x86_64-pc-windows-gnu
+            '

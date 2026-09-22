@@ -98,7 +98,11 @@ impl Win32Overlay {
     /// sentinel handles. Not needed for this POC's static case -- see the module doc comment --
     /// provided so this type's shape matches `X11Overlay`'s.
     pub fn set_always_on_top(&self, enabled: bool) -> Result<()> {
-        let insert_after = if enabled { HWND_TOPMOST } else { HWND_NOTOPMOST };
+        let insert_after = if enabled {
+            HWND_TOPMOST
+        } else {
+            HWND_NOTOPMOST
+        };
         unsafe {
             SetWindowPos(
                 self.hwnd,

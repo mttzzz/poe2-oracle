@@ -8,3 +8,9 @@
 //! Depends on `oodle-ffi` for decompression; depended on by `poe-dat`. Never depended on by
 //! `crates/poe2-oracle` -- the shipped app only ever reads `data-pipeline`'s JSON output, never
 //! touches bundles or Oodle directly.
+
+mod container;
+mod hash;
+mod index;
+
+pub use index::BundleIndex;

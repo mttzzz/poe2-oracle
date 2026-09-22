@@ -11,6 +11,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       pkg-config git ca-certificates curl \
  && rm -rf /var/lib/apt/lists/*
 RUN rustup target add x86_64-pc-windows-gnu
+# fmt/clippy are not part of the default `rust:1-bookworm` toolchain install; step 9 of the
+# architecture plan's CI gate (`cargo fmt --check`, `cargo clippy --workspace -- -D warnings`)
+# needs both.
+RUN rustup component add rustfmt clippy
 
 RUN useradd -m -u 1000 -s /bin/bash runner
 USER runner

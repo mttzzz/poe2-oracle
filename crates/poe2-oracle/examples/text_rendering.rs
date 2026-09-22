@@ -66,18 +66,11 @@ impl Render for PriceCheckCard {
                     )
                     .child(
                         // Modifier list
-                        div()
-                            .flex()
-                            .flex_col()
-                            .flex_1()
-                            .gap_1()
-                            .p_3()
-                            .children(MODIFIERS.iter().map(|line| {
-                                div()
-                                    .text_sm()
-                                    .text_color(rgb(0x8ea9e8))
-                                    .child(*line)
-                            })),
+                        div().flex().flex_col().flex_1().gap_1().p_3().children(
+                            MODIFIERS
+                                .iter()
+                                .map(|line| div().text_sm().text_color(rgb(0x8ea9e8)).child(*line)),
+                        ),
                     )
                     .child(
                         // Price footer
