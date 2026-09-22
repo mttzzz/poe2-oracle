@@ -1,0 +1,9 @@
+[package]
+name = "poe-dat"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+# .dat64 tables live inside bundle files; poe-bundle is how this crate gets their raw bytes.
+poe-bundle = { path = "../poe-bundle" }

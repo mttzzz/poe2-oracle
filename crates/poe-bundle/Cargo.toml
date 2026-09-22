@@ -1,0 +1,10 @@
+[package]
+name = "poe-bundle"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+# Bundle files are Oodle-compressed; decompression is the one thing this crate needs from below
+# it in the local game-data chain (oodle-ffi <- poe-bundle <- poe-dat <- data-pipeline).
+oodle-ffi = { path = "../oodle-ffi" }

@@ -1,0 +1,9 @@
+[package]
+name = "item-parser"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+# Parses clipboard text into poe2-domain::Item; needs nothing beyond that output shape.
+poe2-domain = { path = "../poe2-domain" }

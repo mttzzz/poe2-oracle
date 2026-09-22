@@ -1,0 +1,61 @@
+[package]
+name = "poe2-oracle"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+# Pinned to a git rev, not the crates.io 0.2.2 release: that release predates the gpui_platform
+# split and the Windows backend described on the live main-branch README (confirmed by reading
+# the source at this exact commit before writing any code against it, per plan step 3).
+# Re-pin to current zed-industries/zed main if this commit ever fails to build; GPUI is pre-1.0
+# with frequent breaking changes, and a build break here is not itself a GPUI verdict.
+gpui = { git = "https://github.com/zed-industries/zed", rev = "b54cc1d0acc8fe3f7581721ee1195516e7581f9d" }
+gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "b54cc1d0acc8fe3f7581721ee1195516e7581f9d" }
+# Zed's own GPUI-integrated HTTP client wrapper around reqwest (see crates/zed/src/main.rs) --
+# reused instead of hand-wiring raw reqwest+tokio against GPUI's own executor.
+reqwest_client = { git = "https://github.com/zed-industries/zed", rev = "b54cc1d0acc8fe3f7581721ee1195516e7581f9d" }
+# Not on crates.io (publish = false, internal workspace crate) but reachable as a git dependency:
+# supplies the `HttpClient` trait, `AsyncBody`/`Json`, and `Response` that `reqwest_client`
+# implements against and that `App::http_client()` returns.
+http_client = { git = "https://github.com/zed-industries/zed", rev = "b54cc1d0acc8fe3f7581721ee1195516e7581f9d" }
+# Deliberately NOT depending on `arboard`: GPUI already exposes `App::read_from_clipboard()`
+# natively on every platform (backed by the native Win32 clipboard on Windows internally), so a
+# second clipboard client would just race the first one for clipboard ownership.
+global-hotkey = "0.8"
+# Same major version pinned in Zed's own workspace; `gpui::Window` implements `HasWindowHandle`
+# from this exact crate, so the version must stay compatible for the raw handle match to
+# type-check. `std` feature requested explicitly: `HandleError`'s `impl std::error::Error` is
+# gated behind it (raw-window-handle's own `src/lib.rs`), and it happens to get unified on by
+# some other Linux-only dependency but not on the `x86_64-pc-windows-gnu` target -- without it,
+# `.context()` on `Result<WindowHandle, HandleError>` fails with an unsatisfied-trait-bounds
+# error on Windows only, while the identical Linux code compiles fine.
+raw-window-handle = { version = "0.6", features = ["std"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+futures = "0.3"
+anyhow = "1"
+# This crate is the shipped app: it only ever reads data-pipeline's JSON output at build/runtime
+# (see crates/data-pipeline), never touches poe-bundle/poe-dat/Oodle directly -- that machinery
+# only runs where the Bundles2 SMB share is reachable. Domain types, clipboard item parsing, and
+# the trade API client are shared with data-pipeline-adjacent tooling, so they live in their own
+# crates instead of being duplicated here.
+poe2-domain = { path = "../poe2-domain" }
+item-parser = { path = "../item-parser" }
+trade-client = { path = "../trade-client" }
+auto-update = { path = "../auto-update" }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+# Same major version gpui/gpui_windows pin in Zed's own workspace at this commit. Only the raw
+# Win32 APIs needed for src/platform/win32.rs (SetWindowLongPtrW/SetWindowPos and friends) --
+# not talking to any gpui_windows type directly, just a HWND reconstructed from the
+# raw-window-handle isize, so exact-version lockstep with gpui's internal `windows` isn't
+# required for correctness, only for keeping one coherent toolchain in the repo.
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
+
+[dev-dependencies]
+# Diagnostic-only: GPUI/gpui_wgpu log through the standard `log` facade
+# (`log::warn!`/`log::error!` in gpui_wgpu's device-lost/surface/adapter-fallback paths); without
+# an installed logger backend those calls are silently dropped. Installed explicitly in each
+# example's `main()` via `env_logger::init()` so `RUST_LOG=debug` surfaces real GPU diagnostics.
+env_logger = "0.11"

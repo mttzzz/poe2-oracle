@@ -1,0 +1,11 @@
+[package]
+name = "trade-client"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+# Request/response shapes (Item/Currency etc.) come from poe2-domain; nothing else needed for
+# the dependency graph itself -- HTTP/serde deps are added in the same step that migrates the
+# real trade_api.rs POC logic into this crate's lib.rs.
+poe2-domain = { path = "../poe2-domain" }

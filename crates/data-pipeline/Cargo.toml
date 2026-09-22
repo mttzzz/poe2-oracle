@@ -1,0 +1,11 @@
+[package]
+name = "data-pipeline"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+# Top of the local game-data chain (oodle-ffi <- poe-bundle <- poe-dat <- data-pipeline): reads
+# real bundles via poe-bundle, parses their tables via poe-dat, writes JSON for poe2-oracle.
+poe-bundle = { path = "../poe-bundle" }
+poe-dat = { path = "../poe-dat" }
