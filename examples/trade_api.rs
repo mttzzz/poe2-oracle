@@ -7,9 +7,9 @@
 //! before writing this file (see POC_FINDINGS.md for the cross-check).
 //!
 //! HTTP goes through `http_client`/`reqwest_client` (Zed's own wrapper), not raw `reqwest` --
-//! see the handoff's deviation notes. No `gpui_tokio` glue is needed: `ReqwestClient` lazily
-//! spins up its own background Tokio runtime and returns a plain boxed future safe to `.await`
-//! from GPUI's own executor.
+//! see `POC_FINDINGS.md`'s deviation notes. No `gpui_tokio` glue is needed: `ReqwestClient`
+//! lazily spins up its own background Tokio runtime and returns a plain boxed future safe to
+//! `.await` from GPUI's own executor.
 
 use futures::AsyncReadExt;
 use gpui::{App, Bounds, Context, Render, Window, WindowBounds, div, prelude::*, px, rgb, size};

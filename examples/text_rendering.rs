@@ -1,12 +1,14 @@
 //! Capabilities 4+6 POC: a static price-check card layout exercising mixed Latin+Cyrillic text
 //! rendering.
 //!
-//! The default GPUI text style on Linux resolves to the sentinel family `.SystemUIFont`, which
-//! `cosmic-text`'s fontdb maps to `"IBM Plex Sans"` (Zed's bundled UI font) -- not installed in
-//! this POC's minimal runner image (only `fonts-dejavu-core` is). `.font_family("DejaVu Sans")`
-//! is set explicitly on the root div so the whole subtree inherits it through GPUI's
-//! `text_style_stack`; DejaVu Sans covers both Latin and Cyrillic in one family, unlike most
-//! Latin-only fonts.
+//! Deliberately does *not* override the font family. The default GPUI text style resolves the
+//! sentinel family `.SystemUIFont`; on Windows that maps to whatever `SystemParametersInfoW`
+//! reports as the configured UI font (`gpui_windows/src/direct_write.rs::get_system_ui_font_name`),
+//! which falls back to `"Segoe UI"` if that call fails and is the OS default on every Windows
+//! install since Vista in practice -- a font with complete Cyrillic coverage already. Forcing a
+//! specific family here (the earlier Linux/Xvfb spike used `"DejaVu Sans"`, chosen for that
+//! runner image's installed fonts) would be actively wrong on Windows: DejaVu Sans is not a
+//! standard Windows font and is very unlikely to be installed on a real machine.
 
 use gpui::{App, Bounds, Context, Render, Window, WindowBounds, div, prelude::*, px, rgb, size};
 use gpui_platform::application;
@@ -25,7 +27,6 @@ const MODIFIERS: &[&str] = &[
 impl Render for PriceCheckCard {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         div()
-            .font_family("DejaVu Sans")
             .size_full()
             .flex()
             .flex_col()

@@ -1,13 +1,12 @@
-//! Capabilities 2+3 POC: a system-wide global hotkey (Ctrl+Alt+O) that reads the real X11
-//! clipboard and re-renders with its contents.
+//! Capabilities 2+3 POC: a system-wide global hotkey (Ctrl+Alt+O) that reads the real clipboard
+//! and re-renders with its contents.
 //!
-//! `global-hotkey`'s Linux backend grabs the combo directly on the X server (`XGrabKey` on the
-//! root window), so delivery is independent of which window currently has input focus -- the
-//! harness proves this by sending the key combo via `xdotool key` *without* `--window`, a real
-//! system-wide synthetic key event, not one targeted at a specific client.
+//! `global-hotkey`'s Windows backend registers the combo via `RegisterHotKey`, so delivery is
+//! independent of which window currently has input focus -- it fires system-wide regardless of
+//! focus by construction, not something that needs a foil app to demonstrate.
 //!
-//! Clipboard is read through GPUI's own native `App::read_from_clipboard()` (backed by the
-//! `x11-clipboard` crate on Linux), not `arboard` -- see the handoff's deviation notes.
+//! Clipboard is read through GPUI's own native `App::read_from_clipboard()`, not `arboard` --
+//! see `POC_FINDINGS.md`'s deviation notes.
 
 use gpui::{
     App, Bounds, Context, Render, SharedString, Window, WindowBounds, div, prelude::*, px, rgb,

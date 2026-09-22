@@ -1,15 +1,16 @@
-//! Capability 1 POC: frameless + transparent-background + popup (override-redirect) window,
-//! with a runtime click-through toggle bound to the "t" key.
+//! Capability 1 POC: frameless + transparent-background + popup (`WS_EX_TOOLWINDOW |
+//! WS_EX_TOPMOST` on Windows) window, with a runtime click-through toggle bound to the "t" key.
 //!
 //! Frameless/transparent/popup needs no raw platform code -- it is declarative via
 //! `WindowOptions` (see `build_window_options` below, copied from GPUI's own
-//! `examples/window_positioning.rs`). Click-through is NOT declarative on X11 (GPUI's
-//! `Window::set_input_region` is a Wayland-only no-op there), so this example drives the SHAPE
-//! extension directly through `poe2_oracle::platform::x11::X11Overlay`.
+//! `examples/window_positioning.rs`). Click-through is not declarative on Windows
+//! (`Window::set_input_region` is a Wayland-only no-op there too), so this example drives the
+//! platform escape hatch directly: `WS_EX_LAYERED`/`WS_EX_TRANSPARENT` via
+//! `poe2_oracle::platform::win32::Win32Overlay`.
 //!
-//! Window is opened at a fixed, known screen position (see `WINDOW_BOUNDS`) so the harness can
-//! place a dummy target window at the same coordinates to prove pass-through clicks actually
-//! reach whatever is behind this window once click-through is enabled.
+//! Windows-only: this project ships to Windows exclusively for now (see `POC_FINDINGS.md`'s
+//! "Windows" section for why the earlier Linux/X11 spike's platform module and Xvfb harness
+//! were dropped rather than dual-maintained).
 
 use gpui::{
     App, Bounds, Context, FocusHandle, KeyDownEvent, MouseButton, MouseDownEvent, Render,
@@ -17,17 +18,17 @@ use gpui::{
     div, point, prelude::*, px, rgb, size,
 };
 use gpui_platform::application;
-use poe2_oracle::platform::x11::X11Overlay;
+use poe2_oracle::platform::win32::Win32Overlay;
 use std::cell::RefCell;
 
-/// Fixed screen-space geometry so the harness can reproduce it for the dummy target window.
+/// Fixed screen-space geometry (arbitrary but stable, in case a future harness wants it).
 const WINDOW_BOUNDS: (f32, f32, f32, f32) = (100., 100., 420., 320.);
 
 struct WindowChrome {
     focus_handle: FocusHandle,
     click_through: bool,
     /// Resolved lazily on first render, once the platform window actually exists.
-    overlay: RefCell<Option<X11Overlay>>,
+    overlay: RefCell<Option<Win32Overlay>>,
 }
 
 impl WindowChrome {
@@ -35,12 +36,12 @@ impl WindowChrome {
         if self.overlay.borrow().is_some() {
             return;
         }
-        match X11Overlay::from_window(window) {
+        match Win32Overlay::from_window(window) {
             Ok(overlay) => {
-                println!("X11_OVERLAY_WINDOW_ID={}", overlay.window_id());
+                println!("WIN32_OVERLAY_WINDOW_ID={}", overlay.window_id());
                 *self.overlay.borrow_mut() = Some(overlay);
             }
-            Err(err) => eprintln!("window_chrome: X11Overlay::from_window failed: {err:?}"),
+            Err(err) => eprintln!("window_chrome: Win32Overlay::from_window failed: {err:?}"),
         }
     }
 
@@ -119,9 +120,8 @@ fn build_window_options() -> WindowOptions {
 fn main() {
     application().run(|cx: &mut App| {
         cx.open_window(build_window_options(), |window, cx| {
-            // `titlebar: None` above means GPUI never sets WM_NAME/_NET_WM_NAME at creation
-            // (gpui_linux only does that when `titlebar.title` is `Some`) -- set it explicitly
-            // so the harness's `xdotool search --name` can find this window.
+            // `titlebar: None` above means the window has no OS-drawn titlebar to source a
+            // title from; set one explicitly so the window is identifiable (taskbar, Alt+Tab).
             window.set_window_title("Oracle POC — window_chrome");
             cx.new(|cx| WindowChrome {
                 focus_handle: {

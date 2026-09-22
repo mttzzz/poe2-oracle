@@ -1,20 +1,37 @@
 # GPUI Feasibility POC — Findings
 
-Linux-only spike (X11). Pinned GPUI commit `b54cc1d0acc8fe3f7581721ee1195516e7581f9d`
-(`zed-industries/zed`, `main`, 2026-09-22T03:48:24Z). All commands run through this project's
-lane (`lane exec`); nothing built or run on the host. Harness: `poc/run-and-shoot.sh`. Raw
-evidence: `poc/screenshots/*.png`, `poc/logs/*.log`, `poc/logs/*.xwininfo.txt`,
-`poc/logs/trade_api_crosscheck.json`.
+Pinned GPUI commit `b54cc1d0acc8fe3f7581721ee1195516e7581f9d` (`zed-industries/zed`, `main`,
+2026-09-22T03:48:24Z). All commands run through this project's lane (`lane exec`); nothing built
+or run on the host. Two parts: a Linux/X11 spike (harness: `poc/run-and-shoot.sh`, evidence in
+`poc/screenshots/`, `poc/logs/`) run interactively end-to-end, and a same-day Windows
+cross-compile follow-up (evidence: build logs in this document, binaries shipped to
+`/mnt/poe2/oracle-poc-windows/`) that builds and ships real `.exe`s but has **not** been run on
+an actual Windows machine by this agent — no Windows execution access, only the SMB file share.
 
-## Verdict: **GO**
+## Verdict: **GO** (Linux proven; Windows builds clean and ships, execution pending the user's
+own hands-on test)
 
-All six capabilities either pass outright or are blocked *only* by a well-documented, narrowly
-scoped headless-CI environment limitation (below) that does not apply to this tool's actual
-target environment (a real user's desktop, with a real GPU and a real compositor/window
-manager). No genuine GPUI/crate-level blocker was found for any capability. **Windows is
-completely unverified** — everything below is Linux/X11 only. Real Win32 click-through styles,
-DirectWrite Cyrillic shaping, and `global-hotkey`'s and GPUI's Windows backends were never
-exercised and carry none of this spike's confidence.
+All six capabilities either pass outright on Linux or are blocked *only* by a well-documented,
+narrowly scoped headless-CI environment limitation (below) that does not apply to this tool's
+actual target environment (a real user's desktop, with a real GPU and a real compositor/window
+manager). No genuine GPUI/crate-level blocker was found for any capability on Linux. The Windows
+backend (`gpui_windows`) cross-compiles cleanly from this Linux lane via mingw-w64 with no MSVC
+needed, and all four examples build and link into real, dependency-light Windows executables now
+sitting in `/mnt/poe2/oracle-poc-windows/` — but **whether they actually behave correctly when
+run is unverified**: this agent has file-share access to the Windows box, not execution access.
+See "Windows" below for exactly what cross-compiling did and did not establish.
+
+> **Update, same day, after this document was first written:** the Linux platform module
+> (`src/platform/x11.rs`), the Xvfb harness (`poc/run-and-shoot.sh`), and its screenshots/logs
+> have since been **removed** from the repo. Decision: this project ships to Windows
+> exclusively for the foreseeable future, the Xvfb harness could never do more than
+> behavioral/protocol-level proof anyway (see the DRI3 limitation below — it never delivered
+> real pixel verification, which is exactly what capability 4/6 needed most), and dual-
+> maintaining a platform backend + test harness for a target nothing ships to is pure cost. The
+> Linux findings below are kept as-written, unedited, as the historical record of *why* the
+> underlying GPUI approach was judged sound before committing to it -- the specific files they
+> cite (`poc/logs/...`, `X11Overlay`) no longer exist in the tree. See "Windows" further down for
+> the current, maintained state.
 
 ## Environment limitation (affects capabilities 1's pixel proof, 4, and 6)
 
@@ -131,6 +148,17 @@ shaping stack) are general-purpose, script-agnostic shapers with no Latin-only r
 anywhere in the code read for this spike, so there is no specific reason to expect a failure on
 real hardware — but that is an inference, not a verified result, and is reported as one.
 
+**Post-hoc correction (Windows pass):** the Linux example forced `.font_family("DejaVu Sans")`,
+chosen for that runner image's installed fonts. DejaVu Sans is not a standard Windows font and
+almost certainly is not installed on a real Windows machine — shipping that override as-is would
+have actively risked breaking the one thing this capability exists to test. Fixed before shipping
+to `/mnt/poe2`: `examples/text_rendering.rs` no longer overrides the font family at all. On
+Windows, `.SystemUIFont` resolves via `SystemParametersInfoW`
+(`gpui_windows/src/direct_write.rs::get_system_ui_font_name`) to the user's actual configured UI
+font, falling back to `"Segoe UI"` — Microsoft's own flagship UI font, with complete Cyrillic
+coverage, installed on every Windows machine since Vista. The default is the correct choice here,
+not an override.
+
 ## Capability 5 — Real async trade API call, loading → resolved re-render
 
 **PASS**, with a rigorous independent cross-check.
@@ -158,6 +186,123 @@ cross-check:   league "Forbidden Rites", total 3490,
 and the full identity/price/account of the top-priced result match exactly. This capability's
 proof does not depend on the rendering/screenshot pipeline at all — the network round trip and
 JSON parsing are the proof.
+
+# Windows (cross-compiled from Linux, same day — not yet run on real hardware)
+
+No plan text ever covered Windows in detail (it was explicitly out of scope for the Linux
+spike); this section documents what was actually done and verified on this pass, and draws the
+line precisely at what remains unverified.
+
+## Toolchain: mingw-w64 cross-compilation, no MSVC
+
+`gpui_platform`'s Windows backend is a real, separate crate (`gpui_windows`, parallel to
+`gpui_linux`), auto-selected via `[target.'cfg(target_os = "windows")'.dependencies]` — no
+feature flag needed on our side, unlike Linux's x11/wayland choice. Added to
+`lanes/runner.Dockerfile`: `gcc-mingw-w64-x86-64`/`g++-mingw-w64-x86-64` +
+`rustup target add x86_64-pc-windows-gnu`, plus `.cargo/config.toml` pointing that target's
+linker at `x86_64-w64-mingw32-gcc`. With just that, the **entire** `gpui_windows` stack —
+DirectComposition, DirectWrite, Direct3D 11, `accesskit_windows`, the official `windows` crate
+(0.62.2) — cross-compiles cleanly from this Linux lane. No MSVC, no Windows SDK, no `cargo-xwin`
+needed for compiling. (One thing does need a real Windows SDK at *build* time — release-mode
+shader precompilation — see below.)
+
+## Making the crate cross-platform (as of the mingw-w64 pass; later simplified to Windows-only)
+
+At the point this was written, both `x11.rs` and `win32.rs` existed side by side, `Cargo.toml`
+had matching `[target.'cfg(target_os = "linux")']`/`[target.'cfg(target_os = "windows")']`
+dependency sections, and `window_chrome.rs` picked between `X11Overlay`/`Win32Overlay` via a
+`#[cfg]`-aliased `PlatformOverlay` name. After the decision to drop Linux (see the note at the
+top of this document), `x11.rs`, `x11rb`, and the alias were all removed; `window_chrome.rs` now
+names `Win32Overlay` directly. One thing survives from that pass regardless of platform count:
+a real, reproducible cross-target bug found and fixed. `raw_window_handle::HandleError`'s
+`impl std::error::Error` is gated behind that crate's own `std` feature (its `src/lib.rs`).
+Something in the (now-removed) Linux dependency graph happened to unify that feature on; nothing
+on Windows did. Result: `.context()` on `Result<WindowHandle, HandleError>` compiled fine on
+Linux and failed with an unsatisfied-trait-bounds error on Windows, for byte-identical code.
+Fixed by requesting `raw-window-handle = { version = "0.6", features = ["std"] }` explicitly --
+harmless and correct regardless of target count.
+
+## `src/platform/win32.rs`
+
+Every constant, struct layout, and function signature (`HWND(pub *mut c_void)`, `GWL_EXSTYLE`,
+`WS_EX_LAYERED`/`WS_EX_TRANSPARENT`, `HWND_TOPMOST`/`HWND_NOTOPMOST`,
+`SetWindowLongPtrW`/`SetWindowPos`) was checked against the real downloaded `windows` 0.62.2
+crate source in this lane's cargo registry cache before writing code against it. Two things fall
+out of reading `gpui_windows/src/window.rs` itself, not just the `windows` crate:
+
+- **Always-on-top is free on Windows.** `WindowKind::PopUp` already sets
+  `WS_EX_TOOLWINDOW | WS_EX_TOPMOST` at `CreateWindowExW` time (`window.rs:490`) — genuinely
+  native always-on-top, unlike X11 where override-redirect popups aren't WM-stacked at all and
+  the EWMH hint was only ever a best-effort ask nothing in Xvfb could even honor.
+  `set_always_on_top` exists in `win32.rs` as a runtime-toggle escape hatch, not because the
+  static case needs it.
+- **Click-through genuinely needs raw code.** `gpui_windows`'s `CreateWindowExW` call never sets
+  `WS_EX_LAYERED`/`WS_EX_TRANSPARENT` for any `WindowKind` — confirmed by reading its
+  `dwexstyle` construction directly, not inferred. `win32.rs` toggles both via
+  `SetWindowLongPtrW(GWL_EXSTYLE, ...)`, the standard recipe.
+
+**What this establishes and what it doesn't**: the code compiles against real, version-matched
+API signatures and follows the standard, widely-documented Win32 click-through recipe — but it
+has never actually run. Whether `WS_EX_TRANSPARENT` alone is sufficient on a DirectComposition
+window (`gpui_windows` sets `WS_EX_NOREDIRECTIONBITMAP` for its own GPU-composited rendering
+path, a different, newer mechanism than the classic GDI layered-window path `WS_EX_LAYERED`
+historically implies) is exactly the kind of thing that looks right on paper and needs a real
+click, on a real desktop, to actually confirm. That is squarely what `window_chrome.exe`'s manual
+test (see `/mnt/poe2/oracle-poc-windows/README.txt`) is for.
+
+## Release-mode limitation: shader precompilation needs a real Windows SDK
+
+`gpui_windows`'s build script only precompiles HLSL shaders (`fxc.exe`, located via
+`GPUI_FXC_PATH`, `where.exe`, or the Windows registry's installed-SDK key) when
+`debug_assertions` is off, and only inside a block additionally gated by
+`#[cfg(target_os = "windows")]` — which build scripts evaluate against the *build host*, not
+`--target`, so cross-compiling from Linux means neither the fxc lookup nor a real Windows
+registry/SDK is ever reachable regardless of profile. A genuine `cargo build --release` for this
+target fails outright:
+```
+error: couldn't read ".../release/build/gpui_windows-.../out/shaders_bytes.rs": No such file or directory
+```
+`cargo build` (dev/debug) works precisely because `debug_assertions = true` skips shader
+precompilation entirely and falls back to compiling shaders **at runtime** via
+`D3DCompileFromFile` (confirmed as a real runtime dependency of the built `.exe` via
+`objdump -p` — `d3dcompiler_47.dll`, part of every Windows install with DirectX, i.e. any machine
+that already runs PoE2). Debug binaries are enormous, though (~400-470MB per example,
+unoptimized + full debug info) — too large to comfortably ship. Fix: a custom
+`[profile.dist]` in `Cargo.toml` that `inherits = "dev"` (keeping `debug_assertions = true`, so
+the fxc path stays inert and shaders still compile at runtime) but adds `opt-level = 2` and
+`strip = true`. Result: 23-31MB per example, a ~16x reduction, with identical behavior to debug
+as far as this limitation goes. This is a real, load-bearing constraint for anyone doing CI/CD
+Windows builds of a GPUI app from Linux — a true release build needs either a Windows build
+machine, or a Wine-hosted Windows SDK/fxc.exe, or an actual DXC-based shim; none of that was
+attempted here as out of scope for a feasibility spike.
+
+## Shipped artifacts
+
+`/mnt/poe2/oracle-poc-windows/`: `window_chrome.exe`, `hotkey_clipboard.exe`,
+`text_rendering.exe`, `trade_api.exe` (all `[profile.dist]`, `x86_64-pc-windows-gnu`, PE32+
+console subsystem — each opens a console alongside its window showing `println!` diagnostics
+(`CLICK_THROUGH_STATE`, `HOTKEY_FIRED`, `TRADE_RESOLVED` etc., the same markers the now-removed
+Linux harness used to grep for), plus `README.txt` (Russian, matching how this project's
+owner communicates) with per-exe manual test steps. No mingw runtime DLLs are needed
+(`libgcc`/`libstdc++`/`libwinpthread` are statically linked by this Rust target by default,
+confirmed absent from `objdump -p`'s import table) — only standard Windows system DLLs
+(`user32`, `d3d11`, `dwrite`, `dcomp`, `dwmapi`, `d3dcompiler_47`, `ws2_32`, etc.), all present on
+any Windows 10/11 machine capable of running PoE2 itself.
+
+## What is still genuinely unverified
+
+Everything that requires actually running the binaries: whether the window opens and looks
+right, whether `T` really toggles click-through and a click really passes through
+(`WS_EX_TRANSPARENT` interacting correctly with `gpui_windows`'s DirectComposition-based
+rendering is inferred from reading both codebases, not observed), whether `global-hotkey`'s
+Windows backend (`RegisterHotKey`) actually delivers Ctrl+Alt+O system-wide, whether
+`App::read_from_clipboard()` round-trips real clipboard content on Windows, whether DirectWrite
+actually shapes and rasterizes the Cyrillic text correctly (this is the one capability that
+*needed* Windows to test at all, since it's the platform PoE2 Oracle would actually ship on), and
+whether the real trade-API flow behaves identically (it should — that code path has zero
+platform-specific branches — but "should" is not "observed"). This agent has SMB file-share
+access to the Windows box (`/mnt/poe2`), not execution access; the user runs these by hand next
+and reports back per `README.txt`.
 
 ## Deviations from the plan's literal text (carried over from the prior session's handoff, still accurate)
 
@@ -196,11 +341,12 @@ JSON parsing are the proof.
   fixed `50x50` inner window at a `(10,10)` offset (confirmed via `xwininfo -tree`), not the full
   outer geometry — matters for anyone reusing `xev` as a click-delivery probe.
 
-## Files
+## Files (current tree; `poc/` and `src/platform/x11.rs` no longer exist -- see the archival note)
 
 - `examples/window_chrome.rs`, `examples/hotkey_clipboard.rs`, `examples/text_rendering.rs`,
   `examples/trade_api.rs`
-- `src/platform/x11.rs`, `src/platform/mod.rs`, `src/lib.rs`
-- `poc/run-and-shoot.sh`
-- `poc/screenshots/*.png`, `poc/logs/*.log`, `poc/logs/*.xwininfo.txt`,
-  `poc/logs/trade_api_crosscheck.json`
+- `src/platform/win32.rs`, `src/platform/mod.rs`, `src/lib.rs`
+- `Cargo.toml` (Windows-only deps, `[profile.dist]`), `.cargo/config.toml` (windows-gnu cross
+  linker), `lanes/runner.Dockerfile` (mingw-w64 + rustup target)
+- `/mnt/poe2/oracle-poc-windows/*.exe`, `/mnt/poe2/oracle-poc-windows/README.txt` (Windows
+  binaries + manual test instructions, outside this repo, on the shared Windows drive)

@@ -1,0 +1,4 @@
+# Windows cross-compilation (x86_64-pc-windows-gnu) from this project's Linux lane runner.
+# mingw-w64's cross gcc doubles as the linker driver cargo/rustc need for this target.
+[target.x86_64-pc-windows-gnu]
+linker = "x86_64-w64-mingw32-gcc"
