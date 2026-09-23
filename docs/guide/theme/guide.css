@@ -1,0 +1,24 @@
+/* The app's gold accent (crates/poe2-oracle/src/ui/theme.rs, GOLD and BORDER) on mdBook's coal theme. */
+.coal {
+    --links: #d0913b;
+    --sidebar-active: #d0913b;
+    --sidebar-header-border-color: #6b5022;
+}
+
+.content img {
+    border: 1px solid #2b2b30;
+    border-radius: 4px;
+}
+
+kbd {
+    display: inline-block;
+    padding: 0 0.35em;
+    border: 1px solid #6b5022;
+    border-radius: 3px;
+    background: #1f1811;
+    color: #dcdcdc;
+    font-family: inherit;
+    font-size: 0.9em;
+    line-height: 1.4;
+    white-space: nowrap;
+}

@@ -1,0 +1,637 @@
+{
+ "result": [
+  {
+   "id": "a3811f28c6212211d7564f30c0f65e1bb97657e1c4e22f0f697b9e11350fe44e",
+   "listing": {
+    "method": "psapi",
+    "indexed": "2026-09-23T05:22:30Z",
+    "stash": {
+     "name": "7",
+     "x": 7,
+     "y": 1
+    },
+    "price": {
+     "type": "~b/o",
+     "amount": 1,
+     "currency": "exalted"
+    },
+    "fee": 21790,
+    "account": {
+     "name": "seller0#0000",
+     "online": null,
+     "lastCharacterName": "Seller0",
+     "language": "en_US",
+     "realm": "poe2"
+    },
+    "whisper": "@Seller0  I would like to buy your Cabal Determination Waystone (Tier 15) (T15) listed for 1 exalted in Standard (stash tab \"7\"; position: left 8, top 2)"
+   },
+   "item": {
+    "realm": "poe2",
+    "verified": true,
+    "w": 1,
+    "h": 1,
+    "icon": "https://web.poecdn.com/gen/image/WzI4LDE0LHsiZiI6IjJESXRlbXMvTWFwcy9FbmRnYW1lTWFwcy9FbmRnYW1lTWFwMTUiLCJ3IjoxLCJoIjoxLCJzY2FsZSI6MSwicmVhbG0iOiJwb2UyIn1d/17149586aa/EndgameMap15.png",
+    "iconTierText": "XV",
+    "league": "Standard",
+    "id": "a3811f28c6212211d7564f30c0f65e1bb97657e1c4e22f0f697b9e11350fe44e",
+    "name": "Тайная решимость",
+    "typeLine": "Путевой камень (Ур. 15)",
+    "baseType": "Путевой камень (Ур. 15)",
+    "rarity": "Rare",
+    "ilvl": 82,
+    "identified": true,
+    "note": "~b/o 1 exalted",
+    "properties": [
+     {
+      "name": "[LimitedRespawn|Доступно возрождений]",
+      "values": [
+       [
+        "1",
+        1
+       ]
+      ],
+      "displayMode": 0,
+      "type": 98
+     },
+     {
+      "name": "[Pack|Размер групп монстров]",
+      "values": [
+       [
+        "+29%",
+        1
+       ]
+      ],
+      "displayMode": 0,
+      "type": 4
+     },
+     {
+      "name": "[MonsterEffectiveness|Эффективность монстров]",
+      "values": [
+       [
+        "+13%",
+        1
+       ]
+      ],
+      "displayMode": 0,
+      "type": 102
+     },
+     {
+      "name": "Шанс выпадения путевого камня",
+      "values": [
+       [
+        "+65%",
+        1
+       ]
+      ],
+      "displayMode": 0,
+      "type": 66
+     }
+    ],
+    "explicitMods": [
+     {
+      "description": "Область содержит участки [ShockedGround|заряженной земли]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_3477720557",
+      "mods": [
+       {
+        "name": "Шоковый",
+        "tier": "S1",
+        "magnitudes": [
+         {
+          "min": "1",
+          "max": "1"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "description": "Монстры наносят 15% от их урона в виде дополнительного урона от молнии",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_512071314",
+      "mods": [
+       {
+        "name": "Громовая",
+        "tier": "P1",
+        "magnitudes": [
+         {
+          "min": "15",
+          "max": "19"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "description": "Меткость монстров повышена на 38%",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_1588049749",
+      "mods": [
+       {
+        "name": "Точный",
+        "tier": "P1",
+        "magnitudes": [
+         {
+          "min": "30",
+          "max": "40"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "description": "Монстры с 19% шансом могут наложить [Bleeding|кровотечение] при нанесении [Hit|удара]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_2506820610",
+      "mods": [
+       {
+        "name": "Надрезающий",
+        "tier": "P1",
+        "magnitudes": [
+         {
+          "min": "15",
+          "max": "20"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "description": "Игроки получают уменьшение зарядов [Flask|флакона] на 35%",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_2549889921",
+      "mods": [
+       {
+        "name": "засухи",
+        "tier": "S1",
+        "magnitudes": [
+         {
+          "min": "35",
+          "max": "30"
+         }
+        ]
+       }
+      ]
+     }
+    ],
+    "descrText": "Можно использовать в Машине картоходца, чтобы войти на карту. Путевые камни одноразовые.",
+    "frameType": 2,
+    "frameTypeId": "Rare",
+    "extended": {
+     "hashes": {
+      "explicit": [
+       [
+        "explicit.stat_3477720557",
+        [
+         4
+        ]
+       ],
+       [
+        "explicit.stat_512071314",
+        [
+         1
+        ]
+       ],
+       [
+        "explicit.stat_1588049749",
+        [
+         0
+        ]
+       ],
+       [
+        "explicit.stat_2506820610",
+        [
+         3
+        ]
+       ],
+       [
+        "explicit.stat_2549889921",
+        [
+         2
+        ]
+       ]
+      ]
+     }
+    }
+   }
+  },
+  {
+   "id": "5c8232661f67d5df69d6c583bc3643c514fe42989447ac18dbc0687737da2cf7",
+   "listing": {
+    "method": "psapi",
+    "indexed": "2026-09-23T05:22:30Z",
+    "stash": {
+     "name": "7",
+     "x": 6,
+     "y": 1
+    },
+    "price": {
+     "type": "~b/o",
+     "amount": 1,
+     "currency": "exalted"
+    },
+    "fee": 18719,
+    "account": {
+     "name": "seller1#0001",
+     "online": null,
+     "lastCharacterName": "Seller1",
+     "language": "en_US",
+     "realm": "poe2"
+    },
+    "whisper": "@Seller1  I would like to buy your Desolate Bearings Waystone (Tier 15) (T15) listed for 1 exalted in Standard (stash tab \"7\"; position: left 7, top 2)"
+   },
+   "item": {
+    "realm": "poe2",
+    "verified": true,
+    "w": 1,
+    "h": 1,
+    "icon": "https://web.poecdn.com/gen/image/WzI4LDE0LHsiZiI6IjJESXRlbXMvTWFwcy9FbmRnYW1lTWFwcy9FbmRnYW1lTWFwMTUiLCJ3IjoxLCJoIjoxLCJzY2FsZSI6MSwicmVhbG0iOiJwb2UyIn1d/17149586aa/EndgameMap15.png",
+    "iconTierText": "XV",
+    "league": "Standard",
+    "id": "5c8232661f67d5df69d6c583bc3643c514fe42989447ac18dbc0687737da2cf7",
+    "name": "Пропавший азимут",
+    "typeLine": "Путевой камень (Ур. 15)",
+    "baseType": "Путевой камень (Ур. 15)",
+    "rarity": "Rare",
+    "ilvl": 81,
+    "identified": true,
+    "note": "~b/o 1 exalted",
+    "properties": [
+     {
+      "name": "[LimitedRespawn|Доступно возрождений]",
+      "values": [
+       [
+        "2",
+        1
+       ]
+      ],
+      "displayMode": 0,
+      "type": 98
+     },
+     {
+      "name": "[ItemRarity|Редкость предметов]",
+      "values": [
+       [
+        "+25%",
+        1
+       ]
+      ],
+      "displayMode": 0,
+      "type": 3
+     },
+     {
+      "name": "[Pack|Размер групп монстров]",
+      "values": [
+       [
+        "+13%",
+        1
+       ]
+      ],
+      "displayMode": 0,
+      "type": 4
+     },
+     {
+      "name": "Шанс выпадения путевого камня",
+      "values": [
+       [
+        "+60%",
+        1
+       ]
+      ],
+      "displayMode": 0,
+      "type": 66
+     }
+    ],
+    "explicitMods": [
+     {
+      "description": "Монстры наносят 17% от их урона в виде дополнительного урона от холода",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_211727",
+      "mods": [
+       {
+        "name": "Перемёрзлый",
+        "tier": "P1",
+        "magnitudes": [
+         {
+          "min": "15",
+          "max": "19"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "description": "Монстры [MonsterExtraEvasion1|уклончивы]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_2570249991",
+      "mods": [
+       {
+        "name": "уклонения",
+        "tier": "S1",
+        "magnitudes": [
+         {
+          "min": "35",
+          "max": "55"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "description": "108% усиление [AilmentApplication|наложения] [ElementalAilments|стихийных] состояний у монстров",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_3877264671",
+      "mods": [
+       {
+        "name": "преодоления",
+        "tier": "S1",
+        "magnitudes": [
+         {
+          "min": "100",
+          "max": "119"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "description": "Игроки получают уменьшение зарядов [Flask|флакона] на 34%",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_2549889921",
+      "mods": [
+       {
+        "name": "засухи",
+        "tier": "S1",
+        "magnitudes": [
+         {
+          "min": "35",
+          "max": "30"
+         }
+        ]
+       }
+      ]
+     }
+    ],
+    "descrText": "Можно использовать в Машине картоходца, чтобы войти на карту. Путевые камни одноразовые.",
+    "frameType": 2,
+    "frameTypeId": "Rare",
+    "extended": {
+     "hashes": {
+      "explicit": [
+       [
+        "explicit.stat_211727",
+        [
+         0
+        ]
+       ],
+       [
+        "explicit.stat_2570249991",
+        [
+         1
+        ]
+       ],
+       [
+        "explicit.stat_3877264671",
+        [
+         3
+        ]
+       ],
+       [
+        "explicit.stat_2549889921",
+        [
+         2
+        ]
+       ]
+      ]
+     }
+    }
+   }
+  },
+  {
+   "id": "a240793c99f639e59dba358dd03475a3c4ba96ea814933a06d8478f8f1cdb351",
+   "listing": {
+    "method": "psapi",
+    "indexed": "2026-09-23T05:22:30Z",
+    "stash": {
+     "name": "7",
+     "x": 7,
+     "y": 2
+    },
+    "price": {
+     "type": "~b/o",
+     "amount": 1,
+     "currency": "exalted"
+    },
+    "fee": 19273,
+    "account": {
+     "name": "seller2#0002",
+     "online": null,
+     "lastCharacterName": "Seller2",
+     "language": "en_US",
+     "realm": "poe2"
+    },
+    "whisper": "@Seller2  I would like to buy your Horror Resolve Waystone (Tier 15) (T15) listed for 1 exalted in Standard (stash tab \"7\"; position: left 8, top 3)"
+   },
+   "item": {
+    "realm": "poe2",
+    "verified": true,
+    "w": 1,
+    "h": 1,
+    "icon": "https://web.poecdn.com/gen/image/WzI4LDE0LHsiZiI6IjJESXRlbXMvTWFwcy9FbmRnYW1lTWFwcy9FbmRnYW1lTWFwMTUiLCJ3IjoxLCJoIjoxLCJzY2FsZSI6MSwicmVhbG0iOiJwb2UyIn1d/17149586aa/EndgameMap15.png",
+    "iconTierText": "XV",
+    "league": "Standard",
+    "id": "a240793c99f639e59dba358dd03475a3c4ba96ea814933a06d8478f8f1cdb351",
+    "name": "Ужасная затея",
+    "typeLine": "Путевой камень (Ур. 15)",
+    "baseType": "Путевой камень (Ур. 15)",
+    "rarity": "Rare",
+    "ilvl": 82,
+    "identified": true,
+    "note": "~b/o 1 exalted",
+    "properties": [
+     {
+      "name": "[LimitedRespawn|Доступно возрождений]",
+      "values": [
+       [
+        "2",
+        1
+       ]
+      ],
+      "displayMode": 0,
+      "type": 98
+     },
+     {
+      "name": "[ItemRarity|Редкость предметов]",
+      "values": [
+       [
+        "+24%",
+        1
+       ]
+      ],
+      "displayMode": 0,
+      "type": 3
+     },
+     {
+      "name": "[Pack|Размер групп монстров]",
+      "values": [
+       [
+        "+9%",
+        1
+       ]
+      ],
+      "displayMode": 0,
+      "type": 4
+     },
+     {
+      "name": "[MonsterRarity|Редкость монстров]",
+      "values": [
+       [
+        "+23%",
+        1
+       ]
+      ],
+      "displayMode": 0,
+      "type": 103
+     },
+     {
+      "name": "Шанс выпадения путевого камня",
+      "values": [
+       [
+        "+65%",
+        1
+       ]
+      ],
+      "displayMode": 0,
+      "type": 66
+     }
+    ],
+    "explicitMods": [
+     {
+      "description": "Область [Curse|проклята] Уязвимостью к стихиям",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_554690751",
+      "mods": [
+       {
+        "name": "разъедания",
+        "tier": "S1",
+        "magnitudes": [
+         {
+          "min": "1",
+          "max": "1"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "description": "На 21% больше здоровья монстров",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_95249895",
+      "mods": [
+       {
+        "name": "Стойкий",
+        "tier": "P1",
+        "magnitudes": [
+         {
+          "min": "20",
+          "max": "25"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "description": "Монстры имеют 208% повышение шанса [Critical|критического удара]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_2753083623",
+      "mods": [
+       {
+        "name": "Разрушительный",
+        "tier": "P1",
+        "magnitudes": [
+         {
+          "min": "200",
+          "max": "240"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "description": "+25% к [CriticalDamageBonus|бонусу критического урона] монстров",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_57326096",
+      "mods": [
+       {
+        "name": "Разрушительный",
+        "tier": "P1",
+        "magnitudes": [
+         {
+          "min": "21",
+          "max": "25"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "description": "111% усиление [AilmentApplication|наложения] [ElementalAilments|стихийных] состояний у монстров",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_3877264671",
+      "mods": [
+       {
+        "name": "преодоления",
+        "tier": "S1",
+        "magnitudes": [
+         {
+          "min": "100",
+          "max": "119"
+         }
+        ]
+       }
+      ]
+     }
+    ],
+    "descrText": "Можно использовать в Машине картоходца, чтобы войти на карту. Путевые камни одноразовые.",
+    "frameType": 2,
+    "frameTypeId": "Rare",
+    "extended": {
+     "hashes": {
+      "explicit": [
+       [
+        "explicit.stat_554690751",
+        [
+         1
+        ]
+       ],
+       [
+        "explicit.stat_95249895",
+        [
+         3
+        ]
+       ],
+       [
+        "explicit.stat_2753083623",
+        [
+         0
+        ]
+       ],
+       [
+        "explicit.stat_57326096",
+        [
+         0
+        ]
+       ],
+       [
+        "explicit.stat_3877264671",
+        [
+         2
+        ]
+       ]
+      ]
+     }
+    }
+   }
+  }
+ ]
+}

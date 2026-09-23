@@ -130,6 +130,12 @@ impl Settings {
     /// place of one [`Hotkey::check`] rejects -- a hand-edited file can hold anything.
     fn normalized(mut self) -> Settings {
         self.version = SETTINGS_VERSION;
+        // A typed league as typed, minus the spaces around it; nothing typed is no choice.
+        self.league = match std::mem::take(&mut self.league) {
+            LeagueChoice::Custom(name) if name.trim().is_empty() => LeagueChoice::Auto,
+            LeagueChoice::Custom(name) => LeagueChoice::Custom(name.trim().to_owned()),
+            choice => choice,
+        };
         self.search_tolerance_percent = self
             .search_tolerance_percent
             .min(MAX_SEARCH_TOLERANCE_PERCENT);
@@ -219,16 +225,22 @@ pub enum LeagueChoice {
     /// The trade site's current league: the first one `GET /api/trade2/data/leagues` lists.
     #[default]
     Auto,
-    /// A league the player picked by name.
+    /// A league the player picked by name from the trade site's list.
     Named(String),
+    /// A league the player typed in: a private one (`My League (PL12345)`), which the site's list
+    /// never shows -- searched as typed, listed or not. The site answers searches in it only for
+    /// a signed-in player (`crate::session`).
+    Custom(String),
 }
 
 impl LeagueChoice {
     /// The league to search, given the trade site's leagues in its order. A picked league the site
     /// no longer lists (it ended) gives way to the current one; without a list (it failed to load)
-    /// the pick is used as is. `None` only for `Auto` without a list.
+    /// the pick is used as is. A typed league is always used as typed. `None` only for `Auto`
+    /// without a list.
     pub fn resolve<'a>(&'a self, listed: &'a [String]) -> Option<&'a str> {
         match self {
+            LeagueChoice::Custom(name) if !name.trim().is_empty() => Some(name.trim()),
             LeagueChoice::Named(name) if listed.is_empty() || listed.contains(name) => {
                 Some(name.as_str())
             }
@@ -706,6 +718,19 @@ mod tests {
     }
 
     #[test]
+    fn a_typed_league_loads_trimmed_and_an_empty_one_as_auto() {
+        let dir = TempDir::new();
+        let path = dir.settings_file();
+        write_file(&path, r#"{"league": {"custom": " My League (PL12345) "}}"#);
+        assert_eq!(
+            load_from(&path).league,
+            LeagueChoice::Custom("My League (PL12345)".to_owned())
+        );
+        write_file(&path, r#"{"league": {"custom": "  "}}"#);
+        assert_eq!(load_from(&path).league, LeagueChoice::Auto);
+    }
+
+    #[test]
     fn loaded_values_are_brought_into_range() {
         let dir = TempDir::new();
         let path = dir.settings_file();
@@ -859,5 +884,12 @@ mod tests {
         );
         assert_eq!(named("Standard").resolve(&[]), Some("Standard"));
         assert_eq!(LeagueChoice::Auto.resolve(&[]), None);
+        let custom = LeagueChoice::Custom("My League (PL12345)".to_owned());
+        assert_eq!(
+            custom.resolve(&listed),
+            Some("My League (PL12345)"),
+            "a private league is never listed, and searched anyway"
+        );
+        assert_eq!(custom.resolve(&[]), Some("My League (PL12345)"));
     }
 }

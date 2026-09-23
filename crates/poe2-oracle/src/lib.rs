@@ -3,13 +3,16 @@
 
 pub mod bound_input;
 pub mod brand;
+pub mod bug_report;
 pub mod item_refs;
 pub mod listing_match;
+pub mod live_search;
 pub mod overlay_layout;
 pub mod paths;
 pub mod platform;
 pub mod quick_action;
 pub mod relative_time;
+pub mod session;
 pub mod settings;
 pub mod trade_requests;
 pub mod xp_tracker;

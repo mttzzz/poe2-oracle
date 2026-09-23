@@ -1,0 +1,21 @@
+[book]
+title = "PoE2 Oracle"
+description = "Player guide for PoE2 Oracle, a price-check overlay for Path of Exile 2 on Windows. English and Russian."
+authors = ["PoE2 Oracle contributors"]
+language = "en"
+src = "src"
+
+[build]
+# A page listed in SUMMARY.md but missing on disk fails the build instead of being created empty.
+create-missing = false
+
+[output.html]
+default-theme = "coal"
+preferred-dark-theme = "coal"
+no-section-label = true
+git-repository-url = "https://github.com/mttzzz/poe2-oracle"
+edit-url-template = "https://github.com/mttzzz/poe2-oracle/edit/main/docs/guide/{path}"
+# Where .github/workflows/pages.yml publishes the book: https://mttzzz.github.io/poe2-oracle/guide/
+site-url = "/poe2-oracle/guide/"
+additional-css = ["theme/guide.css"]
+additional-js = ["theme/guide.js"]

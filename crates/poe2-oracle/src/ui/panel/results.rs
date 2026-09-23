@@ -5,23 +5,26 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use gpui::{
     AnyElement, App, AppContext as _, Context, FontWeight, IntoElement, MouseButton,
-    MouseDownEvent, Render, SharedString, Window, div, img, prelude::*, rgb,
+    MouseDownEvent, Render, SharedString, Window, div, prelude::*, rgb,
 };
 
 use poe2_domain::ParsedItem;
+use trade_client::live::MAX_LIVE_SEARCHES;
 use trade_client::rates::{Confidence, PriceEstimate, PriceUnit};
 use trade_client::{AccountStatus, ListedMod, ListingStatus, ModKind, PriceCurrency};
 
 use crate::listing_match::{self, Asked, WantedStat};
+use crate::live_search::LiveSearches;
 use crate::price_check::{ListingRow, PriceCheckApp, SearchState};
 use crate::relative_time;
+use crate::session::SessionStatus;
 use crate::ui::theme::{
     BG_BUTTON, BG_BUTTON_HOVER, BG_CONTROL, BG_NAMEPLATE, BG_PANEL, BG_ROW_STRIPE, BORDER,
     BORDER_GOLD, CONTENT_PADDING, GOLD, PRICE_RISE, TEXT, TEXT_DIM, TEXT_MUTED, TEXT_VALUE,
     TEXT_WARNING, TIER_TOP, rems_from_px,
 };
 
-use super::format::{currency_img, format_ru, format_value, unit_label};
+use super::format::{amount_in, currency_img, format_ru, format_value};
 use super::market::render_market_card;
 use crate::ui::hint as hints;
 
@@ -83,12 +86,18 @@ pub(super) fn render_search_choices(
         ListingStatus::OnlineLeague => "онлайн в лиге",
         ListingStatus::Any => "все, включая офлайн",
     };
+    // Currencies by their icons, as everywhere in the panel.
+    let icon = |id: &str| currency_img(state.currency_icon(id), 14.);
+    let currency = div().flex().items_center().gap(rems_from_px(3.));
     let currency = match state.price_currency {
-        PriceCurrency::Any => "любая валюта",
-        PriceCurrency::ExaltedOrDivine => "ex или div",
-        PriceCurrency::Exalted => "только ex",
-        PriceCurrency::Divine => "только div",
-        PriceCurrency::Chaos => "только хаос",
+        PriceCurrency::Any => currency.child("любая валюта"),
+        PriceCurrency::ExaltedOrDivine => currency
+            .children(icon("exalted"))
+            .child("или")
+            .children(icon("divine")),
+        PriceCurrency::Exalted => currency.child("только").children(icon("exalted")),
+        PriceCurrency::Divine => currency.child("только").children(icon("divine")),
+        PriceCurrency::Chaos => currency.child("только").children(icon("chaos")),
     };
     div()
         .flex()
@@ -99,7 +108,7 @@ pub(super) fn render_search_choices(
         .text_xs()
         .child(div().text_color(rgb(TEXT_DIM)).child("Продавцы:"))
         .child(choice_chip(
-            sellers,
+            sellers.into_any_element(),
             "Каких продавцов искать: выкуп — купить сразу, онлайн — договориться в игре. \
              Нажмите, чтобы сменить; поиск повторится.",
             PriceCheckApp::cycle_listing_status,
@@ -112,7 +121,7 @@ pub(super) fn render_search_choices(
                 .child("Цена:"),
         )
         .child(choice_chip(
-            currency,
+            currency.into_any_element(),
             "В какой валюте должна быть цена лота. Нажмите, чтобы сменить; поиск повторится.",
             PriceCheckApp::cycle_price_currency,
             cx,
@@ -120,14 +129,17 @@ pub(super) fn render_search_choices(
 }
 
 fn choice_chip(
-    label: &'static str,
+    label: AnyElement,
     hint: &'static str,
     step: fn(&mut PriceCheckApp, &mut Context<PriceCheckApp>),
     cx: &Context<PriceCheckApp>,
 ) -> impl IntoElement {
     div()
         .id(hint)
+        .flex()
         .flex_none()
+        .items_center()
+        .gap(rems_from_px(3.))
         .px(rems_from_px(8.))
         .py(rems_from_px(2.))
         .rounded_xs()
@@ -140,7 +152,8 @@ fn choice_chip(
             MouseButton::Left,
             cx.listener(move |view, _event: &MouseDownEvent, _window, cx| step(view, cx)),
         )
-        .child(format!("{label} ▾"))
+        .child(label)
+        .child("▾")
 }
 
 /// The pricing outcome: the market card for a Currency Exchange item, otherwise the estimate and
@@ -181,7 +194,54 @@ fn render_scout_line(state: &PriceCheckApp, (value, unit): (f64, PriceUnit)) -> 
                 .child(format!("≈ {}", format_ru(value))),
         )
         .children(currency_img(state.currency_icon(unit.trade_id()), 18.))
-        .child(unit_label(unit))
+}
+
+/// Why an exchange item has no market card: poe.ninja has no line for it in the league (a thin
+/// league like Standard lists only its busiest items), or poe.ninja itself is out of reach -- said
+/// above whatever prices it instead.
+fn render_market_gap(state: &PriceCheckApp) -> impl IntoElement {
+    let text = match state.market() {
+        Some(_) => format!(
+            "poe.ninja не отслеживает этот предмет в лиге {}.",
+            state.league()
+        ),
+        None => "poe.ninja сейчас недоступен.".to_owned(),
+    };
+    div()
+        .mt(rems_from_px(10.))
+        .text_sm()
+        .text_center()
+        .text_color(rgb(TEXT_DIM))
+        .child(text)
+}
+
+/// Asks for the trade listings of an exchange item poe2scout priced
+/// (`PriceCheckApp::search_listings`): each search spends the trade site's per-IP budget, so
+/// they come only on request.
+fn render_listings_button(cx: &Context<PriceCheckApp>) -> impl IntoElement {
+    div()
+        .id("listings-on-trade-site")
+        .mt(rems_from_px(10.))
+        .flex_none()
+        .px(rems_from_px(10.))
+        .py(rems_from_px(3.))
+        .rounded_xs()
+        .border_1()
+        .border_color(rgb(BORDER_GOLD))
+        .bg(rgb(BG_CONTROL))
+        .text_sm()
+        .text_color(rgb(GOLD))
+        .cursor_pointer()
+        .hover(|style| style.bg(rgb(BG_BUTTON_HOVER)))
+        .tooltip(hints::hint(
+            "Найти лоты этого предмета на сайте торговли. Каждый поиск расходует лимит \
+             запросов площадки.",
+        ))
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(|view, _event: &MouseDownEvent, _window, cx| view.search_listings(cx)),
+        )
+        .child("Лоты на площадке")
 }
 
 fn render_outcome(
@@ -207,11 +267,25 @@ fn render_outcome(
             TEXT_DIM,
         ),
         SearchState::Failed(msg) => status(msg.clone(), TEXT_WARNING),
+        SearchState::Empty if state.priced_by_market => div()
+            .flex()
+            .flex_col()
+            .child(render_market_gap(state))
+            .child(status("На площадке лотов нет".to_owned(), TEXT_DIM))
+            .into_any_element(),
         SearchState::Empty => status("Ничего не найдено".to_owned(), TEXT_DIM),
         SearchState::Market(price) => match state.market() {
             Some(market) => render_market_card(state, item, market, price).into_any_element(),
             None => status("Загрузка цен poe.ninja…".to_owned(), TEXT_DIM),
         },
+        SearchState::Scouted { value, unit } => div()
+            .flex()
+            .flex_col()
+            .items_center()
+            .child(render_market_gap(state))
+            .child(render_scout_line(state, (*value, *unit)))
+            .child(render_listings_button(cx))
+            .into_any_element(),
         SearchState::Matched {
             total,
             rows,
@@ -222,6 +296,11 @@ fn render_outcome(
             .flex()
             .flex_col()
             .mt(rems_from_px(10.))
+            .children(
+                state
+                    .priced_by_market
+                    .then(|| div().mb(rems_from_px(8.)).child(render_market_gap(state))),
+            )
             .children(relaxed.map(|(least, of)| {
                 div()
                     .mb(rems_from_px(8.))
@@ -238,7 +317,7 @@ fn render_outcome(
                     .as_ref()
                     .map(|estimate| render_estimate(state, estimate, cx)),
             )
-            .child(render_matched_line(*total, trade_url.clone()))
+            .child(render_matched_line(state, *total, trade_url.clone(), cx))
             .child(render_results_table(state, rows, *relaxed, cx))
             .into_any_element(),
     }
@@ -252,7 +331,7 @@ fn render_estimate(
     estimate: &PriceEstimate,
     cx: &Context<PriceCheckApp>,
 ) -> impl IntoElement {
-    let unit = unit_label(estimate.unit);
+    let unit = estimate.unit.trade_id();
     let (confidence, confidence_color) = match estimate.confidence {
         Confidence::High => ("высокая", 0x68d391),
         Confidence::Medium => ("средняя", TIER_TOP),
@@ -284,12 +363,7 @@ fn render_estimate(
                 .text_lg()
                 .font_weight(FontWeight::SEMIBOLD)
                 .child(format!("≈ {}", format_ru(estimate.value)))
-                .children(
-                    state
-                        .currency_icon(estimate.unit.trade_id())
-                        .map(|url| img(url.to_owned()).w(rems_from_px(24.)).h(rems_from_px(24.)).flex_none()),
-                )
-                .child(div().text_sm().text_color(rgb(TEXT_DIM)).child(unit)),
+                .children(currency_img(state.currency_icon(unit), 24.)),
         )
         .child(
             div()
@@ -299,11 +373,23 @@ fn render_estimate(
                 .gap(rems_from_px(10.))
                 .text_xs()
                 .text_color(rgb(TEXT_DIM))
-                .child(format!(
-                    "Диапазон: {}–{} {unit}",
-                    format_ru(estimate.low),
-                    format_ru(estimate.high)
-                ))
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(rems_from_px(4.))
+                        .child("Диапазон:")
+                        .child(amount_in(
+                            state,
+                            format!(
+                                "{}–{}",
+                                format_ru(estimate.low),
+                                format_ru(estimate.high)
+                            ),
+                            unit,
+                            14.,
+                        )),
+                )
                 .child(
                     div()
                         .flex()
@@ -324,6 +410,9 @@ fn render_estimate(
             .when(state.price_currency == PriceCurrency::Any, |this| {
                 this.child(
                     div()
+                        .flex()
+                        .items_center()
+                        .gap(rems_from_px(4.))
                         .text_xs()
                         .text_color(rgb(GOLD))
                         .cursor_pointer()
@@ -334,13 +423,22 @@ fn render_estimate(
                                 view.set_price_currency(PriceCurrency::ExaltedOrDivine, cx);
                             }),
                         )
-                        .child("Искать только цены в ex или div"),
+                        .child("Искать только цены в")
+                        .children(currency_img(state.currency_icon("exalted"), 14.))
+                        .child("или")
+                        .children(currency_img(state.currency_icon("divine"), 14.)),
                 )
             })
         })
 }
 
-fn render_matched_line(total: u64, trade_url: String) -> impl IntoElement {
+/// The results' header: how many the search found, the watch toggle and the trade site link.
+fn render_matched_line(
+    state: &PriceCheckApp,
+    total: u64,
+    trade_url: String,
+    cx: &Context<PriceCheckApp>,
+) -> impl IntoElement {
     let host = trade_url
         .split('/')
         .nth(2)
@@ -348,18 +446,139 @@ fn render_matched_line(total: u64, trade_url: String) -> impl IntoElement {
         .to_owned();
     div()
         .flex()
-        .items_center()
-        .justify_between()
-        .gap(rems_from_px(8.))
+        .flex_col()
+        .gap(rems_from_px(4.))
         .pb(rems_from_px(6.))
         .child(
             div()
                 .flex()
-                .gap(rems_from_px(4.))
-                .child(div().text_color(rgb(TEXT_DIM)).child("Найдено:"))
-                .child(total.to_string()),
+                .items_center()
+                .justify_between()
+                .gap(rems_from_px(8.))
+                .child(
+                    div()
+                        .flex()
+                        .gap(rems_from_px(4.))
+                        .child(div().text_color(rgb(TEXT_DIM)).child("Найдено:"))
+                        .child(total.to_string()),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(rems_from_px(8.))
+                        .children(render_watch(state, cx))
+                        .child(render_link(format!("{host}/trade ↗"), trade_url)),
+                ),
         )
-        .child(render_link(format!("{host}/trade ↗"), trade_url))
+        .children(render_watch_refusal(state, cx))
+}
+
+/// Under "Ничего не найдено": a search nothing matches yet is just what watching is for.
+pub(super) fn render_empty_watch(
+    state: &PriceCheckApp,
+    cx: &Context<PriceCheckApp>,
+) -> Option<impl IntoElement> {
+    if !matches!(state.search, SearchState::Empty) || state.priced_by_market {
+        return None;
+    }
+    let toggle = render_watch(state, cx)?;
+    Some(
+        div()
+            .mt(rems_from_px(6.))
+            .flex()
+            .flex_col()
+            .items_center()
+            .gap(rems_from_px(4.))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(rems_from_px(6.))
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(rgb(TEXT_DIM))
+                            .child("Сообщить, когда появится:"),
+                    )
+                    .child(toggle),
+            )
+            .children(render_watch_refusal(state, cx)),
+    )
+}
+
+/// "Следить": the search's new listings come as cards over the game (`crate::live_search`) --
+/// with how many searches are watched. Only for a signed-in player (`crate::session`) and a
+/// search the trade site answered.
+fn render_watch(state: &PriceCheckApp, cx: &Context<PriceCheckApp>) -> Option<impl IntoElement> {
+    let search = state.watchable.clone()?;
+    if !cx.try_global::<SessionStatus>()?.signed_in() {
+        return None;
+    }
+    let live = cx.try_global::<LiveSearches>()?;
+    let watching = live.is_watched(&search.query_id);
+    let count = live.count();
+    let (label, hint) = if watching {
+        ("◉ Слежу", "Слежение включено — нажмите, чтобы снять")
+    } else {
+        (
+            "Следить",
+            "Новые лоты этого поиска будут приходить карточками поверх игры, пока приложение \
+             запущено",
+        )
+    };
+    Some(
+        div()
+            .flex()
+            .items_center()
+            .gap(rems_from_px(6.))
+            .child(
+                div()
+                    .id("watch")
+                    .flex_none()
+                    .px(rems_from_px(8.))
+                    .py(rems_from_px(2.))
+                    .rounded_xs()
+                    .border_1()
+                    .text_xs()
+                    .text_color(rgb(GOLD))
+                    .map(|this| {
+                        if watching {
+                            this.bg(rgb(BG_BUTTON)).border_color(rgb(GOLD))
+                        } else {
+                            this.bg(rgb(BG_CONTROL)).border_color(rgb(BG_CONTROL))
+                        }
+                    })
+                    .cursor_pointer()
+                    .hover(|style| style.bg(rgb(BG_BUTTON_HOVER)))
+                    .tooltip(hints::hint(hint))
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |_view, _event: &MouseDownEvent, _window, cx| {
+                            cx.global_mut::<LiveSearches>().toggle(&search);
+                        }),
+                    )
+                    .child(label),
+            )
+            .when(count > 0, |this| {
+                this.child(
+                    div()
+                        .text_xs()
+                        .text_color(rgb(TEXT_DIM))
+                        .child(format!("поисков: {count} из {MAX_LIVE_SEARCHES}")),
+                )
+            }),
+    )
+}
+
+/// Why watching the shown search was just refused.
+fn render_watch_refusal(
+    state: &PriceCheckApp,
+    cx: &Context<PriceCheckApp>,
+) -> Option<impl IntoElement> {
+    let search = state.watchable.as_ref()?;
+    let reason = cx.try_global::<LiveSearches>()?.refusal(&search.query_id)?;
+    Some(div().text_xs().text_color(rgb(TEXT_WARNING)).child(reason))
 }
 
 /// A text link opened in the default browser via GPUI's own `App::open_url`.
@@ -651,7 +870,7 @@ fn render_price(state: &PriceCheckApp, row: &ListingRow) -> impl IntoElement {
         .and_then(|market| {
             let divines = row.price_amount * market.value_in_divines(currency)?;
             let (value, unit) = market.in_display_unit(divines);
-            Some(format!("≈ {} {}", format_ru(value), unit_label(unit)))
+            Some((format!("≈ {}", format_ru(value)), unit.trade_id()))
         });
     price_cell()
         .flex()
@@ -691,13 +910,12 @@ fn render_price(state: &PriceCheckApp, row: &ListingRow) -> impl IntoElement {
                 this
             }
         })
-        .children(equivalent.map(|text| {
+        .children(equivalent.map(|(text, unit)| {
             div()
                 .min_w_0()
-                .truncate()
                 .text_xs()
                 .text_color(rgb(TEXT_MUTED))
-                .child(text)
+                .child(amount_in(state, text, unit, 12.))
         }))
 }
 

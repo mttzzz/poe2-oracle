@@ -3,6 +3,10 @@ name = "data-pipeline"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 
 [dependencies]
 # Top of the local game-data chain (oodle-ffi <- poe-bundle <- poe-dat <- data-pipeline): reads

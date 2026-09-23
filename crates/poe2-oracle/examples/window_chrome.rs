@@ -10,7 +10,7 @@
 //! `poe2_oracle::platform::win32::Win32Overlay`.
 //!
 //! The toggle is a *global* hotkey (`global-hotkey` crate), not a window-focused `on_key_down`:
-//! confirmed as a real bug on real hardware (manual test, see `POC_FINDINGS.md`) that once
+//! confirmed as a real bug on real hardware (manual test, see `docs/dev/poc-findings.md`) that once
 //! click-through is ON, mouse clicks -- and in practice keyboard focus too, since whatever the
 //! user clicks through to (game, browser) becomes the new OS foreground window -- no longer
 //! reach this window at all, so a window-scoped key handler can never fire again to turn
@@ -21,11 +21,12 @@
 //! `Code::KeyE` registers Windows virtual-key `VK_E`, not a layout-specific character. Windows
 //! keeps the alphabetic VK codes tied to physical key position (not the letter/glyph a layout
 //! types there) specifically so shortcuts keep working across layouts -- confirmed empirically
-//! on the real Windows box with the active layout switched to Russian, see `POC_FINDINGS.md`.
+//! on the real Windows box with the active layout switched to Russian, see
+//! `docs/dev/poc-findings.md`.
 //!
-//! Windows-only: this project ships to Windows exclusively for now (see `POC_FINDINGS.md`'s
-//! "Windows" section for why the earlier Linux/X11 spike's platform module and Xvfb harness
-//! were dropped rather than dual-maintained).
+//! Windows-only: this project ships to Windows exclusively for now (see
+//! `docs/dev/poc-findings.md`'s "Windows" section for why the earlier Linux/X11 spike's platform
+//! module and Xvfb harness were dropped rather than dual-maintained).
 
 use global_hotkey::{
     GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState,

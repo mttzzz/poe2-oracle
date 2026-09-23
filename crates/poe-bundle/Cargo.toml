@@ -3,6 +3,10 @@ name = "poe-bundle"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 
 [dependencies]
 # Bundle files are Oodle-compressed; decompression is the one thing this crate needs from below

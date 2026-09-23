@@ -10,8 +10,8 @@ it is neither of the plan's two anticipated branches exactly: **local `.datc64` 
 mod/stat display text in any language**; the plan's own pre-decided fallback (source text from the
 trade API) is the correct branch regardless.
 
-Mirrors `POC_FINDINGS.md`'s evidence style: what was run, what it printed, what that does and does
-not establish.
+Mirrors [`docs/dev/poc-findings.md`](../../docs/dev/poc-findings.md)'s evidence style: what was
+run, what it printed, what that does and does not establish.
 
 ## Sourcing a real Oodle DLL: two dead ends, then Epic's own official mirror
 
@@ -20,9 +20,9 @@ Steam") turned out not to hold in practice, on this exact hardware, today:
 
 1. **PoE2 itself**: already known from the earlier POC session to statically link Oodle (no loose
    `oo2core*.dll` in its install folder). Re-confirmed here for completeness.
-2. **All 13 Steam games + 4 Battle.net titles already installed** on the real Windows box
-   (HAPPYMONSTER): a recursive filesystem search for `oo2core*.dll`/`*oodle*.dll` across every
-   installed game's folder, then a **full `C:\` and `D:\` drive scan**, found nothing.
+2. **All 13 Steam games + 4 Battle.net titles already installed** on the Windows test machine: a
+   recursive filesystem search for `oo2core*.dll`/`*oodle*.dll` across every installed game's
+   folder, then a **full `C:\` and `D:\` drive scan**, found nothing.
 3. **Warframe, fully installed fresh via Steam** (anonymous SteamCMD login *cannot* license a
    third-party F2P title — `ERROR! Failed to install app '230410' (No subscription)` — the real
    Steam GUI client, authenticated as the box's own account, was used instead; ~56GB Steam depot
@@ -78,14 +78,15 @@ Both the Oodle DLL and the real game files are Windows-native (the DLL is a Wind
 `libloading::Library::new` cannot load it on Linux — `dlopen` rejects a foreign binary format
 outright, not a permissions/path problem). The whole local chain
 (`oodle-ffi`/`poe-bundle`/`poe-dat`/`data-pipeline`) was therefore built and run **natively on
-HAPPYMONSTER** (the real Windows box; source tree transferred via `tar`+`scp`, same pattern
-`POC_FINDINGS.md` used for its own real-hardware pass), directly against the local
+the Windows test machine** (source tree transferred via `tar`+`scp`, same pattern
+[`docs/dev/poc-findings.md`](../../docs/dev/poc-findings.md) used for its own real-hardware pass),
+directly against the local
 `D:\SteamLibrary\steamapps\common\Path of Exile 2\Bundles2` path — not through the `/mnt/poe2-bundles`
 SMB mount, which exists for Linux-side dev tooling (the agent's own file access, quick greps,
 schema exploration) rather than for the pipeline binary's own execution. This is consistent with,
 not a deviation from, this project's already-established Windows-only shipping decision
-(`POC_FINDINGS.md`): the pipeline that reads PoE2's own game files is exactly as Windows-bound as
-PoE2 itself.
+([`docs/dev/poc-findings.md`](../../docs/dev/poc-findings.md)): the pipeline that reads PoE2's own
+game files is exactly as Windows-bound as PoE2 itself.
 
 ```
 $ data-pipeline --dll oo2core_9_win64.dll --bundles2-root "D:\...\Bundles2" --table Mods --rows 20

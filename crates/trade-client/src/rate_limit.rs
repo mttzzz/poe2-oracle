@@ -32,7 +32,8 @@ struct RateWindow {
 /// Tracks when one PoE2 trade API endpoint family may next be called. Search/fetch/exchange each
 /// have their own independent policy (verified live: 5 req/10s tightest for search, 12 req/4s
 /// tightest for fetch, 5 req/15s tightest for exchange), so callers own one `RateLimiter` per
-/// family, never a shared instance.
+/// family, never a shared instance -- but a refusal restricts the whole IP, not its family alone
+/// (see [`Self::refused_until`]).
 ///
 /// Keeps the resulting deadline rather than the raw policy/state: every constraint one response
 /// carries counts down from the same moment, so together they pin a single instant -- and a later
@@ -43,6 +44,8 @@ pub struct RateLimiter {
     /// When the next request becomes safe, per the latest response that carried rate-limit
     /// information; `None` until one has.
     ready_at: Option<Instant>,
+    /// When the latest refusal (`429`) this limiter learned of ends; `None` if it never saw one.
+    refused_until: Option<Instant>,
 }
 
 impl RateLimiter {
@@ -67,7 +70,24 @@ impl RateLimiter {
             // `checked_add`: the seconds are server-controlled, and an absurd value must not
             // panic -- it just fails to arm the limiter.
             self.ready_at = now.checked_add(Duration::from_secs(wait_secs));
+            if status == 429 {
+                self.refused_until = self.ready_at;
+            }
         }
+    }
+
+    /// When the latest refusal this limiter learned of ends. A refusal restricts the player's
+    /// whole IP, not this family alone -- live 2026-09-23 a refused fetch was followed nine seconds
+    /// later by a refused search -- so the caller holds every family until then
+    /// ([`Self::hold_until`]) instead of spending the other families' requests on more refusals.
+    pub fn refused_until(&self) -> Option<Instant> {
+        self.refused_until
+    }
+
+    /// Holds this family's next request until `deadline` at the earliest: another family's
+    /// refusal (see [`Self::refused_until`]).
+    pub fn hold_until(&mut self, deadline: Instant) {
+        self.ready_at = self.ready_at.max(Some(deadline));
     }
 
     /// How long from now until the next request to this endpoint family is safe; `None` if it
@@ -92,6 +112,7 @@ impl RateLimiter {
     /// that finishes last must not erase a restriction the other just learned.
     pub fn merge(&mut self, other: &RateLimiter) {
         self.ready_at = self.ready_at.max(other.ready_at);
+        self.refused_until = self.refused_until.max(other.refused_until);
     }
 }
 
@@ -152,6 +173,51 @@ pub(crate) fn retry_after_secs(headers: &HeaderMap) -> Option<u64> {
         .get(RETRY_AFTER)
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.trim().parse().ok())
+}
+
+/// The rate-limit headers of one response, compactly, for the log: each rule family's windows as
+/// `hits/cap per period` -- `ip 2/5 per 10s, 6/15 per 60s, 11/30 per 300s, 80/600 per 21600s` --
+/// with any restriction still to serve, and a refusal's `Retry-After`. The trade site counts every
+/// request from the player's IP, their browser's included, and only these headers show how close
+/// a lockout was. `None` for a response carrying none of them.
+pub fn describe_limits(headers: &HeaderMap) -> Option<String> {
+    let mut parts = Vec::new();
+    for (name, value) in headers {
+        let Some(family) = name.as_str().strip_suffix("-state") else {
+            continue;
+        };
+        let Some(rule) = family.strip_prefix("x-rate-limit-") else {
+            continue;
+        };
+        let policy = headers
+            .get(family)
+            .and_then(|policy| policy.to_str().ok())
+            .and_then(parse_windows)
+            .unwrap_or_default();
+        let Some(state) = value.to_str().ok().and_then(parse_windows) else {
+            continue;
+        };
+        let windows: Vec<String> = state
+            .iter()
+            .map(|window| {
+                let cap = policy
+                    .iter()
+                    .find(|cap| cap.period_secs == window.period_secs)
+                    .map_or_else(|| "?".to_owned(), |cap| cap.hits.to_string());
+                let restricted = match window.restrict_secs {
+                    0 => String::new(),
+                    secs => format!(" restricted {secs}s"),
+                };
+                format!(
+                    "{}/{cap} per {}s{restricted}",
+                    window.hits, window.period_secs
+                )
+            })
+            .collect();
+        parts.push(format!("{rule} {}", windows.join(", ")));
+    }
+    parts.extend(retry_after_secs(headers).map(|secs| format!("retry after {secs}s")));
+    (!parts.is_empty()).then(|| parts.join("; "))
 }
 
 /// Parses a policy or state header value's comma-separated triples (see [`RateWindow`]). `None`
@@ -295,6 +361,38 @@ mod tests {
         let all_clear = search_headers("1:10:0,1:60:0,1:300:0");
         limiter.record_response_at(200, &all_clear, t0 + secs(10));
         assert_eq!(limiter.required_wait_at(t0 + secs(10)), None);
+    }
+
+    #[test]
+    fn a_refusal_is_the_deadline_every_family_holds_to() {
+        let t0 = Instant::now();
+        let mut fetch = RateLimiter::new();
+        fetch.record_response_at(429, &refusal_headers(), t0);
+        let mut search = RateLimiter::new();
+        search.record_response_at(200, &search_headers("1:10:0,1:60:0,1:300:0"), t0);
+        assert_eq!(search.refused_until(), None, "an all-clear is no refusal");
+
+        search.hold_until(fetch.refused_until().expect("the 429 is remembered"));
+        assert_eq!(search.required_wait_at(t0 + secs(9)), Some(secs(250)));
+        // A copy merged back keeps the refusal, so it reaches the other families from there too.
+        let mut merged = RateLimiter::new();
+        merged.merge(&fetch);
+        assert_eq!(merged.refused_until(), fetch.refused_until());
+    }
+
+    #[test]
+    fn limits_read_as_hits_of_cap_per_window() {
+        let mut headers = search_headers("2:10:0,6:60:0,30:300:1800");
+        headers.insert("x-rate-limit-rules", HeaderValue::from_static("Ip"));
+        assert_eq!(
+            describe_limits(&headers).as_deref(),
+            Some("ip 2/5 per 10s, 6/15 per 60s, 30/30 per 300s restricted 1800s")
+        );
+        assert_eq!(
+            describe_limits(&refusal_headers()).as_deref(),
+            Some("retry after 259s")
+        );
+        assert_eq!(describe_limits(&HeaderMap::new()), None);
     }
 
     #[test]

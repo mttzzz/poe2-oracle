@@ -3,6 +3,10 @@ name = "poe2-oracle"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 
 [dependencies]
 # Pinned to a git rev, not the crates.io 0.2.2 release: that release predates the gpui_platform
@@ -56,12 +60,27 @@ auto-update = { path = "../auto-update" }
 # real diagnostics in a console.
 log = "0.4"
 env_logger = "0.11"
+# Query values of the GitHub issue form URLs a bug report opens (src/bug_report.rs). Already in
+# the tree through `url`.
+percent-encoding = "2"
+# Carries hotkey presses, tray-menu clicks, consumed Esc presses and foreground-window changes
+# from the OS callbacks that report them to the GPUI tasks that act on them, so nothing polls --
+# and what the live search threads hear to the task that fetches it (src/live_search.rs, which
+# builds and is tested on every target). Already in the tree through GPUI's executor (smol).
+async-channel = "2"
+# Live search (src/live_search.rs): the trade site's websocket, one blocking socket per watched
+# search on a thread of its own. TLS through the rustls 0.23 already in the tree (reqwest's), with
+# the system's root certificates -- no second TLS stack. Its config is built with an explicit
+# crypto provider, aws-lc-rs (the one Zed's `http_client_tls` picks): the tree enables both of
+# rustls' providers, and `ClientConfig::builder()` then refuses to choose.
+tungstenite = { version = "0.30", features = ["rustls-tls-native-roots"] }
+rustls = { version = "0.23", default-features = false, features = ["std", "aws_lc_rs"] }
+rustls-native-certs = "0.8"
+# The locks around the pathofexile.com session (src/session.rs) and live search's per-socket stop
+# signal (src/live_search.rs): no poisoning to unwrap. Already in the tree through GPUI.
+parking_lot = "0.12"
 
 [target.'cfg(target_os = "windows")'.dependencies]
-# Carries hotkey presses, tray-menu clicks, consumed Esc presses and foreground-window changes
-# from the OS callbacks that report them to the GPUI tasks that act on them, so nothing polls.
-# Already in the tree through GPUI's executor (smol).
-async-channel = "2"
 # The diagnostics report is one zip the player attaches to a bug report (src/diagnostics.rs).
 # Deflate through flate2, already in the tree; none of zip's other codecs.
 zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2"] }
@@ -89,10 +108,13 @@ zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2
 # `Win32_System_SystemInformation` (the local time the diagnostics report is named by).
 # `Win32_System_Diagnostics_Debug` (`MessageBeep`, the trade overlay's new-request sound,
 # src/ui/trade_overlay.rs).
+# `Win32_Security_Credentials` (the player's pathofexile.com session, kept in the Windows
+# Credential Manager -- src/platform/credentials.rs).
 windows = { version = "0.62", features = [
     "Win32_Foundation",
     "Win32_Graphics_Dwm",
     "Win32_Graphics_Gdi",
+    "Win32_Security_Credentials",
     "Win32_System_Console",
     "Win32_System_Diagnostics_Debug",
     "Win32_System_LibraryLoader",

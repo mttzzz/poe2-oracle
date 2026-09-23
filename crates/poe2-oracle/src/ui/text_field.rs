@@ -1,8 +1,9 @@
 //! A one-line text field for the settings window. GPUI ships none (its `examples/input.rs` is a
 //! ~700-line editor with IME, selection and a caret anywhere); this one covers what a chat
-//! command or a stash search string needs: typing (the keyboard layout's own characters, from
-//! `Keystroke::key_char`), Backspace, Ctrl+V pasting, Ctrl+A selecting everything so the next
-//! key replaces it, and Enter or Esc finishing. The caret stays at the end.
+//! command, a stash search string, a league name or a pasted session needs: typing (the keyboard
+//! layout's own characters, from `Keystroke::key_char`), Backspace, Ctrl+V pasting, Ctrl+A
+//! selecting everything so the next key replaces it, and Enter or Esc finishing. The caret stays
+//! at the end. A masked field -- for a secret -- shows a dot per character, never the text.
 
 use gpui::{
     Context, FocusHandle, Focusable, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent,
@@ -20,6 +21,7 @@ pub struct TextField {
     focus_handle: FocusHandle,
     /// Everything is selected: the next character or paste replaces it, Backspace clears it.
     all_selected: bool,
+    masked: bool,
 }
 
 impl TextField {
@@ -33,11 +35,25 @@ impl TextField {
             placeholder: placeholder.into(),
             focus_handle: cx.focus_handle(),
             all_selected: false,
+            masked: false,
+        }
+    }
+
+    /// An empty field for a secret, which it never shows.
+    pub fn masked(placeholder: impl Into<SharedString>, cx: &mut Context<Self>) -> TextField {
+        TextField {
+            masked: true,
+            ..TextField::new(String::new(), placeholder, cx)
         }
     }
 
     pub fn text(&self) -> &str {
         &self.text
+    }
+
+    pub fn clear(&mut self) {
+        self.text.clear();
+        self.all_selected = false;
     }
 
     /// What the empty field shows until focused.
@@ -140,6 +156,8 @@ impl Render for TextField {
                     .text_color(rgb(if empty { TEXT_MUTED } else { TEXT }))
                     .child(if empty && !focused {
                         self.placeholder.clone()
+                    } else if self.masked {
+                        SharedString::from("•".repeat(self.text.chars().count()))
                     } else {
                         SharedString::from(self.text.clone())
                     }),

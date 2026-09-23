@@ -1,0 +1,31 @@
+name: Feature request / Предложить идею
+description: Suggest something PoE2 Oracle could do. / Предложите, что PoE2 Oracle мог бы делать.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please search the [existing issues](https://github.com/mttzzz/poe2-oracle/issues?q=is%3Aissue) first and suggest one idea per issue.
+
+        Сначала поищите среди [существующих задач](https://github.com/mttzzz/poe2-oracle/issues?q=is%3Aissue); одна задача — одна идея.
+  - type: textarea
+    id: need
+    attributes:
+      label: What do you want to do? / Что вы хотите сделать?
+      description: The situation in the game and what gets in the way today. / Ситуация в игре и что сейчас мешает.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: How could PoE2 Oracle help? / Чем мог бы помочь PoE2 Oracle?
+      description: What the app would do or show. A sketch or a screenshot of another tool helps. / Что программа делала бы или показывала. Поможет набросок или скриншот другой программы.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: How do you do it now? / Как вы делаете это сейчас?
+      description: Other tools or workarounds you use. / Другие программы или обходные пути.
+    validations:
+      required: false

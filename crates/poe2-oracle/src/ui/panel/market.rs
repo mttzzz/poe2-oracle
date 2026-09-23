@@ -15,7 +15,7 @@ use crate::ui::theme::{
     TEXT_MUTED, rems_from_px,
 };
 
-use super::format::{currency_img, format_compact, format_ru, unit_label};
+use super::format::{amount_in, currency_img, format_compact, format_ru};
 use super::results::render_link;
 
 /// A Currency Exchange item's market, the way poe.ninja shows it (the player's reference for
@@ -30,21 +30,32 @@ pub(super) fn render_market_card(
 ) -> impl IntoElement {
     let divines = price.divine_value;
     let (value, unit) = value_not_in_itself(market, price, divines);
-    let unit_name = unit_label(unit);
-    let equivalents = [
-        (divines, PriceUnit::Divine.trade_id(), "div"),
+    // The other core currencies it's worth, each with its icon: "= 0,77 [ex] · 1,2 [chaos]".
+    let mut equivalents = div()
+        .flex()
+        .flex_wrap()
+        .items_center()
+        .gap(rems_from_px(4.))
+        .text_xs()
+        .text_color(rgb(TEXT_DIM))
+        .child("=");
+    for (index, (amount, id)) in [
+        (divines, PriceUnit::Divine.trade_id()),
         (
             divines * market.exalted_per_divine,
             PriceUnit::Exalted.trade_id(),
-            "ex",
         ),
-        (divines * market.chaos_per_divine, "chaos", "chaos"),
+        (divines * market.chaos_per_divine, "chaos"),
     ]
     .into_iter()
-    .filter(|&(_, id, _)| id != unit.trade_id() && id != price.id)
-    .map(|(amount, _, label)| format!("{} {label}", format_ru(amount)))
-    .collect::<Vec<_>>()
-    .join(" · ");
+    .filter(|&(_, id)| id != unit.trade_id() && id != price.id)
+    .enumerate()
+    {
+        if index > 0 {
+            equivalents = equivalents.child("·");
+        }
+        equivalents = equivalents.child(amount_in(state, format_ru(amount), id, 14.));
+    }
     let change_color = match price.change_7d {
         Some(change) if change < 0.0 => PRICE_FALL,
         _ => PRICE_RISE,
@@ -83,21 +94,25 @@ pub(super) fn render_market_card(
                                 .text_size(rems_from_px(24.))
                                 .font_weight(FontWeight::SEMIBOLD)
                                 .child(format!("≈ {}", format_ru(value)))
-                                .children(currency_img(state.currency_icon(unit.trade_id()), 24.))
-                                .child(div().text_sm().text_color(rgb(TEXT_DIM)).child(unit_name)),
+                                .children(currency_img(state.currency_icon(unit.trade_id()), 24.)),
                         )
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(rgb(TEXT_DIM))
-                                .child(format!("= {equivalents}")),
-                        )
+                        .child(equivalents)
                         .when(divines < 1.0, |this| {
                             this.child(
-                                div().text_xs().text_color(rgb(TEXT_DIM)).child(format!(
-                                    "1 div = {} шт.",
-                                    format_compact(1.0 / divines)
-                                )),
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap(rems_from_px(4.))
+                                    .text_xs()
+                                    .text_color(rgb(TEXT_DIM))
+                                    .child(amount_in(state, "1".to_owned(), "divine", 14.))
+                                    .child("=")
+                                    .child(amount_in(
+                                        state,
+                                        format_compact(1.0 / divines),
+                                        &price.id,
+                                        14.,
+                                    )),
                             )
                         }),
                 ),
@@ -157,11 +172,17 @@ pub(super) fn render_market_card(
                         value_not_in_itself(market, price, divines * f64::from(count));
                     market_line(
                         "Ваша стопка",
-                        div().child(format!(
-                            "{count} шт. ≈ {} {}",
-                            format_ru(total),
-                            unit_label(total_unit)
-                        )),
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(rems_from_px(4.))
+                            .child(format!("{count} шт. ≈"))
+                            .child(amount_in(
+                                state,
+                                format_ru(total),
+                                total_unit.trade_id(),
+                                14.,
+                            )),
                     )
                 })),
         )
@@ -208,8 +229,8 @@ fn market_line(label: &'static str, value: impl IntoElement) -> impl IntoElement
 }
 
 /// poe.ninja's "Most Popular" column: the core currency the item trades against most and the
-/// rate, written the way that reads best -- "1 div ⇆ 164 шт." for a cheap item, "4,1k div ⇆ 1"
-/// for a dear one. The rate always means units of the item per unit of that currency.
+/// rate, written the way that reads best -- "1 [div] ⇆ 164 [item]" for a cheap item, "4,1k [div]
+/// ⇆ 1 [item]" for a dear one. The rate always means units of the item per unit of that currency.
 fn most_traded_pair(state: &PriceCheckApp, price: &MarketPrice) -> Option<impl IntoElement> {
     let currency = price.most_traded_with.as_deref()?;
     let rate = price

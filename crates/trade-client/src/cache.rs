@@ -38,17 +38,14 @@ pub async fn load_or_fetch<T: Serialize + DeserializeOwned>(
     match fetch.await {
         Ok(value) => {
             if let Err(err) = write_cache(cache_path, &value) {
-                eprintln!(
-                    "poe2-oracle: failed to write cache {}: {err:#}",
-                    cache_path.display()
-                );
+                log::warn!("failed to write cache {}: {err:#}", cache_path.display());
             }
             Ok(value)
         }
         Err(fetch_err) => match read_stale_cache(cache_path) {
             Some(value) => {
-                eprintln!(
-                    "poe2-oracle: fetch failed ({fetch_err:#}), falling back to stale cache {}",
+                log::warn!(
+                    "fetch failed ({fetch_err:#}), falling back to stale cache {}",
                     cache_path.display()
                 );
                 Ok(value)

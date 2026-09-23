@@ -11,6 +11,8 @@ pub mod client_log;
 #[cfg(target_os = "windows")]
 pub mod clipboard_poll;
 #[cfg(target_os = "windows")]
+pub mod credentials;
+#[cfg(target_os = "windows")]
 pub mod esc_hook;
 pub mod game_config;
 #[cfg(target_os = "windows")]

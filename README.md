@@ -1,103 +1,177 @@
 # PoE2 Oracle
 
-A native Path of Exile 2 price checker for Windows, built on
-[GPUI](https://github.com/zed-industries/zed/tree/main/crates/gpui) (Zed's Rust UI framework) --
-no Electron, no web view, no Overwolf. The interface is Russian; the game client may be Russian
-or English.
+**English** · [Русский](README.ru.md)
 
-## What it does
+PoE2 Oracle is a price checker for Path of Exile 2 on Windows. Hover an item in the game and
+press `Ctrl+E`: a panel opens next to your inventory with the item's stats as search filters and
+the cheapest current listings from the official trade site. Currency and other Currency Exchange
+items are priced from poe.ninja; poe2scout adds prices for uniques and for exchange items that
+poe.ninja doesn't track. It is a native Windows program written in Rust with
+[GPUI](https://github.com/zed-industries/zed/tree/main/crates/gpui), without Electron, a browser
+engine or Overwolf.
 
-- **Price check.** Hover an item in the game and press `Ctrl+E` (rebindable). A panel opens
-  beside the inventory (or the stash) with the item's name and art, poe2db/wiki links, its stat
-  filters -- tiers, pseudo totals, weapon DPS, defences, flag mods -- and the trade site's
-  cheapest listings with an estimate. A rare is searched among its whole class; the class chip
-  switches the search to its base type and back. As in EE2, an uncorrupted item is compared with
-  uncorrupted listings only (a chip lets corrupted ones in), and gear with neither mirrored
-  copies nor sanctified items; an unidentified unique is compared with unidentified uniques of
-  its base. The stats-count chip checks every stat or none, and the "Цена" chip asks for prices
-  in one currency (exalted or divine, exalted, divine, chaos) -- also offered when the listings
-  look price-fixed. When nothing matches every selected stat, the search is relaxed to most of
-  them and says so, with a low-confidence estimate. Hovering a listing shows its mods -- the
-  searched ones ticked or marked short of the bounds, the ones it lacks listed, each mod's item
-  level -- and after a relaxed search every row says how many searched stats it meets. A unique
-  also shows poe2scout's price. Currency Exchange items (currency, omens, runes, essences, uncut
-  gems, ...) are priced from poe.ninja with its weekly chart; what poe.ninja doesn't price, or
-  everything while it can't be reached, falls back to the trade site's listings. A click on a
-  listing whose seller trades in person (✉) copies the trade site's whisper for the game's chat.
-  Chips and price markers say what they mean on hover. Clicks on the panel leave the keyboard
-  with the game; only the number boxes take it. Esc or × closes the panel.
-- **Waystones.** Mark modifiers as dangerous / warning / wanted; the marks are remembered.
-- **XP overlay.** Above the experience bar: the experience rate over a chosen window (5-30 min)
-  and the time to the next level, optionally the level percent and the current map's timer and
-  gain with the session's average map time -- read from the bar itself and `Client.txt`.
-- **Quick actions.** Hotkeys that type into the game: chat commands (`/hideout`, `@last спасибо`
-  answers the last whisper, `/invite @last`) and stash searches (a poe2.re string), pasted the
-  way EE2 does it, with the player's clipboard put back right after.
-- **Trade requests.** A buyer's whisper from the trade site (English or Russian) shows as a card
-  at the top of the game: item, price, stash tab and cell, the buyer's own note, whether they
-  asked again or already joined the party. Its buttons answer in the game's chat -- invite,
-  trade, one moment, sold, thanks, kick -- one message per click, and "Найти" searches the open
-  stash for the item; clicking never takes the keyboard from the game. An optional sound
-  announces a new request.
-- **Settings** (tray menu, the panel's gear, or launching the app again while it runs -- one copy
-  runs at a time): league, client language, hotkey, quick actions, value tolerance, default
-  sellers, seller column, interface scale (80-150 %, the whole panel scales), XP overlay, trade
-  requests, start with Windows, update checks, and a diagnostics report.
-- **Setup checks.** The settings window warns about what keeps checks from working: exclusive
-  fullscreen (use "Windowed Fullscreen") and another program holding the item-copy combo
-  (`Ctrl+Alt+C`). A check swallowed by such a program says so in the panel instead of doing
-  nothing. The first launch opens the settings with a short welcome.
-- **Installer and updates.** A per-user NSIS installer; the tray's update entry installs newer
-  GitHub releases after verifying their SHA-256. Installing over a running copy or uninstalling
-  asks it to quit and closes it by force only if it doesn't.
+The app's own interface is in Russian. The game client can be English or Russian.
 
-The hotkeys are held only while the game is in front (the price check's also while the panel
-is), so `Ctrl+E` and the rest stay usable in other programs. Idle, the app uses about half a
-percent of one CPU core and no GPU time.
+![The price panel open next to the game inventory](docs/guide/src/images/hero.png)
 
-## Files
+## Features
+
+- **Price check.** The panel shows the item's name and art with links to poe2db, the wiki and a
+  problem report for this item, one row per stat with its min/max values and mod tier, and the
+  cheapest listings on the trade site (one page of 10 per search): price, item level, seller and
+  how long ago it was listed, with a price estimate on top. Searches go to www.pathofexile.com or
+  ru.pathofexile.com, matching the language of the item. `Esc` closes the panel.
+- **Search chips** narrow or widen the search with one click: the item's base type or its whole
+  class, its rarity (a magic item is compared with magic items, a rare with every non-unique item),
+  corrupted listings in or out, every stat or none, which sellers to include, and the currency of
+  the price. A magic item's prefix and suffix are both selected from the start, whatever their tier.
+- **Whispers.** Click a listing whose seller trades in person and the trade site's whisper is copied;
+  paste it into the game chat.
+- **Currency Exchange items** (currency, omens, runes, essences and the like) get a market card from
+  poe.ninja: the value in divine, exalted and chaos orbs, the week's chart, the hourly volume and
+  what the copied stack is worth. When poe.ninja doesn't track an item in your league (common in
+  small leagues such as Standard), the panel shows poe2scout's price instead and searches the trade
+  site only when you press «Лоты на площадке» (Trade listings), since every search counts against
+  the trade site's limit. Without a poe2scout price either, the trade site is searched right away.
+- **Waystones.** Click the ◇ at the end of a modifier to mark it as dangerous, doubtful or wanted;
+  the marks are remembered and highlighted on every waystone you check.
+- **Vendor gamble offers** are recognised: the panel says the item is only revealed after buying
+  instead of searching for it.
+- **Trade requests.** When a buyer whispers you from the trade site, a card at the top of the screen
+  shows the item, the price, the stash tab and position and the buyer's note. Its buttons answer in
+  the game chat (invite, trade, one moment, sold, thanks, kick) or find the item in your open stash.
+- **XP overlay** above the experience bar: how fast you level (percent of a level per hour) and the
+  time to the next level, optionally the level percentage and a timer for the current map.
+- **Quick actions:** your own hotkeys that type a chat command (`/hideout`, `@last thanks`) or a
+  stash search string (for example one made with poe2.re).
+- **Updates** from the tray menu: the new installer is downloaded from GitHub Releases, checked
+  against its published SHA-256 sum and installed; the app restarts by itself.
+
+## Requirements
+
+- Windows 10 or 11, 64-bit.
+- Path of Exile 2 in **Windowed Fullscreen** or **Windowed** mode. The panel can't be shown over
+  exclusive Fullscreen; the app's settings window warns you about it.
+- An English or Russian game client.
+- Internet access to pathofexile.com, poe.ninja and poe2scout.
+
+## Install
+
+1. Download `PoE2-Oracle-Setup-<version>.exe` from the
+   [latest release](https://github.com/mttzzz/poe2-oracle/releases/latest).
+2. Run it. It installs for your Windows user only, without administrator rights, into
+   `%LOCALAPPDATA%\Programs\PoE2 Oracle` and adds a Start menu shortcut. The last page offers to
+   start the app and to start it with Windows.
+3. The installer isn't code-signed yet, so Windows SmartScreen may show "Windows protected your
+   PC". Click **More info**, then **Run anyway**. To check that you have the published file, run
+   `Get-FileHash .\PoE2-Oracle-Setup-<version>.exe` in PowerShell and compare the result with the
+   `SHA256SUMS` file of the same release.
+
+To uninstall, open Windows Settings → Apps → Installed apps (Apps & features on Windows 10) →
+PoE2 Oracle → Uninstall. Your settings and downloaded price data are kept unless you tick
+**Settings and cache**.
+
+## First run
+
+1. The settings window opens with a short welcome. After that the app runs in the background: its
+   icon is in the notification area next to the clock, sometimes behind the "Show hidden icons"
+   arrow. Its menu has **Настройки** (Settings), **Проверить обновления** (Check for updates),
+   **Сообщить об ошибке** (Report a bug) and **Выход** (Quit).
+2. In the game's graphics options, set the display mode to Windowed Fullscreen.
+3. Hover an item in the game and press `Ctrl+E`. Right after the first launch the app spends a few
+   seconds downloading the trade site's catalogs; until then the panel says «Загрузка каталога…»
+   (Loading catalog).
+
+Good to know:
+
+- The hotkeys work only while the game (or the price panel) is in front, so `Ctrl+E` stays free in
+  other programs. You can change it in the settings.
+- To read an item, the app presses the game's own advanced copy, `Ctrl+Alt+C`, and puts your
+  clipboard back afterwards. If another program (a graphics card overlay, a screen recorder,
+  Discord) has taken that combination, price checks can't work; the settings window tells you.
+- One copy runs at a time. Starting it again opens the settings.
+
+## User guide
+
+The full guide, with every setting explained, is at
+**[mttzzz.github.io/poe2-oracle/guide](https://mttzzz.github.io/poe2-oracle/guide/)**:
+[introduction](https://mttzzz.github.io/poe2-oracle/guide/en/introduction.html),
+[troubleshooting](https://mttzzz.github.io/poe2-oracle/guide/en/troubleshooting.html) and
+[privacy](https://mttzzz.github.io/poe2-oracle/guide/en/privacy.html). The project site is
+[mttzzz.github.io/poe2-oracle](https://mttzzz.github.io/poe2-oracle/).
+
+## Reporting a problem
+
+The quickest way is from the app itself. It fills in the form for you, and you submit it from your
+own GitHub account; the app sends nothing by itself.
+
+- **Сообщить об ошибке** (Report a bug) in the tray menu, or the button of the same name in the
+  **Диагностика** section of the settings, saves a diagnostics report to your desktop (a zip with
+  the logs and settings, your Windows user name masked), shows it in Explorer and opens the bug
+  form with the version, the client language and the report's file name filled in. Drag the zip
+  into the form.
+- **сообщить об ошибке ↗** under the item name on the price panel, or **Сообщить разработчику**
+  (Tell the developer) in the message about an item the app couldn't read, opens the item form
+  with the item text filled in.
+
+You can also open a form yourself:
+
+- [Report a bug](https://github.com/mttzzz/poe2-oracle/issues/new?template=bug_report.yml)
+- [An item isn't recognised, or gets wrong filters or a wrong price](https://github.com/mttzzz/poe2-oracle/issues/new?template=item_problem.yml)
+- [Suggest a feature](https://github.com/mttzzz/poe2-oracle/issues/new?template=feature_request.yml)
+
+Please search the [existing issues](https://github.com/mttzzz/poe2-oracle/issues) first. Mention
+the app version (Windows Settings → Apps → Installed apps shows it) and your game client language.
+For an item problem, paste the item text: hover the item in the game, press `Ctrl+Alt+C`, then
+paste into the form. Never post passwords or session cookies. Security problems go through private
+reporting, see [SECURITY.md](SECURITY.md).
+
+If searches stop with «Сайт торговли временно ограничил поиск» (the trade site has temporarily
+restricted searching), you have hit the trade site's limit on requests from one IP address, which
+is shared with the trade site open in your browser. After the site refuses a request, the app sends
+it nothing until the lockout ends: wait for the time the panel shows and try again. poe.ninja
+prices keep working meanwhile.
+
+## Privacy
+
+PoE2 Oracle has no telemetry, no analytics and no accounts of its own. It connects to:
+
+| Where | What for |
+|---|---|
+| www.pathofexile.com, ru.pathofexile.com | The trade site's API: leagues, stat and item catalogs, your searches (the item's stats) and the listings they find |
+| poe.ninja | Currency Exchange prices for your league |
+| api.poe2scout.com | Prices of uniques, and of Currency Exchange items poe.ninja doesn't track in your league |
+| web.poecdn.com | Item images |
+| api.github.com, github.com | The update check (30 seconds after start while update checks are on, or from the tray menu) and the installer download |
+
+Everything else stays on your computer. The app reads the item text the game copies, the game's
+own log (`Client.txt`: whispers, level-ups, area changes), the game's settings file and the screen
+pixels of the experience bar itself. It keeps its files here:
 
 | What | Where |
 |---|---|
 | Settings | `%APPDATA%\poe2-oracle\config\settings.json` |
-| Log (this run, and the previous run's) | `%LOCALAPPDATA%\poe2-oracle\data\logs\` |
-| Item texts the parser couldn't read | `%LOCALAPPDATA%\poe2-oracle\data\unparsed\` |
-| Trade catalogs, poe.ninja market, downloaded updates | `%LOCALAPPDATA%\poe2-oracle\cache\` |
-| Diagnostics report ("Собрать отчёт" in the settings) | a zip on the desktop, user name masked |
+| Logs of this run and the previous one | `%LOCALAPPDATA%\poe2-oracle\data\logs` |
+| Item texts it couldn't read | `%LOCALAPPDATA%\poe2-oracle\data\unparsed` |
+| Downloaded catalogs, prices and updates | `%LOCALAPPDATA%\poe2-oracle\cache` |
 
-## Workspace
+The diagnostics report is made only when you ask for it, and the app never sends it anywhere:
+reporting a bug only opens GitHub's form in your browser, and you decide what to submit. Links on
+the panel (poe2db, the wiki, poe.ninja, the trade site) open in your browser too.
 
-```
-crates/
-  poe2-oracle/     the app: GPUI panel, settings, XP overlay, tray, Win32 overlay and hooks
-  item-parser/     clipboard item text -> ParsedItem (English and Russian clients)
-  stat-filters/    ParsedItem -> the trade search's filter rows (EE2's defaults)
-  trade-client/    trade API (leagues, catalogs, search, fetch, rate limits), poe.ninja market
-  poe2-domain/     shared item/stat types, no I/O
-  auto-update/     GitHub release check and SHA-256-verified installer download
-  oodle-ffi/, poe-bundle/, poe-dat/, data-pipeline/
-                   local game-data extraction (Bundles2 + .datc64 through a real Oodle DLL);
-                   the app never depends on them
-```
+## Contributing
 
-## Building
+Bug reports, item texts that the app gets wrong and pull requests are welcome. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for the rules and how to build the app, and
+[CHANGELOG.md](CHANGELOG.md) for what changed between versions.
 
-Everything project-related runs in the checkout's lane (`lane exec -- cargo ...`). CI
-(`.github/workflows/ci.yml`) runs `cargo fmt --check`, clippy with `-D warnings` (the app itself
-for `x86_64-pc-windows-gnu`), the tests, and a windows-gnu build.
+## License and disclaimer
 
-A binary meant to run is built natively on Windows (MSVC toolchain and Windows SDK: GPUI compiles
-its shaders with the SDK's `fxc.exe`); a windows-gnu cross build is for type-checking only.
-`packaging/build-release.ps1` builds the release exe, the installer
-`target\dist\PoE2-Oracle-Setup-<version>.exe` and `SHA256SUMS`; pushing a tag
-`v<workspace version>` runs it in `.github/workflows/release.yml` and publishes the release the
-updater reads. The updater asks this repository's GitHub releases; a build with
-`POE2_ORACLE_RELEASES_URL` set asks another URL of the same shape instead (a public releases
-repository's `https://api.github.com/repos/<owner>/<repo>/releases/latest`, or a local stand-in
-for testing an update end to end).
+PoE2 Oracle is licensed under either of the [MIT License](LICENSE-MIT) or the
+[Apache License 2.0](LICENSE-APACHE), at your option. It includes item and stat data derived from
+[Exiled Exchange 2](https://github.com/Kvan7/Exiled-Exchange-2) (MIT) and the Philosopher and
+Alegreya SC fonts (SIL Open Font License 1.1); the installer puts the full third-party notices
+next to the app as `THIRD-PARTY-NOTICES.html`.
 
-After a patch or at a new league: `packaging/data/generate_stat_matchers.py <EE2's
-renderer/public/data>` refreshes the ways the client prints stats that the parser falls back on
-(`generate_item_refs.py` the item database), and `cargo run -p item-parser --example sweep --
-<cache dir> <texts>` runs item texts swept from the game (a vendor, the stash, the inventory)
-against the app's cached catalogs and lists every item or line it can't handle.
+PoE2 Oracle is a fan-made tool. This product isn't affiliated with or endorsed by Grinding Gear
+Games in any way. Path of Exile is a trademark of Grinding Gear Games.

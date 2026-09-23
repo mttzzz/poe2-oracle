@@ -6,8 +6,9 @@
 ;   makensis /INPUTCHARSET UTF8 /DVERSION=0.1.0 packaging\installer.nsi
 ;
 ; Optional defines, paths relative to this file: APP_EXE_PATH (default
-; ..\target\release\poe2-oracle.exe) and OUT_DIR (default ..\target\dist, must exist). The output
-; is ${OUT_DIR}\PoE2-Oracle-Setup-${VERSION}.exe -- the asset name crates/auto-update looks for.
+; ..\target\release\poe2-oracle.exe) and OUT_DIR (default ..\target\dist, must exist and hold the
+; THIRD-PARTY-NOTICES.html build-release.ps1 writes there first). The output is
+; ${OUT_DIR}\PoE2-Oracle-Setup-${VERSION}.exe -- the asset name crates/auto-update looks for.
 ;
 ; Command line:
 ;   /S          silent (NSIS built-in): no UI, the autostart entry is left exactly as it was
@@ -15,8 +16,9 @@
 ;               failed. crates/auto-update starts updates as `/S /relaunch`, then quits the app.
 ;   /D=<dir>    install directory (NSIS built-in, must come last)
 ;
-; The uninstaller removes the program, the shortcut, the autostart entry and the "Installed apps"
-; entry; settings and caches only when the user ticks "Settings and cache" (never in /S mode).
+; The uninstaller removes the program with its license files, the shortcut, the autostart entry and
+; the "Installed apps" entry; settings and caches only when the user ticks "Settings and cache"
+; (never in /S mode).
 
 Unicode true
 ManifestDPIAware true
@@ -36,6 +38,11 @@ AllowSkipFiles off
 !define PUBLISHER "mttzzz"
 !define APP_EXE "poe2-oracle.exe"
 !define UNINSTALLER "uninstall.exe"
+; Beside the exe: the app's two license texts (the repository's LICENSE-MIT and LICENSE-APACHE,
+; named .txt so a double-click opens them) and the third-party notices.
+!define LICENSE_MIT "LICENSE-MIT.txt"
+!define LICENSE_APACHE "LICENSE-APACHE.txt"
+!define NOTICES "THIRD-PARTY-NOTICES.html"
 !define ICON "..\crates\poe2-oracle\assets\icon\poe2-oracle.ico"
 !define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}"
 ; The autostart entry, exactly as the app's settings write it (agreed with the settings module
@@ -219,6 +226,9 @@ Section "-${PRODUCT_NAME}"
   SetOutPath "$INSTDIR"
   Call CloseRunningApp
   File "/oname=${APP_EXE}" "${APP_EXE_PATH}"
+  File "/oname=${LICENSE_MIT}" "..\LICENSE-MIT"
+  File "/oname=${LICENSE_APACHE}" "..\LICENSE-APACHE"
+  File "${OUT_DIR}\${NOTICES}"
   WriteUninstaller "$INSTDIR\${UNINSTALLER}"
   CreateShortcut "$SMPROGRAMS\${PRODUCT_NAME}.lnk" "$INSTDIR\${APP_EXE}"
 
@@ -281,6 +291,9 @@ Section "un.${PRODUCT_NAME}" UninstallProgram
   SectionIn RO
   Call un.CloseRunningApp
   Delete "$INSTDIR\${APP_EXE}"
+  Delete "$INSTDIR\${LICENSE_MIT}"
+  Delete "$INSTDIR\${LICENSE_APACHE}"
+  Delete "$INSTDIR\${NOTICES}"
   Delete "$INSTDIR\${UNINSTALLER}"
   ; Not /r: the user may have chosen a folder that holds other files.
   RMDir "$INSTDIR"

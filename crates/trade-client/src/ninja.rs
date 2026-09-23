@@ -39,7 +39,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::cache::{league_file_name, load_or_fetch};
 use crate::rates::PriceUnit;
-use crate::{checked_body, urlencoding_space};
+use crate::{checked_body, encode_league};
 
 const API_BASE_URL: &str = "https://poe.ninja/poe2/api";
 const PAGE_BASE_URL: &str = "https://poe.ninja/poe2/economy";
@@ -257,8 +257,8 @@ async fn download_market(client: &Arc<dyn HttpClient>, league: &str) -> Result<M
     let (overviews, index_state) = join(overviews, download_index_state(client)).await;
     let index_state = index_state
         .inspect_err(|err| {
-            eprintln!(
-                "poe2-oracle: poe.ninja's league list is unavailable, guessing {league}'s page \
+            log::warn!(
+                "poe.ninja's league list is unavailable, guessing {league}'s page \
                  slug: {err:#}"
             )
         })
@@ -274,7 +274,7 @@ async fn download_overview(
 ) -> Result<String> {
     let url = format!(
         "{API_BASE_URL}/economy/exchange/current/overview?league={}&type={}",
-        urlencoding_space(league),
+        encode_league(league),
         category.api_type
     );
     let request = client.get(&url, AsyncBody::default(), true);
@@ -315,8 +315,8 @@ fn build_market<'a>(
                 }
             }
             Err(err) => {
-                eprintln!(
-                    "poe2-oracle: leaving poe.ninja's {} out of the market: {err:#}",
+                log::warn!(
+                    "leaving poe.ninja's {} out of the market: {err:#}",
                     category.title
                 );
                 first_error.get_or_insert(err);

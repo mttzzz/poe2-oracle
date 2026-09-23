@@ -2,13 +2,17 @@
 <#
 .SYNOPSIS
   Builds a PoE2 Oracle release on Windows: target\release\poe2-oracle.exe, then
-  target\dist\PoE2-Oracle-Setup-<version>.exe and target\dist\SHA256SUMS.
+  target\dist\PoE2-Oracle-Setup-<version>.exe, target\dist\SHA256SUMS and
+  target\dist\THIRD-PARTY-NOTICES.html.
 
 .DESCRIPTION
   Needs Rust with the MSVC toolchain and the Windows SDK: gpui compiles its shaders with the SDK's
   fxc.exe in release builds, and crates\poe2-oracle\build.rs embeds the exe's icon and version
   with its rc.exe. makensis comes from PATH or a standard NSIS install; failing both, the official
-  NSIS 3.12 zip is downloaded into %TEMP% and checked against its pinned SHA-256.
+  NSIS 3.12 zip is downloaded into %TEMP% and checked against its pinned SHA-256. cargo-about
+  writes the third-party notices from about.toml and about.hbs; a missing one, or another version
+  than the pinned one, is installed with `cargo install` first. The installer carries the notices
+  and the two license texts next to the exe.
   .github\workflows\release.yml runs this same script.
 
 .PARAMETER Tag
@@ -29,6 +33,9 @@ $ProgressPreference = 'SilentlyContinue'
 $NsisVersion = '3.12'
 # nsis-3.12.zip as SourceForge serves it; its MD5 matched the one SourceForge publishes (2026-09-22).
 $NsisZipSha256 = '56581f90db321581c5381193d796fffcf2d24b2f8fed2160a6c6a3baa67f2c4f'
+# The cargo-about the notices were generated and checked with (2026-09-23); another version may
+# read about.toml or lay the notices out differently. Its binary is behind the `cli` feature.
+$CargoAboutVersion = '0.9.2'
 
 # Runs a native tool and fails on a non-zero exit code. Windows PowerShell 5.1 turns a native
 # tool's stderr into error records once output is redirected (as over SSH or in CI), which
@@ -70,6 +77,16 @@ function Get-MakeNsis {
     return $makensis
 }
 
+# Makes `cargo about` the pinned version: installed when missing or another one.
+function Install-CargoAbout {
+    if (Get-Command cargo-about.exe -ErrorAction SilentlyContinue) {
+        $installed = (Invoke-Native cargo @('about', '--version') | Out-String).Trim()
+        if ($installed -eq "cargo-about $CargoAboutVersion") { return }
+    }
+    Invoke-Native cargo @('install', 'cargo-about', '--version', $CargoAboutVersion, '--locked',
+        '--features', 'cli')
+}
+
 $root = Split-Path -Parent $PSScriptRoot
 Push-Location $root
 try {
@@ -80,6 +97,9 @@ try {
         throw "Tag $Tag does not match the workspace version $version (root Cargo.toml)"
     }
 
+    # Before the long build, so a cargo-about that can't be installed stops the release early.
+    Install-CargoAbout
+
     Invoke-Native cargo @('build', '-p', 'poe2-oracle', '--release', '--locked')
     $exe = Join-Path $root 'target\release\poe2-oracle.exe'
 
@@ -87,6 +107,13 @@ try {
     $dist = Join-Path $root 'target\dist'
     if (Test-Path $dist) { Remove-Item -Recurse -Force $dist }
     New-Item -ItemType Directory -Path $dist | Out-Null
+    # Into the installer, next to the exe: the data, the fonts and every crate of the shipped
+    # app's own graph (-m), not the workspace's local game-data tools.
+    Invoke-Native cargo @('about', 'generate', '--locked',
+        '-m', (Join-Path $root 'crates\poe2-oracle\Cargo.toml'),
+        '-c', (Join-Path $root 'about.toml'),
+        '-o', (Join-Path $dist 'THIRD-PARTY-NOTICES.html'),
+        (Join-Path $root 'about.hbs'))
     Invoke-Native $makensis @('/INPUTCHARSET', 'UTF8', "/DVERSION=$version", "/DAPP_EXE_PATH=$exe",
         "/DOUT_DIR=$dist", (Join-Path $PSScriptRoot 'installer.nsi'))
 

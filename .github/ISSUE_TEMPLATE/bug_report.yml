@@ -1,0 +1,58 @@
+name: Bug report / Сообщить об ошибке
+description: Something in PoE2 Oracle doesn't work as it should. / Что-то в PoE2 Oracle работает не так, как должно.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The app can open this form for you: «Сообщить об ошибке» (Report a bug) in its tray menu or in the «Диагностика» section of its settings saves a diagnostics report to your desktop and fills in the version and client language. Please search the [existing issues](https://github.com/mttzzz/poe2-oracle/issues?q=is%3Aissue) first and report one problem per issue. If an item isn't recognised or gets wrong filters or a wrong price, use the [item problem form](https://github.com/mttzzz/poe2-oracle/issues/new?template=item_problem.yml) instead. Never post passwords or your session cookie (`POESESSID`).
+
+        Программа может открыть эту форму сама: «Сообщить об ошибке» в меню значка в трее или в разделе «Диагностика» настроек сохраняет отчёт диагностики на рабочий стол и заполняет версию и язык клиента. Сначала поищите среди [существующих задач](https://github.com/mttzzz/poe2-oracle/issues?q=is%3Aissue); одна задача — одна проблема. Если предмет не распознаётся или у него неверные фильтры или цена, заполните [форму о предмете](https://github.com/mttzzz/poe2-oracle/issues/new?template=item_problem.yml). Никогда не публикуйте пароли и cookie сессии (`POESESSID`).
+  - type: input
+    id: version
+    attributes:
+      label: Version / Версия
+      description: Windows Settings → Apps → Installed apps shows it next to PoE2 Oracle. / Видна в Параметры Windows → Приложения → Установленные приложения, рядом с PoE2 Oracle.
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: game-language
+    attributes:
+      label: Game client language / Язык клиента игры
+      placeholder: English client / Русский клиент
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened? / Что произошло?
+      description: What you did, what you expected and what happened instead. A screenshot helps. / Что вы сделали, чего ожидали и что произошло на самом деле. Скриншот поможет.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce / Как воспроизвести
+      description: If you can make it happen again, how? / Если ошибку можно повторить — как?
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: false
+  - type: textarea
+    id: item-text
+    attributes:
+      label: Item text / Текст предмета
+      description: If an item is involved, hover it in the game, press Ctrl+Alt+C and paste the text here. / Если дело в предмете, наведите на него курсор в игре, нажмите Ctrl+Alt+C и вставьте текст сюда.
+      render: text
+    validations:
+      required: false
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics report / Отчёт диагностики
+      description: «Сообщить об ошибке» (Report a bug) in the app's tray menu or settings saves PoE2-Oracle-report-….zip to your desktop, with your Windows user name masked, and shows it in Explorer («Собрать отчёт» in the settings only saves it). Drag the zip into this box. / «Сообщить об ошибке» в меню значка или в настройках программы сохраняет PoE2-Oracle-report-….zip на рабочий стол, имя пользователя Windows в нём скрыто, и показывает его в Проводнике («Собрать отчёт» в настройках только сохраняет архив). Перетащите архив в это поле.
+    validations:
+      required: false

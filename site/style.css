@@ -1,0 +1,468 @@
+/*
+ * PoE2 Oracle landing pages (index.html and ru/index.html).
+ * Colours are the app's own (crates/poe2-oracle/src/ui/theme.rs): the near-black panel, gold
+ * accents and the nameplate faces, Alegreya SC for English and Philosopher for Russian.
+ */
+
+@font-face {
+    font-family: "Alegreya SC";
+    font-style: normal;
+    font-weight: 500;
+    font-display: swap;
+    src: url("fonts/AlegreyaSC-Medium.ttf") format("truetype");
+}
+
+@font-face {
+    font-family: "Philosopher";
+    font-style: normal;
+    font-weight: 700;
+    font-display: swap;
+    src: url("fonts/Philosopher-Bold.ttf") format("truetype");
+}
+
+:root {
+    --bg: #0e0e10;
+    --bg-deep: #060607;
+    --bg-warm: #17130d;
+    --bg-control: #1e1e22;
+    --bg-stripe: #17171a;
+    --bg-button: #1f1811;
+    --bg-button-hover: #33261a;
+    --border: #2b2b30;
+    --border-gold: #6b5022;
+    --gold: #d0913b;
+    --gold-bright: #ecc94b;
+    --text: #dcdcdc;
+    --text-dim: #9d9da3;
+    --text-muted: #66666c;
+    --warning: #e0664f;
+    --display: "Alegreya SC", Georgia, "Times New Roman", serif;
+    --display-weight: 500;
+    --body: "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
+    --width: 72rem;
+    color-scheme: dark;
+}
+
+html[lang="ru"] {
+    --display: "Philosopher", Georgia, "Times New Roman", serif;
+    --display-weight: 700;
+}
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+html {
+    background: var(--bg-deep);
+}
+
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--body);
+    font-size: 1rem;
+    line-height: 1.6;
+}
+
+a {
+    color: var(--gold);
+    text-underline-offset: 0.2em;
+}
+
+a:hover {
+    color: var(--gold-bright);
+}
+
+h1,
+h2,
+h3 {
+    font-family: var(--display);
+    font-weight: var(--display-weight);
+    line-height: 1.2;
+    color: var(--gold);
+}
+
+h2 {
+    font-size: 2rem;
+    margin: 0 0 1rem;
+}
+
+h3 {
+    font-size: 1.45rem;
+    margin: 0 0 0.6rem;
+}
+
+p {
+    margin: 0 0 1rem;
+}
+
+img {
+    max-width: 100%;
+    height: auto;
+}
+
+kbd {
+    display: inline-block;
+    padding: 0 0.4em;
+    border: 1px solid var(--border-gold);
+    border-radius: 3px;
+    background: var(--bg-button);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 0.9em;
+    line-height: 1.5;
+    white-space: nowrap;
+}
+
+/* A key combination such as Ctrl+E stays on one line. */
+.keys {
+    white-space: nowrap;
+}
+
+.wrap {
+    max-width: var(--width);
+    margin: 0 auto;
+    padding: 0 1.5rem;
+}
+
+.skip-link {
+    position: absolute;
+    left: -999px;
+}
+
+.skip-link:focus {
+    left: 1rem;
+    top: 1rem;
+    z-index: 10;
+    padding: 0.5rem 1rem;
+    background: var(--bg-button);
+    border: 1px solid var(--gold);
+}
+
+/* Top bar */
+
+.topbar {
+    background: var(--bg-deep);
+    border-bottom: 1px solid var(--border-gold);
+}
+
+.topbar .wrap {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 1.5rem;
+    min-height: 3.5rem;
+}
+
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-right: auto;
+    color: var(--gold);
+    font-family: var(--display);
+    font-weight: var(--display-weight);
+    font-size: 1.35rem;
+    text-decoration: none;
+}
+
+.brand img {
+    width: 2rem;
+    height: 2rem;
+}
+
+.topnav {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem 1.25rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.topnav a {
+    color: var(--text-dim);
+    text-decoration: none;
+}
+
+.topnav a:hover {
+    color: var(--text);
+}
+
+.lang-switch {
+    display: flex;
+    gap: 0.25rem;
+}
+
+.lang-switch a,
+.lang-switch span {
+    padding: 0.1rem 0.5rem;
+    border: 1px solid var(--bg-control);
+    border-radius: 3px;
+    font-size: 0.85rem;
+}
+
+.lang-switch a {
+    background: var(--bg-control);
+}
+
+.lang-switch span {
+    background: var(--bg-button);
+    border-color: var(--gold);
+    color: var(--gold);
+}
+
+/* Hero */
+
+.hero {
+    padding: 4rem 0 3rem;
+    background: radial-gradient(ellipse at top, var(--bg-warm), var(--bg) 70%);
+    border-bottom: 1px solid var(--border);
+    text-align: center;
+}
+
+.hero h1 {
+    margin: 0 0 0.75rem;
+    font-size: clamp(2.5rem, 6vw, 4rem);
+}
+
+.hero .lead {
+    max-width: 44rem;
+    margin: 0 auto 2rem;
+    color: var(--text-dim);
+    font-size: 1.2rem;
+}
+
+.actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+}
+
+.button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2.75rem;
+    padding: 0.5rem 1.5rem;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    background: var(--bg-control);
+    color: var(--text-dim);
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.button:hover {
+    border-color: var(--text-dim);
+    color: var(--text);
+}
+
+.button-primary {
+    background: var(--bg-button);
+    border-color: var(--gold);
+    color: var(--gold);
+    font-size: 1.1rem;
+}
+
+.button-primary:hover {
+    background: var(--bg-button-hover);
+    border-color: var(--gold-bright);
+    color: var(--gold-bright);
+}
+
+.fineprint {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+.shot {
+    margin: 2.5rem auto 0;
+    padding: 0;
+}
+
+.shot img,
+.feature img {
+    display: block;
+    border: 1px solid var(--border-gold);
+    border-radius: 4px;
+    background: var(--bg-deep);
+}
+
+.shot img {
+    margin: 0 auto;
+}
+
+/* Sections */
+
+.section {
+    padding: 4rem 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.section-alt {
+    background: var(--bg-stripe);
+}
+
+.section > .wrap > p.intro {
+    max-width: 48rem;
+    color: var(--text-dim);
+}
+
+.feature {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+    gap: 2rem 3rem;
+    align-items: center;
+    margin-top: 3.5rem;
+}
+
+.feature:nth-of-type(even) .feature-media {
+    order: -1;
+}
+
+.feature p,
+.feature li {
+    color: var(--text-dim);
+}
+
+.feature ul {
+    margin: 0 0 1rem;
+    padding-left: 1.2rem;
+}
+
+.feature figure {
+    margin: 0;
+}
+
+.also {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+    gap: 1rem;
+    margin: 3.5rem 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.also li {
+    padding: 1rem 1.25rem;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg-control);
+    color: var(--text-dim);
+}
+
+.also strong {
+    display: block;
+    margin-bottom: 0.25rem;
+    color: var(--text);
+}
+
+.columns {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+    gap: 2rem 3rem;
+}
+
+.checklist {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.checklist li {
+    position: relative;
+    margin-bottom: 0.75rem;
+    padding-left: 1.5rem;
+    color: var(--text-dim);
+}
+
+.checklist li::before {
+    content: "";
+    position: absolute;
+    left: 0.2rem;
+    top: 0.6em;
+    width: 0.45rem;
+    height: 0.45rem;
+    transform: rotate(45deg);
+    background: var(--gold);
+}
+
+.steps {
+    margin: 0;
+    padding-left: 1.4rem;
+    color: var(--text-dim);
+}
+
+.steps li {
+    margin-bottom: 0.75rem;
+}
+
+.steps li::marker {
+    color: var(--gold);
+    font-weight: 600;
+}
+
+.note {
+    margin-top: 1.5rem;
+    padding: 0.9rem 1.2rem;
+    border: 1px solid var(--border-gold);
+    border-radius: 4px;
+    background: var(--bg-warm);
+    color: var(--text-dim);
+}
+
+/* Footer */
+
+.footer {
+    padding: 2.5rem 0 3rem;
+    background: var(--bg-deep);
+    border-top: 1px solid var(--border-gold);
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+.footer-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.5rem;
+    margin: 0 0 1.25rem;
+    padding: 0;
+    list-style: none;
+}
+
+.footer-links a {
+    color: var(--text-dim);
+}
+
+.footer p {
+    margin-bottom: 0.5rem;
+}
+
+.footer a {
+    color: var(--text-dim);
+}
+
+@media (max-width: 52rem) {
+    .feature {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .feature:nth-of-type(even) .feature-media {
+        order: 0;
+    }
+
+    .hero {
+        padding-top: 2.5rem;
+    }
+
+    .section {
+        padding: 3rem 0;
+    }
+}

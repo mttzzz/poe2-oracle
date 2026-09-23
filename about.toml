@@ -1,0 +1,34 @@
+# cargo-about (https://github.com/EmbarkStudios/cargo-about) turns the dependency graph into the
+# third-party notices that ship with the app:
+#
+#   cargo about generate -m crates/poe2-oracle/Cargo.toml about.hbs -o THIRD-PARTY-NOTICES.html
+#
+# packaging/build-release.ps1 runs it this way (with --locked) to write
+# target\dist\THIRD-PARTY-NOTICES.html, which the installer puts next to the exe. `-m` limits the
+# graph to the shipped app; run from the workspace root without it, the notices also cover the
+# local game-data tools (data-pipeline and the crates under it), which the app never links.
+#
+# `accepted` is exactly the set of licenses the graph needs, in priority order: a crate that
+# offers a choice ("MIT OR Apache-2.0") is listed under the first of these it offers. The
+# licenses some crates offer only beside one of these (Unlicense, CC0-1.0, MIT-0, BSL-1.0, 0BSD)
+# are never needed, so they are not here. A new dependency under any other license stops the
+# generation -- and with it the release build -- instead of shipping unnoticed.
+accepted = [
+    "MIT",
+    "Apache-2.0",
+    "ISC",
+    "BSD-3-Clause",
+    "BSD-2-Clause",
+    "Zlib",
+    "Unicode-3.0",
+    "MPL-2.0",
+    "CDLA-Permissive-2.0",
+    "bzip2-1.0.6",
+]
+
+# The exe's only target: crates that only other platforms pull in (macOS, Linux, wasm) are not in
+# it.
+targets = ["x86_64-pc-windows-msvc"]
+# Neither kind ends up in the exe.
+ignore-build-dependencies = true
+ignore-dev-dependencies = true

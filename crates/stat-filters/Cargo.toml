@@ -3,6 +3,10 @@ name = "stat-filters"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 
 [dependencies]
 # Pure search-filter-construction logic over poe2-domain::ParsedItem; no I/O, no other deps.

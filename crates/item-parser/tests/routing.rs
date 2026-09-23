@@ -215,14 +215,15 @@ fn ru_live_items_get_their_routes() {
     use Want::*;
     let catalog = ru_exchange_catalog();
     let wanted = [
-        // A magic waystone's value is in its mods and tier, never the plain exchange tier.
+        // A magic waystone's value is in its mods and tier, never the plain exchange tier; it is
+        // compared with magic waystones, as every magic item is.
         (
             "ru_live_adskiy_putevoy_kamen_ur_13_ukloneniya.txt",
-            Category("map.waystone", Some(RarityFilter::NonUnique)),
+            Category("map.waystone", Some(RarityFilter::Magic)),
         ),
         (
             "ru_live_bespamyatnoe_chistilische.txt",
-            Category("weapon.crossbow", Some(RarityFilter::NonUnique)),
+            Category("weapon.crossbow", Some(RarityFilter::Rare)),
         ),
         (
             "ru_live_bolshaya_runa_pererozhdeniya.txt",
@@ -251,20 +252,21 @@ fn ru_live_items_get_their_routes() {
         ("ru_live_detal_dospeha.txt", Market("scrap")),
         (
             "ru_live_entropicheskaya_kayma.txt",
-            Category("accessory.ring", Some(RarityFilter::NonUnique)),
+            Category("accessory.ring", Some(RarityFilter::Rare)),
         ),
+        // A magic item is compared with magic ones: a jewel as in EE2 (`forAdornedJewel`), gear
+        // too, since the player asked for it (a magic wand's buyer wants a crafting base).
         (
             "ru_live_glificheskiy_uvyadshiy_zhezl_katastrofy.txt",
-            Category("weapon.wand", Some(RarityFilter::NonUnique)),
+            Category("weapon.wand", Some(RarityFilter::Magic)),
         ),
-        // EE2's `forAdornedJewel`: a magic jewel is compared with magic jewels.
         (
             "ru_live_kopenosnyy_izumrud_prigvozhdeniya.txt",
             Category("jewel", Some(RarityFilter::Magic)),
         ),
         (
             "ru_live_krutyaschiy_obodok.txt",
-            Category("accessory.ring", Some(RarityFilter::NonUnique)),
+            Category("accessory.ring", Some(RarityFilter::Rare)),
         ),
         (
             "ru_live_malaya_sfera_zlatokuznetsa.txt",
@@ -327,7 +329,7 @@ fn ru_live_items_get_their_routes() {
         ),
         (
             "ru_live_zdorovye_ponozhi_vaal_trollya.txt",
-            Category("armour.boots", Some(RarityFilter::NonUnique)),
+            Category("armour.boots", Some(RarityFilter::Magic)),
         ),
         (
             "ru_live_zhemchuzhnoe_koltso.txt",

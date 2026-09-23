@@ -1,10 +1,9 @@
 //! The number and currency formatting the panel's parts share.
 
-use gpui::{IntoElement, img, prelude::*};
+use gpui::{IntoElement, div, img, prelude::*, rgb};
 
-use trade_client::rates::PriceUnit;
-
-use crate::ui::theme::rems_from_px;
+use crate::price_check::PriceCheckApp;
+use crate::ui::theme::{TEXT_DIM, rems_from_px};
 
 pub(crate) fn currency_img(url: Option<&str>, size: f32) -> Option<impl IntoElement> {
     url.map(|url| {
@@ -15,11 +14,28 @@ pub(crate) fn currency_img(url: Option<&str>, size: f32) -> Option<impl IntoElem
     })
 }
 
-pub(super) fn unit_label(unit: PriceUnit) -> &'static str {
-    match unit {
-        PriceUnit::Divine => "div",
-        PriceUnit::Exalted => "ex",
-    }
+/// `amount` followed by `currency`'s icon, `size` rems square -- `0,026 [divine]` -- the way
+/// every price in the panel reads: currencies go by their icons, never by words like "div" or
+/// "chaos", so a price reads the same in the title bar, the market card and the listings. The
+/// currency's name stands in only where the catalog has no icon for it.
+pub(super) fn amount_in(
+    state: &PriceCheckApp,
+    amount: String,
+    currency: &str,
+    size: f32,
+) -> impl IntoElement {
+    let icon = currency_img(state.currency_icon(currency), size);
+    let name = icon
+        .is_none()
+        .then(|| state.currency_name(currency).unwrap_or(currency).to_owned());
+    div()
+        .flex()
+        .flex_none()
+        .items_center()
+        .gap(rems_from_px(3.))
+        .child(amount)
+        .children(icon)
+        .children(name.map(|name| div().text_color(rgb(TEXT_DIM)).child(name)))
 }
 
 /// PoE Overlay II's number style: decimal comma, trailing zeros dropped, two decimals under 10,

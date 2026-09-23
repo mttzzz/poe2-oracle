@@ -1,11 +1,14 @@
 //! The settings window: a copy of [`Settings`] edited in place and handed to `on_save` by
-//! "Сохранить" -- nothing applies before that. It reads as part of the price-check panel
-//! (`ui::panel`): the same near-black panel, gold section headers, chips and buttons. Its last
-//! section writes the diagnostics report (`crate::diagnostics`), which applies nothing either.
+//! "Сохранить" -- nothing applies before that, except signing in and out of pathofexile.com
+//! (`crate::session`), which keeps its secret out of the settings and applies at once. It reads
+//! as part of the price-check panel (`ui::panel`): the same near-black panel, gold section
+//! headers, chips and buttons. Its last section writes the diagnostics report
+//! (`crate::diagnostics`), which applies nothing either.
 //!
 //! GPUI has no stock text input or dropdown, so the controls are built here: chips that pick one
 //! of a few choices, switches, -/+ steppers, and hotkey recorders that capture the next
-//! combination pressed while they have focus -- plus `ui::text_field` for the quick actions' text.
+//! combination pressed while they have focus -- plus `ui::text_field` for the quick actions' text,
+//! a typed league's name and the pasted session.
 //!
 //! The view draws its own title bar (open the window with `TitlebarOptions::appears_transparent`)
 //! and closes its window once it has reported: `on_save` after "Сохранить", `on_cancel` after
@@ -21,7 +24,9 @@ use gpui::{
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, VK_0, VK_9, VK_SHIFT};
 
+use crate::bug_report;
 use crate::diagnostics;
+use crate::session::{self, SessionStatus};
 use crate::settings::{
     self, ClientLanguage, Hotkey, HotkeyProblem, KeyName, LeagueChoice, ListingStatusChoice,
     QuickAction, QuickActionKind, Settings,
@@ -29,7 +34,7 @@ use crate::settings::{
 use crate::ui::text_field::TextField;
 use crate::ui::theme::{
     BG_BUTTON, BG_BUTTON_HOVER, BG_CLOSE_HOVER, BG_CONTROL, BG_PANEL, BG_TITLE, BORDER,
-    BORDER_GOLD, CONTENT_PADDING, GOLD, TEXT, TEXT_DIM, TEXT_MUTED, TEXT_WARNING,
+    BORDER_GOLD, CONTENT_PADDING, GOLD, PRICE_RISE, TEXT, TEXT_DIM, TEXT_MUTED, TEXT_WARNING,
 };
 
 /// What one click of a stepper moves the tolerance and the scale by, in percent.
@@ -82,6 +87,12 @@ pub struct SettingsView {
     /// the fields' text goes into the settings on save.
     action_fields: Vec<Entity<TextField>>,
     action_recorders: Vec<FocusHandle>,
+    /// The typed league's name (`LeagueChoice::Custom`); its text goes into the settings on save.
+    league_field: Entity<TextField>,
+    /// Where the player pastes their session: masked, and emptied as soon as it is used.
+    session_field: Entity<TextField>,
+    /// Why the last "Войти" went nowhere.
+    session_error: Option<String>,
     /// The modifiers held during a capture, shown until the key comes.
     held: Modifiers,
     /// Why the combination last pressed into the recorder was refused.
@@ -119,6 +130,21 @@ impl SettingsView {
             .iter()
             .map(|_| cx.focus_handle())
             .collect();
+        let typed_league = match &settings.league {
+            LeagueChoice::Custom(name) => name.clone(),
+            _ => String::new(),
+        };
+        let league_field = cx.new(|cx| {
+            TextField::new(
+                typed_league,
+                "Название лиги, например My League (PL12345)",
+                cx,
+            )
+        });
+        let session_field = cx.new(|cx| TextField::masked("Вставьте POESESSID (Ctrl+V)", cx));
+        // The account section shows what the site says of the session, whenever it says it.
+        cx.observe_global::<SessionStatus>(|_, cx| cx.notify())
+            .detach();
         SettingsView {
             settings,
             leagues,
@@ -129,6 +155,9 @@ impl SettingsView {
             recorder_focus: cx.focus_handle(),
             action_fields,
             action_recorders,
+            league_field,
+            session_field,
+            session_error: None,
             held: Modifiers::default(),
             recorder_error: None,
             reported: false,
@@ -139,6 +168,15 @@ impl SettingsView {
 
     fn save(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.reported = true;
+        // A typed league is the field's text; nothing typed is no choice.
+        if let LeagueChoice::Custom(_) = self.settings.league {
+            let typed = self.league_field.read(cx).text().trim().to_owned();
+            self.settings.league = if typed.is_empty() {
+                LeagueChoice::Auto
+            } else {
+                LeagueChoice::Custom(typed)
+            };
+        }
         for (action, field) in self
             .settings
             .quick_actions
@@ -159,6 +197,37 @@ impl SettingsView {
         self.reported = true;
         (self.on_cancel)(cx);
         window.remove_window();
+    }
+
+    /// "Войти": the pasted session is saved and used at once -- it needs no "Сохранить" -- then
+    /// checked; the field is emptied either way.
+    fn sign_in(&mut self, cx: &mut Context<Self>) {
+        let pasted = self.session_field.read(cx).text().to_owned();
+        self.session_field.update(cx, |field, cx| {
+            field.clear();
+            cx.notify();
+        });
+        self.session_error = match session::parse_pasted(&pasted) {
+            Some(value) => session::sign_in(value, cx)
+                .err()
+                .map(|err| format!("Не удалось сохранить вход: {err:#}")),
+            None if pasted.trim().is_empty() => {
+                Some("Сначала вставьте POESESSID в поле".to_owned())
+            }
+            None => Some(
+                "Это не похоже на POESESSID: нужно значение куки — 32 знака, цифры и латинские \
+                 буквы"
+                    .to_owned(),
+            ),
+        };
+        cx.notify();
+    }
+
+    /// "Выйти": the session is forgotten at once, from the Credential Manager too.
+    fn sign_out(&mut self, cx: &mut Context<Self>) {
+        session::sign_out(cx);
+        self.session_error = None;
+        cx.notify();
     }
 
     /// Writes the diagnostics report off the main thread, then shows it in Explorer.
@@ -411,8 +480,9 @@ impl SettingsView {
         )
     }
 
-    /// "Авто" (naming the league it stands for), every league the trade site lists, and a picked
-    /// league it no longer lists -- still shown, since it's what the file holds.
+    /// "Авто" (naming the league it stands for), every league the trade site lists, a picked
+    /// league it no longer lists -- still shown, since it's what the file holds -- and a league the
+    /// player types: a private one, which the site's list never shows.
     fn render_league(&self, cx: &Context<Self>) -> impl IntoElement {
         let auto_label: SharedString = match self.leagues.first() {
             Some(current) => format!("Авто · {current}").into(),
@@ -422,6 +492,11 @@ impl SettingsView {
             LeagueChoice::Named(league) if !self.leagues.contains(league) => Some(league),
             _ => None,
         };
+        // The chip stands for the typed league whatever its name: the field below has it.
+        let (typed, typed_choice) = match &self.settings.league {
+            choice @ LeagueChoice::Custom(_) => (true, choice.clone()),
+            _ => (false, LeagueChoice::Custom(String::new())),
+        };
         let options = std::iter::once((LeagueChoice::Auto, auto_label))
             .chain(
                 self.leagues
@@ -429,8 +504,23 @@ impl SettingsView {
                     .chain(unlisted)
                     .map(|league| (LeagueChoice::Named(league.clone()), league.clone().into())),
             )
+            .chain(std::iter::once((typed_choice, "Своя лига…".into())))
             .collect();
-        let (note, note_color) = if self.leagues.is_empty() {
+        let signed_in = cx
+            .try_global::<SessionStatus>()
+            .is_some_and(SessionStatus::signed_in);
+        let (note, note_color) = if typed && !signed_in {
+            (
+                "Поиск в приватной лиге работает только со входом на pathofexile.com — раздел \
+                 «Аккаунт pathofexile.com» ниже",
+                TEXT_WARNING,
+            )
+        } else if typed {
+            (
+                "Своя лига — название как на сайте торговли, со скобками: My League (PL12345)",
+                TEXT_MUTED,
+            )
+        } else if self.leagues.is_empty() {
             ("Список лиг с сайта торговли не загрузился", TEXT_MUTED)
         } else if unlisted.is_some() {
             (
@@ -450,6 +540,9 @@ impl SettingsView {
                 |settings, league| settings.league = league,
                 cx,
             ))
+            .when(typed, |this| {
+                this.child(div().flex().child(self.league_field.clone()))
+            })
             .child(note_line(note, note_color))
     }
 
@@ -804,11 +897,86 @@ impl SettingsView {
                 cx,
             ))
             .child(toggle_row(
-                labelled("Звук при новом запросе", None),
+                labelled(
+                    "Звук при новом запросе",
+                    Some("И при новом лоте из слежения за поиском"),
+                ),
                 self.settings.trade_sound,
                 |settings| &mut settings.trade_sound,
                 cx,
             ))
+    }
+
+    /// The pathofexile.com session: what it gives, where to find it and how it is kept, its
+    /// field and buttons, and what the site says of it. Signing in and out apply at once.
+    fn render_account(&self, cx: &Context<Self>) -> impl IntoElement {
+        let status = cx
+            .try_global::<SessionStatus>()
+            .cloned()
+            .unwrap_or_default();
+        let stored = status != SessionStatus::SignedOut;
+        let (line, color): (SharedString, u32) = match &status {
+            SessionStatus::SignedOut => ("Вход не выполнен".into(), TEXT_MUTED),
+            SessionStatus::Checking => ("Проверяю вход…".into(), TEXT_DIM),
+            SessionStatus::SignedIn {
+                account: Some(name),
+            } => (format!("Вход выполнен: {name}").into(), PRICE_RISE),
+            SessionStatus::SignedIn { account: None } => ("Вход выполнен".into(), PRICE_RISE),
+            SessionStatus::Invalid => (
+                "Сессия недействительна — войдите на сайте заново и вставьте новый POESESSID"
+                    .into(),
+                TEXT_WARNING,
+            ),
+            SessionStatus::Unchecked(err) => (
+                format!("Не удалось проверить вход — сессия используется как есть: {err}").into(),
+                TEXT_WARNING,
+            ),
+        };
+        section("Аккаунт pathofexile.com")
+            .child(note_line(
+                "Вход нужен для поиска в приватных лигах и для слежения за поиском: новые лоты \
+                 приходят карточками поверх игры.",
+                TEXT_DIM,
+            ))
+            .child(note_line(
+                "Где взять POESESSID: войдите на pathofexile.com в браузере, откройте DevTools \
+                 (F12) → Application → Cookies → https://www.pathofexile.com и скопируйте \
+                 значение POESESSID.",
+                TEXT_MUTED,
+            ))
+            .child(note_line(
+                "POESESSID — ключ к вашей учётной записи на сайте: никому его не передавайте. \
+                 Приложение хранит его в диспетчере учётных данных Windows и отправляет только \
+                 на pathofexile.com.",
+                TEXT_WARNING,
+            ))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(8.))
+                    .child(self.session_field.clone())
+                    .child(button("Войти", true).on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|view, _event: &MouseDownEvent, _window, cx| {
+                            view.sign_in(cx);
+                        }),
+                    ))
+                    .when(stored, |this| {
+                        this.child(button("Выйти", false).on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(|view, _event: &MouseDownEvent, _window, cx| {
+                                view.sign_out(cx);
+                            }),
+                        ))
+                    }),
+            )
+            .child(div().text_xs().text_color(rgb(color)).child(line))
+            .children(
+                self.session_error
+                    .clone()
+                    .map(|error| div().text_xs().text_color(rgb(TEXT_WARNING)).child(error)),
+            )
     }
 
     fn render_system(&self, cx: &Context<Self>) -> impl IntoElement {
@@ -857,6 +1025,14 @@ impl SettingsView {
                 div()
                     .flex()
                     .gap(px(8.))
+                    .child(button("Сообщить об ошибке", false).on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|view, _event: &MouseDownEvent, _window, cx| {
+                            let summary = (view.report_summary)(cx);
+                            let language = view.settings.client_language.item_language();
+                            bug_report::report_bug(summary, language, cx);
+                        }),
+                    ))
                     .child(button("Собрать отчёт", false).on_mouse_down(
                         MouseButton::Left,
                         cx.listener(|view, _event: &MouseDownEvent, _window, cx| {
@@ -943,6 +1119,7 @@ impl Render for SettingsView {
                     .child(self.render_appearance(cx))
                     .child(self.render_xp_overlay(cx))
                     .child(self.render_trade(cx))
+                    .child(self.render_account(cx))
                     .child(self.render_system(cx))
                     .child(self.render_diagnostics(cx)),
             )

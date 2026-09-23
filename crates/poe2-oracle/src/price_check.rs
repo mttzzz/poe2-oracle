@@ -35,16 +35,18 @@ use trade_client::rate_limit::RateLimiter;
 use trade_client::rates::{Confidence, PriceEstimate, PriceUnit};
 use trade_client::scout::ScoutPrices;
 use trade_client::{
-    AccountStatus, GroupedListing, ListedMod, ListingStatus, PriceCurrency, SearchOutcome,
-    SearchRoute, SearchScope, StatMatch, TradeApiError, TradeSite,
+    AccountStatus, FetchedItem, GroupedListing, ListedMod, ListingStatus, PriceCurrency,
+    RarityFilter, SearchOutcome, SearchRoute, SearchScope, StatMatch, TradeApiError, TradeSite,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, VIRTUAL_KEY, VK_CONTROL, VK_MENU, VK_SHIFT,
 };
 
 use crate::bound_input;
+use crate::bug_report;
 use crate::game_chat;
 use crate::item_refs::{self, RefKind};
+use crate::live_search::{self, WatchedSearch};
 use crate::overlay_layout::PhysicalRect;
 use crate::paths;
 use crate::platform::game_window::Foreground;
@@ -63,10 +65,13 @@ const FOREGROUND_SETTLE: Duration = Duration::from_millis(250);
 /// How long a listing row says its whisper was copied.
 const WHISPER_COPIED_SHOWN: Duration = Duration::from_secs(4);
 
-/// Up to 10 listings per `fetch` request -- the trade API's own per-request limit -- and two
-/// requests per search, EE2's first page (`trade-api.ts` fetches listings 0-10 and 10-20).
+/// Up to 10 listings per `fetch` request -- the trade API's own per-request limit -- and one
+/// request per search. EE2 fetches a second page (listings 10-20, `trade-api.ts`), but two
+/// fetches a check made fetches the tighter budget (50 per 5 minutes is 25 checks, against 30
+/// searches), shared with the player's browser on the same IP: a refused fetch locked the owner
+/// out for ten minutes on 2026-09-23. The ten cheapest listings already set the estimate.
 const FETCH_PAGE_SIZE: usize = 10;
-const FETCH_PAGES: usize = 2;
+const FETCH_PAGES: usize = 1;
 
 /// Longest trade API rate-limit wait a search sits out before sending. A longer one means the API
 /// has restricted this IP (a live 429 carried `Retry-After: 259`), and the search reports that
@@ -173,6 +178,12 @@ pub enum SearchState {
     /// A Currency Exchange item, priced from poe.ninja: the exchange is an auction the trade
     /// site's listings don't reflect (`trade_client::SearchRoute::Market`).
     Market(MarketPrice),
+    /// An exchange item poe.ninja has no line for in the league, priced by poe2scout instead;
+    /// its trade listings only when the player asks (`PriceCheckApp::search_listings`).
+    Scouted {
+        value: f64,
+        unit: PriceUnit,
+    },
 }
 
 /// Per-filter-row UI state paired 1:1 with `PriceCheckApp.filters` (same index) -- the editable
@@ -245,6 +256,46 @@ impl ScopeChoice {
     }
 }
 
+/// The rarity a non-unique item's filtered search admits: the default `trade_client` chose (a
+/// magic item among magic ones, a rare among every non-unique) or the other one
+/// (`trade_client::other_rarity`) -- the panel's rarity chip, PoE Overlay II's rarity toggle.
+#[derive(Debug, Clone, Copy)]
+pub struct RarityChoice {
+    default: RarityFilter,
+    other: RarityFilter,
+    /// The player chose the other rarity. Reset for every new item.
+    pub switched_on: bool,
+}
+
+impl RarityChoice {
+    /// The rarity the search admits now.
+    pub fn current(&self) -> RarityFilter {
+        if self.switched_on {
+            self.other
+        } else {
+            self.default
+        }
+    }
+}
+
+/// A yes/no trade filter the item's own state sets (`trade_client::MiscChoices`) -- corrupted or
+/// not, unidentified -- which the player can drop for the next search, taking listings either
+/// way: the panel's corruption and identification chips.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StateChoice {
+    /// The state the search asks for.
+    pub value: bool,
+    /// Whether the search asks for it at all. Reset for every new item.
+    pub on: bool,
+}
+
+impl StateChoice {
+    /// The search matches `value`, as it does by default.
+    fn matched(value: bool) -> Self {
+        StateChoice { value, on: true }
+    }
+}
+
 pub struct PriceCheckApp {
     http_client: Arc<dyn HttpClient>,
     league: String,
@@ -295,10 +346,24 @@ pub struct PriceCheckApp {
     pub show_hidden: bool,
     /// The item's search by its category or by its base type, when it can go by either.
     pub scope: Option<ScopeChoice>,
-    /// Whether an uncorrupted item's search leaves corrupted listings out (`Some(true)`, EE2's
-    /// default, `trade_client::MiscChoices`) or the player let them in (`Some(false)`); `None`
-    /// where the search takes either anyway. Reset for every new item.
-    pub uncorrupted_only: Option<bool>,
+    /// The item's corruption the search matches (`trade_client::MiscChoices::corrupted`): an
+    /// uncorrupted item among listings that can still be modified, a corrupted one among
+    /// corrupted ones -- or, dropped by the player, either. `None` where the search takes either.
+    pub corruption: Option<StateChoice>,
+    /// An unidentified item's search among unidentified listings
+    /// (`trade_client::MiscChoices::identified`), or, dropped by the player, identified ones too.
+    pub identification: Option<StateChoice>,
+    /// The rarity a non-unique item's search admits, where it can admit two.
+    pub rarity: Option<RarityChoice>,
+    /// The player asked for an exchange item's trade listings where poe2scout priced it
+    /// (`search_listings`): its searches go to the trade site. Reset for every new item.
+    listings_wanted: bool,
+    /// The last checked item's text, as the game copied it -- parsed or not: what a report of a
+    /// misread or mispriced item carries (`report_item`).
+    item_text: Option<String>,
+    /// The problem shown is an item the parser rejected -- one to report (`report_item`), unlike
+    /// a gamble offer or a copy combo another program holds.
+    problem_reportable: bool,
     /// The listing whose whisper was just copied -- the search generation that listed it and its
     /// row -- which the row says for a few seconds.
     copied_whisper: Option<(u64, usize)>,
@@ -308,6 +373,9 @@ pub struct PriceCheckApp {
     /// Recent searches' listings by `search_key`, newest last, each with when it arrived: a
     /// repeated search within `SEARCH_CACHE_TTL` is answered without the trade API.
     search_cache: Vec<(String, Instant, SearchResults)>,
+    /// The search the panel shows, as the trade site knows it -- what "Следить" watches
+    /// (`live_search`); `None` while a search runs and after one the site didn't answer.
+    pub watchable: Option<WatchedSearch>,
 
     /// Site the displayed item was parsed for; its searches go to the same site, because the
     /// `Exact` search and the exchange catalog `Market` routing match localized names.
@@ -350,10 +418,16 @@ impl PriceCheckApp {
             placement: None,
             show_hidden: false,
             scope: None,
-            uncorrupted_only: None,
+            corruption: None,
+            identification: None,
+            rarity: None,
+            listings_wanted: false,
+            item_text: None,
+            problem_reportable: false,
             copied_whisper: None,
             search_generation: 0,
             search_cache: Vec::new(),
+            watchable: None,
             site: TradeSite::International,
             market: None,
             scout: None,
@@ -455,6 +529,7 @@ impl PriceCheckApp {
         self.filters.clear();
         self.filter_ui.clear();
         self.problem = Some(message);
+        self.problem_reportable = false;
         self.search = SearchState::NotSearched;
     }
 
@@ -730,6 +805,41 @@ impl PriceCheckApp {
         self.site
     }
 
+    /// The game client's language as far as the app knows it: the last checked item's, else the
+    /// one the player set -- what a bug report says the client is.
+    pub fn item_language(&self) -> Option<ItemLanguage> {
+        if self.item_text.is_some() {
+            Some(match self.site {
+                TradeSite::International => ItemLanguage::English,
+                TradeSite::Russian => ItemLanguage::Russian,
+            })
+        } else {
+            self.settings.client_language.item_language()
+        }
+    }
+
+    /// Whether the problem the panel shows is a rejected item, which `report_item` reports.
+    pub fn problem_reportable(&self) -> bool {
+        self.problem_reportable
+    }
+
+    /// Opens the item problem form (`bug_report::item_problem_url`) for the last checked item --
+    /// misread, or priced wrong -- with its text as the game copied it.
+    pub fn report_item(&self, cx: &mut App) {
+        let Some(text) = &self.item_text else {
+            return;
+        };
+        let name = self
+            .item
+            .as_ref()
+            .map_or("не распознан", |item| item.name.as_str());
+        cx.open_url(&bug_report::item_problem_url(
+            self.item_language(),
+            name,
+            text,
+        ));
+    }
+
     /// Toggles one filter's checkbox. Does NOT trigger a re-search on its own (matches the
     /// reference's own lack of any debounce/auto-search-on-edit -- see `run_search`'s doc
     /// comment).
@@ -771,11 +881,29 @@ impl PriceCheckApp {
         }
     }
 
-    /// Lets corrupted listings into an uncorrupted item's search, or leaves them out again
-    /// (`uncorrupted_only`); takes effect with the next search.
-    pub fn toggle_uncorrupted_only(&mut self, cx: &mut Context<Self>) {
-        if let Some(only) = &mut self.uncorrupted_only {
-            *only = !*only;
+    /// Drops the item's corruption from its search, or matches it again (`corruption`); takes
+    /// effect with the next search.
+    pub fn toggle_corruption(&mut self, cx: &mut Context<Self>) {
+        if let Some(choice) = &mut self.corruption {
+            choice.on = !choice.on;
+            cx.notify();
+        }
+    }
+
+    /// Lets identified listings into an unidentified item's search, or leaves them out again
+    /// (`identification`); takes effect with the next search.
+    pub fn toggle_identification(&mut self, cx: &mut Context<Self>) {
+        if let Some(choice) = &mut self.identification {
+            choice.on = !choice.on;
+            cx.notify();
+        }
+    }
+
+    /// Switches a non-unique item's search between its own rarity and every non-unique one
+    /// (`RarityChoice`); takes effect with the next search.
+    pub fn toggle_rarity(&mut self, cx: &mut Context<Self>) {
+        if let Some(choice) = &mut self.rarity {
+            choice.switched_on = !choice.switched_on;
             cx.notify();
         }
     }
@@ -897,6 +1025,13 @@ impl PriceCheckApp {
 
     /// The Search button's click handler.
     pub fn trigger_search(&mut self, cx: &mut Context<Self>) {
+        self.spawn_search(cx);
+    }
+
+    /// Searches the trade site's listings of an exchange item the market doesn't price: what the
+    /// panel's "Лоты на площадке" asks for after poe2scout's price (`SearchState::Scouted`).
+    pub fn search_listings(&mut self, cx: &mut Context<Self>) {
+        self.listings_wanted = true;
         self.spawn_search(cx);
     }
 
@@ -1369,6 +1504,7 @@ async fn run_price_check(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
         if placement.is_some() {
             state.placement = placement;
         }
+        state.item_text = Some(text.clone());
         let parsed = match item_site(&text, state.settings.client_language.item_language()) {
             Some((language, site)) => {
                 state.site = site;
@@ -1412,22 +1548,35 @@ async fn run_price_check(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
                     _ => None,
                 };
                 state.priced_by_market = matches!(route, SearchRoute::Market { .. });
-                state.uncorrupted_only = match &route {
-                    SearchRoute::Filtered { scope } => {
-                        (scope.misc.corrupted == Some(false)).then_some(true)
-                    }
+                let misc = match &route {
+                    SearchRoute::Filtered { scope } => Some(scope.misc),
+                    _ => None,
+                };
+                state.corruption = misc.and_then(|misc| misc.corrupted.map(StateChoice::matched));
+                state.identification =
+                    misc.and_then(|misc| misc.identified.map(StateChoice::matched));
+                state.rarity = match &route {
+                    SearchRoute::Filtered { scope } => scope.rarity.and_then(|default| {
+                        trade_client::other_rarity(default, &item).map(|other| RarityChoice {
+                            default,
+                            other,
+                            switched_on: false,
+                        })
+                    }),
                     _ => None,
                 };
                 state.scope = scope;
                 state.item = Some(item);
                 state.problem = None;
                 state.show_hidden = false;
+                state.listings_wanted = false;
                 state.listing_status = state.settings.listing_status.into();
                 state.search = SearchState::NotSearched;
             }
             Err(err) => {
                 log::warn!("not parsed: {err:?}");
                 state.show_problem(describe_parse_error(&err));
+                state.problem_reportable = err != ParseError::Unrevealed;
             }
         }
         cx.notify();
@@ -1556,12 +1705,24 @@ pub async fn run_search(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
         let item = state.item.as_ref()?;
         let catalog = state.catalog(state.site);
         let mut route = trade_client::route_search(item, &catalog.currencies, &catalog.item_types);
+        if state.listings_wanted && matches!(route, SearchRoute::Market { .. }) {
+            route = SearchRoute::Exact {
+                exact_type: item.name.clone(),
+            };
+        }
         if let (SearchRoute::Filtered { scope }, Some(choice)) = (&mut route, &state.scope) {
             *scope = choice.current().clone();
         }
-        if let (SearchRoute::Filtered { scope }, Some(false)) = (&mut route, state.uncorrupted_only)
-        {
-            scope.misc.corrupted = None;
+        if let SearchRoute::Filtered { scope } = &mut route {
+            if state.corruption.is_some_and(|choice| !choice.on) {
+                scope.misc.corrupted = None;
+            }
+            if state.identification.is_some_and(|choice| !choice.on) {
+                scope.misc.identified = None;
+            }
+        }
+        if let (SearchRoute::Filtered { scope }, Some(choice)) = (&mut route, state.rarity) {
+            scope.rarity = Some(choice.current());
         }
         if let SearchRoute::Filtered { scope } = &mut route {
             scope.price = state.price_currency;
@@ -1591,6 +1752,7 @@ pub async fn run_search(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
             }
         );
         state.search = SearchState::Searching;
+        state.watchable = None;
         state.search_generation += 1;
         cx.notify();
         Some((
@@ -1639,6 +1801,12 @@ pub async fn run_search(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
         Ok(RouteOutcome::Market(price)) => {
             log::info!("  market {:.4} div", price.divine_value);
         }
+        Ok(RouteOutcome::Scouted { value, unit }) => {
+            log::info!(
+                "  not on poe.ninja; poe2scout {value:.4} {}",
+                unit.trade_id()
+            );
+        }
         Ok(RouteOutcome::Listings(results)) => log::info!(
             "  {} found, {} listed{}{}",
             results.total,
@@ -1655,10 +1823,25 @@ pub async fn run_search(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
         if state.search_generation != generation {
             return;
         }
+        state.watchable = match &outcome {
+            Ok(RouteOutcome::Listings(results)) => Some(WatchedSearch {
+                site,
+                league: league.clone(),
+                query_id: results.query_id.clone(),
+                trade_url: results.trade_url.clone(),
+                label: state
+                    .item
+                    .as_ref()
+                    .map(live_search::watch_label)
+                    .unwrap_or_default(),
+            }),
+            _ => None,
+        };
         // Rows stay in the order they arrived in: the search sorts by price across currencies,
         // which raw amounts ("1 divine" vs "40 exalted") can't.
         state.search = match outcome {
             Ok(RouteOutcome::Market(price)) => SearchState::Market(price),
+            Ok(RouteOutcome::Scouted { value, unit }) => SearchState::Scouted { value, unit },
             Ok(RouteOutcome::Listings(results)) if results.rows.is_empty() => SearchState::Empty,
             Ok(RouteOutcome::Listings(results)) => {
                 let prices: Vec<(f64, &str)> = results
@@ -1697,12 +1880,8 @@ fn trade_site_url(site: TradeSite, league: &str, query_id: &str) -> String {
     format!(
         "{}/trade2/search/poe2/{}/{query_id}",
         site.origin(),
-        urlencode_league(league)
+        trade_client::encode_league(league)
     )
-}
-
-fn urlencode_league(league: &str) -> String {
-    league.replace(' ', "%20")
 }
 
 /// A trade search's listing rows, plus the search's own total and trade-site link.
@@ -1711,14 +1890,18 @@ struct SearchResults {
     rows: Vec<ListingRow>,
     total: u64,
     trade_url: String,
+    /// The search's id: its fetches' `query`, and what live search watches.
+    query_id: String,
     /// See `SearchState::Matched::relaxed`.
     relaxed: Option<(u32, u32)>,
 }
 
-/// What pricing an item produced: trade listings, or an exchange item's market price.
+/// What pricing an item produced: trade listings, an exchange item's market price, or -- for one
+/// the market has no line for -- poe2scout's.
 enum RouteOutcome {
     Listings(SearchResults),
     Market(MarketPrice),
+    Scouted { value: f64, unit: PriceUnit },
 }
 
 /// What every request of one search shares.
@@ -1761,9 +1944,27 @@ async fn execute_route(
             };
             match market.price(&trade_id).cloned() {
                 Some(price) => Ok(RouteOutcome::Market(price)),
-                // poe.ninja doesn't price every exchange item (live: a Regal Shard): its trade
-                // listings by name, then.
-                None => exact_listings(view, cx, target, item_name).await,
+                // poe.ninja doesn't price every exchange item: some it never lists (a Regal
+                // Shard), and a thin league only its busiest (Standard's Runes had 47 lines to
+                // the current league's 144 on 2026-09-23). poe2scout's price stands in without
+                // spending the trade API's IP budget -- the player can still ask for the listings
+                // -- and without one, the trade listings by name.
+                None => {
+                    // A failed load leaves no prices to look in: the listings, then.
+                    if let Err(err) = current_scout(view, cx, client, league).await {
+                        log::warn!("{err:#}");
+                    }
+                    let scouted = view.read_with(cx, |state, _| {
+                        state
+                            .scout
+                            .as_ref()
+                            .and_then(|(scout, _)| scout.exchange_price(&trade_id))
+                    });
+                    match scouted {
+                        Some((value, unit)) => Ok(RouteOutcome::Scouted { value, unit }),
+                        None => exact_listings(view, cx, target, item_name).await,
+                    }
+                }
             }
         }
         SearchRoute::Filtered { mut scope } => {
@@ -1887,8 +2088,59 @@ async fn fetch_listings(
         rows: groups.into_iter().map(ListingRow::from).collect(),
         total: outcome.total,
         trade_url,
+        query_id: outcome.query_id,
         relaxed: None,
     })
+}
+
+/// A watched search's new listings (`live_search`), by id: fetched like a search's own page,
+/// through the same fetch limiter, a page at a time. Nobody watches a spinner here, so a
+/// restriction is sat out however long it is, and a 429 is one more restriction to sit out.
+pub(crate) async fn fetch_new_listings(
+    view: &Entity<PriceCheckApp>,
+    cx: &mut AsyncApp,
+    site: TradeSite,
+    query_id: &str,
+    ids: &[String],
+) -> Result<Vec<FetchedItem>> {
+    /// No panel search has this generation, so the waits never show in the panel.
+    const NOT_A_PANEL_SEARCH: u64 = u64::MAX;
+    /// Tries per page, each after a refusal's wait.
+    const TRIES: u32 = 3;
+    let client = view.read_with(cx, |state, _| state.http_client.clone());
+    let mut items = Vec::new();
+    for page in ids.chunks(FETCH_PAGE_SIZE) {
+        let mut tries = 0;
+        loop {
+            tries += 1;
+            let mut limiter =
+                match limiter_for_request(view, cx, NOT_A_PANEL_SEARCH, Endpoint::Fetch).await {
+                    Ok(limiter) => limiter,
+                    Err(err) => match err.downcast_ref::<RateLimitedFor>() {
+                        Some(&RateLimitedFor(wait)) if tries < TRIES => {
+                            cx.background_executor().timer(wait).await;
+                            continue;
+                        }
+                        _ => return Err(err),
+                    },
+                };
+            let result = trade_client::fetch(&client, site, page, query_id, &mut limiter).await;
+            store_limiter(view, cx, Endpoint::Fetch, limiter);
+            match result {
+                Ok(fetched) => {
+                    items.extend(fetched);
+                    break;
+                }
+                Err(err)
+                    if tries < TRIES
+                        && err
+                            .downcast_ref::<TradeApiError>()
+                            .is_some_and(TradeApiError::is_rate_limited) => {}
+                Err(err) => return Err(err),
+            }
+        }
+    }
+    Ok(items)
 }
 
 /// The trade API's independently rate-limited endpoint families -- one `RateLimiter` each,
@@ -1958,7 +2210,9 @@ fn show_search_state(
 }
 
 /// Merges a request's limiter copy back: concurrent searches each work on their own copy, and
-/// the last to finish must not erase a restriction another one just learned.
+/// the last to finish must not erase a restriction another one just learned. A refusal holds
+/// every endpoint, not only the refused one: the trade API restricts the whole IP then
+/// (`RateLimiter::refused_until`), and a request sent anyway only earns another refusal.
 fn store_limiter(
     view: &Entity<PriceCheckApp>,
     cx: &mut AsyncApp,
@@ -1967,6 +2221,11 @@ fn store_limiter(
 ) {
     view.update(cx, |state, _cx| {
         state.limiters[endpoint as usize].merge(&limiter);
+        if let Some(until) = limiter.refused_until() {
+            for other in &mut state.limiters {
+                other.hold_until(until);
+            }
+        }
     });
 }
 
@@ -2015,10 +2274,26 @@ fn describe_search_error(err: &anyhow::Error) -> String {
     format!("Ошибка поиска: {err:#}")
 }
 
+/// The trade site's refusal, said the way the player can act on it: when to try again, and that
+/// the limit counts every request from their IP -- the trade site open in their browser included
+/// -- while the market prices, which don't go through it, still work.
 fn rate_limit_message(retry_after_secs: Option<u64>) -> String {
-    match retry_after_secs {
-        Some(secs) => format!("Слишком много запросов к trade API — повторите через {secs} с"),
-        None => "Слишком много запросов к trade API — повторите чуть позже".to_owned(),
+    let when = match retry_after_secs {
+        Some(secs) => format!("через {}", format_wait(secs)),
+        None => "чуть позже".to_owned(),
+    };
+    format!(
+        "Сайт торговли временно ограничил поиск — повторите {when}.\n\nЛимит общий для всех \
+         запросов с вашего IP, в том числе из браузера. Цены валюты с poe.ninja работают и сейчас."
+    )
+}
+
+/// A wait as minutes and seconds: `45 с`, `10 мин`, `9 мин 50 с`.
+fn format_wait(secs: u64) -> String {
+    match (secs / 60, secs % 60) {
+        (0, secs) => format!("{secs} с"),
+        (mins, 0) => format!("{mins} мин"),
+        (mins, secs) => format!("{mins} мин {secs} с"),
     }
 }
 

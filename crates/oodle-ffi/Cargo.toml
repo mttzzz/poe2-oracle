@@ -3,6 +3,10 @@ name = "oodle-ffi"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 
 [dependencies]
 # Cross-platform dynamic-library loading (dlopen on Linux, LoadLibrary on Windows). Mainstream,

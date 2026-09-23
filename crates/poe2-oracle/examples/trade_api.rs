@@ -4,15 +4,15 @@
 //! Endpoints and request/response shapes are taken from the real Exiled Exchange 2 source
 //! (`renderer/src/web/price-check/trade/pathofexile-trade.ts`, `.../background/Leagues.ts`) and
 //! were independently verified against the live API with `curl` from inside this project's lane
-//! before writing this file (see POC_FINDINGS.md for the cross-check). The actual endpoint/parse
-//! logic proven here now lives in `trade-client` (see the architecture plan's step 8); this
-//! example is just the GPUI presentation shell around it, kept as a smoke test for the platform
-//! layer -- `trade_client::search_current_league` is the real library API.
+//! before writing this file (see docs/dev/poc-findings.md for the cross-check). The actual
+//! endpoint/parse logic proven here now lives in `trade-client` (see the architecture plan's
+//! step 8); this example is just the GPUI presentation shell around it, kept as a smoke test for
+//! the platform layer -- `trade_client::search_current_league` is the real library API.
 //!
 //! HTTP goes through `http_client`/`reqwest_client` (Zed's own wrapper), not raw `reqwest` --
-//! see `POC_FINDINGS.md`'s deviation notes. No `gpui_tokio` glue is needed: `ReqwestClient`
-//! lazily spins up its own background Tokio runtime and returns a plain boxed future safe to
-//! `.await` from GPUI's own executor.
+//! see `docs/dev/poc-findings.md`'s deviation notes. No `gpui_tokio` glue is needed:
+//! `ReqwestClient` lazily spins up its own background Tokio runtime and returns a plain boxed
+//! future safe to `.await` from GPUI's own executor.
 
 use gpui::{App, Bounds, Context, Render, Window, WindowBounds, div, prelude::*, px, rgb, size};
 use gpui_platform::application;

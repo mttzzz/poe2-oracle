@@ -1,9 +1,10 @@
 //! PoE2 trade API client (leagues -> search -> fetch). Endpoints and request/response shapes are
 //! migrated from the real, independently-verified POC in
-//! `crates/poe2-oracle/examples/trade_api.rs` (see `POC_FINDINGS.md`'s "Capability 5" section for
-//! the original cross-check against a separate Python `urllib` call) into a real library API
-//! here -- a move-and-refactor of already-proven logic, not a rewrite. The exact endpoint URLs,
-//! request bodies, and rate-limit-relevant `GET`/`POST` shapes are unchanged from the POC.
+//! `crates/poe2-oracle/examples/trade_api.rs` (see `docs/dev/poc-findings.md`'s "Capability 5"
+//! section for the original cross-check against a separate Python `urllib` call) into a real
+//! library API here -- a move-and-refactor of already-proven logic, not a rewrite. The exact
+//! endpoint URLs, request bodies, and rate-limit-relevant `GET`/`POST` shapes are unchanged from
+//! the POC.
 //!
 //! Deliberately UI/runtime-agnostic: takes an already-constructed `Arc<dyn HttpClient>` rather
 //! than building one itself (`reqwest_client::ReqwestClient` construction, including the
@@ -17,15 +18,18 @@
 //! (`/api/trade2/data/{stats,items,static}`), `cache` gives that slow-changing data a disk
 //! cache, and `rate_limit` tracks the real rate-limit response headers so a caller that owns an
 //! executor can hold off until the trade API will take its next request -- this crate itself
-//! never sleeps.
+//! never sleeps. `live` speaks the live search socket's protocol (the socket is the caller's), and
+//! `account` asks whether the session the caller's client sends is signed in.
 //!
-//! Every response, `catalog`'s included, goes through `checked_body`: a refusal (a `429` while
-//! rate-limited, a rejected query, a Cloudflare error page) reaches the caller as a
+//! Every trade API response, `catalog`'s included, goes through `checked_body`: a refusal (a `429`
+//! while rate-limited, a rejected query, a Cloudflare error page) reaches the caller as a
 //! [`TradeApiError`], never as a JSON parse error from feeding its body to a success-shape
-//! parser.
+//! parser. The account page is the exception: its 401 is an answer, not a refusal.
 
+pub mod account;
 pub mod cache;
 pub mod catalog;
+pub mod live;
 pub mod ninja;
 pub mod rate_limit;
 pub mod rates;
@@ -65,6 +69,15 @@ impl TradeSite {
         match self {
             TradeSite::International => "https://www.pathofexile.com",
             TradeSite::Russian => "https://ru.pathofexile.com",
+        }
+    }
+
+    /// The site's host name: the one the player's session cookie belongs to, and the live search
+    /// socket's (`live::live_url`).
+    pub fn host(self) -> &'static str {
+        match self {
+            TradeSite::International => "www.pathofexile.com",
+            TradeSite::Russian => "ru.pathofexile.com",
         }
     }
 
@@ -178,6 +191,17 @@ pub(crate) async fn checked_body(
     let status = response.status();
     if let Some(limiter) = limiter {
         limiter.record_response(status.as_u16(), response.headers());
+        // The audit trail of the player's IP budget: what this response says is left of it.
+        match rate_limit::describe_limits(response.headers()) {
+            Some(limits) if status.as_u16() == 429 => {
+                log::warn!("trade API refused the {what}: {limits}")
+            }
+            Some(limits) => log::info!("trade limits after the {what}: {limits}"),
+            None if status.as_u16() == 429 => {
+                log::warn!("trade API refused the {what}, saying nothing of its limits")
+            }
+            None => {}
+        }
     }
     let mut body = String::new();
     let read = response.body_mut().read_to_string(&mut body).await;
@@ -246,13 +270,14 @@ impl ListingStatus {
     }
 }
 
-/// The rarities a filtered search admits (`query.filters.type_filters.filters.rarity`): the
-/// options EE2 sets, among the live ones (verified 2026-09-22), and `unique` for an
-/// unidentified unique, whose base alone would also list its normal, magic and rare copies.
+/// The rarities a filtered search admits (`query.filters.type_filters.filters.rarity`), among the
+/// live options (verified 2026-09-23): the item's own rarity, every non-unique one, and `unique`
+/// for an unidentified unique, whose base alone would also list its normal, magic and rare copies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RarityFilter {
     Normal,
     Magic,
+    Rare,
     /// Every rarity but unique.
     NonUnique,
     Unique,
@@ -263,6 +288,7 @@ impl RarityFilter {
         match self {
             RarityFilter::Normal => "normal",
             RarityFilter::Magic => "magic",
+            RarityFilter::Rare => "rare",
             RarityFilter::NonUnique => "nonunique",
             RarityFilter::Unique => "unique",
         }
@@ -317,14 +343,16 @@ impl PriceCurrency {
     }
 }
 
-/// The trade site's `misc_filters` a filtered search sets, EE2's defaults (`createFilters`,
-/// `create-item-filters.ts:303-366` and `443-455`, sent by `createTradeRequest`,
-/// `pathofexile-trade.ts:780-857`). For the yes/no ones `Some(false)` leaves listings with the
-/// property out, `Some(true)` asks for them, `None` takes either. An uncorrupted item is priced
-/// against uncorrupted listings only -- a corrupted one can't be crafted on, or carries an
-/// implicit this one lacks -- and a gear item against neither mirrored copies nor sanctified
-/// items unless it is one itself; an unidentified unique against unidentified listings, which
-/// are what it can be sold as.
+/// The trade site's `misc_filters` a filtered search sets: the item's own state, matched -- what
+/// PoE Overlay II and Sidekick send (compared on 2026-09-23 after the owner found EE2's defaults,
+/// which drop half of it, pricing an unidentified waystone among 10000 identified ones instead of
+/// 72 unidentified). For the yes/no ones `Some(false)` leaves listings with the property out,
+/// `Some(true)` asks for them, `None` takes either. An uncorrupted item goes among uncorrupted
+/// listings -- items that can still be modified, which a buyer of a base or of a waystone to roll
+/// is after -- and a corrupted one among corrupted ones, whose implicits and sockets it shares;
+/// the same for mirrored and sanctified items. An unidentified item goes among unidentified
+/// listings, which are what it sells as: an identified one shows its mods. The panel lets the
+/// player drop the corruption and identification choices for the next search.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct MiscChoices {
     pub corrupted: Option<bool>,
@@ -337,45 +365,23 @@ pub struct MiscChoices {
 }
 
 impl MiscChoices {
-    /// EE2's choices for `item`, whose trade category is `category_id`; `exact` is EE2's exact
-    /// preset (`stat_filters::uses_exact_preset`).
+    /// The choices for `item`, whose trade category is `category_id`; `exact` is EE2's exact
+    /// preset (`stat_filters::uses_exact_preset`), which also leaves fractured items out.
     fn for_item(item: &ParsedItem, category_id: Option<&str>, exact: bool) -> MiscChoices {
         let gem = category_id.is_some_and(|id| id.starts_with("gem"));
-        let gear = matches!(
-            item.rarity,
-            Some(ItemRarity::Normal | ItemRarity::Magic | ItemRarity::Rare)
-        );
-        // EE2's `forAdornedJewel`: a magic jewel's corruption is matched exactly.
-        let adorned_jewel = item.rarity == Some(ItemRarity::Magic) && category_id == Some("jewel");
-        // A corrupted waystone with the right mods is all the same to a buyer.
-        let corruption_matters = gem
-            || (item.rarity.is_some()
-                && !item.is_unmodifiable
-                && category_id != Some("map.waystone"));
-        let corrupted = (corruption_matters && !item.is_sanctified)
-            .then(|| {
-                if adorned_jewel {
-                    Some(item.is_corrupted)
-                } else {
-                    (!item.is_corrupted).then_some(false)
-                }
-            })
-            .flatten();
-        let corrupted_any = corruption_matters && !gem && item.is_corrupted && !adorned_jewel;
-        // An unidentified item with a tier is matched by it from tier 5 up (EE2); a unique is
-        // matched among the unidentified -- EE2 skips that for one with a tier, which would
-        // let its identified copies in below tier 5.
+        // An unmodifiable item's corruption changes nothing a buyer could do with it.
+        let has_state = (gem || item.rarity.is_some()) && !item.is_unmodifiable;
+        let gear = has_state && !gem;
+        // An unidentified item with a tier is matched by it from tier 5 up (EE2).
         let unidentified_tier = item
             .unidentified_tier
             .filter(|&tier| item.is_unidentified && tier >= 5);
-        let identified =
-            (item.is_unidentified && item.rarity == Some(ItemRarity::Unique)).then_some(false);
         MiscChoices {
-            corrupted,
-            mirrored: (gear && !item.is_mirrored).then_some(false),
-            sanctified: (gear && !item.is_sanctified && !corrupted_any).then_some(false),
+            corrupted: has_state.then_some(item.is_corrupted),
+            mirrored: gear.then_some(item.is_mirrored),
+            sanctified: gear.then_some(item.is_sanctified),
             fractured: (exact && !item.is_fractured).then_some(false),
-            identified,
+            identified: item.is_unidentified.then_some(false),
             unidentified_tier,
         }
     }
@@ -546,7 +552,7 @@ pub async fn search_with_filters(
     limiter: &mut RateLimiter,
 ) -> Result<SearchOutcome> {
     let body = filtered_search_body(scope, filters, status);
-    let url = format!("{}/search/{}", site.api_base(), urlencoding_space(league));
+    let url = format!("{}/search/{}", site.api_base(), encode_league(league));
     let request = client.post_json(&url, AsyncBody::from(Json(body)));
     let response_body = checked_body(request, "POST", &url, Some(limiter), "search").await?;
     let parsed: SearchResponse =
@@ -741,7 +747,7 @@ pub async fn search_exact(
         },
         sort: SearchSort { price: "asc" },
     };
-    let url = format!("{}/search/{}", site.api_base(), urlencoding_space(league));
+    let url = format!("{}/search/{}", site.api_base(), encode_league(league));
     let request = client.post_json(&url, AsyncBody::from(Json(body)));
     let response_body = checked_body(request, "POST", &url, Some(limiter), "exact-search").await?;
     let parsed: SearchResponse =
@@ -875,7 +881,7 @@ fn filtered_scope(item: &ParsedItem, item_types: &[ItemTypeEntry]) -> SearchScop
             .filter(|_| base_type.is_none())
             .map(str::to_owned),
         base_type,
-        rarity: rarity_filter(item, category_id, exact),
+        rarity: own_rarity(item),
         stat_match: StatMatch::All,
         misc,
         price: PriceCurrency::Any,
@@ -936,22 +942,32 @@ fn has_category_search(category_id: &str) -> bool {
         )
 }
 
-/// EE2's rarity filter (`create-item-filters.ts:303-354`): magic for a magic jewel (its
-/// `forAdornedJewel`); in the exact preset the item's own Normal or Magic rarity (a magic tablet
-/// excepted); otherwise any non-unique. Uniques get none: their name pins them down.
-fn rarity_filter(
-    item: &ParsedItem,
-    category_id: Option<&str>,
-    exact: bool,
-) -> Option<RarityFilter> {
+/// The rarity a filtered search admits by default: the item's own, as PoE Overlay II searches
+/// (EE2 widens most items to every non-unique): a magic item among magic ones -- its one prefix
+/// and one suffix are the whole item, and a buyer after a magic base doesn't take a rare -- a rare
+/// among rares, which a magic item sharing its few selected mods would price low, and a normal
+/// base among normal ones. [`other_rarity`] is the panel's way to every non-unique. Uniques get
+/// none: their name pins them down.
+fn own_rarity(item: &ParsedItem) -> Option<RarityFilter> {
     match item.rarity? {
-        ItemRarity::Magic if category_id == Some("jewel") => Some(RarityFilter::Magic),
-        ItemRarity::Normal if exact => Some(RarityFilter::Normal),
-        ItemRarity::Magic if exact && category_id != Some("map.tablet") => {
-            Some(RarityFilter::Magic)
-        }
-        ItemRarity::Normal | ItemRarity::Magic | ItemRarity::Rare => Some(RarityFilter::NonUnique),
+        ItemRarity::Normal => Some(RarityFilter::Normal),
+        ItemRarity::Magic => Some(RarityFilter::Magic),
+        ItemRarity::Rare => Some(RarityFilter::Rare),
         ItemRarity::Unique => None,
+    }
+}
+
+/// The other rarity a filtered search of `item` can admit than `current`: every non-unique one
+/// where it admits only the item's own, and back. `None` for a unique, or where `current` is
+/// neither (an unidentified unique's `unique`).
+pub fn other_rarity(current: RarityFilter, item: &ParsedItem) -> Option<RarityFilter> {
+    let own = own_rarity(item)?;
+    if current == RarityFilter::NonUnique {
+        Some(own)
+    } else if current == own {
+        Some(RarityFilter::NonUnique)
+    } else {
+        None
     }
 }
 
@@ -1447,11 +1463,23 @@ pub async fn search_current_league(
     Ok((league, outcome.total, items))
 }
 
-/// PoE league names can contain spaces (e.g. "Forbidden Rites"); the search endpoint is queried
-/// with the raw league id in this encoded form, not the URL-encoded form the real app uses in
-/// browser-facing trade links.
-fn urlencoding_space(s: &str) -> String {
-    s.replace(' ', "%20")
+/// A league id as one URL path segment or query value, encoded the way the trade site's own
+/// frontend encodes it (JavaScript's `encodeURIComponent`): letters, digits and `-_.!~*'()` stay as
+/// they are, every other byte of its UTF-8 becomes `%XX`. League ids hold spaces ("Forbidden
+/// Rites") and a private league's parentheses ("My League (PL12345)"), and a name the player typed
+/// may hold anything; the trade API, poe.ninja and poe2scout all take this form.
+pub fn encode_league(league: &str) -> String {
+    use std::fmt::Write as _;
+    let mut encoded = String::with_capacity(league.len());
+    for byte in league.bytes() {
+        if byte.is_ascii_alphanumeric() || b"-_.!~*'()".contains(&byte) {
+            encoded.push(char::from(byte));
+        } else {
+            // Writing into a `String` can't fail.
+            let _ = write!(encoded, "%{byte:02X}");
+        }
+    }
+    encoded
 }
 
 #[cfg(test)]
@@ -1939,19 +1967,15 @@ mod route_search_tests {
                 category: None,
                 rarity: None,
                 stat_match: StatMatch::All,
-                // Uncorrupted, so against uncorrupted listings; a unique is never a mirrored
-                // or sanctified copy worth leaving out.
-                misc: MiscChoices {
-                    corrupted: Some(false),
-                    ..MiscChoices::default()
-                },
+                // In its own state, like any item: uncorrupted, unmirrored, unsanctified.
+                misc: clean_gear(),
                 price: PriceCurrency::Any,
             }
         );
     }
 
     #[test]
-    fn rare_equipment_is_searched_by_category_and_any_non_unique_rarity() {
+    fn rare_equipment_is_searched_by_category_among_rares() {
         let item = ParsedItem {
             name: "Dragon Core".to_string(),
             base_type: Some("Bombard Crossbow".to_string()),
@@ -1963,7 +1987,7 @@ mod route_search_tests {
             filtered_scope_of(&item, &[]),
             SearchScope {
                 category: Some("weapon.crossbow".to_owned()),
-                rarity: Some(RarityFilter::NonUnique),
+                rarity: Some(RarityFilter::Rare),
                 misc: clean_gear(),
                 ..SearchScope::default()
             }
@@ -1981,7 +2005,7 @@ mod route_search_tests {
     }
 
     #[test]
-    fn corruption_mirroring_and_sanctification_follow_ee2s_defaults() {
+    fn corruption_mirroring_and_sanctification_match_the_items_own_state() {
         let rare = |edit: fn(&mut ParsedItem)| {
             let mut item = ParsedItem {
                 name: "Dragon Core".to_string(),
@@ -1992,27 +2016,42 @@ mod route_search_tests {
             edit(&mut item);
             filtered_scope_of(&item, &[]).misc
         };
-        // A corrupted item is priced against any, corrupted or not, and sanctified ones too.
+        // A corrupted item among corrupted ones, which share what corruption did to it.
         let corrupted = rare(|item| item.is_corrupted = true);
-        assert_eq!((corrupted.corrupted, corrupted.sanctified), (None, None));
-        assert_eq!(corrupted.mirrored, Some(false));
-        // A mirrored item's own copies are its comparables.
-        assert_eq!(rare(|item| item.is_mirrored = true).mirrored, None);
-        // A magic jewel's corruption is matched exactly, either way.
-        let jewel = ParsedItem {
-            category: category("jewel"),
-            rarity: Some(ItemRarity::Magic),
-            is_corrupted: true,
-            ..Default::default()
-        };
-        assert_eq!(filtered_scope_of(&jewel, &[]).misc.corrupted, Some(true));
-        // A buyer doesn't mind a corrupted waystone with the right mods.
+        assert_eq!(
+            (
+                corrupted.corrupted,
+                corrupted.mirrored,
+                corrupted.sanctified
+            ),
+            (Some(true), Some(false), Some(false))
+        );
+        // A mirrored item among its mirrored copies.
+        assert_eq!(rare(|item| item.is_mirrored = true).mirrored, Some(true));
+        // An unmodifiable item's corruption changes nothing for a buyer.
+        assert_eq!(rare(|item| item.is_unmodifiable = true).corrupted, None);
+        // An uncorrupted waystone can still be modified, which is what its buyer rolls it for
+        // (PoE Overlay II's "Можно изменить").
         let waystone = ParsedItem {
             category: category("map.waystone"),
             rarity: Some(ItemRarity::Rare),
             ..Default::default()
         };
-        assert_eq!(filtered_scope_of(&waystone, &[]).misc.corrupted, None);
+        assert_eq!(
+            filtered_scope_of(&waystone, &[]).misc.corrupted,
+            Some(false)
+        );
+        // An unidentified item among unidentified ones, whatever its rarity: an identified one
+        // shows its mods and sells for them.
+        let unidentified = ParsedItem {
+            is_unidentified: true,
+            rarity: Some(ItemRarity::Magic),
+            ..waystone
+        };
+        assert_eq!(
+            filtered_scope_of(&unidentified, &[]).misc.identified,
+            Some(false)
+        );
 
         let scope = filtered_scope_of(
             &ParsedItem {
@@ -2050,7 +2089,7 @@ mod route_search_tests {
             by_base,
             SearchScope {
                 base_type: Some("Тератновская пушка".to_owned()),
-                rarity: Some(RarityFilter::NonUnique),
+                rarity: Some(RarityFilter::Rare),
                 misc: clean_gear(),
                 ..SearchScope::default()
             }
@@ -2119,6 +2158,32 @@ mod route_search_tests {
             unresolved.category.as_deref(),
             Some("flask.life"),
             "an unknown base falls back to the category"
+        );
+    }
+
+    #[test]
+    fn the_rarity_chip_switches_between_the_items_own_rarity_and_every_non_unique() {
+        let item = |rarity| ParsedItem {
+            rarity: Some(rarity),
+            ..ParsedItem::default()
+        };
+        let magic = item(ItemRarity::Magic);
+        assert_eq!(
+            other_rarity(RarityFilter::Magic, &magic),
+            Some(RarityFilter::NonUnique)
+        );
+        assert_eq!(
+            other_rarity(RarityFilter::NonUnique, &magic),
+            Some(RarityFilter::Magic)
+        );
+        assert_eq!(
+            other_rarity(RarityFilter::NonUnique, &item(ItemRarity::Rare)),
+            Some(RarityFilter::Rare)
+        );
+        // An unidentified unique's `unique` has no other way.
+        assert_eq!(
+            other_rarity(RarityFilter::Unique, &item(ItemRarity::Unique)),
+            None
         );
     }
 

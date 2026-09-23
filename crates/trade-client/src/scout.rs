@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 use crate::cache::{league_file_name, load_or_fetch};
 use crate::ninja::DIVINE_UNIT_CUTOVER;
 use crate::rates::PriceUnit;
-use crate::{checked_body, urlencoding_space};
+use crate::{checked_body, encode_league};
 
 const API_BASE_URL: &str = "https://api.poe2scout.com/poe2";
 
@@ -38,19 +38,34 @@ pub struct ScoutPrices {
     pub exalted_per_divine: f64,
     /// Uniques' prices in Exalted Orbs, by English unique name.
     pub uniques: HashMap<String, f64>,
+    /// Exchange items' prices in Exalted Orbs, by trade id: the second opinion for an item
+    /// poe.ninja's market has no line for in the league (thin leagues like Standard list a third
+    /// of the runes). Absent from caches written before it existed.
+    #[serde(default)]
+    pub exchange: HashMap<String, f64>,
 }
 
 impl ScoutPrices {
     /// The unique named `name` (in English)'s price in the unit it reads best in -- divines above
     /// 0.94, exalted below, EE2's cutover as for poe.ninja's prices -- at poe2scout's own rate.
     pub fn unique_price(&self, name: &str) -> Option<(f64, PriceUnit)> {
-        let exalted = *self.uniques.get(name)?;
+        self.uniques.get(name).map(|&exalted| self.in_unit(exalted))
+    }
+
+    /// The exchange item `trade_id`'s price, read the same way as [`Self::unique_price`].
+    pub fn exchange_price(&self, trade_id: &str) -> Option<(f64, PriceUnit)> {
+        self.exchange
+            .get(trade_id)
+            .map(|&exalted| self.in_unit(exalted))
+    }
+
+    fn in_unit(&self, exalted: f64) -> (f64, PriceUnit) {
         let divines = exalted / self.exalted_per_divine;
-        Some(if divines > DIVINE_UNIT_CUTOVER {
+        if divines > DIVINE_UNIT_CUTOVER {
             (divines, PriceUnit::Divine)
         } else {
             (exalted, PriceUnit::Exalted)
-        })
+        }
     }
 }
 
@@ -68,7 +83,7 @@ pub async fn fetch_prices(
 }
 
 async fn download_prices(client: &Arc<dyn HttpClient>, league: &str) -> Result<ScoutPrices> {
-    let url = format!("{API_BASE_URL}/Leagues/{}/Items", urlencoding_space(league));
+    let url = format!("{API_BASE_URL}/Leagues/{}/Items", encode_league(league));
     let request = client.get(&url, AsyncBody::default(), true);
     let body = checked_body(request, "GET", &url, None, "poe2scout items").await?;
     parse_items(&body)
@@ -91,14 +106,20 @@ fn parse_items(body: &str) -> Result<ScoutPrices> {
         .and_then(|divine| usable(divine.current_price))
         .context("poe2scout has no Divine Orb price for the league")?;
     // Exchange items carry their trade id; uniques have none, and a name.
-    let uniques = items
+    let (exchange, uniques): (Vec<Item>, Vec<Item>) =
+        items.into_iter().partition(|item| item.api_id.is_some());
+    let uniques = uniques
         .into_iter()
-        .filter(|item| item.api_id.is_none())
         .filter_map(|item| Some((item.name?, usable(item.current_price)?)))
+        .collect();
+    let exchange = exchange
+        .into_iter()
+        .filter_map(|item| Some((item.api_id?, usable(item.current_price)?)))
         .collect();
     Ok(ScoutPrices {
         exalted_per_divine,
         uniques,
+        exchange,
     })
 }
 
@@ -130,6 +151,21 @@ mod tests {
         // An exchange item isn't a unique, and neither is a name without a price.
         assert_eq!(prices.unique_price("Divine Orb"), None);
         assert_eq!(prices.unique_price("Unpriced"), None);
+    }
+
+    #[test]
+    fn exchange_items_are_priced_by_their_trade_id() {
+        let prices = parse_items(ITEMS).expect("parses");
+        assert_eq!(
+            prices.exchange_price("aug"),
+            Some((2.93, PriceUnit::Exalted))
+        );
+        // Uniques aren't exchange items.
+        assert_eq!(prices.exchange_price("Mageblood"), None);
+        // A cache written before exchange prices were kept still loads, with none.
+        let old = r#"{"exalted_per_divine":500.0,"uniques":{"Igniferis":1.0}}"#;
+        let old: ScoutPrices = serde_json::from_str(old).expect("an old cache loads");
+        assert_eq!(old.exchange_price("aug"), None);
     }
 
     #[test]

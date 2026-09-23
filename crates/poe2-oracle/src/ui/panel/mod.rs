@@ -26,16 +26,23 @@ mod results;
 mod title_bar;
 mod waystone;
 
-use gpui::{AnyElement, Context, IntoElement, Render, Window, div, prelude::*, relative, rgb};
+use gpui::{
+    AnyElement, Context, IntoElement, MouseButton, MouseDownEvent, Render, Window, div, prelude::*,
+    relative, rgb,
+};
 
 use poe2_domain::ParsedItem;
 
 use crate::price_check::{BootstrapState, PriceCheckApp};
-use crate::ui::theme::{BG_PANEL, CONTENT_PADDING, TEXT, TEXT_DIM, TEXT_WARNING, rems_from_px};
+use crate::ui::hint as hints;
+use crate::ui::theme::{
+    BG_BUTTON_HOVER, BG_CONTROL, BG_PANEL, BORDER_GOLD, CONTENT_PADDING, GOLD, TEXT, TEXT_DIM,
+    TEXT_WARNING, rems_from_px,
+};
 
 use filters::render_sections;
 use nameplate::{render_chips, render_nameplate};
-use results::{render_results, render_search_button, render_search_choices};
+use results::{render_empty_watch, render_results, render_search_button, render_search_choices};
 use title_bar::render_title_bar;
 use waystone::render_waystone_marks;
 
@@ -74,7 +81,7 @@ impl Render for PriceCheckApp {
 
 fn render_ready(state: &PriceCheckApp, window: &Window, cx: &Context<PriceCheckApp>) -> AnyElement {
     let main = if let Some(err) = &state.problem {
-        centered_message(err.clone(), TEXT_WARNING).into_any_element()
+        render_problem(err.clone(), state.problem_reportable(), cx).into_any_element()
     } else if let Some(item) = &state.item {
         render_item(state, item, window, cx).into_any_element()
     } else {
@@ -113,7 +120,7 @@ fn render_item(
         .flex_1()
         .min_h_0()
         .overflow_y_scroll()
-        .child(render_nameplate(item, state.trade_site()))
+        .child(render_nameplate(item, state.trade_site(), cx))
         .child(
             div()
                 .flex()
@@ -130,9 +137,60 @@ fn render_item(
                             .child(render_search_button(state, cx))
                             .child(render_search_choices(state, cx))
                             .child(render_results(state, item, cx))
+                            .children(render_empty_watch(state, cx))
                     }
                 }),
         )
+}
+
+/// What went wrong with a check, centred -- and, for an item the parser rejected, a button that
+/// opens the item problem form with its text filled in (`PriceCheckApp::report_item`).
+fn render_problem(
+    message: String,
+    reportable: bool,
+    cx: &Context<PriceCheckApp>,
+) -> impl IntoElement {
+    div()
+        .flex()
+        .flex_col()
+        .flex_1()
+        .items_center()
+        .justify_center()
+        .gap(rems_from_px(12.))
+        .p(rems_from_px(16.))
+        .child(
+            div()
+                .w_full()
+                .text_center()
+                .text_color(rgb(TEXT_WARNING))
+                .child(message),
+        )
+        .when(reportable, |this| {
+            this.child(
+                div()
+                    .id("report-rejected-item")
+                    .px(rems_from_px(10.))
+                    .py(rems_from_px(3.))
+                    .rounded_xs()
+                    .border_1()
+                    .border_color(rgb(BORDER_GOLD))
+                    .bg(rgb(BG_CONTROL))
+                    .text_color(rgb(GOLD))
+                    .cursor_pointer()
+                    .hover(|style| style.bg(rgb(BG_BUTTON_HOVER)))
+                    .tooltip(hints::hint(
+                        "Откроет на GitHub форму с текстом этого предмета: останется описать, \
+                         что не так, и отправить.",
+                    ))
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|view, _event: &MouseDownEvent, _window, cx| {
+                            view.report_item(cx);
+                        }),
+                    )
+                    .child("Сообщить разработчику"),
+            )
+        })
 }
 
 /// A message in the middle of the panel, wrapped to its width: a problem can run long (a saved

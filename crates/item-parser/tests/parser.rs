@@ -1907,3 +1907,18 @@ fn a_gamble_offer_is_reported_unrevealed() {
         Err(ParseError::Unrevealed)
     );
 }
+
+/// A magic item is its one prefix and one suffix, so both are searched whatever their tier: the
+/// live wand's T3 `+3 к уровню всех камней умений чар хаоса` is what it sells for (reported by
+/// the player, 2026-09-23), yet the rares' top-tier rule left it out.
+#[test]
+fn a_magic_items_affixes_are_all_searched() {
+    let wand = parse_ru_live("ru_live_glificheskiy_uvyadshiy_zhezl_katastrofy.txt");
+    let filters = stat_filters::build_filters(&wand, 10, &ru_live_catalog());
+    let affixes: Vec<_> = filters
+        .iter()
+        .filter(|filter| filter.generation.is_some())
+        .map(|filter| (filter.tier, filter.enabled))
+        .collect();
+    assert_eq!(affixes, [(Some(2), true), (Some(3), true)]);
+}

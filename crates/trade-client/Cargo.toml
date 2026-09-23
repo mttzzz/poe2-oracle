@@ -3,6 +3,10 @@ name = "trade-client"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 
 [dependencies]
 # Request/response shapes (Item/Currency etc.) come from poe2-domain; nothing else needed for
@@ -19,6 +23,10 @@ futures = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 anyhow = "1"
+# Warnings (stale cache fallbacks, a poe.ninja category left out) and the rate-limit audit trail
+# (`checked_body`) go through the `log` facade: the app's logger writes them into its log file,
+# where a release build's detached stderr would lose them.
+log = "0.4"
 # `SearchFilter` -- the shape `search_with_filters` (step 7) builds a stat-filtered trade search
 # request body from.
 stat-filters = { path = "../stat-filters" }

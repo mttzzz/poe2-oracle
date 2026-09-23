@@ -1,0 +1,811 @@
+{
+ "result": [
+  {
+   "id": "0bee7750893ac6c5a744e825acb25bb0ea9b2a9e982eb7445cb9b2c669798d0e",
+   "listing": {
+    "method": "psapi",
+    "indexed": "2026-03-10T11:11:58Z",
+    "stash": {
+     "name": "16",
+     "x": 4,
+     "y": 8
+    },
+    "price": {
+     "type": "~b/o",
+     "amount": 1,
+     "currency": "exalted"
+    },
+    "fee": 36207,
+    "account": {
+     "name": "seller0#0000",
+     "online": null,
+     "lastCharacterName": "Seller0"
+    }
+   },
+   "item": {
+    "realm": "poe2",
+    "verified": true,
+    "w": 2,
+    "h": 3,
+    "icon": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvQXJtb3Vycy9Cb2R5QXJtb3Vycy9CYXNldHlwZXMvQm9keURleEludDA2IiwidyI6MiwiaCI6Mywic2NhbGUiOjEsInJlYWxtIjoicG9lMiJ9XQ/512e4bd095/BodyDexInt06.png",
+    "league": "Standard",
+    "id": "0bee7750893ac6c5a744e825acb25bb0ea9b2a9e982eb7445cb9b2c669798d0e",
+    "name": "Штурмовой саван",
+    "typeLine": "Накидка сокольничего",
+    "baseType": "Накидка сокольничего",
+    "rarity": "Rare",
+    "ilvl": 75,
+    "identified": true,
+    "note": "~b/o 1 exalted",
+    "properties": [
+     {
+      "name": "Нательный доспех",
+      "values": [],
+      "displayMode": 0,
+      "type": 109
+     },
+     {
+      "name": "[Evasion|Уклонение]",
+      "values": [
+       [
+        "500",
+        1
+       ]
+      ],
+      "displayMode": 0,
+      "type": 17
+     },
+     {
+      "name": "[EnergyShield|Энергетический щит]",
+      "values": [
+       [
+        "162",
+        1
+       ]
+      ],
+      "displayMode": 0,
+      "type": 18
+     }
+    ],
+    "requirements": [
+     {
+      "name": "Уровень",
+      "values": [
+       [
+        "75",
+        0
+       ]
+      ],
+      "displayMode": 0,
+      "type": 62
+     },
+     {
+      "name": "[Dexterity|Ловк]",
+      "values": [
+       [
+        "50",
+        1
+       ]
+      ],
+      "displayMode": 1,
+      "type": 64
+     },
+     {
+      "name": "[Intelligence|Инт]",
+      "values": [
+       [
+        "50",
+        1
+       ]
+      ],
+      "displayMode": 1,
+      "type": 65
+     }
+    ],
+    "implicitMods": [
+     {
+      "description": "5% повышение скорости передвижения",
+      "domain": "implicit",
+      "hash": "stat.implicit.stat_2250533757",
+      "mods": [
+       {
+        "magnitudes": [
+         {
+          "min": "5",
+          "max": "5"
+         }
+        ]
+       }
+      ]
+     }
+    ],
+    "explicitMods": [
+     {
+      "description": "+125 к [Evasion|уклонению]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_53045048",
+      "mods": [
+       {
+        "name": "Потусторонний",
+        "tier": "P1",
+        "level": 75,
+        "magnitudes": [
+         {
+          "min": "142",
+          "max": "161"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "description": "+45 к максимуму [EnergyShield|энергетического щита]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_4052037485",
+      "mods": [
+       {
+        "name": "Потусторонний",
+        "tier": "P1",
+        "level": 75,
+        "magnitudes": [
+         {
+          "min": "43",
+          "max": "48"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "description": "34% увеличение [Evasion|уклонения] и [EnergyShield|энергетического щита]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_1999113824",
+      "mods": [
+       {
+        "name": "Менестрельский",
+        "tier": "P2",
+        "level": 60,
+        "magnitudes": [
+         {
+          "min": "33",
+          "max": "38"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "description": "+36 к максимуму здоровья",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_3299347043",
+      "mods": [
+       {
+        "name": "Менестрельский",
+        "tier": "P2",
+        "level": 60,
+        "magnitudes": [
+         {
+          "min": "33",
+          "max": "41"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "description": "25% снижение требований к [Attributes|характеристикам]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_3639275092",
+      "mods": [
+       {
+        "name": "таланта",
+        "tier": "S3",
+        "level": 40,
+        "magnitudes": [
+         {
+          "min": "-25",
+          "max": "-25"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "description": "+38% к сопротивлению [Resistances|холоду]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_4220027924",
+      "mods": [
+       {
+        "name": "льда",
+        "tier": "S2",
+        "level": 71,
+        "magnitudes": [
+         {
+          "min": "36",
+          "max": "40"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "description": "+32% к сопротивлению [Resistances|молнии]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_1671376347",
+      "mods": [
+       {
+        "name": "вихря",
+        "tier": "S3",
+        "level": 60,
+        "magnitudes": [
+         {
+          "min": "31",
+          "max": "35"
+         }
+        ]
+       }
+      ]
+     }
+    ],
+    "frameType": 2,
+    "frameTypeId": "Rare",
+    "extended": {
+     "ev": 600,
+     "ev_aug": true,
+     "es": 195,
+     "es_aug": true,
+     "hashes": {
+      "explicit": [
+       [
+        "explicit.stat_53045048",
+        [
+         2
+        ]
+       ],
+       [
+        "explicit.stat_4052037485",
+        [
+         2
+        ]
+       ],
+       [
+        "explicit.stat_1999113824",
+        [
+         3
+        ]
+       ],
+       [
+        "explicit.stat_3299347043",
+        [
+         3
+        ]
+       ],
+       [
+        "explicit.stat_3639275092",
+        [
+         0
+        ]
+       ],
+       [
+        "explicit.stat_4220027924",
+        [
+         1
+        ]
+       ],
+       [
+        "explicit.stat_1671376347",
+        [
+         4
+        ]
+       ]
+      ],
+      "implicit": [
+       [
+        "implicit.stat_2250533757",
+        [
+         0
+        ]
+       ]
+      ]
+     }
+    }
+   }
+  },
+  {
+   "id": "2fedde1f5ab2cfd095b8c88ddfc21b7430c1b4292e319568ba93fa3339550ec6",
+   "listing": {
+    "method": "psapi",
+    "indexed": "2026-06-22T13:29:38Z",
+    "stash": {
+     "name": "Sell",
+     "x": 6,
+     "y": 9
+    },
+    "price": {
+     "type": "~b/o",
+     "amount": 1,
+     "currency": "exalted"
+    },
+    "fee": 12988,
+    "account": {
+     "name": "seller1#0001",
+     "online": null,
+     "lastCharacterName": "Seller1"
+    }
+   },
+   "item": {
+    "realm": "poe2",
+    "verified": true,
+    "w": 2,
+    "h": 3,
+    "icon": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvQXJtb3Vycy9Cb2R5QXJtb3Vycy9CYXNldHlwZXMvQm9keUludFN0cjA4IiwidyI6MiwiaCI6Mywic2NhbGUiOjEsInJlYWxtIjoicG9lMiJ9XQ/6ea550382e/BodyIntStr08.png",
+    "league": "Standard",
+    "id": "2fedde1f5ab2cfd095b8c88ddfc21b7430c1b4292e319568ba93fa3339550ec6",
+    "name": "Колючий убор",
+    "typeLine": "Наряд провидца волн",
+    "baseType": "Наряд провидца волн",
+    "rarity": "Rare",
+    "ilvl": 66,
+    "identified": true,
+    "note": "~b/o 1 exalted",
+    "properties": [
+     {
+      "name": "Нательный доспех",
+      "values": [],
+      "displayMode": 0,
+      "type": 109
+     },
+     {
+      "name": "[Armour|Броня]",
+      "values": [
+       [
+        "218",
+        0
+       ]
+      ],
+      "displayMode": 0,
+      "type": 16
+     },
+     {
+      "name": "[EnergyShield|Энергетический щит]",
+      "values": [
+       [
+        "63",
+        0
+       ]
+      ],
+      "displayMode": 0,
+      "type": 18
+     }
+    ],
+    "requirements": [
+     {
+      "name": "Уровень",
+      "values": [
+       [
+        "51",
+        0
+       ]
+      ],
+      "displayMode": 0,
+      "type": 62
+     },
+     {
+      "name": "[Strength|Сила]",
+      "values": [
+       [
+        "45",
+        0
+       ]
+      ],
+      "displayMode": 1,
+      "type": 63
+     },
+     {
+      "name": "[Intelligence|Инт]",
+      "values": [
+       [
+        "45",
+        0
+       ]
+      ],
+      "displayMode": 1,
+      "type": 65
+     }
+    ],
+    "explicitMods": [
+     {
+      "description": "+119 к максимуму здоровья",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_3299347043",
+      "mods": [
+       {
+        "name": "Могучий",
+        "tier": "P6",
+        "level": 54,
+        "magnitudes": [
+         {
+          "min": "100",
+          "max": "119"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "description": "+22% к сопротивлению [Resistances|молнии]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_1671376347",
+      "mods": [
+       {
+        "name": "грозовой тучи",
+        "tier": "S5",
+        "level": 37,
+        "magnitudes": [
+         {
+          "min": "21",
+          "max": "25"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "description": "36% уменьшение длительности [Ignite|поджога] на вас",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_986397080",
+      "mods": [
+       {
+        "name": "увлажнения",
+        "tier": "S5",
+        "level": 21,
+        "magnitudes": [
+         {
+          "min": "36",
+          "max": "40"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "description": "От 80 до 121 [Physical|физического] урона [Thorns|шипами]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_2881298780",
+      "mods": [
+       {
+        "name": "Заострённый",
+        "tier": "P2",
+        "level": 63,
+        "magnitudes": [
+         {
+          "min": "64",
+          "max": "97"
+         },
+         {
+          "min": "98",
+          "max": "145"
+         }
+        ]
+       }
+      ]
+     }
+    ],
+    "frameType": 2,
+    "frameTypeId": "Rare",
+    "extended": {
+     "ar": 262,
+     "ar_aug": true,
+     "es": 76,
+     "es_aug": true,
+     "hashes": {
+      "explicit": [
+       [
+        "explicit.stat_3299347043",
+        [
+         1
+        ]
+       ],
+       [
+        "explicit.stat_1671376347",
+        [
+         3
+        ]
+       ],
+       [
+        "explicit.stat_986397080",
+        [
+         0
+        ]
+       ],
+       [
+        "explicit.stat_2881298780",
+        [
+         2
+        ]
+       ]
+      ]
+     }
+    }
+   }
+  },
+  {
+   "id": "333a1cbf3a59fc0967bd05037d60cfda10cb569226afa05cd905b2b45e9e9b29",
+   "listing": {
+    "method": "psapi",
+    "indexed": "2026-06-15T23:59:47Z",
+    "stash": {
+     "name": "59",
+     "x": 2,
+     "y": 9
+    },
+    "price": {
+     "type": "~b/o",
+     "amount": 1,
+     "currency": "exalted"
+    },
+    "fee": 28774,
+    "account": {
+     "name": "seller2#0002",
+     "online": null,
+     "lastCharacterName": "Seller2"
+    }
+   },
+   "item": {
+    "realm": "poe2",
+    "verified": true,
+    "w": 2,
+    "h": 3,
+    "icon": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvQXJtb3Vycy9Cb2R5QXJtb3Vycy9CYXNldHlwZXMvQm9keURleDA2IiwidyI6MiwiaCI6Mywic2NhbGUiOjEsInJlYWxtIjoicG9lMiJ9XQ/dd53d7b8d1/BodyDex06.png",
+    "league": "Standard",
+    "id": "333a1cbf3a59fc0967bd05037d60cfda10cb569226afa05cd905b2b45e9e9b29",
+    "name": "Энтропический покров",
+    "typeLine": "Нагрудник ловкача",
+    "baseType": "Нагрудник ловкача",
+    "rarity": "Rare",
+    "ilvl": 74,
+    "identified": true,
+    "note": "~b/o 1 exalted",
+    "properties": [
+     {
+      "name": "Нательный доспех",
+      "values": [],
+      "displayMode": 0,
+      "type": 109
+     },
+     {
+      "name": "[Evasion|Уклонение]",
+      "values": [
+       [
+        "887",
+        1
+       ]
+      ],
+      "displayMode": 0,
+      "type": 17
+     }
+    ],
+    "requirements": [
+     {
+      "name": "Уровень",
+      "values": [
+       [
+        "70",
+        0
+       ]
+      ],
+      "displayMode": 0,
+      "type": 62
+     },
+     {
+      "name": "[Dexterity|Ловк]",
+      "values": [
+       [
+        "121",
+        0
+       ]
+      ],
+      "displayMode": 1,
+      "type": 64
+     }
+    ],
+    "explicitMods": [
+     {
+      "description": "+53 к [Evasion|уклонению]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_53045048",
+      "mods": [
+       {
+        "name": "Изюбровый",
+        "tier": "P3",
+        "level": 46,
+        "magnitudes": [
+         {
+          "min": "39",
+          "max": "53"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "description": "55% увеличение [Evasion|уклонения]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_124859000",
+      "mods": [
+       {
+        "name": "Бараний",
+        "tier": "P3",
+        "level": 46,
+        "magnitudes": [
+         {
+          "min": "27",
+          "max": "32"
+         }
+        ]
+       },
+       {
+        "name": "Изюбровый",
+        "tier": "P3",
+        "level": 46,
+        "magnitudes": [
+         {
+          "min": "27",
+          "max": "32"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "description": "+28 к максимуму здоровья",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_3299347043",
+      "mods": [
+       {
+        "name": "Бараний",
+        "tier": "P3",
+        "level": 46,
+        "magnitudes": [
+         {
+          "min": "26",
+          "max": "32"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "description": "+14% к сопротивлению [Resistances|холоду]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_4220027924",
+      "mods": [
+       {
+        "name": "пингвина",
+        "tier": "S7",
+        "level": 14,
+        "magnitudes": [
+         {
+          "min": "11",
+          "max": "15"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "description": "+32% к сопротивлению [Resistances|молнии]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_1671376347",
+      "mods": [
+       {
+        "name": "вихря",
+        "tier": "S3",
+        "level": 60,
+        "magnitudes": [
+         {
+          "min": "31",
+          "max": "35"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "description": "Регенерация 23.3 здоровья в секунду",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_3325883026",
+      "mods": [
+       {
+        "name": "возрождения",
+        "tier": "S3",
+        "level": 68,
+        "magnitudes": [
+         {
+          "min": "23.1",
+          "max": "29"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "description": "От 105 до 173 [Physical|физического] урона [Thorns|шипами]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_2881298780",
+      "mods": [
+       {
+        "name": "Зазубренный",
+        "tier": "P1",
+        "level": 74,
+        "magnitudes": [
+         {
+          "min": "101",
+          "max": "151"
+         },
+         {
+          "min": "152",
+          "max": "220"
+         }
+        ]
+       }
+      ]
+     }
+    ],
+    "frameType": 2,
+    "frameTypeId": "Rare",
+    "extended": {
+     "ev": 1064,
+     "ev_aug": true,
+     "hashes": {
+      "explicit": [
+       [
+        "explicit.stat_53045048",
+        [
+         2
+        ]
+       ],
+       [
+        "explicit.stat_124859000",
+        [
+         0,
+         2
+        ]
+       ],
+       [
+        "explicit.stat_3299347043",
+        [
+         0
+        ]
+       ],
+       [
+        "explicit.stat_4220027924",
+        [
+         1
+        ]
+       ],
+       [
+        "explicit.stat_1671376347",
+        [
+         3
+        ]
+       ],
+       [
+        "explicit.stat_3325883026",
+        [
+         5
+        ]
+       ],
+       [
+        "explicit.stat_2881298780",
+        [
+         4
+        ]
+       ]
+      ]
+     }
+    }
+   }
+  }
+ ]
+}

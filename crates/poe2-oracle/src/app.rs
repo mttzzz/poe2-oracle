@@ -32,7 +32,9 @@ use windows::Win32::UI::HiDpi::{
 };
 
 use crate::brand;
+use crate::bug_report;
 use crate::diagnostics;
+use crate::live_search::{self, LiveCard, LiveSearches};
 use crate::logging;
 use crate::overlay_layout::PhysicalRect;
 use crate::paths;
@@ -40,6 +42,7 @@ use crate::platform::instance::{self, Request};
 use crate::platform::win32::Win32Overlay;
 use crate::platform::{autostart, game_config, game_window};
 use crate::price_check::{self, BootstrapState, PriceCheckApp};
+use crate::session::{self, SessionHttpClient};
 use crate::settings::{self, Hotkey, Settings};
 use crate::ui::fonts;
 use crate::ui::settings_view::{Intro, SettingsView};
@@ -76,11 +79,14 @@ struct PriceCheckRoot {
     xp_opening: bool,
     /// Last suppression handed to the XP overlay; `None` until the first sync.
     last_xp_suppressed: Option<bool>,
-    /// The trade overlay, opened while the setting allows it (see `sync_trade`).
+    /// The trade overlay, opened while the setting allows it or a search is watched (see
+    /// `sync_trade`).
     trade: Option<Entity<TradeOverlay>>,
     trade_opening: bool,
     /// Last suppression handed to the trade overlay; `None` until the first sync.
     last_trade_suppressed: Option<bool>,
+    /// Live search's cards, which the trade overlay shows (`live_search::init`).
+    live_cards: async_channel::Receiver<LiveCard>,
 }
 
 impl PriceCheckRoot {
@@ -245,9 +251,9 @@ impl PriceCheckRoot {
         }
     }
 
-    /// Opens the trade overlay -- at the first sync, or once the setting is turned on -- and
-    /// hides it while the price window is shown. The player's trade options follow it whenever
-    /// they change.
+    /// Opens the trade overlay -- at the first sync, or once the setting is turned on or a search
+    /// is watched (live search's cards show in it too) -- and hides it while the price window is
+    /// shown. The player's trade options follow it whenever they change.
     fn sync_trade(&mut self, cx: &mut Context<Self>) {
         let (enabled, price_shown, options) = {
             let state = self.inner.read(cx);
@@ -257,12 +263,16 @@ impl PriceCheckRoot {
                 TradeOverlayOptions::from_settings(&state.settings),
             )
         };
-        if enabled && self.trade.is_none() && !self.trade_opening {
+        let watching = cx
+            .try_global::<LiveSearches>()
+            .is_some_and(|live| live.count() > 0);
+        if (enabled || watching) && self.trade.is_none() && !self.trade_opening {
             // Spawned: this runs from `render`, where no window may be opened.
             self.trade_opening = true;
             let app = self.inner.downgrade();
+            let live_cards = self.live_cards.clone();
             cx.spawn(async move |this, cx| {
-                let opened = cx.update(|cx| trade_overlay::open(options, app, cx));
+                let opened = cx.update(|cx| trade_overlay::open(options, app, live_cards, cx));
                 this.update(cx, |root, cx| {
                     root.trade_opening = false;
                     match opened {
@@ -332,7 +342,8 @@ fn tray_tooltip(hotkey: Hotkey) -> String {
     format!("PoE2 Oracle — проверка цены: {hotkey}")
 }
 
-/// Notification-area icon with "Настройки", the update entry (`crate::updates`) and "Выход".
+/// Notification-area icon with "Настройки", the update entry (`crate::updates`), "Сообщить об
+/// ошибке" (`bug_report::report_bug`) and "Выход".
 /// Created on GPUI's main thread, whose message loop also drives the tray's hidden window; menu
 /// clicks come through `MenuEvent`'s handler into a channel a task here awaits.
 fn build_tray(cx: &mut App, app: &Entity<PriceCheckApp>) -> anyhow::Result<TrayIcon> {
@@ -345,11 +356,14 @@ fn build_tray(cx: &mut App, app: &Entity<PriceCheckApp>) -> anyhow::Result<TrayI
     let settings_id = open_settings_item.id().clone();
     let update_item = Updates::menu_item();
     let update_id = update_item.id().clone();
+    let report_item = MenuItem::new("Сообщить об ошибке", true, None);
+    let report_id = report_item.id().clone();
     let quit = MenuItem::new("Выход", true, None);
     let quit_id = quit.id().clone();
     let menu = Menu::new();
     menu.append(&open_settings_item)?;
     menu.append(&update_item)?;
+    menu.append(&report_item)?;
     menu.append(&PredefinedMenuItem::separator())?;
     menu.append(&quit)?;
     let tray = TrayIconBuilder::new()
@@ -377,6 +391,17 @@ fn build_tray(cx: &mut App, app: &Entity<PriceCheckApp>) -> anyhow::Result<TrayI
             }
             if event.id == update_id {
                 updates.clicked(cx);
+            }
+            if event.id == report_id
+                && let Some(app) = app.upgrade()
+            {
+                cx.update(|cx| {
+                    let (summary, language) = {
+                        let state = app.read(cx);
+                        (state.diagnostics_summary(), state.item_language())
+                    };
+                    bug_report::report_bug(summary, language, cx);
+                });
             }
         }
     })
@@ -539,14 +564,19 @@ pub fn run() {
         None
     });
 
+    // The player's pathofexile.com session, from the Credential Manager: the HTTP client adds it
+    // to the trade sites' requests, and to theirs only (`session`).
+    let trade_session = session::load();
     application()
-        .with_http_client(Arc::new(
-            ReqwestClient::user_agent(USER_AGENT).expect("failed to build HTTP client"),
-        ))
+        .with_http_client(Arc::new(SessionHttpClient::new(
+            Arc::new(ReqwestClient::user_agent(USER_AGENT).expect("failed to build HTTP client")),
+            trade_session.clone(),
+        )))
         .run(|cx: &mut App| {
             if let Err(err) = fonts::register(cx) {
                 log::warn!("nameplate fonts unavailable: {err:#}");
             }
+            session::init(trade_session, cx);
             let http_client: Arc<dyn HttpClient> = cx.http_client();
             // No settings file yet: the first launch. Its defaults are saved at once, so the
             // welcome shows this once only.
@@ -556,6 +586,7 @@ pub fn run() {
                 log::warn!("saving the first settings failed: {err:#}");
             }
             let inner = price_check::create_app(cx, http_client, settings);
+            let live_cards = live_search::init(&inner, USER_AGENT, cx);
             if first_launch {
                 welcome_when_ready(&inner, cx);
             }
@@ -596,6 +627,7 @@ pub fn run() {
                         trade: None,
                         trade_opening: false,
                         last_trade_suppressed: None,
+                        live_cards,
                     }
                 })
             })

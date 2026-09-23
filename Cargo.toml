@@ -22,6 +22,12 @@ members = [
 version = "0.1.0"
 edition = "2024"
 publish = false
+# Every crate inherits these (`license.workspace = true` and so on). LICENSE-MIT and LICENSE-APACHE
+# are the two license texts; the installer ships them next to the exe.
+authors = ["mttzzz"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/mttzzz/poe2-oracle"
+homepage = "https://mttzzz.github.io/poe2-oracle/"
 
 [profile.dist]
 # Cargo only allows [profile.*] tables in the workspace root manifest, never in a member crate --

@@ -1,0 +1,67 @@
+name: Pages
+
+# Publishes https://mttzzz.github.io/poe2-oracle/: the landing pages from site/ (English at the
+# root, Russian under ru/), the player guide built from docs/guide with mdBook under guide/, and
+# the guide's screenshots under images/ for the landing pages. Needs Settings > Pages > Source set
+# to "GitHub Actions".
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/guide/**"
+      - "site/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time; a newer push waits instead of cancelling one already deploying.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  MDBOOK_VERSION: v0.5.4
+  # sha256 of mdbook-v0.5.4-x86_64-unknown-linux-gnu.tar.gz, as listed on the release.
+  MDBOOK_SHA256: 3f28de05dafca9d0f2eab99c662116b0e37b89b1d96a08f8f430b9eeae958cd7
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install mdBook
+        run: |
+          archive="mdbook-${MDBOOK_VERSION}-x86_64-unknown-linux-gnu.tar.gz"
+          curl -sSfL -o "$RUNNER_TEMP/$archive" \
+            "https://github.com/rust-lang/mdBook/releases/download/${MDBOOK_VERSION}/$archive"
+          echo "${MDBOOK_SHA256}  $RUNNER_TEMP/$archive" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/bin"
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Build the site
+        run: |
+          mdbook build docs/guide --dest-dir _site/guide
+          cp -R site/. _site/
+          cp -R docs/guide/src/images _site/images
+
+      - uses: actions/configure-pages@v6
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

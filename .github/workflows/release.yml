@@ -4,7 +4,8 @@ name: Release
 # GitHub release: the layout crates/auto-update reads (tag vX.Y.Z; assets
 # PoE2-Oracle-Setup-X.Y.Z.exe and SHA256SUMS). packaging/build-release.ps1 does the building --
 # the same script used by hand on a Windows machine -- and refuses a tag that is not "v" + the
-# workspace version.
+# workspace version. The installer carries LICENSE-MIT, LICENSE-APACHE and the
+# THIRD-PARTY-NOTICES.html the script writes next to the exe, so the release attaches nothing else.
 on:
   push:
     tags: ["v*"]
@@ -16,7 +17,9 @@ jobs:
   windows-installer:
     # windows-latest (Windows Server 2025, checked 2026-09-22) ships Rust 1.98, the Windows SDK
     # (fxc.exe for gpui's release-mode shaders, rc.exe for the exe's icon and version) and the
-    # GitHub CLI. NSIS is not on it; build-release.ps1 fetches its pinned zip.
+    # GitHub CLI. NSIS is not on it; build-release.ps1 fetches its pinned zip. Nor is cargo-about;
+    # build-release.ps1 installs its pinned version, which rust-cache keeps (~/.cargo/bin) for the
+    # next tag.
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4

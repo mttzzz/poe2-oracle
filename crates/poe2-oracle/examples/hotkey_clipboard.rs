@@ -6,7 +6,7 @@
 //! focus by construction, not something that needs a foil app to demonstrate.
 //!
 //! Clipboard is read through GPUI's own native `App::read_from_clipboard()`, not `arboard` --
-//! see `POC_FINDINGS.md`'s deviation notes.
+//! see `docs/dev/poc-findings.md`'s deviation notes.
 
 use global_hotkey::{
     GlobalHotKeyEvent, GlobalHotKeyManager,

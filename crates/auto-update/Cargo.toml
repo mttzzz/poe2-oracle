@@ -3,6 +3,10 @@ name = "auto-update"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 
 [dependencies]
 # The `HttpClient` trait the app's GPUI client (reqwest_client) implements -- injected by the

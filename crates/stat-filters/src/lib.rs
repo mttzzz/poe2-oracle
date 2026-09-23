@@ -124,7 +124,7 @@ pub fn build_filters(
     ));
     filters.extend(mod_filters);
     filters.extend(empty_affix_filters(item, catalog));
-    select_by_tier(&mut filters);
+    select_by_tier(item, &mut filters);
     settle_exact_kinds(item, catalog, &mut filters);
     word_like_the_item(item, &mut filters);
     filters
@@ -285,21 +285,24 @@ fn settle_exact_kinds(item: &ParsedItem, catalog: &StatCatalog, filters: &mut Ve
 const TOP_TIERS: u32 = 2;
 
 /// The default selection a player expects, by the game's own measure of a mod: an explicit
-/// prefix or suffix is searched when it rolled in one of its `TOP_TIERS` best tiers and left out
-/// otherwise -- a low-tier mod doesn't set the price, and requiring it only empties the search.
-/// Pseudo totals start unselected: they restate the mods listed with them -- unless no affix made
-/// the cut, when the totals (EE2's own default) are what the item offers: without them the search
-/// would price the bare base type. Everything else keeps the EE2 default it was built with
+/// prefix or suffix of a rare is searched when it rolled in one of its `TOP_TIERS` best tiers and
+/// left out otherwise -- a low-tier mod doesn't set a rare's price, and requiring it only empties
+/// the search. A magic item's one prefix and one suffix are the whole item, so both are searched
+/// whatever their tier (a T3 `+3 to Level of all Chaos Spell Skills` is what a magic wand sells
+/// for). Pseudo totals start unselected: they restate the mods listed with them -- unless no affix
+/// made the cut, when the totals (EE2's own default) are what the item offers: without them the
+/// search would price the bare base type. Everything else keeps the EE2 default it was built with
 /// (defences/DPS on, implicits and free slots off). Replaces EE2's pseudo-first selection, which
 /// searched a T9 roll while skipping the T1 ones a pseudo total happened to cover.
-fn select_by_tier(filters: &mut [SearchFilter]) {
+fn select_by_tier(item: &ParsedItem, filters: &mut [SearchFilter]) {
     let is_affix =
         |filter: &SearchFilter| filter.generation.is_some() && filter.tag != FilterTag::EmptyAffix;
+    let every_affix = item.rarity == Some(ItemRarity::Magic);
     for filter in filters.iter_mut() {
         if filter.tag == FilterTag::Pseudo {
             filter.enabled = false;
         } else if is_affix(filter) {
-            filter.enabled = filter.tier.is_some_and(|tier| tier <= TOP_TIERS);
+            filter.enabled = every_affix || filter.tier.is_some_and(|tier| tier <= TOP_TIERS);
         }
     }
     let has_affixes = filters.iter().any(is_affix);

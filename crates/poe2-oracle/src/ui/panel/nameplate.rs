@@ -8,7 +8,7 @@ use gpui::{
 };
 
 use poe2_domain::{ItemRarity, ParsedItem};
-use trade_client::TradeSite;
+use trade_client::{RarityFilter, TradeSite};
 
 use crate::item_refs;
 use crate::price_check::PriceCheckApp;
@@ -33,8 +33,13 @@ const BANNER_EDGE: f32 = 0.45;
 /// The item's name -- and, for rares and uniques, its base type -- in the game's own name colour
 /// and in the stand-in for its tooltip face on the item's client language (see `fonts`), like its
 /// tooltip header; beside it the item's art, and under it links to the item's poe2db and wiki
-/// pages (`item_refs`), when the item database knows it.
-pub(super) fn render_nameplate(item: &ParsedItem, site: TradeSite) -> impl IntoElement {
+/// pages (`item_refs`), when the item database knows it, and to the form that reports the item
+/// read or priced wrong (`PriceCheckApp::report_item`).
+pub(super) fn render_nameplate(
+    item: &ParsedItem,
+    site: TradeSite,
+    cx: &Context<PriceCheckApp>,
+) -> impl IntoElement {
     let name_font = fonts::name_font(site);
     let refs = item_refs::refs_for(item);
     let art = refs.and_then(|found| found.icon_url());
@@ -52,17 +57,34 @@ pub(super) fn render_nameplate(item: &ParsedItem, site: TradeSite) -> impl IntoE
                 .clone()
                 .map(|base| div().text_size(rems_from_px(17.)).child(base)),
         );
-    let links = refs.map(|found| {
-        div()
-            .flex()
-            .gap(rems_from_px(12.))
-            .mt(rems_from_px(3.))
-            .child(render_link(
-                "poe2db ↗",
-                found.poe2db_url(site == TradeSite::Russian),
-            ))
-            .child(render_link("вики ↗", found.wiki_url()))
-    });
+    let links = div()
+        .flex()
+        .gap(rems_from_px(12.))
+        .mt(rems_from_px(3.))
+        .children(
+            refs.map(|found| render_link("poe2db ↗", found.poe2db_url(site == TradeSite::Russian))),
+        )
+        .children(refs.map(|found| render_link("вики ↗", found.wiki_url())))
+        .child(
+            div()
+                .id("report-item")
+                .flex_none()
+                .text_xs()
+                .text_color(rgb(TEXT_DIM))
+                .cursor_pointer()
+                .hover(|style| style.text_color(rgb(GOLD)))
+                .tooltip(hints::hint(
+                    "Предмет разобран или оценён неверно? Откроет на GitHub форму с текстом \
+                     предмета: останется описать, что не так.",
+                ))
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(|view, _event: &MouseDownEvent, _window, cx| {
+                        view.report_item(cx);
+                    }),
+                )
+                .child("сообщить об ошибке ↗"),
+        );
     div()
         .flex()
         .items_center()
@@ -94,7 +116,7 @@ pub(super) fn render_nameplate(item: &ParsedItem, site: TradeSite) -> impl IntoE
                 .flex_1()
                 .min_w_0()
                 .child(names)
-                .children(links),
+                .child(links),
         )
         .when(art.is_some(), |this| {
             this.child(
@@ -167,24 +189,83 @@ pub(super) fn render_chips(
         }
         None => class.map(|class| chip(None, class, TEXT).into_any_element()),
     };
-    let corruption = state.uncorrupted_only.map(|only| {
-        let (value, hint) = if only {
+    // The item's own state, matched by default as PoE Overlay II does: "Можно изменить" there.
+    let corruption = state.corruption.map(|choice| {
+        let (value, hint) = match (choice.value, choice.on) {
+            (false, true) => (
+                "Можно изменить",
+                "Только лоты, которые ещё можно изменить: осквернённые не учитываются — их \
+                 нельзя улучшить, и у них бывают свойства, которых нет у этой вещи. Нажмите, \
+                 чтобы учитывать и их.",
+            ),
+            (true, true) => (
+                "Только осквернённые",
+                "Эта вещь осквернена: учитываются только осквернённые лоты, у которых скверна \
+                 так же изменила свойства. Нажмите, чтобы учитывать и неосквернённые.",
+            ),
+            (_, false) => (
+                "И осквернённые, и нет",
+                "Скверна не учитывается. Нажмите, чтобы искать только лоты в том же состоянии, \
+                 что и эта вещь.",
+            ),
+        };
+        toggle_chip(
+            None,
+            value.to_owned(),
+            hint,
+            PriceCheckApp::toggle_corruption,
+            cx,
+        )
+    });
+    let identification = state.identification.map(|choice| {
+        let (value, hint) = if choice.on {
             (
-                "Без осквернённых",
-                "Осквернённые лоты не учитываются: их нельзя изменить, и у них бывают свойства, \
-                 которых нет у этой вещи. Нажмите, чтобы учитывать и их.",
+                "Неопознанные",
+                "Эта вещь не опознана: учитываются только неопознанные лоты — опознанные \
+                 продаются за свои свойства. Нажмите, чтобы учитывать и опознанные.",
             )
         } else {
             (
-                "И осквернённые",
-                "Учитываются и осквернённые лоты. Нажмите, чтобы их исключить.",
+                "И опознанные",
+                "Учитываются и опознанные лоты. Нажмите, чтобы искать только неопознанные.",
             )
         };
         toggle_chip(
             None,
             value.to_owned(),
             hint,
-            PriceCheckApp::toggle_uncorrupted_only,
+            PriceCheckApp::toggle_identification,
+            cx,
+        )
+    });
+    let rarity = state.rarity.map(|choice| {
+        let (value, hint) = match choice.current() {
+            RarityFilter::Magic => (
+                "волшебные",
+                "Поиск только среди волшебных вещей. Нажмите, чтобы искать среди всех, \
+                 кроме уникальных.",
+            ),
+            RarityFilter::Rare => (
+                "редкие",
+                "Поиск только среди редких вещей. Нажмите, чтобы искать среди всех, \
+                 кроме уникальных.",
+            ),
+            RarityFilter::Normal => (
+                "обычные",
+                "Поиск только среди обычных вещей. Нажмите, чтобы искать среди всех, \
+                 кроме уникальных.",
+            ),
+            RarityFilter::NonUnique | RarityFilter::Unique => (
+                "все, кроме уникальных",
+                "Поиск среди вещей любой редкости, кроме уникальных. Нажмите, чтобы искать \
+                 только среди вещей той же редкости, что и эта.",
+            ),
+        };
+        toggle_chip(
+            Some("Редкость:"),
+            value.to_owned(),
+            hint,
+            PriceCheckApp::toggle_rarity,
             cx,
         )
     });
@@ -214,6 +295,8 @@ pub(super) fn render_chips(
             item.stack_size
                 .map(|(count, _)| chip(Some("В стопке:"), count.to_string(), TEXT)),
         )
+        .children(rarity)
+        .children(identification)
         .children(corruption)
         .children((searchable > 0).then(|| {
             toggle_chip(
@@ -243,7 +326,8 @@ fn chip(label: Option<&'static str>, value: String, value_color: u32) -> impl In
 
 /// A chip a click turns to its other state for the next search -- the item-type chip, when the
 /// search can go by the item's class or its base type (`PriceCheckApp::toggle_scope`), the
-/// corrupted-listings one (`PriceCheckApp::toggle_uncorrupted_only`), the stats count
+/// rarity one (`PriceCheckApp::toggle_rarity`), the corruption and identification ones
+/// (`PriceCheckApp::toggle_corruption`, `toggle_identification`), the stats count
 /// (`PriceCheckApp::toggle_all_filters`) -- saying on hover what it does (`hint`).
 fn toggle_chip(
     label: Option<&'static str>,
