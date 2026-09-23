@@ -740,6 +740,9 @@ fn render_watch(state: &PriceCheckApp, cx: &Context<PriceCheckApp>) -> Option<im
         )
         .child(switch("switch", watching))
         .child(tr!("Live search"));
+    // The count keeps its room while nothing is watched, only unseen: the switch then stays under
+    // the pointer when a click turns watching on and the count appears -- a second click turns it
+    // off again instead of landing on the count.
     Some(
         div()
             .flex()
@@ -748,18 +751,17 @@ fn render_watch(state: &PriceCheckApp, cx: &Context<PriceCheckApp>) -> Option<im
             .child(ease_hover("watch", toggle, |toggle, hover| {
                 toggle.text_color(rgb(blend(TEXT, GOLD_LIGHT, hover)))
             }))
-            .when(count > 0, |this| {
-                this.child(
-                    div()
-                        .text_size(rems_from_px(12.))
-                        .text_color(rgb(TEXT_DIM))
-                        .child(tr!(
-                            "{count} of {max} in use",
-                            count = count,
-                            max = MAX_LIVE_SEARCHES
-                        )),
-                )
-            }),
+            .child(
+                div()
+                    .text_size(rems_from_px(12.))
+                    .text_color(rgb(TEXT_DIM))
+                    .when(count == 0, |this| this.opacity(0.))
+                    .child(tr!(
+                        "{count} of {max} in use",
+                        count = count,
+                        max = MAX_LIVE_SEARCHES
+                    )),
+            ),
     )
 }
 
