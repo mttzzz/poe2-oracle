@@ -4,9 +4,10 @@
 //! (`crate::i18n`) that Общие's «Язык интерфейса» picks, worded anew on every render, so a change
 //! of language shows at once.
 //!
-//! Every change applies at once, through one handler ([`SettingsView::change`]): the settings
-//! file is written and the app takes them over (`PriceCheckApp::apply_settings`); there is no
-//! Сохранить or Отмена. A text field applies when the player leaves it (`ui::text_field`), a
+//! Every change applies at once, through one handler ([`SettingsView::change`]): the app takes
+//! the settings over (`PriceCheckApp::apply_settings`) and the file is written -- a write it
+//! doesn't take is said over every section until one gets through; there is no Сохранить or
+//! Отмена. A text field applies when the player leaves it (`ui::text_field`) or the app quits, a
 //! hotkey recorder as soon as it takes a combination -- refused, with the reason under it and the
 //! old hotkey kept, when another program holds that one. A quick action whose text is a denied
 //! command (`quick_action::denied_command`) says so under its field and isn't saved: the file
@@ -154,7 +155,7 @@ impl Section {
             Section::General => tr!("League, client language, scale and starting with Windows"),
             Section::PriceCheck => tr!("Hotkey, sellers, results table and Waystones"),
             Section::QuickActions => tr!("Keys that type chat commands and searches into the game"),
-            Section::XpOverlay => tr!("Experience rate and map timer over the game"),
+            Section::XpOverlay => tr!("Experience rate and map timer in the game's own panels"),
             Section::Account => {
                 tr!("Signing in to pathofexile.com: private leagues and live search")
             }
@@ -373,9 +374,10 @@ impl SettingsView {
     }
 
     /// Applies `edit` to the player's settings at once -- the one handler every control goes
-    /// through. Autostart goes into the registry when it changed (that is where it lives), the
-    /// settings file is written, and the app takes them over (`PriceCheckApp::apply_settings`),
-    /// refusing a hotkey another program holds; what changed is logged as the app took it.
+    /// through. Autostart goes into the registry when it changed (that is where it lives), the app
+    /// takes the settings over (`PriceCheckApp::apply_settings`), refusing a hotkey another
+    /// program holds, and the file gets them as the app took them
+    /// (`PriceCheckApp::save_settings`); what changed is logged.
     fn change(&mut self, cx: &mut Context<Self>, edit: impl FnOnce(&mut Settings)) {
         self.app.update(cx, |state, cx| {
             let old = state.settings.clone();
@@ -390,10 +392,8 @@ impl SettingsView {
                 log::warn!("{err:#}");
                 new.autostart = autostart::autostart_enabled();
             }
-            if let Err(err) = settings::save(&new) {
-                log::warn!("saving settings failed: {err:#}");
-            }
             state.apply_settings(new, cx);
+            state.save_settings(cx);
             let changed = changes(&old, &state.settings);
             if !changed.is_empty() {
                 log::info!("settings changed: {changed}");
@@ -462,7 +462,10 @@ impl SettingsView {
         .detach();
     }
 
-    fn apply_typed(&mut self, cx: &mut Context<Self>) {
+    /// Applies what the fields hold, typed but not yet left: the private league's name and the
+    /// quick actions' texts. A field reports only when it's left, so the window's close does this
+    /// first, and so does quitting the app (`app::quit`), which closes no window.
+    pub fn apply_typed(&mut self, cx: &mut Context<Self>) {
         self.apply_private_league(cx);
         let mut typed = false;
         for row in &mut self.actions {
@@ -1099,6 +1102,19 @@ impl SettingsView {
                                     .text_color(rgb(TEXT_DIM))
                                     .child(section.summary()),
                             )
+                            .children(self.app.read(cx).save_failure().map(|error| {
+                                div()
+                                    .flex()
+                                    .gap(px(8.))
+                                    .pt(px(4.))
+                                    .text_size(px(13.))
+                                    .text_color(rgb(TEXT_WARNING))
+                                    .child(div().flex_none().child("⚠"))
+                                    .child(tr!(
+                                        "Couldn't save the settings: {error}",
+                                        error = error
+                                    ))
+                            }))
                             .child(div().pt(px(12.)).child(ornament_rule(BORDER_GOLD))),
                     )
                     .child(
@@ -1224,7 +1240,9 @@ impl SettingsView {
                 [setting_row(
                     tr!("Interface scale"),
                     [note(
-                        tr!("Size of the text and controls on the price panel and overlays"),
+                        tr!(
+                            "Size of the text and controls on the price panel and live search cards"
+                        ),
                         TEXT_DIM,
                     )],
                     stepper(
@@ -1600,7 +1618,7 @@ impl SettingsView {
                     "xp-overlay",
                     tr!("Show the XP overlay"),
                     Some(tr!(
-                        "Experience rate and time to the next level, above the experience bar"
+                        "Experience rate and time to the next level, on the flask panel"
                     )),
                     settings.xp_overlay,
                     |settings| &mut settings.xp_overlay,
@@ -1619,7 +1637,7 @@ impl SettingsView {
                     tr!("Map timer"),
                     Some(tr!(
                         "Time in the current map, the experience it gave and the session's \
-                         average map time"
+                         average map time, on the skill panel"
                     )),
                     settings.xp_map_timer,
                     |settings| &mut settings.xp_map_timer,

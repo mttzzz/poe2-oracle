@@ -14,8 +14,9 @@
 //!   to the next level, whether the player is playing or paused ([`Activity`]), and the current
 //!   or last map run ([`MapStatus`]): its time, its experience, and the average time of the maps
 //!   before it.
-//! - [`Word`] and [`percent_words`], [`rate_words`], [`pause_words`], [`map_words`]: the
-//!   overlay's line, word by word, in the interface language (`crate::i18n`).
+//! - [`Word`] and [`percent_words`], [`rate_words`], [`pause_words`], [`map_words`]: what the
+//!   overlay's plates say, word by word, in the interface language (`crate::i18n`), in full or in
+//!   the shorter [`Wording`] a rail too narrow for the full one gets.
 
 use std::borrow::Cow;
 use std::ops::{Range, RangeInclusive};
@@ -53,10 +54,6 @@ const TICK_HALF_WIDTH: f64 = 5.0;
 const FILL_BAND: (f64, f64) = (19.0, 14.0);
 /// The rows just below the fill (2147-2150), where each tick's stem is a dark notch in the frame.
 const STEM_BAND: (f64, f64) = (13.0, 9.0);
-/// The frame's top edge (row 2126): the overlay window stays above it, out of the capture.
-const FRAME_TOP: f64 = 34.0;
-/// Rows between the frame and the overlay window.
-const OVERLAY_GAP: f64 = 6.0;
 /// The smallest game height read at all: at 720 rows the fill band is already a single row and a
 /// tick stem a single column; any smaller and the bar can't be told apart from other pixels.
 const MIN_HEIGHT: i32 = 720;
@@ -78,9 +75,6 @@ pub struct XpBarGeometry {
     pub capture: PhysicalRect,
     /// Game pixels per reference pixel: 1.0 for a 2160-row game.
     scale: f64,
-    /// Screen x of the bar's centre line and screen y of its frame's top edge.
-    centre: f64,
-    frame_top: f64,
     /// Capture-local, in continuous coordinates (pixel `i` spans `[i, i + 1)`).
     fill_start: f64,
     fill_end: f64,
@@ -119,26 +113,12 @@ impl XpBarGeometry {
         Some(Self {
             capture,
             scale,
-            centre,
-            frame_top: bottom - FRAME_TOP * scale,
             fill_start: centre - FILL_HALF_WIDTH * scale - left,
             fill_end: centre + FILL_HALF_WIDTH * scale - left,
             ticks: std::array::from_fn(|i| centre + (i as f64 - 9.0) * TICK_SPACING * scale - left),
             fill_rows: local(fill),
             stem_rows: local(stems),
         })
-    }
-
-    /// Where a `width` x `height` (physical pixels) overlay window goes: centred on the bar, just
-    /// above its frame -- never inside [`Self::capture`], which would then read the overlay.
-    pub fn overlay_rect(&self, width: i32, height: i32) -> PhysicalRect {
-        let bottom = (self.frame_top - OVERLAY_GAP * self.scale).floor() as i32;
-        PhysicalRect {
-            x: (self.centre - f64::from(width) / 2.0).round() as i32,
-            y: bottom - height,
-            width,
-            height,
-        }
     }
 }
 
@@ -1028,17 +1008,35 @@ impl MapRuns {
 
 // --- Wording ------------------------------------------------------------------------------------
 
-/// A word of the overlay's line, by what it says -- which decides how `ui::xp_overlay` draws it.
+/// A word of the overlay's plates, by what it says -- which decides how `ui::xp_overlay` draws it.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Word {
-    /// The rate, the line's headline: `+12,4 %/ч`.
+    /// The rate, the level plate's headline: `+12,4 %/ч`.
     Rate(Cow<'static, str>),
     /// A value, or a word read as one: `1 ч 32 мин`, `4:07`, `пауза`.
     Value(Cow<'static, str>),
-    /// A word saying what a value is: `до 75 ур.`, `игры`, `карта`.
+    /// A word saying what a value is: `до 75 ур.`, `карта`.
     Label(Cow<'static, str>),
     /// The dot between a part's groups: `·`.
     Dot,
+}
+
+impl Word {
+    /// What the word reads.
+    pub fn text(&self) -> &str {
+        match self {
+            Word::Rate(text) | Word::Value(text) | Word::Label(text) => text,
+            Word::Dot => "·",
+        }
+    }
+}
+
+/// How much a part says: all of it, or the shorter wording for a rail it doesn't fit --
+/// `ui::xp_overlay` tries the full one first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Wording {
+    Full,
+    Short,
 }
 
 /// How much of the level is earned: `64,8 %`.
@@ -1047,28 +1045,24 @@ pub fn percent_words(fraction: f64) -> Vec<Word> {
 }
 
 /// How fast the character levels and how much play is left to the next level: `+12,4 %/ч · до
-/// 75 ур. 1 ч 32 мин игры` -- `до ур.` until the log names the level, `—` for the time when
-/// nothing has been gained to go by -- or, the first two minutes of play, the wait for a rate.
-pub fn rate_words(status: &XpStatus) -> Vec<Word> {
+/// 75 ур. 1 ч 32 мин` -- `до ур.` until the log names the level, `—` for the time when nothing
+/// has been gained to go by; `+12,4 %/ч · 1 ч 32 мин` when [`Wording::Short`]. Or, the first two
+/// minutes of play, the wait for a rate.
+pub fn rate_words(status: &XpStatus, wording: Wording) -> Vec<Word> {
     let Some(rate) = status.rate_per_hour else {
         return vec![Word::Label(tr!("measuring rate…").into())];
     };
-    let target: Cow<'static, str> = match status.level {
-        Some(level) => tr!("level {level} in", level = level + 1).into(),
-        None => tr!("next level in").into(),
-    };
-    let mut words = vec![
-        Word::Rate(format_rate(rate).into()),
-        Word::Dot,
-        Word::Label(target),
-    ];
-    match status.time_to_level() {
-        Some(eta) => words.extend([
-            Word::Value(i18n::duration(eta).into()),
-            Word::Label(tr!("of play").into()),
-        ]),
-        None => words.push(Word::Label("—".into())),
+    let mut words = vec![Word::Rate(format_rate(rate).into()), Word::Dot];
+    if wording == Wording::Full {
+        words.push(Word::Label(match status.level {
+            Some(level) => tr!("level {level} in", level = level + 1).into(),
+            None => tr!("next level in").into(),
+        }));
     }
+    words.push(match status.time_to_level() {
+        Some(eta) => Word::Value(i18n::duration(eta).into()),
+        None => Word::Label("—".into()),
+    });
     words
 }
 
@@ -1082,9 +1076,11 @@ pub fn pause_words(elapsed: Duration) -> Vec<Word> {
 }
 
 /// The map run: `карта 4:07 +1,2 % · ср. 6:30`, and `последняя карта 9:00 +3,66 %` once it is
-/// the last one; without the average in a pause.
-pub fn map_words(map: &MapStatus, paused: bool) -> Vec<Word> {
-    let label = if map.state == RunState::Last {
+/// the last one; without the average in a pause. [`Wording::Short`] keeps `карта 4:07 +1,2 %`:
+/// no average, and no `последняя` -- the plate dims a run that is over anyway.
+pub fn map_words(map: &MapStatus, paused: bool, wording: Wording) -> Vec<Word> {
+    let full = wording == Wording::Full;
+    let label = if full && map.state == RunState::Last {
         tr!("last map")
     } else {
         tr!("map")
@@ -1097,7 +1093,7 @@ pub fn map_words(map: &MapStatus, paused: bool) -> Vec<Word> {
         let gained = i18n::percent(format_percent(map.gained));
         words.push(Word::Value(format!("+{gained}").into()));
     }
-    if let Some(average) = map.average.filter(|_| !paused) {
+    if let Some(average) = map.average.filter(|_| full && !paused) {
         words.extend([
             Word::Dot,
             Word::Label(tr!("avg").into()),
@@ -1216,9 +1212,6 @@ mod tests {
         assert_eq!(window.capture.y, 50 + 1070);
         assert!((window.ticks[9] + f64::from(window.capture.x) - (100.0 + 960.0)).abs() < 1e-9);
         assert!((window.fill_end - window.fill_start - 766.0).abs() < 1e-9);
-        let overlay = window.overlay_rect(300, 40);
-        assert_eq!(overlay.x + overlay.width / 2, 100 + 960);
-        assert!(overlay.y + overlay.height < window.capture.y);
         assert!(
             XpBarGeometry::for_client(PhysicalRect {
                 height: 600,
@@ -1930,34 +1923,31 @@ mod tests {
         });
     }
 
-    /// `words` as the overlay shows them, a space apart.
+    /// `words` as a plate shows them, a space apart.
     fn read(words: &[Word]) -> String {
-        let texts: Vec<&str> = words
-            .iter()
-            .map(|word| match word {
-                Word::Rate(text) | Word::Value(text) | Word::Label(text) => text,
-                Word::Dot => "·",
-            })
-            .collect();
-        texts.join(" ")
+        words.iter().map(Word::text).collect::<Vec<_>>().join(" ")
     }
 
-    /// The whole line for `status`, the parts as `ui::xp_overlay` puts them together: the
-    /// percent, the rate or the pause, the map -- a diamond apart there, a `·` here.
-    fn line(status: &XpStatus) -> String {
+    /// What the plates read for `status` in `wording`, the parts as `ui::xp_overlay` puts them
+    /// together -- a diamond apart there, `◆` here: the level plate (the percent, then the rate or
+    /// the pause) and, `|` after it, the map plate when there is a run to show.
+    fn plates(status: &XpStatus, wording: Wording) -> String {
         let paused = matches!(status.activity, Activity::Paused { .. });
-        let mut parts: Vec<Vec<Word>> = status.fraction.map(percent_words).into_iter().collect();
-        parts.push(match status.activity {
-            Activity::Playing => rate_words(status),
+        let mut level: Vec<Vec<Word>> = status.fraction.map(percent_words).into_iter().collect();
+        level.push(match status.activity {
+            Activity::Playing => rate_words(status, wording),
             Activity::Paused { elapsed, .. } => pause_words(elapsed),
         });
-        parts.extend(status.map.map(|map| map_words(&map, paused)));
-        let parts: Vec<String> = parts.iter().map(|words| read(words)).collect();
-        parts.join(" · ")
+        let level: Vec<String> = level.iter().map(|words| read(words)).collect();
+        let level = level.join(" ◆ ");
+        match status.map {
+            Some(map) => format!("{level} | {}", read(&map_words(&map, paused, wording))),
+            None => level,
+        }
     }
 
     #[test]
-    fn the_line_reads_in_the_interface_language() {
+    fn the_plates_read_in_the_interface_language_in_full_or_short() {
         let map = MapStatus {
             time: Duration::from_secs(4 * 60 + 7),
             gained: 0.012,
@@ -2017,27 +2007,40 @@ mod tests {
             &level_unknown,
             &nothing_gained,
         ];
+        let full = |status: &XpStatus| plates(status, Wording::Full);
+        let short = |status: &XpStatus| plates(status, Wording::Short);
         assert_eq!(
-            i18n::with_lang(i18n::Lang::Russian, || states.map(line)),
+            i18n::with_lang(i18n::Lang::Russian, || states.map(full)),
             [
-                "64,8 % · +12,4 %/ч · до 75 ур. 2 ч 50 мин игры · карта 4:07 +1,2 % · ср. 6:30",
-                "64,8 % · +12,4 %/ч · до 75 ур. 2 ч 50 мин игры · последняя карта 4:07 +1,2 % · \
-                 ср. 6:30",
-                "64,8 % · пауза · 12 мин · последняя карта 9:00 +3,66 %",
-                "64,8 % · замер скорости…",
-                "64,8 % · +12,4 %/ч · до ур. 2 ч 50 мин игры",
-                "64,8 % · +0 %/ч · до 75 ур. —",
+                "64,8 % ◆ +12,4 %/ч · до 75 ур. 2 ч 50 мин | карта 4:07 +1,2 % · ср. 6:30",
+                "64,8 % ◆ +12,4 %/ч · до 75 ур. 2 ч 50 мин | последняя карта 4:07 +1,2 % · ср. 6:30",
+                "64,8 % ◆ пауза · 12 мин | последняя карта 9:00 +3,66 %",
+                "64,8 % ◆ замер скорости…",
+                "64,8 % ◆ +12,4 %/ч · до ур. 2 ч 50 мин",
+                "64,8 % ◆ +0 %/ч · до 75 ур. —",
             ]
         );
         assert_eq!(
-            i18n::with_lang(i18n::Lang::English, || states.map(line)),
+            i18n::with_lang(i18n::Lang::English, || states.map(full)),
             [
-                "64.8% · +12.4%/h · level 75 in 2h 50m of play · map 4:07 +1.2% · avg 6:30",
-                "64.8% · +12.4%/h · level 75 in 2h 50m of play · last map 4:07 +1.2% · avg 6:30",
-                "64.8% · paused · 12m · last map 9:00 +3.66%",
-                "64.8% · measuring rate…",
-                "64.8% · +12.4%/h · next level in 2h 50m of play",
-                "64.8% · +0%/h · level 75 in —",
+                "64.8% ◆ +12.4%/h · level 75 in 2h 50m | map 4:07 +1.2% · avg 6:30",
+                "64.8% ◆ +12.4%/h · level 75 in 2h 50m | last map 4:07 +1.2% · avg 6:30",
+                "64.8% ◆ paused · 12m | last map 9:00 +3.66%",
+                "64.8% ◆ measuring rate…",
+                "64.8% ◆ +12.4%/h · next level in 2h 50m",
+                "64.8% ◆ +0%/h · level 75 in —",
+            ]
+        );
+        // Short: no level to reach, no map average, and a run that is over is just a map.
+        assert_eq!(
+            i18n::with_lang(i18n::Lang::Russian, || {
+                [&playing, &trial, &paused, &nothing_gained].map(short)
+            }),
+            [
+                "64,8 % ◆ +12,4 %/ч · 2 ч 50 мин | карта 4:07 +1,2 %",
+                "64,8 % ◆ +12,4 %/ч · 2 ч 50 мин | карта 4:07 +1,2 %",
+                "64,8 % ◆ пауза · 12 мин | карта 9:00 +3,66 %",
+                "64,8 % ◆ +0 %/ч · —",
             ]
         );
     }

@@ -763,18 +763,18 @@ fn render_watch(state: &PriceCheckApp, cx: &Context<PriceCheckApp>) -> Option<im
     )
 }
 
-/// Why watching the shown search was just refused.
+/// Why watching the shown search was just refused, in the language the panel is drawn in.
 fn render_watch_refusal(
     state: &PriceCheckApp,
     cx: &Context<PriceCheckApp>,
 ) -> Option<impl IntoElement> {
     let search = state.watchable.as_ref()?;
-    let reason = cx.try_global::<LiveSearches>()?.refusal(&search.query_id)?;
+    let refusal = cx.try_global::<LiveSearches>()?.refusal(&search.query_id)?;
     Some(
         div()
             .text_size(rems_from_px(12.))
             .text_color(rgb(TEXT_WARNING))
-            .child(reason),
+            .child(refusal.message()),
     )
 }
 

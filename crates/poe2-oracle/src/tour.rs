@@ -7,7 +7,8 @@
 //! window, the first price check, the price panel that check opens, and the XP overlay. The
 //! panel's step has four stops, one per part: the filters, the Search button, the listings and the
 //! league in the title bar. A stop whose part the panel doesn't show -- the filters of an item the
-//! exchange prices -- is passed over, both ways.
+//! exchange prices -- is passed over, both ways, and so is the stop the tour stands at when the
+//! panel comes back without its part: another item checked, or the settings window closed.
 
 use crate::settings::LeagueChoice;
 
@@ -220,7 +221,10 @@ impl Tour {
 
     /// The player did `action`: the stop that asks for it moves on -- the league's with a pick or
     /// with the settings window closed, the check's with a panel opened, Search's with a search --
-    /// and a closed panel ends the panel's step. Any other stop stays.
+    /// and a closed panel ends the panel's step. A panel shown again at one of its stops -- another
+    /// check, or the settings window it stepped aside for closed -- passes over the stop when it
+    /// no longer shows that part, as Next would: another item's panel may lack it. Any other stop
+    /// stays.
     pub fn act(&mut self, action: Action, shown: impl Fn(Stop) -> bool) {
         if self.ended.is_some() {
             return;
@@ -229,6 +233,11 @@ impl Tour {
             (Stop::League, Action::LeaguePicked | Action::SettingsClosed)
             | (Stop::PriceCheck, Action::CheckShown)
             | (Stop::Search, Action::SearchStarted) => self.advance(shown),
+            (stop, Action::CheckShown | Action::SettingsClosed)
+                if stop.host() == Host::Panel && !shown(stop) =>
+            {
+                self.advance(shown);
+            }
             (stop, Action::PanelClosed) if stop.host() == Host::Panel => {
                 self.stop = Stop::XpLine;
             }
@@ -458,6 +467,27 @@ mod tests {
         let mut nothing_on_the_panel = at(Stop::PriceCheck);
         nothing_on_the_panel.act(Action::CheckShown, |stop| stop.host() != Host::Panel);
         assert_eq!(nothing_on_the_panel.stop(), Stop::XpLine);
+    }
+
+    #[test]
+    fn a_panel_back_without_the_stops_part_passes_it_over_and_one_with_it_keeps_it() {
+        // The panel of an item it couldn't read: its title bar alone.
+        let unread_item = |stop: Stop| stop.host() != Host::Panel || stop == Stop::PanelLeague;
+        for action in [Action::CheckShown, Action::SettingsClosed] {
+            for stop in [Stop::Filters, Stop::Search] {
+                let mut tour = at(stop);
+                tour.act(action, exchange_item);
+                assert_eq!(tour, at(Stop::Listings), "{stop:?}, {action:?}");
+            }
+            let mut listings = at(Stop::Listings);
+            listings.act(action, unread_item);
+            assert_eq!(listings, at(Stop::PanelLeague), "{action:?}");
+            for stop in [Stop::Search, Stop::Listings, Stop::PanelLeague] {
+                let mut tour = at(stop);
+                tour.act(action, all);
+                assert_eq!(tour, at(stop), "resumed where it was: {stop:?}, {action:?}");
+            }
+        }
     }
 
     #[test]

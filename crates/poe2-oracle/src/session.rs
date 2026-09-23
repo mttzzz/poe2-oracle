@@ -21,7 +21,7 @@
 use std::fmt;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use gpui::{App, Global};
 use http_client::http::HeaderValue;
@@ -174,6 +174,10 @@ impl SessionStatus {
 /// speaks for the stored session.
 static CHECKS: AtomicU64 = AtomicU64::new(0);
 
+/// The trade site refused a weighted sum since the account page last accepted the session
+/// ([`sum_refused`]).
+static SUMS_REFUSED: AtomicBool = AtomicBool::new(false);
+
 /// The session saved by the last sign-in, if any; one that can't be read counts as signed out.
 #[cfg(target_os = "windows")]
 pub fn load() -> TradeSession {
@@ -224,6 +228,7 @@ pub fn sign_in(session: String, account: Option<String>, cx: &mut App) -> anyhow
     crate::platform::credentials::write(CREDENTIAL_TARGET, CREDENTIAL_USER, &session)?;
     cx.global::<TradeSession>().set(session);
     CHECKS.fetch_add(1, Ordering::Relaxed);
+    SUMS_REFUSED.store(false, Ordering::Relaxed);
     cx.set_global(SessionStatus::SignedIn { account });
     log::info!("pathofexile.com session saved");
     Ok(())
@@ -251,8 +256,15 @@ pub fn refused(cx: &mut App) {
 }
 
 /// Asks the account page about the stored session and shows the answer: at start, and whenever
-/// the trade site refuses what only a signed-in account may search (a weighted sum).
+/// the trade site refuses what only a signed-in account may search (a weighted sum). One at a
+/// time: while a check is under way, its answer is the one coming.
 pub fn check(cx: &mut App) {
+    if matches!(
+        cx.try_global::<SessionStatus>(),
+        Some(SessionStatus::Checking)
+    ) {
+        return;
+    }
     let check = CHECKS.fetch_add(1, Ordering::Relaxed) + 1;
     if !cx.global::<TradeSession>().is_signed_in() {
         cx.set_global(SessionStatus::SignedOut);
@@ -277,11 +289,34 @@ pub fn check(cx: &mut App) {
         }
         cx.update(|cx| {
             if CHECKS.load(Ordering::Relaxed) == check {
+                if matches!(status, SessionStatus::SignedIn { .. }) {
+                    SUMS_REFUSED.store(false, Ordering::Relaxed);
+                }
                 cx.set_global(status);
             }
         });
     })
     .detach();
+}
+
+/// Whether a search may ask the trade site to add stats up -- a weighted sum, which it takes only
+/// from a signed-in account (`stat_filters::Session`). A session the account page accepted may,
+/// and so may one the check couldn't reach the site about, sent as it is -- until the trade site
+/// refuses a sum ([`sum_refused`]); then only once the account page accepts the session again.
+/// One being checked, refused or missing may not.
+pub fn sums_allowed(cx: &App) -> bool {
+    match cx.try_global::<SessionStatus>() {
+        Some(SessionStatus::SignedIn { .. }) => true,
+        Some(SessionStatus::Unchecked(_)) => !SUMS_REFUSED.load(Ordering::Relaxed),
+        _ => false,
+    }
+}
+
+/// The trade site refused a weighted sum: it doesn't take the session for a signed-in one. The
+/// account page is asked again, and no search sends a sum until it accepts the session.
+pub fn sum_refused(cx: &mut App) {
+    SUMS_REFUSED.store(true, Ordering::Relaxed);
+    check(cx);
 }
 
 #[cfg(test)]

@@ -90,8 +90,48 @@ pub enum LiveEvent {
 pub enum LiveCard {
     /// A new listing of a watched search.
     Listing(LiveListing),
-    /// A watch the site ended for good, and why.
-    Ended { label: String, reason: &'static str },
+    /// A watch the site ended for good (`LiveEnd::is_final`), and why: said as the card is drawn
+    /// ([`ended_reason`]).
+    Ended { label: String, end: LiveEnd },
+}
+
+/// Why the site ended a watch for good, in the interface language: kept as the site's answer and
+/// worded as its card is drawn, so a change of language reaches it too.
+pub fn ended_reason(end: LiveEnd) -> &'static str {
+    match end {
+        LiveEnd::Unauthorized => tr!(
+            "the site no longer accepts the sign-in — the session expired, sign in again in \
+             the settings, “Account” section"
+        ),
+        LiveEnd::SearchGone | LiveEnd::RateLimited | LiveEnd::Other => {
+            tr!("the search is gone from the site — run it again and turn live search back on")
+        }
+    }
+}
+
+/// Why a watch couldn't start, kept as what happened: the panel says it in the interface language
+/// as it draws it ([`Refusal::message`]), so a change of language reaches it too.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Refusal {
+    /// No pathofexile.com session to watch with.
+    SignedOut,
+    /// `MAX_LIVE_SEARCHES` are watched already: the site's own limit per account.
+    Full,
+    /// The watch's thread didn't start.
+    NoThread,
+}
+
+impl Refusal {
+    /// The refusal in the interface language.
+    pub fn message(self) -> &'static str {
+        match self {
+            Refusal::SignedOut => tr!("Live search needs a sign-in to pathofexile.com"),
+            Refusal::Full => {
+                tr!("Live search works on at most 20 searches at once — stop it on another search")
+            }
+            Refusal::NoThread => tr!("Couldn't start the live search"),
+        }
+    }
 }
 
 /// A new listing, as its card shows it.
@@ -138,7 +178,7 @@ pub struct LiveSearches {
     events: Sender<LiveEvent>,
     /// The search a watch was just refused for, and why: said beside its toggle until the next
     /// toggle.
-    refused: Option<(String, &'static str)>,
+    refused: Option<(String, Refusal)>,
 }
 
 struct Watch {
@@ -179,11 +219,11 @@ impl LiveSearches {
     }
 
     /// Why watching `query_id` was just refused, if it was.
-    pub fn refusal(&self, query_id: &str) -> Option<&'static str> {
+    pub fn refusal(&self, query_id: &str) -> Option<Refusal> {
         self.refused
             .as_ref()
             .filter(|(refused, _)| refused == query_id)
-            .map(|&(_, reason)| reason)
+            .map(|&(_, refusal)| refusal)
     }
 
     /// Watches `search`, or stops watching it.
@@ -199,20 +239,18 @@ impl LiveSearches {
             log::info!("live search {}: stopped", watch.id);
             return;
         }
-        if let Err(reason) = self.watch(search.clone()) {
-            self.refused = Some((search.query_id.clone(), reason));
+        if let Err(refusal) = self.watch(search.clone()) {
+            self.refused = Some((search.query_id.clone(), refusal));
         }
     }
 
-    fn watch(&mut self, search: WatchedSearch) -> Result<(), &'static str> {
+    fn watch(&mut self, search: WatchedSearch) -> Result<(), Refusal> {
         if !self.session.is_signed_in() {
-            return Err(tr!("Live search needs a sign-in to pathofexile.com"));
+            return Err(Refusal::SignedOut);
         }
         if self.watches.len() >= MAX_LIVE_SEARCHES {
             // The site's own limit per account.
-            return Err(tr!(
-                "Live search works on at most 20 searches at once — stop it on another search"
-            ));
+            return Err(Refusal::Full);
         }
         self.next_id += 1;
         let id = self.next_id;
@@ -231,7 +269,7 @@ impl LiveSearches {
             .spawn(move || socket.run())
             .map_err(|err| {
                 log::warn!("starting a live search thread failed: {err}");
-                tr!("Couldn't start the live search")
+                Refusal::NoThread
             })?;
         log::info!(
             "live search {id}: watching {} in {} ({:?} site)",
@@ -536,7 +574,6 @@ mod app_side {
     use super::{LiveCard, LiveEvent, LiveListing, LiveSearches, SHOWN_LISTINGS};
     use crate::price_check::{self, PriceCheckApp};
     use crate::session::{self, SessionStatus, TradeSession};
-    use crate::tr;
 
     /// Starts live search: the global the panel's "Следить" drives, and the task that turns what
     /// the sockets hear into cards -- handed back as the channel the trade overlay reads. Needs
@@ -648,18 +685,12 @@ mod app_side {
             return;
         };
         log::warn!("live search {watch}: ended ({end:?})");
-        let reason = if end == LiveEnd::Unauthorized {
+        if end == LiveEnd::Unauthorized {
             session::refused(cx);
-            tr!(
-                "the site no longer accepts the sign-in — the session expired, sign in again in \
-                 the settings, “Account” section"
-            )
-        } else {
-            tr!("the search is gone from the site — run it again and turn live search back on")
-        };
+        }
         let _ = cards.try_send(LiveCard::Ended {
             label: search.label,
-            reason,
+            end,
         });
     }
 }
@@ -673,6 +704,7 @@ mod tests {
     use tungstenite::handshake::server::{Request, Response};
 
     use super::*;
+    use crate::i18n::Lang;
 
     const SESSION: &str = "0123456789abcdef0123456789abcdef";
 
@@ -681,6 +713,26 @@ mod tests {
         let mut backoff = Backoff::default();
         let waits: Vec<u64> = (0..8).map(|_| backoff.next_wait().as_secs()).collect();
         assert_eq!(waits, [5, 10, 20, 40, 80, 160, 300, 300]);
+    }
+
+    #[test]
+    fn a_refusal_is_worded_in_the_language_it_is_shown_in() {
+        let (events, _heard) = async_channel::unbounded();
+        let mut live = LiveSearches::new(TradeSession::default(), "PoE2 Oracle test", events);
+        let search = WatchedSearch {
+            site: TradeSite::International,
+            league: "Standard".to_owned(),
+            query_id: "Q1".to_owned(),
+            trade_url: String::new(),
+            label: "Sapphire Ring".to_owned(),
+        };
+        crate::i18n::with_lang(Lang::Russian, || live.toggle(&search));
+        let refusal = live.refusal("Q1").expect("refused while signed out");
+        assert_eq!(
+            crate::i18n::with_lang(Lang::English, || refusal.message()),
+            "Live search needs a sign-in to pathofexile.com"
+        );
+        assert_eq!(live.refusal("Q2"), None, "said beside its own search only");
     }
 
     #[test]

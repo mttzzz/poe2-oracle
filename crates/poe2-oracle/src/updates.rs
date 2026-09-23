@@ -155,7 +155,7 @@ impl Updates {
                 })
                 .await;
             match installer.and_then(|installer| auto_update::apply_update(&installer)) {
-                Ok(()) => cx.update(|cx| cx.quit()),
+                Ok(()) => cx.update(crate::app::quit),
                 Err(err) => {
                     log::warn!("installing {} failed: {err:#}", update.version);
                     let label = Label::InstallFailed(update.version.clone());

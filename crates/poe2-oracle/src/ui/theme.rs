@@ -1,5 +1,6 @@
-//! The palette and spacing the price-check panel (`ui::panel`), the settings window and the XP
-//! overlay all draw with, so the three read as one app.
+//! The palette and spacing the price-check panel (`ui::panel`), the settings window and the
+//! overlays all draw with, so they read as one app -- but for the XP overlay's plates, inlaid in
+//! the game's HUD, which take the HUD's own colours (the `HUD_*` ones).
 
 use gpui::{Rems, rems};
 
@@ -129,3 +130,17 @@ pub(crate) const PLATE_TOP: u32 = 0x3d2c16;
 pub(crate) const PLATE_BOTTOM: u32 = 0x1f170c;
 /// A destructive button's edge; its label is `TEXT_WARNING`.
 pub(crate) const BORDER_DANGER: u32 = 0x5e2c22;
+
+// The game's own HUD, sampled live 2026-09-23 on the test machine's 4K game, for the plates the
+// XP overlay inlays in its rails (`ui::xp_overlay`).
+/// A recessed slot's near-black, top and bottom: the plate of the menu button by the flasks.
+pub(crate) const HUD_SLOT_TOP: u32 = 0x100f0e;
+pub(crate) const HUD_SLOT_BOTTOM: u32 = 0x1d1b17;
+/// The slot's rim: in shade along its top, under the rail's lip, and lit bronze along its bottom,
+/// like the rims of the HUD's buttons.
+pub(crate) const HUD_RIM_SHADE: u32 = 0x060607;
+pub(crate) const HUD_RIM_LIGHT: u32 = 0x544832;
+/// The HUD's text: the charm counts' cream, a muted step of it for words, and the stash's gold.
+pub(crate) const HUD_TEXT: u32 = 0xe4dab8;
+pub(crate) const HUD_LABEL: u32 = 0x8f8772;
+pub(crate) const HUD_GOLD: u32 = 0xc4aa57;

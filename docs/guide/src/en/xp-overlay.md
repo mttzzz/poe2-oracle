@@ -1,37 +1,49 @@
 # XP overlay
 
-![The XP overlay above the experience bar](../images/xp-overlay.png)
+![The XP overlay built into the game's HUD](../images/xp-overlay.png)
 
-A single line just above the game's experience bar tells how fast you gain experience and when the
-next level comes. It is on by default; the [settings](settings.md#xp-overlay) section
-**XP overlay** turns it and its parts on and off.
+PoE2 Oracle builds its experience readout into the game's own HUD. The rail along the top of the
+flask panel, left of the experience bar, carries a line that tells how fast you gain experience and
+when the next level comes, with a ⚙ at its end that opens the [settings](settings.md). With the
+map timer on, the rail along the top of the skill panel carries the current map. The overlay is on
+by default; the [settings](settings.md#xp-overlay) section **XP overlay** turns it and its parts on
+and off.
 
-A full line looks like this:
+On the flask panel:
 
 ```text
-64.8% · +12.4%/h · level 75 in 2h 50m of play · map 4:07 +1.2% · avg 6:30
+64.8% ◆ +12.4%/h · level 75 in 2h 50m
+```
+
+On the skill panel:
+
+```text
+map 4:07 +1.2% · avg 6:30
 ```
 
 | Part | Meaning |
 |---|---|
 | `64.8%` | How much of the current level is done. Shown with **Level percentage**, off by default. |
 | `+12.4%/h` | Experience per hour (`h`) of play, in percent of the current level. |
-| `level 75 in 2h 50m of play` | Playing time to level 75 at this rate: 2 hours 50 minutes. `next level in` when your level is not known yet; `—` when there is no estimate. |
+| `level 75 in 2h 50m` | Playing time to level 75 at this rate: 2 hours 50 minutes. `next level in` when your level is not known yet; `—` when there is no estimate. |
 | `map 4:07 +1.2%` | Time in the current map and the experience it gave. Shown with **Map timer**, on by default. Dimmed once you leave the map; five minutes later it reads `last map`. |
 | `avg 6:30` | Average time of the maps finished this session. |
 
-For the first couple of minutes the line reads `measuring rate…`. Times use `m` for minutes, `h`
-for hours and `d` for days. With the Russian [interface language](settings.md#interface-language),
-the line is in Russian: `64,8 % · +12,4 %/ч · до 75 ур. 2 ч 50 мин игры · …`.
+Each line says as much as its rail has room for. When the whole wording doesn't fit, the flask
+panel's line drops the level (`+12.4%/h · 2h 50m`) and then the percentage; the map line drops the
+average and `last`. For the first couple of minutes the line reads `measuring rate…`. Times use
+`m` for minutes, `h` for hours and `d` for days. With the Russian
+[interface language](settings.md#interface-language), the lines are in Russian:
+`64,8 % ◆ +12,4 %/ч · до 75 ур. 2 ч 50 мин`.
 
 In a town or hideout, and after five minutes of play without experience, the line dims and shows
 a pause instead of the rate and the time to level, which would still be those of the play before:
 
 ```text
-64.8% · paused · 12m · last map 9:00 +3.66%
+64.8% ◆ paused · 12m
 ```
 
-`paused · 12m` is how long the pause has lasted; with the map timer, the map you left follows,
+`paused · 12m` is how long the pause has lasted. The map line keeps the map you left, dimmed and
 without the average. The pause does not change the rate: it is back as it was when you play again.
 
 ## How it works
@@ -50,12 +62,14 @@ without the average. The pause does not change the rate: it is back as it was wh
   the map statistics over.
 - Ascendancy trials (the Trial of the Sekhemas and the Trial of Chaos) are never part of a map, but
   count as play for the rate.
-- When something covers the bar (a game panel, a loading screen, the price panel), that time does
-  not count; after five seconds the line hides until the bar is visible again.
+- When something covers the bar (a loading screen, the passive tree, the price panel), that time
+  does not count. After five seconds without the bar the lines hide until it is back, except while
+  the price panel is open: the HUD is still in view then.
 
 ## Requirements
 
 - The game window must be at least 720 pixels tall and not minimised.
 - The game must run in Windowed or Windowed Fullscreen mode, like everything PoE2 Oracle draws over
   it.
-- The line hides while the price panel is open, and follows the **Interface scale** setting.
+- The lines are the size of the game's HUD at the game's resolution; the **Interface scale**
+  setting does not change them. The price panel hides one only when you drag the panel over it.

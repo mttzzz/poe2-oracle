@@ -863,7 +863,8 @@ fn render_bounds(
 /// edge and shows a caret after the value -- highlighted as selected right after the click
 /// (`fresh`), when typing replaces it. A press on it never toggles its row. A click never
 /// activates the panel (see `app`'s overlay setup), so the box activates it: the keys must come
-/// here, not to the game.
+/// here, not to the game. A press anywhere else in the panel lets go of the keyboard, as any
+/// field does; the panel losing it to the game does the same (`app::PriceCheckRoot`).
 fn render_bound_input(
     row: usize,
     is_min: bool,
@@ -875,6 +876,7 @@ fn render_bound_input(
 ) -> impl IntoElement {
     let focused = focus_handle.is_focused(window);
     let focus_for_click = focus_handle.clone();
+    let focus_for_outside = focus_handle.clone();
     let (key, placeholder) = if is_min {
         ("min", tr!("min"))
     } else {
@@ -914,6 +916,14 @@ fn render_bound_input(
                 }
                 focus_for_click.focus(window, cx);
                 view.begin_bound_edit(row, is_min, cx);
+            }),
+        )
+        .on_mouse_down_out(
+            cx.listener(move |view, _event: &MouseDownEvent, window, cx| {
+                if focus_for_outside.is_focused(window) {
+                    window.blur(cx);
+                    view.end_bound_edit(cx);
+                }
             }),
         )
         .map(|this| {

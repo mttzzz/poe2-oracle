@@ -1,4 +1,5 @@
-//! Where the price-check panel goes on screen, ported from EE2's own layout math so the panel
+//! Where the app's windows go on the game's screen: the XP overlay's plates in the HUD's rails
+//! ([`hud_rails`]), and the price-check panel, ported from EE2's own layout math so the panel
 //! sits exactly where an EE2 user expects it:
 //!
 //! - `renderer/src/web/overlay/OverlayWindow.vue`: PoE's side panel (inventory on the right, stash
@@ -36,6 +37,74 @@ pub struct PhysicalRect {
     pub y: i32,
     pub width: i32,
     pub height: i32,
+}
+
+impl PhysicalRect {
+    /// Whether the two rects share any pixel.
+    pub fn intersects(&self, other: &PhysicalRect) -> bool {
+        self.x < other.x + other.width
+            && other.x < self.x + self.width
+            && self.y < other.y + other.height
+            && other.y < self.y + self.height
+    }
+}
+
+// --- The HUD's rails ----------------------------------------------------------------------------
+//
+// Measured live 2026-09-23 on the test machine's 3840x2160 game. The panels either side of the
+// experience bar -- the flasks and charms on the left, the skills on the right -- each have a top
+// rail: a grey cap molding whose top highlight (rows 1859-1862) is the HUD's upper edge there,
+// a scroll band under it, and a thin molding at rows 1895-1896 before the panel's ironwork. The
+// XP overlay's plates are inlaid in the rails, from just under the highlight down to that
+// molding, along each rail's straight run between its end caps. PoE2 scales its HUD with the
+// game's height (as `xp_tracker::XpBarGeometry` assumes), so every length is in pixels of a
+// 2160-row game; each panel hangs from its globe in a bottom corner, so each run is measured from
+// its own side's edge -- which only 16:9 has confirmed.
+
+const HUD_REFERENCE_HEIGHT: f64 = 2160.0;
+/// A plate's top and bottom rows, as distances from the game's bottom edge: rows 1863 and 1895.
+const RAIL_PLATE_ROWS: (f64, f64) = (297.0, 265.0);
+/// The flask rail's straight run, x 467-927: its ends' distances from the game's left edge.
+const FLASK_RAIL_RUN: (f64, f64) = (467.0, 927.0);
+/// The skill rail's straight run, x 2905-3374: its ends' distances from the game's right edge.
+const SKILL_RAIL_RUN: (f64, f64) = (935.0, 466.0);
+
+/// Where the XP overlay's plates go in a game whose client area is `game`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HudRails {
+    /// In the flask panel's rail, left of the experience bar.
+    pub flask: PhysicalRect,
+    /// In the skill panel's rail, right of it.
+    pub skill: PhysicalRect,
+}
+
+/// The plates' rects in the game's client area `game`.
+pub fn hud_rails(game: PhysicalRect) -> HudRails {
+    let scale = f64::from(game.height) / HUD_REFERENCE_HEIGHT;
+    let bottom = f64::from(game.y + game.height);
+    let top = (bottom - RAIL_PLATE_ROWS.0 * scale).round() as i32;
+    let height = (bottom - RAIL_PLATE_ROWS.1 * scale).round() as i32 - top;
+    let run = |from: f64, to: f64| {
+        let x = from.round() as i32;
+        PhysicalRect {
+            x,
+            y: top,
+            width: to.round() as i32 - x,
+            height,
+        }
+    };
+    let left = f64::from(game.x);
+    let right = f64::from(game.x + game.width);
+    HudRails {
+        flask: run(
+            left + FLASK_RAIL_RUN.0 * scale,
+            left + FLASK_RAIL_RUN.1 * scale,
+        ),
+        skill: run(
+            right - SKILL_RAIL_RUN.0 * scale,
+            right - SKILL_RAIL_RUN.1 * scale,
+        ),
+    }
 }
 
 /// Which of the game's side panels a check sits beside: the inventory, on the game's right, for a
@@ -156,6 +225,67 @@ mod tests {
         width: 3840,
         height: 2160,
     };
+
+    #[test]
+    fn plates_sit_in_the_rails_they_were_measured_in() {
+        let rails = hud_rails(GAME_4K);
+        assert_eq!(
+            rails.flask,
+            PhysicalRect {
+                x: 467,
+                y: 1863,
+                width: 460,
+                height: 32,
+            }
+        );
+        assert_eq!(
+            rails.skill,
+            PhysicalRect {
+                x: 2905,
+                y: 1863,
+                width: 469,
+                height: 32,
+            }
+        );
+    }
+
+    #[test]
+    fn plates_scale_with_the_game_and_keep_to_their_own_edges() {
+        // A 1080-row window: everything halves, from the window's own corners.
+        let windowed = hud_rails(PhysicalRect {
+            x: 100,
+            y: 50,
+            width: 1920,
+            height: 1080,
+        });
+        assert_eq!((windowed.flask.x, windowed.flask.width), (334, 230));
+        assert_eq!((windowed.flask.y, windowed.flask.height), (982, 16));
+        assert_eq!((windowed.skill.x, windowed.skill.width), (1553, 234));
+        // A wider game of the same height: the flask rail stays by the left edge, the skill
+        // rail moves with the right one.
+        let wide = hud_rails(PhysicalRect {
+            width: 5120,
+            ..GAME_4K
+        });
+        assert_eq!(wide.flask, hud_rails(GAME_4K).flask);
+        assert_eq!(wide.skill.x, 5120 - 935);
+    }
+
+    #[test]
+    fn rects_intersect_only_when_they_share_a_pixel() {
+        let plate = hud_rails(GAME_4K).flask;
+        let panel = |x| PhysicalRect {
+            x,
+            y: 0,
+            width: 1024,
+            height: 2160,
+        };
+        assert!(!panel(1331).intersects(&plate));
+        assert!(panel(0).intersects(&plate));
+        // Touching edges share no pixel.
+        assert!(!panel(plate.x + plate.width).intersects(&plate));
+        assert!(panel(plate.x + plate.width - 1).intersects(&plate));
+    }
 
     #[test]
     fn inventory_side_panel_ends_where_the_inventory_panel_starts() {

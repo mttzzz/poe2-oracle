@@ -515,59 +515,6 @@ fn paint_corner(
     paint_diamond(center, half * 0.4, rgb(BG_TITLE), window);
 }
 
-/// [`game_frame`] for a bar too low for its corner ornaments -- the XP line: both lines, and at
-/// the middle of each end a diamond, its arms fading along the end towards the corners. `lit`
-/// (0 to 1) warms the ornaments from the edge's dull gold to full gold. Laid like [`game_frame`].
-pub(crate) fn bar_frame(lit: f32) -> impl IntoElement {
-    canvas(
-        |_, _, _| {},
-        move |bounds, (), window, _| paint_bar_frame(bounds, lit, window),
-    )
-    .absolute()
-    .top_0()
-    .left_0()
-    .size_full()
-}
-
-fn paint_bar_frame(bounds: Bounds<Pixels>, lit: f32, window: &mut Window) {
-    let unit = window.rem_size() / px(BASE_REM_SIZE);
-    window.paint_quad(outline(bounds, rgb(BORDER_GOLD), BorderStyle::Solid));
-    window.paint_quad(outline(
-        bounds.inset(px(FRAME_GAP * unit)),
-        alpha(GOLD, FRAME_INNER_OPACITY),
-        BorderStyle::Solid,
-    ));
-    let gold = blend(BORDER_GOLD, GOLD, lit);
-    let hairline = px(1.);
-    let half = px(FRAME_DIAMOND * unit);
-    let middle = bounds.center().y;
-    let reach = (bounds.size.height / 2. - half).max(px(0.));
-    // Each arm fades from a diamond tip to a corner: CSS angles, 0 is bottom up, 180 top down.
-    let fading = |angle: f32| {
-        linear_gradient(
-            angle,
-            linear_color_stop(rgb(gold), 0.),
-            linear_color_stop(alpha(gold, 0.), 1.),
-        )
-    };
-    for (line_x, center_x) in [
-        (bounds.left(), bounds.left() + half),
-        (bounds.right() - hairline, bounds.right() - half),
-    ] {
-        window.paint_quad(fill(
-            Bounds::new(point(line_x, bounds.top()), size(hairline, reach)),
-            fading(0.),
-        ));
-        window.paint_quad(fill(
-            Bounds::new(point(line_x, middle + half), size(hairline, reach)),
-            fading(180.),
-        ));
-        let center = point(center_x, middle);
-        paint_diamond(center, half, rgb(gold), window);
-        paint_diamond(center, half * 0.4, rgb(BG_TITLE), window);
-    }
-}
-
 fn paint_diamond(
     center: Point<Pixels>,
     half: Pixels,

@@ -23,6 +23,9 @@ pub struct Login {
     open: bool,
     /// Why the last sign-in didn't finish, until the next one.
     problem: Option<LoginProblem>,
+    /// Counts the sign-ins «Войти» started. One whose window has closed may still be asking the
+    /// site about the window's last page: it leaves a newer one's window and problem alone.
+    started: u64,
 }
 
 impl Global for Login {}
@@ -53,6 +56,7 @@ pub fn init(cx: &mut App) {
     cx.set_global(Login {
         open: false,
         problem: None,
+        started: 0,
     });
 }
 
@@ -67,12 +71,16 @@ pub fn open(cx: &mut App) {
     let login = cx.global_mut::<Login>();
     login.open = true;
     login.problem = None;
+    login.started += 1;
+    let id = login.started;
     cx.spawn(async move |cx| {
-        let problem = sign_in(&page, cx).await;
+        let problem = sign_in(&page, id, cx).await;
         cx.update(|cx| {
             let login = cx.global_mut::<Login>();
-            login.open = false;
-            login.problem = problem;
+            if login.started == id {
+                login.open = false;
+                login.problem = problem;
+            }
         });
     })
     .detach();
@@ -84,9 +92,9 @@ fn login_page() -> String {
     format!("{}/login", i18n::lang().trade_site().origin())
 }
 
-/// One sign-in on `page`, from opening the window until it closes: what kept it from finishing, if
-/// anything.
-async fn sign_in(page: &str, cx: &mut AsyncApp) -> Option<LoginProblem> {
+/// Sign-in `id` on `page`, from opening the window until the site has answered about the last page
+/// it reported: what kept it from finishing, if anything.
+async fn sign_in(page: &str, id: u64, cx: &mut AsyncApp) -> Option<LoginProblem> {
     let Some(version) = login_window::runtime_version() else {
         log::warn!("no WebView2 runtime: the sign-in window can't open");
         return Some(LoginProblem::NoRuntime);
@@ -97,9 +105,33 @@ async fn sign_in(page: &str, cx: &mut AsyncApp) -> Option<LoginProblem> {
         return Some(LoginProblem::Failed(format!("{err:#}")));
     }
     log::info!("sign-in window opened on {page} (WebView2 {version})");
-    let problem = watch(&events, cx).await;
-    log::info!("sign-in window closed");
-    problem
+    watch(&closed_at_once(events, id, cx), cx).await
+}
+
+/// The window's `events` passed on as they come, its close taken on the way: another «Войти» opens
+/// a new window at once, while [`watch`] may still be waiting for the site's answer about the last
+/// page -- which still counts: a player who signed in and closed the window before the app did is
+/// signed in once the site answers.
+fn closed_at_once(events: Receiver<LoginEvent>, id: u64, cx: &AsyncApp) -> Receiver<LoginEvent> {
+    let (passed_tx, passed) = async_channel::unbounded();
+    cx.spawn(async move |cx| {
+        while let Ok(event) = events.recv().await {
+            if matches!(event, LoginEvent::Closed) {
+                log::info!("sign-in window closed");
+                cx.update(|cx| {
+                    let login = cx.global_mut::<Login>();
+                    if login.started == id {
+                        login.open = false;
+                    }
+                });
+            }
+            if passed_tx.send(event).await.is_err() {
+                return;
+            }
+        }
+    })
+    .detach();
+    passed
 }
 
 /// Follows the open window until it closes: asks the account page about the sessions it reports,

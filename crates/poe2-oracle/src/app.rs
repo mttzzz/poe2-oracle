@@ -53,7 +53,7 @@ use crate::ui::settings_view::{self, Intro, SettingsView};
 use crate::ui::theme::BASE_REM_SIZE;
 use crate::ui::tour;
 use crate::ui::trade_overlay::{self, TradeOverlay, TradeOverlayOptions};
-use crate::ui::xp_overlay::{self, XpOverlay, XpOverlayOptions};
+use crate::ui::xp_overlay::{self, XpCover, XpOverlay, XpOverlayOptions};
 use crate::updates::Updates;
 
 const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
@@ -83,8 +83,8 @@ struct PriceCheckRoot {
     xp: Option<Entity<XpOverlay>>,
     /// An overlay open is under way (the setting was just turned on), so it isn't started twice.
     xp_opening: bool,
-    /// Last suppression handed to the XP overlay; `None` until the first sync.
-    last_xp_suppressed: Option<bool>,
+    /// Last cover handed to the XP overlay; `None` until the first sync.
+    last_xp_cover: Option<XpCover>,
     /// The trade overlay, opened once a search is watched (see `sync_trade`).
     trade: Option<Entity<TradeOverlay>>,
     trade_opening: bool,
@@ -213,42 +213,50 @@ impl PriceCheckRoot {
         self.tray_words = Some(words);
     }
 
-    /// Hides the XP overlay while the price window is shown (the panel spans the bar's middle) or
-    /// the setting is off, and opens it -- at the first sync, or once the setting is turned on.
-    /// Turning it off only hides it; its sampling stops with the next launch, which never opens it.
-    /// The player's XP options follow it whenever they change.
+    /// Opens the XP overlay -- at the first sync, or once the setting is turned on -- and tells it
+    /// what covers its plates: the setting off, or the price panel while it's shown. Turning the
+    /// setting off only hides them; the sampling stops with the next launch, which never opens
+    /// the overlay. The player's XP options follow it whenever they change.
     fn sync_xp(&mut self, cx: &mut Context<Self>) {
-        let (enabled, price_shown, options) = {
+        let (enabled, panel, options) = {
             let state = self.inner.read(cx);
             (
                 state.settings.xp_overlay,
-                state.visible,
+                // Where the panel is going, as `sync_window` places it right after this.
+                state
+                    .visible
+                    .then(|| state.placement.or(self.default_bounds))
+                    .flatten(),
                 XpOverlayOptions::from_settings(&state.settings),
             )
         };
         if enabled && self.xp.is_none() && !self.xp_opening {
             // Spawned: this runs from `render`, where no window may be opened.
             self.xp_opening = true;
+            let app = self.inner.downgrade();
             cx.spawn(async move |this, cx| {
-                let opened = cx.update(|cx| xp_overlay::open(options, cx));
+                let opened = cx.update(|cx| xp_overlay::open(options, app, cx));
                 this.update(cx, |root, cx| {
                     root.xp_opening = false;
                     match opened {
                         Ok(xp) => root.xp = Some(xp),
                         Err(err) => log::warn!("the XP overlay is unavailable: {err:#}"),
                     }
-                    root.last_xp_suppressed = None;
+                    root.last_xp_cover = None;
                     root.sync_xp(cx);
                 })
                 .ok();
             })
             .detach();
         }
-        let suppressed = price_shown || !enabled;
+        let cover = XpCover {
+            off: !enabled,
+            panel,
+        };
         if let Some(xp) = &self.xp {
-            if self.last_xp_suppressed != Some(suppressed) {
-                xp.update(cx, |xp, cx| xp.set_suppressed(suppressed, cx));
-                self.last_xp_suppressed = Some(suppressed);
+            if self.last_xp_cover != Some(cover) {
+                xp.update(cx, |xp, cx| xp.set_cover(cover, cx));
+                self.last_xp_cover = Some(cover);
             }
             xp.update(cx, |xp, cx| xp.set_options(options, cx));
         }
@@ -418,7 +426,7 @@ fn build_tray(cx: &mut App, app: &Entity<PriceCheckApp>) -> anyhow::Result<Tray>
         }
         while let Ok(event) = clicks.recv().await {
             if event.id == quit_id {
-                cx.update(|cx| cx.quit());
+                cx.update(quit);
                 return;
             }
             if event.id == settings_id
@@ -445,6 +453,23 @@ fn build_tray(cx: &mut App, app: &Entity<PriceCheckApp>) -> anyhow::Result<Tray>
     .detach();
 
     Ok(tray)
+}
+
+/// Quits the app -- from the tray, for the installer (`instance`) or for an update. What the
+/// settings window's fields hold, typed but not yet left, applies first
+/// (`SettingsView::apply_typed`), as the window's own close would apply it: quitting ends GPUI's
+/// message loop without closing any window, so nothing else would.
+pub fn quit(cx: &mut App) {
+    for settings in cx
+        .windows()
+        .into_iter()
+        .filter_map(|window| window.downcast::<SettingsView>())
+    {
+        if let Err(err) = settings.update(cx, |view, _, cx| view.apply_typed(cx)) {
+            log::warn!("taking the settings window's typed text failed: {err:#}");
+        }
+    }
+    cx.quit();
 }
 
 /// The settings window's size, logical px, as the owner approved it on the style mockup; and
@@ -547,7 +572,7 @@ fn serve_instance_requests(
             match request {
                 Request::Quit => {
                     log::info!("asked to quit");
-                    cx.update(|cx| cx.quit());
+                    cx.update(quit);
                     return;
                 }
                 Request::ShowSettings => {
@@ -629,6 +654,18 @@ pub fn run() {
                         },
                     )
                     .detach();
+                    // A click on the game takes the keyboard from a bound box the player typed
+                    // in: the box lets go of it, like any field whose window loses the keyboard.
+                    cx.observe_window_activation(
+                        window,
+                        |this: &mut PriceCheckRoot, window, cx| {
+                            if !window.is_window_active() {
+                                window.blur(cx);
+                                this.inner.update(cx, |app, cx| app.end_bound_edit(cx));
+                            }
+                        },
+                    )
+                    .detach();
                     PriceCheckRoot {
                         inner,
                         overlay: None,
@@ -642,7 +679,7 @@ pub fn run() {
                         tray_words: None,
                         xp: None,
                         xp_opening: false,
-                        last_xp_suppressed: None,
+                        last_xp_cover: None,
                         trade: None,
                         trade_opening: false,
                         last_trade_suppressed: None,

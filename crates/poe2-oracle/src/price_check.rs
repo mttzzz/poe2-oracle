@@ -445,8 +445,12 @@ pub struct PriceCheckApp {
     /// Every league the trade site lists, current first -- what the settings window offers and
     /// `Settings::league` resolves against.
     leagues: Vec<String>,
-    /// The player's settings, as saved.
+    /// The player's settings as they apply: as saved, unless the file didn't take the last write
+    /// (`save_failure`).
     pub settings: Settings,
+    /// Why the settings file didn't take the last write (`save_settings`); `None` once one gets
+    /// through.
+    save_failure: Option<String>,
     /// Registers the hotkeys (`register_hotkeys`) for the app's lifetime.
     hotkeys: Option<GlobalHotKeyManager>,
     /// The combinations registered right now (`sync_hotkey_registration`): the price check's
@@ -559,6 +563,7 @@ impl PriceCheckApp {
             listing_status: settings.listing_status.into(),
             price_currency: PriceCurrency::Any,
             settings,
+            save_failure: None,
             hotkeys: None,
             registered: Vec::new(),
             refused: Vec::new(),
@@ -708,18 +713,14 @@ impl PriceCheckApp {
         self.search = SearchState::NotSearched;
     }
 
-    /// Takes over the settings the player just saved (already written to disk). The hotkeys and
-    /// the league change at once; listing status and client language apply from the next check,
-    /// as in EE2. A hotkey another program already holds is refused -- the price check keeps its
-    /// old one, a quick action goes without -- and the settings are saved back, so the file never
-    /// names a dead combination.
+    /// Takes over the settings the player just changed, for the caller to write as taken
+    /// (`save_settings`). The hotkeys and the league change at once; listing status and client
+    /// language apply from the next check, as in EE2. A hotkey another program already holds is
+    /// refused -- the price check keeps its old one, a quick action goes without -- so the file
+    /// never names a dead combination.
     pub fn apply_settings(&mut self, new: Settings, cx: &mut Context<Self>) {
         let old = std::mem::replace(&mut self.settings, new);
-        if self.refuse_taken_hotkeys(&old)
-            && let Err(err) = settings::save(&self.settings)
-        {
-            log::warn!("{err:#}");
-        }
+        self.refuse_taken_hotkeys(&old);
         self.sync_hotkey_registration(game_window::foreground());
         self.follow_league(cx);
         if self.settings.interface_language != old.interface_language
@@ -730,6 +731,27 @@ impl PriceCheckApp {
         cx.notify();
     }
 
+    /// Writes the settings as they stand. What changed applies whether or not the file takes it;
+    /// a write it didn't take would be lost at the next launch, so the settings window says so
+    /// (`save_failure`) until a later one gets through.
+    pub fn save_settings(&mut self, cx: &mut Context<Self>) {
+        let failure = settings::save(&self.settings)
+            .err()
+            .map(|err| format!("{err:#}"));
+        if let Some(err) = &failure {
+            log::warn!("saving the settings failed: {err}");
+        }
+        if self.save_failure != failure {
+            self.save_failure = failure;
+            cx.notify();
+        }
+    }
+
+    /// Why the settings file didn't take the last write, until one gets through.
+    pub fn save_failure(&self) -> Option<&str> {
+        self.save_failure.as_deref()
+    }
+
     /// Takes the league the player picked in the title bar's league menu: into the settings,
     /// saved at once, and followed (`follow_league`) -- which searches again only when the pick
     /// moves searches to another league.
@@ -737,9 +759,7 @@ impl PriceCheckApp {
         self.league_menu = false;
         if choice != self.settings.league {
             self.settings.league = choice;
-            if let Err(err) = settings::save(&self.settings) {
-                log::warn!("saving the league failed: {err:#}");
-            }
+            self.save_settings(cx);
             self.follow_league(cx);
         }
         cx.notify();
@@ -780,11 +800,10 @@ impl PriceCheckApp {
     /// Tries each combination the settings brought in (one `old` didn't have) against the rest of
     /// the system, and takes back those another program holds: the price check's goes back to
     /// `old`'s, a quick action's to none. Everything this app holds is released first, so only
-    /// other programs answer; `sync_hotkey_registration` holds what's wanted again after. Whether
-    /// anything was taken back.
-    fn refuse_taken_hotkeys(&mut self, old: &Settings) -> bool {
+    /// other programs answer; `sync_hotkey_registration` holds what's wanted again after.
+    fn refuse_taken_hotkeys(&mut self, old: &Settings) {
         let Some(manager) = &self.hotkeys else {
-            return false;
+            return;
         };
         for hotkey in self.registered.drain(..) {
             let _ = manager.unregister(hotkey.to_global());
@@ -805,10 +824,8 @@ impl PriceCheckApp {
                     }
                 }
         };
-        let mut refused = false;
         if !free(self.settings.hotkey) {
             self.settings.hotkey = old.hotkey;
-            refused = true;
         }
         for action in &mut self.settings.quick_actions {
             // The price check's hotkey may just have gone back to one an action now has.
@@ -816,10 +833,8 @@ impl PriceCheckApp {
                 && (hotkey == self.settings.hotkey || !free(hotkey))
             {
                 action.hotkey = None;
-                refused = true;
             }
         }
-        refused
     }
 
     /// Holds each hotkey only while its keys are for this app, and releases it otherwise -- a
@@ -1128,9 +1143,7 @@ impl PriceCheckApp {
                 marks.remove(stat_id);
             }
         }
-        if let Err(err) = settings::save(&self.settings) {
-            log::warn!("saving the waystone mark failed: {err:#}");
-        }
+        self.save_settings(cx);
         cx.notify();
     }
 
@@ -1178,6 +1191,16 @@ impl PriceCheckApp {
             }
             cx.notify();
         }
+    }
+
+    /// The bound boxes lost the keyboard -- a press outside the focused box, or the panel losing
+    /// the keyboard to the game: no value shows as selected any more, as in any field left.
+    pub fn end_bound_edit(&mut self, cx: &mut Context<Self>) {
+        for ui in &mut self.filter_ui {
+            ui.min_fresh = false;
+            ui.max_fresh = false;
+        }
+        cx.notify();
     }
 
     /// Edits filter `row`'s min (`is_min`) or max box with a keystroke (`bound_input::type_key`);
@@ -1297,12 +1320,12 @@ impl PriceCheckApp {
     }
 
     /// Builds the item's rows again as a signed-out search does (`stat_filters::Session`), in the
-    /// same profile, and searches once: the «Искать без сумм» button after the site refused a
-    /// weighted sum. The mods the sums added up are rows of their own then, picked on their
-    /// scores.
-    pub fn search_without_sums(&mut self, cx: &mut Context<Self>) {
+    /// same profile: the mods the sums added up are rows of their own then, picked on their
+    /// scores. Whether there were rows to build: an item searched by its exact type or priced by
+    /// the exchange has none a profile sets up.
+    fn build_without_sums(&mut self, cx: &mut Context<Self>) -> bool {
         let (Some(item), Some(profile)) = (self.item.as_ref(), self.profile) else {
-            return;
+            return false;
         };
         self.filters = stat_filters::build_filters(
             item,
@@ -1316,8 +1339,16 @@ impl PriceCheckApp {
             .map(|filter| FilterRowUi::new(cx, filter))
             .collect();
         self.roll_drag = None;
-        self.spawn_search(cx);
-        cx.notify();
+        true
+    }
+
+    /// The «Искать без сумм» button after the site refused a weighted sum: the rows built again
+    /// without sums (`build_without_sums`), searched once.
+    pub fn search_without_sums(&mut self, cx: &mut Context<Self>) {
+        if self.build_without_sums(cx) {
+            self.spawn_search(cx);
+            cx.notify();
+        }
     }
 
     /// Sets the minimum of every checked row whose tier the tier table knows to the bottom of
@@ -1469,9 +1500,7 @@ impl PriceCheckApp {
                 rect.x,
                 drag.side
             );
-            if let Err(err) = settings::save(&self.settings) {
-                log::warn!("saving the panel's place failed: {err:#}");
-            }
+            self.save_settings(cx);
         }
         false
     }
@@ -1489,10 +1518,8 @@ impl PriceCheckApp {
             self.placement = Some(rect);
         }
         log::info!("the price panel went back to its own place on the {side:?} side");
-        if self.settings.panel_positions != kept
-            && let Err(err) = settings::save(&self.settings)
-        {
-            log::warn!("saving the panel's place failed: {err:#}");
+        if self.settings.panel_positions != kept {
+            self.save_settings(cx);
         }
         cx.notify();
     }
@@ -2168,6 +2195,19 @@ fn item_site(text: &str, forced: Option<ItemLanguage>) -> Option<(ItemLanguage, 
 /// lack of any debounce anywhere in its codebase).
 pub async fn run_search(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
     let prepared = view.update(cx, |state, cx| {
+        // A weighted sum goes out only while the site takes one from the session
+        // (`search_session`): rows built with sums before it stopped -- the site refused one, the
+        // player signed out -- are built again without them first, as «Искать без сумм» does,
+        // whatever asked for the search.
+        if search_session(cx) == stat_filters::Session::Anonymous
+            && state
+                .filters
+                .iter()
+                .any(|filter| filter.enabled && filter.weighted_sum)
+            && state.build_without_sums(cx)
+        {
+            log::info!("no weighted sums without an accepted sign-in: the rows are built again");
+        }
         let item = state.item.as_ref()?;
         let catalog = state.catalog(state.site);
         let mut route = trade_client::route_search(item, &catalog.currencies, &catalog.item_types);
@@ -2335,7 +2375,8 @@ pub async fn run_search(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
             Err(err) => SearchState::Failed(SearchFailure::of(&err, summed)),
         };
         // A weighted sum refused: the site doesn't take the session the app holds for a signed-in
-        // one. Asking its account page again makes the next check build without sums.
+        // one. No search sends a sum until the account page accepts the session again
+        // (`session::sum_refused`): the next one builds its rows without them.
         if matches!(
             state.search,
             SearchState::Failed(SearchFailure::TooComplex {
@@ -2343,7 +2384,7 @@ pub async fn run_search(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
             })
         ) {
             log::warn!("the trade site refused a weighted sum; checking the session again");
-            crate::session::check(cx);
+            crate::session::sum_refused(cx);
         }
         cx.notify();
     });
@@ -2355,16 +2396,13 @@ pub async fn run_search(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
     }
 }
 
-/// Whether a search may add stats up on the site: a weighted sum needs a signed-in account
-/// (`stat_filters::Session`). A session the site accepted counts, and so does one the check
-/// couldn't reach the site about, sent as it is; one being checked, refused or missing doesn't.
+/// How a search's rows are built: with weighted sums only while the trade site takes one from the
+/// session (`session::sums_allowed`).
 fn search_session(cx: &App) -> stat_filters::Session {
-    match cx.try_global::<crate::session::SessionStatus>() {
-        Some(
-            crate::session::SessionStatus::SignedIn { .. }
-            | crate::session::SessionStatus::Unchecked(_),
-        ) => stat_filters::Session::SignedIn,
-        _ => stat_filters::Session::Anonymous,
+    if crate::session::sums_allowed(cx) {
+        stat_filters::Session::SignedIn
+    } else {
+        stat_filters::Session::Anonymous
     }
 }
 

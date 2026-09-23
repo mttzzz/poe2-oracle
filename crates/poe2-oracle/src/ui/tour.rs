@@ -32,12 +32,12 @@ use gpui::{
     relative, rgb, size,
 };
 
-use crate::overlay_layout::PhysicalRect;
+use crate::overlay_layout::{PhysicalRect, hud_rails};
 use crate::platform::game_window::GameScreen;
 use crate::platform::win32::Win32Overlay;
 use crate::price_check::{BootstrapState, PriceCheckApp, SearchState};
 use crate::settings::{self, Hotkey};
-use crate::tour::{self, Area, Host, Outcome, STEPS, Stop, Tour, Watched};
+use crate::tour::{self, Action, Area, Host, Outcome, STEPS, Stop, Tour, Watched};
 use crate::tr;
 use crate::ui::fonts;
 use crate::ui::settings_view::SettingsView;
@@ -65,9 +65,6 @@ const HOLE_HALO: f32 = 3.;
 /// The check's card over the game: its top this share of the game's height down, clear of the
 /// inventory and the stash at the sides.
 const CHECK_CARD_TOP: f32 = 0.12;
-/// The XP line's card while the line isn't on screen: its bottom this share of the game's height
-/// up, above the skill bar, near where the line would be.
-const XP_CARD_BOTTOM: f32 = 0.16;
 
 /// The running tour, for the windows that draw it.
 struct Running(Entity<Guide>);
@@ -245,7 +242,9 @@ impl Guide {
         self.follow(from, cx);
     }
 
-    /// What the player just did in the app, moving the tour on where a stop asks for it.
+    /// What the player just did in the app, moving the tour on where a stop asks for it. The
+    /// settings window closed at one of the panel's stops -- opened from the tray, say -- brings
+    /// back the panel that stepped aside for it (`app::open_settings`), and the stop with it.
     fn app_changed(&mut self, app: &Entity<PriceCheckApp>, cx: &mut Context<Self>) {
         if self.tour.ended().is_some() {
             return;
@@ -261,8 +260,14 @@ impl Guide {
         let actions = self.seen.actions_to(&now);
         self.seen = now;
         let from = self.tour.stop();
+        let settings_closed = actions.contains(&Action::SettingsClosed);
         for action in actions {
             self.tour.act(action, |stop| parts.show(stop));
+        }
+        if settings_closed && self.tour.ended().is_none() && self.tour.stop().host() == Host::Panel
+        {
+            let app = self.app.clone();
+            cx.defer(move |cx| set_panel_shown(&app, true, cx));
         }
         self.follow(from, cx);
     }
@@ -320,12 +325,8 @@ impl Guide {
             }
             app.update(cx, |state, cx| {
                 if !state.settings.tour_done {
-                    let mut settings = state.settings.clone();
-                    settings.tour_done = true;
-                    if let Err(err) = settings::save(&settings) {
-                        log::warn!("saving the tour's end failed: {err:#}");
-                    }
-                    state.apply_settings(settings, cx);
+                    state.settings.tour_done = true;
+                    state.save_settings(cx);
                 }
                 cx.notify();
             });
@@ -333,8 +334,8 @@ impl Guide {
     }
 
     /// Where the tour's own window goes for the stop: the check's card over the top of the game;
-    /// the XP line's spotlight over the game, or its card above the skill bar while the line
-    /// isn't on screen -- nowhere for a stop another window draws.
+    /// the XP line's spotlight over the game, or its card above the flask panel's rail while the
+    /// line isn't on screen -- nowhere for a stop another window draws.
     fn screen_layout(&self, cx: &App) -> Option<Layout> {
         let stop = self.tour.stop();
         if self.tour.ended().is_some() || stop.host() != Host::Screen {
@@ -349,12 +350,16 @@ impl Guide {
         Some(match stop {
             Stop::XpLine => match cx.try_global::<XpLineOnScreen>().and_then(|line| line.0) {
                 Some(line) => Layout::Spotlight { area: game, line },
-                None => Layout::Card {
-                    centre_x,
-                    y: at(1. - XP_CARD_BOTTOM),
-                    rises: true,
-                    scale,
-                },
+                // Just above where the line would be: the flask panel's rail.
+                None => {
+                    let plate = hud_rails(game).flask;
+                    Layout::Card {
+                        centre_x: plate.x + plate.width / 2,
+                        y: plate.y - (CARD_GAP * scale).round() as i32,
+                        rises: true,
+                        scale,
+                    }
+                }
             },
             _ => Layout::Card {
                 centre_x,
@@ -655,10 +660,11 @@ fn words(stop: Stop, g: &Guide, cx: &App) -> Words {
         Stop::XpLine => Words {
             title: tr!("XP overlay"),
             text: tr!(
-                "The line above the experience bar shows how fast you level — percent of a \
-                 level per hour — and how much play is left to the next level. In town, in your \
-                 hideout and after five minutes without experience it pauses: it dims and shows \
-                 how long the pause has lasted."
+                "The line on the flask panel shows how fast you level — percent of a level per \
+                 hour — and how much play is left to the next level; its ⚙ opens the settings. \
+                 In town, in your hideout and after five minutes without experience it pauses: \
+                 it dims and shows how long the pause has lasted. The map timer sits on the \
+                 skill panel."
             )
             .into(),
             note: match cx.try_global::<XpLineOnScreen>().and_then(|line| line.0) {

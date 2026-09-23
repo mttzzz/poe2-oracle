@@ -21,7 +21,7 @@ use gpui::{
 };
 use windows::Win32::System::SystemInformation::GetLocalTime;
 
-use crate::live_search::{LiveCard, LiveListing, SHOWN_LISTINGS};
+use crate::live_search::{LiveCard, LiveListing, SHOWN_LISTINGS, ended_reason};
 use crate::overlay_layout::PhysicalRect;
 use crate::platform::game_window::{self, Foreground};
 use crate::platform::win32::Win32Overlay;
@@ -464,7 +464,7 @@ impl TradeOverlay {
                             )),
                     )
             }
-            LiveCard::Ended { label, reason } => card(TEXT_WARNING)
+            LiveCard::Ended { label, end } => card(TEXT_WARNING)
                 .child(header(
                     tr!("Live search ended · {label}", label = label),
                     TEXT_WARNING,
@@ -473,7 +473,7 @@ impl TradeOverlay {
                     div()
                         .text_size(rems_from_px(12.))
                         .text_color(rgb(TEXT_DIM))
-                        .child(tr!("Reason: {reason}.", reason = reason)),
+                        .child(tr!("Reason: {reason}.", reason = ended_reason(*end))),
                 ),
         };
         appear(("card", id), card.child(dismiss))

@@ -31,10 +31,10 @@ use crate::xp_tracker::{XpBarGeometry, read_fill};
 /// One look at the game.
 #[derive(Debug, Clone)]
 pub struct BarSample {
-    /// Where the bar is, for placing the overlay; `None` for a game window too small or too narrow
-    /// to read.
-    pub geometry: Option<XpBarGeometry>,
-    /// The game window's DPI scale (1.0 at 96 DPI), for sizing the overlay window.
+    /// The game's client area on screen, physical pixels: the overlay's plates go in its HUD
+    /// (`overlay_layout::hud_rails`).
+    pub client: PhysicalRect,
+    /// The game window's DPI scale (1.0 at 96 DPI), for sizing the overlay's windows.
     pub dpi_scale: f64,
     /// The fraction of the level the bar shows; `None` when it isn't readable.
     pub fill: Option<f64>,
@@ -55,7 +55,7 @@ pub fn sample() -> Option<BarSample> {
         .filter(|geometry| shows_the_game(hwnd, geometry.capture))
         .and_then(|geometry| read_screen(geometry.capture, |bgra| read_fill(geometry, bgra)));
     Some(BarSample {
-        geometry,
+        client,
         dpi_scale,
         fill,
     })
@@ -65,7 +65,7 @@ pub fn sample() -> Option<BarSample> {
 /// over the bar -- the price panel, which can span the bar's middle, the tour's dim, another
 /// program, the desktop after an Alt+Tab -- is what a blit copies, and a cover that happens to
 /// pass `read_fill`'s checks reads as a wrong fill: a drop the tracker takes for a loss, then a
-/// "gain" when the cover goes. Windows that let clicks through (our own XP line) are passed over by
+/// "gain" when the cover goes. Windows that let clicks through are passed over by
 /// `WindowFromPoint`, as by the mouse.
 fn shows_the_game(game: HWND, rect: PhysicalRect) -> bool {
     const POINTS: i32 = 9;

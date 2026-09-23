@@ -71,8 +71,9 @@ language Craft of Exile opens in and the trade site whose league names the leagu
 ### Interface scale
 
 Row **Interface scale**: 100% by default, from 80 to 150% in steps of 5, with the − and + buttons. It
-sizes the text and controls of everything PoE2 Oracle draws over the game: the price panel (its
-width too) and the overlays. The settings window itself does not scale.
+sizes the text and controls of the price panel (its width too) and of the trade overlay's cards.
+The XP overlay is part of the game's HUD and takes its size; the settings window itself does not
+scale.
 
 ### System
 
@@ -141,9 +142,9 @@ Section **XP overlay**, group **XP line**. See [XP overlay](xp-overlay.md) for w
 
 | Setting | Default | Meaning |
 |---|---|---|
-| **Show the XP overlay** | on | Show the experience rate and the time to the next level above the experience bar |
+| **Show the XP overlay** | on | Show the experience rate and the time to the next level on the flask panel |
 | **Level percentage** | off | Also show how much of the current level is done |
-| **Map timer** | on | Also show the time in the current map, the experience it gave and the session's average map time |
+| **Map timer** | on | Show the time in the current map, the experience it gave and the session's average map time on the skill panel |
 | **Rate smoothing** | 10m | 5, 10, 20 or 30 minutes. Shorter shows a change of farming sooner, longer reads steadier |
 
 ## Account
