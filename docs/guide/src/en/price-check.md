@@ -1,6 +1,6 @@
 # Price check
 
-![The price panel next to the inventory, checking a rare item](../images/price-check.png)
+![The price panel next to the inventory, checking a rare item](../images/ru/price-check.webp)
 
 This page names the panel's parts as the English interface shows them; the
 [interface language](settings.md#interface-language) switches them to Russian. The item's own
@@ -293,7 +293,7 @@ switch for what it does; if the site refuses to watch a search, the reason shows
 
 ## Currency and exchange items
 
-![The market card for a currency item](../images/market.png)
+<img src="../images/ru/market.webp" width="461" alt="The market card for a currency item">
 
 Items traded on the in-game Currency Exchange (currency, omens, runes, essences, catalysts, soul
 cores, fragments, uncut and lineage gems, plain waystones and the like) are priced from GGG's own

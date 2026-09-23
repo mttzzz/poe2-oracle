@@ -1,6 +1,6 @@
 # Settings
 
-![The settings window](../images/settings.png)
+![The settings window](../images/en/settings.webp)
 
 Open the settings in any of three ways:
 

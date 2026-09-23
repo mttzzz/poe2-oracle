@@ -1,6 +1,6 @@
 # PoE2 Oracle
 
-![The PoE2 Oracle price panel next to the game's inventory](images/hero.png)
+![The PoE2 Oracle price panel next to the game's inventory](images/ru/hero.webp)
 
 ## English
 

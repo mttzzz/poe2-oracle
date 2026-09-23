@@ -21,7 +21,7 @@ The app's interface is in English and Russian: by default it follows the game cl
 and the settings can switch it. The game client can be English or Russian. A short tour shows the
 basics on the first launch.
 
-![The price panel open next to the game inventory](docs/guide/src/images/hero.png)
+![The price panel open next to the game inventory](docs/guide/src/images/ru/hero.webp)
 
 ## Features
 

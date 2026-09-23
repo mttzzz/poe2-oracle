@@ -24,11 +24,11 @@ The first public release.
   level, rarity and mods (in the site's Russian interface when the app's interface is Russian);
   one filter row per stat with min/max values, mod tier and source, pseudo totals, weapon DPS
   and defences; the cheapest listings, one page of 10 per search, with price, item level, seller
-  and listing age; a price estimate with its range and confidence, and a warning when the listings
-  look price-fixed. Prices are shown with currency icons. Hovering a listing shows it the way the
-  game's item tooltip does: properties, requirements, sockets, item level and every mod with its
-  tier and roll range, the searched ones marked. When nothing matches every selected stat, the
-  search is relaxed to most of them and says so.
+  and listing age, one seller's listings at one price in one row. Prices are shown with currency
+  icons. Hovering a listing shows it the way the game's item tooltip does: properties,
+  requirements, sockets, item level and every mod with its tier and roll range, the searched ones
+  marked. When nothing is found, the panel offers broader searches (**Broad −10%**, **Match N of
+  M**) rather than spending the trade site's limit on its own.
 - **Search profiles** in the row above the filters: **Quick price** (up to 4 most valuable stats,
   your rolls as minimums), **Exact match**, **Broad −10%** and **Crafting base** (implicit and
   fractured stats on the same base). **Tier minimum** sets each checked stat's minimum to the

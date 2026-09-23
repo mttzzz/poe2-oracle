@@ -290,6 +290,7 @@ kbd {
 .shot img,
 .feature img {
     display: block;
+    margin: 0 auto;
     border: 1px solid var(--border-gold);
     border-radius: 4px;
     background: var(--bg-deep);
@@ -321,6 +322,11 @@ kbd {
     gap: 2rem 3rem;
     align-items: center;
     margin-top: 3.5rem;
+}
+
+/* The screenshot takes the wider column on either side. */
+.feature:nth-of-type(even) {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
 }
 
 .feature:nth-of-type(even) .feature-media {
@@ -450,7 +456,8 @@ kbd {
 }
 
 @media (max-width: 52rem) {
-    .feature {
+    .feature,
+    .feature:nth-of-type(even) {
         grid-template-columns: minmax(0, 1fr);
     }
 
