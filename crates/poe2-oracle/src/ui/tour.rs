@@ -79,6 +79,16 @@ fn running(cx: &App) -> Option<Entity<Guide>> {
         .map(|Running(guide)| guide.clone())
 }
 
+/// Whether the tour stands at the XP line. The XP overlay stays on screen then, although the
+/// tour's dim covers the bar the line reads and the bar goes unreadable: otherwise the line would
+/// hide under its own spotlight.
+pub fn holds_xp_line(cx: &App) -> bool {
+    running(cx).is_some_and(|guide| {
+        let tour = &guide.read(cx).tour;
+        tour.ended().is_none() && tour.stop() == Stop::XpLine
+    })
+}
+
 /// The running tour: where its course stands, what the app last showed, the tour's own window,
 /// and where the stops' targets and the card were last drawn.
 struct Guide {

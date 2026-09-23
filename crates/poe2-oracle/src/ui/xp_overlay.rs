@@ -302,7 +302,10 @@ impl XpOverlay {
             return;
         };
         let placement = self.placement();
-        let want_shown = !self.suppressed && self.status.bar_visible && placement.is_some();
+        // Shown while the bar is readable -- or while the tour spotlights the line, whose dim
+        // covers the bar (`platform::xp_bar` then refuses to read it).
+        let readable = self.status.bar_visible || crate::ui::tour::holds_xp_line(cx);
+        let want_shown = !self.suppressed && readable && placement.is_some();
         let bounds = placement.filter(|rect| self.last_bounds != Some(*rect));
         let shown = (self.last_shown != Some(want_shown)).then_some(want_shown);
         if bounds.is_none() && shown.is_none() {

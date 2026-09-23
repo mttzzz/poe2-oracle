@@ -4,23 +4,25 @@
 //!
 //! Only the bar's own rect is copied -- `XpBarGeometry::capture`, inside the game's client area
 //! by construction: 1536x10 pixels on the 4K test machine. The copy is a plain `SRCCOPY` blit
-//! from the screen DC, i.e. the composed desktop: whatever the player sees there. A window over
-//! the bar (a PoE Overlay II panel, a tooltip) or a screen without the HUD (loading screen,
-//! passive tree) is therefore what gets read, and `read_fill` refuses it -- the tracker counts
-//! that time as not played and the overlay hides. The game's own inventory and stash panels leave
-//! the bar uncovered at 16:9 (verified live 2026-09-22 with the inventory open).
+//! from the screen DC, i.e. the composed desktop: whatever the player sees there. So the bar is
+//! read only while the screen shows the game at points along it ([`shows_the_game`]): a window
+//! over it -- our price panel, which can span its middle, the tour's dim, another program --
+//! makes the sample unreadable, like a screen without the HUD (loading screen, passive tree) that
+//! `read_fill` refuses; the tracker counts that time as not played and the overlay hides. The
+//! game's own inventory and stash panels are drawn inside the game window and leave the bar
+//! uncovered at 16:9 (verified live 2026-09-22 with the inventory open).
 //!
 //! No `CAPTUREBLT`: it only adds layered windows to the copy (the game's isn't one) and is known
 //! to make the mouse cursor flicker on each blit, which here would be every two seconds over the
-//! game. Whether our own layered overlay windows appear in a plain blit is not verified; if they
-//! cover the bar and do appear, `read_fill` refuses the frame like any other cover.
+//! game.
 
+use windows::Win32::Foundation::{HWND, POINT};
 use windows::Win32::Graphics::Gdi::{
     BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BitBlt, CreateCompatibleDC, CreateDIBSection,
     DIB_RGB_COLORS, DeleteDC, DeleteObject, GdiFlush, GetDC, ReleaseDC, SRCCOPY, SelectObject,
 };
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
-use windows::Win32::UI::WindowsAndMessaging::IsIconic;
+use windows::Win32::UI::WindowsAndMessaging::{GA_ROOT, GetAncestor, IsIconic, WindowFromPoint};
 
 use crate::overlay_layout::PhysicalRect;
 use crate::platform::game_window;
@@ -50,11 +52,28 @@ pub fn sample() -> Option<BarSample> {
     let geometry = XpBarGeometry::for_client(client);
     let fill = geometry
         .as_ref()
+        .filter(|geometry| shows_the_game(hwnd, geometry.capture))
         .and_then(|geometry| read_screen(geometry.capture, |bgra| read_fill(geometry, bgra)));
     Some(BarSample {
         geometry,
         dpi_scale,
         fill,
+    })
+}
+
+/// Whether the screen shows the game itself at points along `rect`, the bar's capture. Anything
+/// over the bar -- the price panel, which can span the bar's middle, the tour's dim, another
+/// program, the desktop after an Alt+Tab -- is what a blit copies, and a cover that happens to
+/// pass `read_fill`'s checks reads as a wrong fill: a drop the tracker takes for a loss, then a
+/// "gain" when the cover goes. Windows that let clicks through (our own XP line) are passed over by
+/// `WindowFromPoint`, as by the mouse.
+fn shows_the_game(game: HWND, rect: PhysicalRect) -> bool {
+    const POINTS: i32 = 9;
+    let y = rect.y + rect.height / 2;
+    (0..POINTS).all(|i| {
+        let x = rect.x + (rect.width - 1) * i / (POINTS - 1);
+        let at = unsafe { WindowFromPoint(POINT { x, y }) };
+        !at.is_invalid() && unsafe { GetAncestor(at, GA_ROOT) } == game
     })
 }
 
