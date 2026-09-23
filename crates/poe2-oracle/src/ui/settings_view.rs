@@ -152,7 +152,7 @@ impl Section {
 
     fn summary(self) -> &'static str {
         match self {
-            Section::General => tr!("League, client language, scale and starting with Windows"),
+            Section::General => tr!("League, languages, scale, starting with Windows and updates"),
             Section::PriceCheck => tr!("Hotkey, sellers, results table and Waystones"),
             Section::QuickActions => tr!("Keys that type chat commands and searches into the game"),
             Section::XpOverlay => tr!("Experience rate and map timer, on top of the game's panels"),

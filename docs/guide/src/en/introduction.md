@@ -1,6 +1,6 @@
 # Introduction
 
-![The PoE2 Oracle price panel next to the game's inventory](../images/ru/hero.webp)
+![The PoE2 Oracle price panel next to the game's inventory](../images/en/hero.webp)
 
 PoE2 Oracle is a free, open-source overlay for Path of Exile 2 on Windows. Point at an item in the
 game, press <kbd>Ctrl</kbd>+<kbd>E</kbd>, and a panel next to your inventory shows what similar

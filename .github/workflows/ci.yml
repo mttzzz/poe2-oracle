@@ -4,11 +4,17 @@ on:
   push:
   pull_request:
 
+# Reads the code and nothing else: the job pushes, publishes and comments nowhere.
+permissions:
+  contents: read
+
 jobs:
   build-test-lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       # The project's own lane runner image (lanes/runner.Dockerfile): rust:1-bookworm plus the
       # mingw-w64 cross toolchain for x86_64-pc-windows-gnu (this project's only ship target) and
@@ -22,7 +28,7 @@ jobs:
       # are redirected into the checked-out workspace (mounted into the container below) so
       # actions/cache can persist them across runs on the host side.
       - name: Cache cargo registry and build artifacts
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             .ci-cargo-home
