@@ -31,10 +31,10 @@ map 4:07 +1.2% · avg 6:30
 | `avg 6:30` | Average time of the maps finished this session. |
 
 Each line says as much as its plate has room for. When the whole wording doesn't fit, the flask
-panel's line drops the level (`+12.4%/h · 2h 50m`) and then the percentage; the map line drops the
-average and `last`. For the first couple of minutes the line reads `measuring rate…`. Times use
-`m` for minutes, `h` for hours and `d` for days. With the Russian
-[interface language](settings.md#interface-language), the lines are in Russian:
+panel's line drops the level (`64.8% ◆ +12.4%/h · 2h 50m`) and then the percentage
+(`+12.4%/h · 2h 50m`); the map line drops the average and `last`. For the first couple of minutes
+the line reads `measuring rate…`. Times use `m` for minutes, `h` for hours and `d` for days. With
+the Russian [interface language](settings.md#interface-language), the lines are in Russian:
 `64,8 % ◆ +12,4 %/ч · до 75 ур. 2 ч 50 мин`.
 
 In a town or hideout, and after five minutes of play without experience, the line dims and shows
@@ -63,9 +63,11 @@ without the average. The pause does not change the rate: it is back as it was wh
   the map statistics over.
 - Ascendancy trials (the Trial of the Sekhemas and the Trial of Chaos) are never part of a map, but
   count as play for the rate.
-- When something covers the bar (a loading screen, the passive tree, the price panel), that time
-  does not count. After five seconds without the bar the lines hide until it is back, except while
-  the price panel is open: the HUD is still in view then.
+- If something covers the bar for more than a few seconds (a loading screen, the passive tree, the
+  price panel), that time counts only when you earned experience behind the cover, as in a fight
+  with the price panel open, and the bar was back within a minute; otherwise neither that time nor
+  the experience earned in it counts. After a few seconds without the bar the lines hide until it
+  is back, except while the price panel is open: the HUD is still in view then.
 
 ## Requirements
 

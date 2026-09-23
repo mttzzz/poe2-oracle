@@ -70,8 +70,9 @@ Texts are saved to `%LOCALAPPDATA%\poe2-oracle\data\unparsed`; the last 100 are 
 saves there, without a message, items it read only partly: a modifier line it could not match
 simply has no filter row.
 
-Please report such items with **Report a problem**: the button under the message, or the link under
-the item's name when an item was read but got wrong filters or a price that looks wrong. It opens
+Please report such items with the button **Report a problem** under the message, or, when an item
+was read but got wrong filters or a price that looks wrong, with the link **report a problem ↗**
+under the item's name. Both open
 the [item problem form](https://github.com/mttzzz/poe2-oracle/issues/new?template=item_problem.yml)
 in your browser with the item's text, the app's version and your client's language filled in.
 Describe what went wrong and submit it; you need a GitHub account. You can also fill the form by
@@ -93,10 +94,11 @@ The zip holds plain text files:
 - `settings.json`: your settings;
 - `unparsed/`: the saved item texts.
 
-Everywhere in it, your Windows user name is replaced with `%USERNAME%`, and the paths of your user
-folder and of your Desktop, Documents and AppData folders, wherever Windows keeps them, with
-`%USERPROFILE%`, `%DESKTOP%`, `%DOCUMENTS%`, `%APPDATA%` and `%LOCALAPPDATA%`. Nothing is sent
-anywhere: you attach the file yourself, and you can open it and read it first.
+Everywhere in it, your Windows user name, if it has three characters or more, is replaced with
+`%USERNAME%`, and the paths of your user folder and of your Desktop, Documents and AppData folders,
+wherever Windows keeps them, with `%USERPROFILE%`, `%DESKTOP%`, `%DOCUMENTS%`, `%APPDATA%` and
+`%LOCALAPPDATA%`. Nothing is sent anywhere: you attach the file yourself, and you can open it and
+read it first.
 
 **Logs folder** → **Open** in the same section opens `%LOCALAPPDATA%\poe2-oracle\data\logs`, with
 `poe2-oracle.log` for the current run and `poe2-oracle.previous.log` for the one before.

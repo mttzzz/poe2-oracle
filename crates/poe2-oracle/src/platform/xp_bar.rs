@@ -1,6 +1,6 @@
 //! Reads PoE2's experience bar off the screen for the XP overlay: finds the game window through
 //! `game_window`, copies the bar's few rows with GDI, and leaves the reading to
-//! `crate::xp_tracker::read_fill`. It looks at the HUD's rails the overlay's plates are inlaid in
+//! `crate::xp_tracker::read_fill`. It looks at the HUD's rails the overlay's plates stand on
 //! the same way: a strip of each rail's lip, which `overlay_layout::rail_seen` tells from anything
 //! else.
 //!
@@ -10,7 +10,7 @@
 //! read only while the screen shows the game at points along it ([`shows_the_game`]): a window
 //! over it -- our price panel, which can span its middle, the tour's dim, another program --
 //! makes the sample unreadable, like a screen without the HUD (loading screen, passive tree) that
-//! `read_fill` refuses; the tracker counts that time as not played and the overlay hides. The
+//! `read_fill` refuses; the tracker keeps its last reading until the bar can be read again. The
 //! game's own inventory and stash panels are drawn inside the game window and leave the bar
 //! uncovered at 16:9 (verified live 2026-09-22 with the inventory open).
 //!

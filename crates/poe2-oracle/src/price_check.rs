@@ -399,8 +399,8 @@ impl ScopeChoice {
     }
 }
 
-/// The rarity a non-unique item's filtered search admits: the default `trade_client` chose (a
-/// magic item among magic ones, a rare among every non-unique) or the other one
+/// The rarity a non-unique item's filtered search admits: the default `trade_client` chose (the
+/// item's own rarity: a magic item among magic ones, a rare among rares) or the other one
 /// (`trade_client::other_rarity`) -- the panel's rarity chip, PoE Overlay II's rarity toggle.
 #[derive(Debug, Clone, Copy)]
 pub struct RarityChoice {

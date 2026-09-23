@@ -14,7 +14,7 @@ optional; signed in, the app searches the trade site with your session (see
 | Live search: `wss://www.pathofexile.com` and `wss://ru.pathofexile.com` | Only signed in, while **Live search** watches a search. | The league and the search's id. The site answers with the ids of new listings, which are then fetched as in a check. |
 | `api.poe2scout.com` | At start, when you change the league, and after a check, when the saved prices are older than 30 minutes. | The league, to get the prices of unique items, the Currency Exchange's last seven days and item pages, and the prices of exchange items not traded lately. |
 | `web.poecdn.com` (the game's server for pictures and exchange data) | When the panel shows an item picture or a currency icon. At start, when you change the league, and during checks at most every 10 minutes: each complete hour of GGG's record of the Currency Exchange's trades not downloaded yet. | Requests for those pictures, and for the hours of exchange data, which are the same for every league and player: nothing about you or your league. |
-| `api.github.com`, `github.com` | 30 seconds after start, if **Check for updates automatically** is on; when you click the update entry; when you install an update. | A request for the latest release; downloads of the installer and its `SHA256SUMS`. |
+| `api.github.com`, `github.com` and GitHub's file storage (`…githubusercontent.com`) | 30 seconds after start, if **Check for updates automatically** is on; when you click the update entry; when you install an update. | A request for the latest release; downloads of the installer and its `SHA256SUMS`, which github.com passes on to its file storage. |
 
 Signed out, no request carries your account, a cookie or anything else that identifies you. Signed
 in, the requests to the trade site and the live search connection carry your pathofexile.com
@@ -23,21 +23,24 @@ string that is the same for every player: a common web browser's for the Path of
 poe2scout and the game's picture and exchange server, and `PoE2-Oracle/<version>` for GitHub. As
 with any request on the internet, each service sees your IP address.
 
-The links on the panel (**poe2db ↗**, **wiki ↗**, **poe2scout ↗**, **…/trade ↗**) open in your
-browser: poe2db.tw, www.poe2wiki.net, poe2scout.com and the trade site. PoE2 Oracle itself never
-contacts poe2db or the wiki.
+The links on the panel (**poe2db ↗**, **wiki ↗**, **Craft of Exile ↗**, **poe2scout ↗**,
+**…/trade ↗**) open in your browser when you click them: poe2db.tw, www.poe2wiki.net,
+beta.craftofexile.com, poe2scout.com and the trade site. The Craft of Exile link carries the item
+in its address: its base, item level, rarity and modifiers. PoE2 Oracle itself never contacts
+poe2db, the wiki or Craft of Exile.
 
-**Report a bug** and **report a problem** open a GitHub issue form in your browser with the app's
-version, your client's language and, for an item, its text filled in. Nothing reaches GitHub
-unless you submit that form yourself, from your own account.
+**Report a bug**, the button **Report a problem** and the link **report a problem ↗** open a GitHub
+issue form in your browser with the app's version, your client's language and, for an item, its
+text filled in. Nothing reaches GitHub unless you submit that form yourself, from your own account.
 
 ## Signing in to pathofexile.com
 
-Signing in is needed only for private leagues and live search (see [Account](settings.md#account)).
-**Sign in** opens pathofexile.com's own sign-in page in a window of the app, a Microsoft Edge
-WebView2 browser, where you sign in as on the site: with your password, or through Steam,
-PlayStation or Xbox. PoE2 Oracle never sees your password. It takes only the session the site gives
-that browser, the cookie `POESESSID`, and checks it on the site's account page.
+Signing in is needed only for private leagues, live search and the **sum** rows among the filters
+(see [Account](settings.md#account)). **Sign in** opens pathofexile.com's own sign-in page in a
+window of the app, a Microsoft Edge WebView2 browser, where you sign in as on the site: with your
+password, or through Steam, PlayStation or Xbox. PoE2 Oracle never sees your password. It takes
+only the session the site gives that browser, the cookie `POESESSID`, and checks it on the site's
+account page.
 
 - **What is kept.** The session alone, in Windows' Credential Manager, as the generic credential
   `PoE2 Oracle/pathofexile.com` (user name `POESESSID`). Windows keeps it encrypted for your Windows

@@ -35,12 +35,12 @@ The first public release.
   bottom of its tier.
 - **The league on the panel:** the top bar names the league being searched, and a click switches
   it there, saved to the settings. Beside it, the Divine Orb's price in Exalted Orbs.
-- **Search chips:** base type or the whole item class; rarity (a magic item is compared with magic
-  items, a rare with all non-unique items); corrupted listings in or out; every stat or none;
-  which sellers to include; the currency of the price. A magic item's prefix and suffix are both
-  selected from the start, whatever their tier. As in Exiled Exchange 2, an uncorrupted item is
-  compared with uncorrupted listings, gear leaves out mirrored and sanctified items, and an
-  unidentified unique is compared with unidentified uniques of its base.
+- **Search chips:** base type or the whole item class; rarity (by default a magic item is compared
+  with magic items and a rare with rare items; a click switches to all non-unique items); corrupted
+  listings in or out; every stat or none; which sellers to include; the currency of the price. As
+  in Exiled Exchange 2, an uncorrupted item is compared with uncorrupted listings, gear leaves out
+  mirrored and sanctified items, and an unidentified unique is compared with unidentified uniques
+  of its base.
 - **Whispers:** a click on a listing whose seller trades in person copies the trade site's whisper
   for the game chat.
 - **Currency Exchange items** priced from GGG's own hourly record of the exchange's trades, in a
@@ -53,14 +53,9 @@ The first public release.
 - **Trade site limits kept:** after the trade site refuses a request (HTTP 429), nothing is sent to
   it until the lockout ends, and the panel says when to try again. The limit is per IP address and
   shared with the trade site open in a browser.
-- **Waystone marks:** modifiers can be marked as dangerous, doubtful or wanted; the marks are kept
-  and highlighted on every waystone checked later.
+- **Waystone marks:** modifiers can be marked as danger, caution or wanted; the marks are kept and
+  highlighted on every waystone checked later.
 - **Vendor gamble offers** ("Random Helmet") are recognised and explained instead of searched.
-- **Trade requests:** buyers' whispers from the trade site (English or Russian) appear as cards at
-  the top of the screen with the item, price, stash tab and position, the buyer's note, repeats
-  and arrival. Buttons answer in the game chat (invite, trade, one moment, sold, thanks, kick) or
-  search the open stash for the item; clicking them leaves the keyboard with the game. An optional
-  sound announces a new request.
 - **Sign-in to pathofexile.com**, optional: Settings → Account → **Sign in** opens the site's own
   sign-in page in a window of the app (Microsoft Edge WebView2), Steam included. The app doesn't
   read or keep the password; the site's session is kept in Windows Credential Manager, sent only
@@ -76,18 +71,18 @@ The first public release.
   panel a map timer with the map's experience and the session's average map time. The plates are
   built of the rails' own molding, take the HUD's size, let clicks through to the game but for the
   ⚙, and say as much as they have room for.
-- **Quick actions:** up to 12 hotkeys that type a chat command (`/hideout` is preset, `@last`
+- **Quick actions:** up to 12 hotkeys that type a chat command (`/hideout` is preset, `@last thanks`
   answers whoever whispered last) or paste a stash search string.
-- **Settings window:** league, client language, hotkeys, quick actions, value tolerance (±10 % by
-  default, up to ±50 %), default sellers, seller column, interface scale (80 to 150 %), XP overlay,
-  trade requests, start with Windows, update checks, bug reporting and the diagnostics report. It
-  warns when the game runs in exclusive fullscreen or another program holds the item-copy
-  combination.
+- **Settings window:** league, client language, hotkeys, quick actions, default sellers, seller
+  column, interface scale (80 to 150 %), XP overlay, start with Windows, update checks, bug
+  reporting and the diagnostics report. It warns when the game runs in exclusive fullscreen or
+  another program holds the item-copy combination.
 - **Guided tour** at launch, until finished or skipped, and again from Settings → Help →
   **Tutorial**: the screen dims around one thing at a time, with a card beside it — the league in
   the settings, a first price check in the game, the price panel's filters, Search, listings and
-  league, and the XP overlay. Next, Back and Skip tour on every card; a step that waits for the
-  player (the first check, a search) moves on by itself when it happens.
+  league, and the XP overlay. Skip tour on every card, Back on all but the first, and Next (Done on
+  the last) on all but the first check's; a step that waits for the player (the first check, a
+  search) moves on by itself when it happens.
 - **English or Russian interface:** Settings → General → **Interface language**: **Auto** (the
   game client's language; before the game's first run, Windows' display language), **Русский** or
   **English**, applied at once, the tray menu included. Only the app's own words change: item
@@ -99,16 +94,17 @@ The first public release.
   session; starting it again opens the settings.
 - **Bug reports from the app:** **Report a bug**, in the tray menu and the settings, writes the
   diagnostics report to the desktop, shows it in Explorer and opens GitHub's bug form with the
-  version, the client language and the report's file name filled in. **Report a problem**, under
-  the item name on the panel and under an item the app couldn't read, opens the item form with the
-  item text filled in. The player submits the form from their own GitHub account; the app sends
-  nothing.
+  version, the client language and the report's file name filled in. The link **report a problem ↗**
+  under the item name on the panel and the button **Report a problem** under an item the app
+  couldn't read open the item form with the item text filled in. The player submits the form from
+  their own GitHub account; the app sends nothing.
 - **Updates** from GitHub Releases: the installer is downloaded, verified against the release's
   `SHA256SUMS`, installed silently, and the app restarts.
 - **Installer** for the current user, without administrator rights: Start menu shortcut, optional
   start with Windows, the license texts and third-party notices next to the app. Uninstalling
   removes the saved sign-in and keeps settings and caches unless asked to remove them.
 - **Diagnostics report:** a zip on the desktop with the logs, settings, unread item texts and a
-  summary of the system, with the Windows user name and the user's folder paths masked.
+  summary of the system, with the user's folder paths masked, and the Windows user name too if it
+  has three characters or more.
 
 [0.1.0]: https://github.com/mttzzz/poe2-oracle/releases/tag/v0.1.0

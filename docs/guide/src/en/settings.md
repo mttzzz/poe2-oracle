@@ -149,18 +149,20 @@ Section **XP overlay**, group **XP line**. See [XP overlay](xp-overlay.md) for w
 
 ## Account
 
-Section **Account**. Signing in to pathofexile.com is needed to search private leagues and to watch
-searches.
+Section **Account**. Signing in to pathofexile.com is needed to search private leagues, to watch
+searches and for the **sum** rows among the [filters](price-check.md#filters).
 
-- **pathofexile.com.** The row tells what is known about your sign-in: "Not signed in", "Checking
-  the sign-in…", "Signed in as *account*", "Session expired" (the site no longer accepts it) or
-  "Couldn't check the sign-in" (the site did not answer; the session is used as it is). **Sign in**
-  opens pathofexile.com's sign-in page in the app's own window, in the interface language
-  (www.pathofexile.com in English, ru.pathofexile.com in Russian; both keep the same session): sign
-  in as usual, through Steam too, and the window closes by itself. The session is kept in Windows'
-  Credential Manager and sent to pathofexile.com only. **Sign out** makes PoE2 Oracle forget the
-  session; you stay signed in on the site. The sign-in window needs the Microsoft Edge WebView2
-  Runtime; without it, the row shows a link **Download from Microsoft**.
+- **pathofexile.com.** The row tells what is known about your sign-in: "Sign in through the window
+  that opened" while the sign-in window is open, "Not signed in", "Checking the sign-in…", "Signed
+  in as *account*" (or "Signed in" when the site's page doesn't name the account), "Session
+  expired" (the site no longer accepts it) or "Couldn't check the sign-in" (the site did not
+  answer; the session is used as it is). **Sign in** opens pathofexile.com's sign-in page in the
+  app's own window, in the interface language (www.pathofexile.com in English, ru.pathofexile.com
+  in Russian; both keep the same session): sign in as usual, through Steam too, and the window
+  closes by itself. The session is kept in Windows' Credential Manager and sent to pathofexile.com
+  only. **Sign out** makes PoE2 Oracle forget the session; you stay signed in on the site. The
+  sign-in window needs the Microsoft Edge WebView2 Runtime; without it, the row shows a link
+  **Download from Microsoft**.
 - **Live searches.** Row **Live search**: how many searches the price panel's **Live search** button
   is watching, for example "2 of 20". New listings for them arrive as cards over the game. The site
   allows 20 at most. Signed out, the row reads "sign-in needed".
@@ -181,8 +183,9 @@ Section **Help**.
     report to your desktop, shows it in File Explorer and opens GitHub's bug report form in your
     browser. See [Reporting a bug](troubleshooting.md#reporting-a-bug).
   - **Collect report** only writes the report: a zip with the logs, the settings and the item texts
-    the app could not read, on your desktop, shown in File Explorer. Your Windows user name is
-    hidden in it. See [Troubleshooting](troubleshooting.md#collecting-a-diagnostics-report).
+    the app could not read, on your desktop, shown in File Explorer. Your Windows user name, if it
+    has three characters or more, is hidden in it. See
+    [Troubleshooting](troubleshooting.md#collecting-a-diagnostics-report).
 - **Logs folder** → **Open** opens the folder with the logs of this run and the one before.
 - **About**: PoE2 Oracle's version and license. **Licenses** opens `THIRD-PARTY-NOTICES.html`, which
   the installer puts next to the app: the licenses of everything it includes. **GitHub ↗** opens the

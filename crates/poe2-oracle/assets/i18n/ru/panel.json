@@ -101,7 +101,7 @@
   "Danger:": "Опасно:",
   "Caution:": "Осторожно:",
   "Wanted:": "Желанно:",
-  "◇ at the end of a modifier marks it: danger, caution or wanted": "◇ в конце свойства — пометить его опасным, спорным или желанным",
+  "◇ at the end of a modifier marks it: danger, caution or wanted": "◇ в конце свойства — пометить его: опасно, осторожно или желанно",
 
   "Profile:": "Профиль:",
   "How to search for this item: which stats are checked and their minimums. Picking a profile searches again at once.": "Как искать эту вещь: какие свойства отмечены и какие у них минимумы. Выбор сразу повторяет поиск.",

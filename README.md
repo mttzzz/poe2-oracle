@@ -37,9 +37,9 @@ basics on the first launch.
   the tier needs and the best tier the item's level allows. When nothing is found, the panel offers
   a broader search instead of spending the trade site's limit on its own.
 - **Search chips** narrow or widen the search with one click: the item's base type or its whole
-  class, its rarity (a magic item is compared with magic items, a rare with every non-unique item),
-  corrupted listings in or out, every stat or none, which sellers to include (instant buyout only by
-  default), and the currency of the price.
+  class, its rarity (by default a magic item is compared with magic items and a rare with rare
+  items; a click widens that to every non-unique item), corrupted listings in or out, every stat or
+  none, which sellers to include (instant buyout only by default), and the currency of the price.
 - **Whispers.** Click a listing whose seller trades in person and the trade site's whisper is copied;
   paste it into the game chat.
 - **Currency Exchange items** (currency, omens, runes, essences and the like) get a market card from
@@ -59,10 +59,9 @@ basics on the first launch.
   the settings; above the skill panel, a timer for the current map.
 - **Quick actions:** your own hotkeys that type a chat command (`/hideout`, `@last thanks`) or a
   stash search string (for example one made with poe2.re).
-- **Trade requests:** buyers' whispers from the trade site appear as cards at the top of the
-  screen, with buttons that answer in the game chat or search the open stash for the item.
-- **Sign-in to pathofexile.com**, optional, on the site's own page: it opens private leagues and
-  **Live search**, which watches a search and brings each new listing as a card over the game.
+- **Sign-in to pathofexile.com**, optional, on the site's own page: it opens private leagues,
+  **sum** rows (a stat added up across mods) and **Live search**, which watches a search and brings
+  each new listing as a card over the game.
 - **Updates** from the tray menu: the new installer is downloaded from GitHub Releases, checked
   against its published SHA-256 sum and installed; the app restarts by itself.
 
@@ -72,7 +71,7 @@ basics on the first launch.
 - Path of Exile 2 in **Windowed Fullscreen** or **Windowed** mode. The panel can't be shown over
   exclusive Fullscreen; the app's settings window warns you about it.
 - An English or Russian game client.
-- Internet access to pathofexile.com, web.poecdn.com and poe2scout.
+- Internet access to pathofexile.com, web.poecdn.com and poe2scout, and to GitHub for updates.
 
 ## Install
 
@@ -127,10 +126,11 @@ own GitHub account; the app sends nothing by itself.
 
 - **Report a bug** in the tray menu, or **Report ↗** in the **Help** section of the settings, saves
   a diagnostics report to your desktop (a zip with the logs and settings, your Windows user name
-  masked), shows it in Explorer and opens the bug form with the version, the client language and
-  the report's file name filled in. Drag the zip into the form.
-- **Report a problem**, under the item name on the price panel or in the message about an item the
-  app couldn't read, opens the item form with the item text filled in.
+  masked if it has three characters or more), shows it in Explorer and opens the bug form with the
+  version, the client language and the report's file name filled in. Drag the zip into the form.
+- The link **report a problem ↗** under the item name on the price panel, or the button
+  **Report a problem** in the message about an item the app couldn't read, opens the item form
+  with the item text filled in.
 
 You can also open a form yourself:
 
@@ -158,7 +158,7 @@ PoE2 Oracle has no telemetry, no analytics and no accounts of its own. It connec
 | www.pathofexile.com, ru.pathofexile.com | The trade site's API: leagues, stat and item catalogs, your searches (the item's stats) and the listings they find; once you sign in, the site's session goes along, and each live search keeps a connection open |
 | api.poe2scout.com | Prices of uniques; the week's prices and pages of Currency Exchange items, and prices of those that haven't traded in your league lately |
 | web.poecdn.com | Item images, and GGG's hourly record of the trades made on the Currency Exchange (one file per hour for all leagues, the same for everyone) |
-| api.github.com, github.com | The update check (30 seconds after start while update checks are on, or from the tray menu) and the installer download |
+| api.github.com, github.com, GitHub's file storage (…githubusercontent.com) | The update check (30 seconds after start while update checks are on, or from the tray menu) and the installer download |
 
 Signing in is optional. It happens on pathofexile.com's own page, in a window of the app (Microsoft
 Edge WebView2); PoE2 Oracle doesn't read or keep your password, only the site's session.
@@ -177,7 +177,9 @@ pixels of the experience bar itself. It keeps its files here:
 
 The diagnostics report is made only when you ask for it, and the app never sends it anywhere:
 reporting a bug only opens GitHub's form in your browser, and you decide what to submit. Links on
-the panel (poe2db, the wiki, poe2scout, the trade site) open in your browser too.
+the panel (poe2db, the wiki, Craft of Exile, poe2scout, the trade site) open in your browser too,
+when you click them. The Craft of Exile link carries the item's base, item level, rarity and
+modifiers in its address; the app itself never contacts poe2db, the wiki or Craft of Exile.
 
 ## Contributing
 

@@ -90,7 +90,7 @@ an explanation.
 | Chip | What it switches |
 |---|---|
 | **Class: …** ↔ **Base: …** | Search among every item of the class (a rare is compared with its whole class by default) or only among items of this base type. The base can matter on its own: a base implicit, a sought-after base. |
-| **Rarity: …** | **Magic**, **Rare** or **Normal** searches only items of the same rarity; **Any Non-Unique** searches every rarity except unique. A magic item is compared with magic items by default, a rare with all non-unique items. |
+| **Rarity: …** | **Magic**, **Rare** or **Normal** searches only items of the same rarity; **Any Non-Unique** searches every rarity except unique. The chip starts on the item's own rarity, so a magic item is compared with magic items and a rare with rare items; a click switches it to **Any Non-Unique**, and another click back. |
 | **Modifiable** ↔ **Corrupted or not** | For an item that is not corrupted, corrupted listings are left out by default: they cannot be changed and may have modifiers this item lacks. Click to include them. |
 | **Corrupted only** ↔ **Corrupted or not** | For a corrupted item, only corrupted listings count by default, since corruption changed them the same way. Click to include uncorrupted ones. |
 | **Unidentified only** ↔ **Identified too** | For an unidentified item, only unidentified listings count by default: identified ones sell for their modifiers. Click to include identified ones. |
@@ -178,9 +178,9 @@ speed; unrevealed modifiers; a timeless jewel's legend; and granted skills of le
 (of any level on an amulet).
 
 In **Quick price** and **Exact match**, item level, sockets, quality, gem and waystone rows keep
-their usual checkbox. On a waystone, the modifiers start unselected, a desecrated one excepted:
-its tier and properties set the price, its modifiers only make the map harder. Select a modifier
-yourself to search for it.
+their usual checkbox. A waystone starts on **Quick price**, which leaves all its modifiers
+unselected: its tier and properties set the price, its modifiers only make the map harder. Select
+a modifier yourself to search for it, or pick **Exact match** to search them all.
 
 ### Min and max
 
@@ -194,10 +194,10 @@ yourself to search for it.
 
 Under a modifier row whose tier the app's tier table knows, a slider runs from the lowest to the
 highest roll of that modifier across all its tiers on this kind of item, with those two numbers at
-its ends. A blue tick marks your roll. A gold handle marks the search's **min** (its **max** on
-rows where a lower number is better), and the part of the track the search admits is lit gold.
-Click or drag on the slider to move the handle, and the **min** (or **max**) box follows; typing
-in the box moves the handle. Hover the slider for a short explanation.
+its ends. A bright gold tick marks your roll, and a gold circle, the handle, marks the search's
+**min** (its **max** on rows where a lower number is better); the part of the track the search
+admits is lit gold. Click or drag on the slider to move the handle, and the **min** (or **max**)
+box follows; typing in the box moves the handle. Hover the slider for a short explanation.
 
 Hover a tier badge to see where the tier stands: **Tier 3 of 9** (the tier among all tiers of that
 modifier on this kind of item), the lowest roll of this tier, every tier's range, the item level
