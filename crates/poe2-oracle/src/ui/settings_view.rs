@@ -533,6 +533,12 @@ impl SettingsView {
             if let Err(err) = overlay.set_topmost(topmost) {
                 log::warn!("{err:#}");
             }
+            // Stepping down puts this window first among those that aren't topmost -- over the
+            // sign-in window, when that opened first (its task ran before this one): it comes
+            // forward again.
+            if !topmost {
+                crate::platform::login_window::bring_forward();
+            }
         })
         .detach();
     }

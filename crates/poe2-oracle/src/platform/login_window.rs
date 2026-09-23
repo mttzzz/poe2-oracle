@@ -49,11 +49,12 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect, GetForegroundWindow, HICON,
-    IDC_ARROW, IMAGE_ICON, IsIconic, LR_DEFAULTSIZE, LR_SHARED, LoadCursorW, LoadImageW,
-    PostMessageW, RegisterClassExW, SIZE_MINIMIZED, SW_RESTORE, SW_SHOW, SWP_NOACTIVATE,
-    SWP_NOZORDER, SetForegroundWindow, SetWindowPos, ShowWindow, WINDOW_EX_STYLE, WM_CLOSE,
-    WM_DESTROY, WM_DPICHANGED, WM_MOVE, WM_SETFOCUS, WM_SIZE, WNDCLASSEXW, WS_OVERLAPPEDWINDOW,
+    BringWindowToTop, CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect,
+    GetForegroundWindow, HICON, IDC_ARROW, IMAGE_ICON, IsIconic, LR_DEFAULTSIZE, LR_SHARED,
+    LoadCursorW, LoadImageW, PostMessageW, RegisterClassExW, SIZE_MINIMIZED, SW_RESTORE, SW_SHOW,
+    SWP_NOACTIVATE, SWP_NOZORDER, SetForegroundWindow, SetWindowPos, ShowWindow, WINDOW_EX_STYLE,
+    WM_CLOSE, WM_DESTROY, WM_DPICHANGED, WM_MOVE, WM_SETFOCUS, WM_SIZE, WNDCLASSEXW,
+    WS_OVERLAPPEDWINDOW,
 };
 use windows::core::{HSTRING, Interface, PCWSTR, PWSTR, w};
 
@@ -177,7 +178,9 @@ pub fn open(page: &str, events: Sender<LoginEvent>) -> Result<()> {
     Ok(())
 }
 
-/// Brings the open sign-in window, if any, to the front.
+/// Brings the open sign-in window, if any, to the front -- to the top of the Z order even when
+/// it is already the foreground window, which `SetForegroundWindow` alone would leave behind a
+/// window placed over it since (the settings window stepping down from topmost).
 pub fn bring_forward() {
     let Some(hwnd) = LOGIN.with_borrow(|login| login.as_ref().map(|login| login.hwnd)) else {
         return;
@@ -187,6 +190,7 @@ pub fn bring_forward() {
         if IsIconic(hwnd).as_bool() {
             let _ = ShowWindow(hwnd, SW_RESTORE);
         }
+        let _ = BringWindowToTop(hwnd);
         let _ = SetForegroundWindow(hwnd);
     }
 }
