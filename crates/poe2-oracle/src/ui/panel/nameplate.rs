@@ -15,20 +15,15 @@ use crate::price_check::PriceCheckApp;
 use crate::ui::fonts;
 use crate::ui::hint as hints;
 use crate::ui::theme::{
-    BG_BUTTON_HOVER, BG_CONTROL, BG_NAMEPLATE, BORDER_GOLD, CONTENT_PADDING, CURRENCY_NAME,
-    GEM_NAME, GOLD, RARITY_MAGIC, RARITY_NORMAL, RARITY_RARE, RARITY_UNIQUE, TEXT, TEXT_DIM,
-    TEXT_VALUE, TEXT_WARNING, blend, rems_from_px,
+    BANNER_EDGE, BANNER_TINT, BG_BUTTON_HOVER, BG_CONTROL, BG_NAMEPLATE, BORDER_GOLD,
+    CONTENT_PADDING, CURRENCY_NAME, GEM_NAME, GOLD, RARITY_MAGIC, RARITY_NORMAL, RARITY_RARE,
+    RARITY_UNIQUE, TEXT, TEXT_DIM, TEXT_VALUE, TEXT_WARNING, blend, rems_from_px,
 };
 
 use super::results::render_link;
 
 /// Edge of the item art beside the name.
 const ART_SIZE: f32 = 48.;
-
-/// How much of the name's colour the top of the header takes, fading to none at its bottom.
-const BANNER_TINT: f32 = 0.16;
-/// How much of it the line under the header takes.
-const BANNER_EDGE: f32 = 0.45;
 
 /// The item's name -- and, for rares and uniques, its base type -- in the game's own name colour
 /// and in the stand-in for its tooltip face on the item's client language (see `fonts`), like its

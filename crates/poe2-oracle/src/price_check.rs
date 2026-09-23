@@ -35,7 +35,7 @@ use trade_client::rate_limit::RateLimiter;
 use trade_client::rates::{Confidence, PriceEstimate, PriceUnit};
 use trade_client::scout::ScoutPrices;
 use trade_client::{
-    AccountStatus, FetchedItem, GroupedListing, ListedMod, ListingStatus, PriceCurrency,
+    AccountStatus, FetchedItem, GroupedListing, ListedItem, ListingStatus, PriceCurrency,
     RarityFilter, SearchOutcome, SearchRoute, SearchScope, StatMatch, TradeApiError, TradeSite,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
@@ -105,38 +105,33 @@ const BOOTSTRAP_RETRY: [Duration; 4] = [
 pub struct ListingRow {
     pub price_amount: f64,
     pub price_currency: String,
-    pub item_level: Option<u32>,
     pub account_name: String,
     pub indexed: String,
     pub account_status: AccountStatus,
     pub instant_buyout: bool,
-    /// Priced by the item's own note rather than its stash tab's name -- EE2 marks the latter
-    /// with "?" as likely not a real price.
-    pub has_note: bool,
     /// How many times this seller listed it at this price (EE2's "× N").
     pub listed_times: u32,
     /// The message to the seller, ready for the game's chat; `None` for instant buyout.
     pub whisper: Option<String>,
-    /// The listed item's mods, shown when the row is hovered.
-    pub mods: Vec<ListedMod>,
+    /// The listed item, drawn the way the game's tooltip draws it when the row is hovered --
+    /// shared, so a hover hands it to its tooltip without a copy.
+    pub item: Arc<ListedItem>,
 }
 
 impl From<GroupedListing> for ListingRow {
     fn from(group: GroupedListing) -> Self {
-        let item = group.listing;
-        let (price_amount, price_currency) = item.price.unwrap_or((0.0, String::new()));
+        let listing = group.listing;
+        let (price_amount, price_currency) = listing.price.unwrap_or((0.0, String::new()));
         ListingRow {
             price_amount,
             price_currency,
-            item_level: item.item_level,
-            account_name: item.account_name,
-            indexed: item.indexed,
-            account_status: item.account_status,
-            instant_buyout: item.instant_buyout,
-            has_note: item.has_note,
+            account_name: listing.account_name,
+            indexed: listing.indexed,
+            account_status: listing.account_status,
+            instant_buyout: listing.instant_buyout,
             listed_times: group.listed_times,
-            whisper: item.whisper,
-            mods: item.mods,
+            whisper: listing.whisper,
+            item: Arc::new(listing.item),
         }
     }
 }

@@ -163,6 +163,7 @@ mod tests {
             tier: None,
             level: None,
             value,
+            ranges: Vec::new(),
         }
     }
 

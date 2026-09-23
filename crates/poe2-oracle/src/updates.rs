@@ -80,7 +80,9 @@ impl Updates {
         self.set_busy("Проверка обновлений…");
         let this = self.clone();
         cx.spawn(async move |_| {
-            let found = auto_update::check_for_update(&this.client, &this.current).await;
+            let found =
+                auto_update::check_for_update(&this.client, &this.current, &paths::updates_dir())
+                    .await;
             let (label, state) = match found {
                 Ok(Some(update)) => (
                     format!("Установить версию {}", update.version),

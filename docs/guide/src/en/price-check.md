@@ -176,12 +176,18 @@ it for you.
 
 ### Listing details
 
-Hover a row to see the listing's modifiers with their tiers:
+Hover a row to see the listing the way the game's own item tooltip shows it: the name in its
+rarity colour, properties, requirements, sockets with their runes, item level, every modifier,
+flags such as «Осквернено» (corrupted) and the seller's note. Each modifier has its tier on the
+left and «ур. N» (the item level it needs) on the right. The range a value rolls in follows it in
+brackets, for example `+38(36-40)%`.
+
+The modifiers you search for are marked:
 
 - green **✓** — the modifier meets your bounds;
 - red **✗** with «(нужно …)» (needed) — it is outside them, and the bounds are shown;
-- «ур. N» — the item level the modifier needs;
-- «Нет у этого предмета:» (this item lacks) — selected properties the listing does not have at all.
+- «Нет у этого предмета:» (this item lacks) at the foot of the card — selected properties the
+  listing does not have at all.
 
 ### Estimate
 

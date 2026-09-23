@@ -21,9 +21,10 @@ The first public release.
   wiki; one filter row per stat with min/max values, mod tier and source, pseudo totals, weapon DPS
   and defences; the cheapest listings, one page of 10 per search, with price, item level, seller
   and listing age; a price estimate with its range and confidence, and a warning when the listings
-  look price-fixed. Prices are shown with currency icons. Hovering a listing shows its mods against
-  the searched ones. When nothing matches every selected stat, the search is relaxed to most of
-  them and says so.
+  look price-fixed. Prices are shown with currency icons. Hovering a listing shows it the way the
+  game's item tooltip does: properties, requirements, sockets, item level and every mod with its
+  tier and roll range, the searched ones marked. When nothing matches every selected stat, the
+  search is relaxed to most of them and says so.
 - **Search chips:** base type or the whole item class; rarity (a magic item is compared with magic
   items, a rare with all non-unique items); corrupted listings in or out; every stat or none;
   which sellers to include; the currency of the price. A magic item's prefix and suffix are both

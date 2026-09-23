@@ -115,7 +115,7 @@ pub struct LiveListing {
 
 impl LiveListing {
     pub fn new(search: &WatchedSearch, item: FetchedItem) -> LiveListing {
-        let name = [item.name.as_str(), item.type_line.as_str()]
+        let name = [item.item.name.as_str(), item.item.type_line.as_str()]
             .into_iter()
             .filter(|part| !part.is_empty())
             .collect::<Vec<_>>()

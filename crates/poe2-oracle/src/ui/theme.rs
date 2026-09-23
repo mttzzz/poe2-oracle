@@ -24,6 +24,12 @@ pub(crate) fn blend(base: u32, over: u32, amount: f32) -> u32 {
     channel(16) | channel(8) | channel(0)
 }
 
+/// How much of an item name's colour the top of its header takes, fading to none at the bottom,
+/// the way the game's tooltip banners are tinted: rarity reads before the name does.
+pub(crate) const BANNER_TINT: f32 = 0.16;
+/// How much of it the line under the header takes.
+pub(crate) const BANNER_EDGE: f32 = 0.45;
+
 pub(crate) const BG_PANEL: u32 = 0x0e0e10;
 pub(crate) const BG_TITLE: u32 = 0x060607;
 pub(crate) const BG_NAMEPLATE: u32 = 0x17130d;
@@ -54,6 +60,26 @@ pub(crate) const RARITY_NORMAL: u32 = 0xc8c8c8;
 pub(crate) const RARITY_MAGIC: u32 = 0x8888ff;
 pub(crate) const RARITY_RARE: u32 = 0xffff77;
 pub(crate) const RARITY_UNIQUE: u32 = 0xaf6025;
+
+// The game's item tooltip beyond its name colours, as the PoE wiki's `c` template and Path of
+// Building draw it.
+/// The tooltip's black.
+pub(crate) const BG_ITEM_CARD: u32 = 0x000000;
+/// Unmet requirements, and the Corrupted and Unidentified lines.
+pub(crate) const GAME_RED: u32 = 0xd20000;
+/// Damage values by kind; physical damage is plain white.
+pub(crate) const DAMAGE_FIRE: u32 = 0x960000;
+pub(crate) const DAMAGE_COLD: u32 = 0x366492;
+pub(crate) const DAMAGE_LIGHTNING: u32 = 0xffd700;
+pub(crate) const DAMAGE_CHAOS: u32 = 0xd02090;
+/// Enchanted, rune and crafted mods.
+pub(crate) const MOD_ENCHANTED: u32 = 0xb4b4ff;
+/// Fractured mods, and the Fractured Item and Sanctified lines.
+pub(crate) const MOD_FRACTURED: u32 = 0xa29162;
+/// Desecrated mods. The game draws a revealed one like any other mod; this is the green of the
+/// Abyss's unrevealed runes, muted to read on the tooltip's black, so they stand out as the
+/// panel's own "очернённый" badge makes them.
+pub(crate) const MOD_DESECRATED: u32 = 0x6fae8c;
 
 /// Horizontal inset of everything below the panel's nameplate and the settings window's title
 /// bar.

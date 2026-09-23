@@ -43,7 +43,7 @@ impl From<FetchedItem> for ListingRow {
             None => "no price".to_string(),
         };
         ListingRow {
-            display_name: format!("{} ({})", item.name, item.type_line),
+            display_name: format!("{} ({})", item.item.name, item.item.type_line),
             price,
             account: item.account_name,
         }

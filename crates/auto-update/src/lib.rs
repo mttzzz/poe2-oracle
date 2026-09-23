@@ -23,10 +23,11 @@ use std::time::Duration;
 
 use anyhow::{Context as _, Result, bail, ensure};
 use futures::AsyncReadExt as _;
+use http_client::http::header::{ETAG, IF_NONE_MATCH};
 use http_client::{
     AsyncBody, HttpClient, HttpRequestExt as _, RedirectPolicy, Request, StatusCode,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 
 pub use semver::Version;
@@ -51,6 +52,8 @@ const METADATA_TIMEOUT: Duration = Duration::from_secs(20);
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(600);
 /// The release JSON and SHA256SUMS are a few KB; a body far larger is not what was asked for.
 const MAX_METADATA_BYTES: u64 = 1 << 20;
+/// GitHub's last latest-release answer, kept in the updates folder as [`KeptRelease`].
+const KEPT_RELEASE_FILE: &str = "latest-release.json";
 
 /// A published release newer than the running app, with what [`download_update`] needs.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -91,8 +94,21 @@ struct GitHubError {
     message: String,
 }
 
+/// GitHub's last latest-release answer with its `ETag`, kept on disk: the next check sends the tag
+/// as `If-None-Match`, and GitHub's `304 Not Modified` -- which it doesn't count against the
+/// anonymous API's 60 requests an hour per IP, shared by every device behind one address -- stands
+/// for the kept body. Live 2026-09-23 the owner's IP ran out of those 60 while the app was
+/// relaunched a few dozen times, and the update check failed with a 403.
+#[derive(Serialize, Deserialize)]
+struct KeptRelease {
+    etag: String,
+    body: String,
+}
+
 /// Returns the latest published release when it is newer than `current` by semver precedence --
-/// `0.2.0` updates `0.2.0-rc.1`, and nothing ever downgrades.
+/// `0.2.0` updates `0.2.0-rc.1`, and nothing ever downgrades. `cache_dir` keeps GitHub's last
+/// answer ([`KeptRelease`]), so an unchanged release costs none of the anonymous API's hourly
+/// allowance.
 ///
 /// Every failure is an error, never a silent "up to date": network trouble, a GitHub refusal (its
 /// anonymous API allows 60 requests an hour per IP), a 404 (no release published yet, or the
@@ -102,11 +118,20 @@ struct GitHubError {
 pub async fn check_for_update(
     client: &Arc<dyn HttpClient>,
     current: &Version,
+    cache_dir: &Path,
 ) -> Result<Option<UpdateInfo>> {
-    let request = Request::get(LATEST_RELEASE_URL)
+    let kept_path = cache_dir.join(KEPT_RELEASE_FILE);
+    let kept: Option<KeptRelease> = fs::read(&kept_path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok());
+    let mut request = Request::get(LATEST_RELEASE_URL)
         .header("User-Agent", USER_AGENT)
         .header("Accept", "application/vnd.github+json")
-        .header("X-GitHub-Api-Version", "2022-11-28")
+        .header("X-GitHub-Api-Version", "2022-11-28");
+    if let Some(kept) = &kept {
+        request = request.header(IF_NONE_MATCH, kept.etag.as_str());
+    }
+    let request = request
         .follow_redirects(RedirectPolicy::FollowAll)
         .timeout(METADATA_TIMEOUT)
         .body(AsyncBody::default())?;
@@ -115,21 +140,41 @@ pub async fn check_for_update(
         .await
         .context("asking GitHub for the latest release")?;
     let status = response.status();
+    let etag = response
+        .headers()
+        .get(ETAG)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
     let body = read_capped(response.body_mut(), MAX_METADATA_BYTES)
         .await
         .context("reading GitHub's latest-release response")?;
-    if status == StatusCode::NOT_FOUND {
-        bail!(
+    let body = match (status, kept) {
+        (StatusCode::NOT_MODIFIED, Some(kept)) => kept.body.into_bytes(),
+        (StatusCode::NOT_FOUND, _) => bail!(
             "GitHub lists no release of PoE2 Oracle (404): none is published yet, \
              or the repository is private"
-        );
-    }
-    if !status.is_success() {
-        let message = serde_json::from_slice::<GitHubError>(&body)
-            .map(|error| error.message)
-            .unwrap_or_else(|_| String::from_utf8_lossy(&body).into_owned());
-        bail!("GitHub answered {status} for the latest release: {message}");
-    }
+        ),
+        (status, _) if !status.is_success() => {
+            let message = serde_json::from_slice::<GitHubError>(&body)
+                .map(|error| error.message)
+                .unwrap_or_else(|_| String::from_utf8_lossy(&body).into_owned());
+            bail!("GitHub answered {status} for the latest release: {message}");
+        }
+        _ => {
+            // Best effort: without a kept copy the next check just asks in full.
+            if let Some(etag) = etag {
+                let kept = KeptRelease {
+                    etag,
+                    body: String::from_utf8_lossy(&body).into_owned(),
+                };
+                if let Ok(json) = serde_json::to_vec(&kept) {
+                    let _ =
+                        fs::create_dir_all(cache_dir).and_then(|()| fs::write(&kept_path, json));
+                }
+            }
+            body
+        }
+    };
     let release: Release =
         serde_json::from_slice(&body).context("parsing GitHub's latest-release JSON")?;
 
@@ -341,11 +386,14 @@ mod tests {
 
     const INSTALLER: &[u8] = b"MZ\x90\x00 stand-in for an NSIS installer";
 
-    /// Serves canned bodies by exact URL (anything else: 404) and records each request's URL and
-    /// User-Agent.
+    /// Serves canned bodies by exact URL (anything else: 404) and records each request's URL,
+    /// User-Agent and `If-None-Match`. With an `etag`, the latest release carries it, and a request
+    /// asking `If-None-Match` it gets GitHub's empty `304`.
     struct CannedClient {
         responses: HashMap<String, (u16, Vec<u8>)>,
         requests: Mutex<Vec<(String, Option<String>)>>,
+        etag: Option<&'static str>,
+        conditions: Mutex<Vec<Option<String>>>,
     }
 
     impl CannedClient {
@@ -356,6 +404,8 @@ mod tests {
                     .map(|(url, status, body)| (url, (status, body)))
                     .collect(),
                 requests: Mutex::new(Vec::new()),
+                etag: None,
+                conditions: Mutex::new(Vec::new()),
             })
         }
     }
@@ -374,19 +424,32 @@ mod tests {
             request: Request<AsyncBody>,
         ) -> BoxFuture<'static, Result<Response<AsyncBody>>> {
             let url = request.uri().to_string();
-            let user_agent = request
-                .headers()
-                .get("user-agent")
-                .and_then(|value| value.to_str().ok())
-                .map(str::to_owned);
-            self.requests.lock().push((url.clone(), user_agent));
-            let (status, body) = self
-                .responses
-                .get(&url)
-                .cloned()
-                .unwrap_or((404, Vec::new()));
-            let response = Response::builder()
-                .status(status)
+            let header = |name: &str| {
+                request
+                    .headers()
+                    .get(name)
+                    .and_then(|value| value.to_str().ok())
+                    .map(str::to_owned)
+            };
+            let condition = header("if-none-match");
+            self.requests
+                .lock()
+                .push((url.clone(), header("user-agent")));
+            self.conditions.lock().push(condition.clone());
+            let etag = self.etag.filter(|_| url == LATEST_RELEASE_URL);
+            let (status, body) = if etag.is_some() && condition.as_deref() == etag {
+                (304, Vec::new())
+            } else {
+                self.responses
+                    .get(&url)
+                    .cloned()
+                    .unwrap_or((404, Vec::new()))
+            };
+            let mut response = Response::builder().status(status);
+            if let Some(etag) = etag {
+                response = response.header("etag", etag);
+            }
+            let response = response
                 .body(AsyncBody::from(body))
                 .map_err(anyhow::Error::from);
             Box::pin(async move { response })
@@ -453,9 +516,45 @@ mod tests {
         )
     }
 
+    /// A check with nothing kept from an earlier one.
     fn check(client: &Arc<CannedClient>, current: &str) -> Result<Option<UpdateInfo>> {
+        let dir = tempfile::tempdir().unwrap();
+        check_in(client, current, dir.path())
+    }
+
+    fn check_in(
+        client: &Arc<CannedClient>,
+        current: &str,
+        cache_dir: &Path,
+    ) -> Result<Option<UpdateInfo>> {
         let client: Arc<dyn HttpClient> = client.clone();
-        block_on(check_for_update(&client, &Version::parse(current).unwrap()))
+        block_on(check_for_update(
+            &client,
+            &Version::parse(current).unwrap(),
+            cache_dir,
+        ))
+    }
+
+    #[test]
+    fn an_unchanged_release_is_read_from_the_kept_answer() {
+        let mut github = Arc::into_inner(release_0_2_0(INSTALLER)).expect("sole owner");
+        github.etag = Some("W/\"release-v0.2.0\"");
+        let github = Arc::new(github);
+        let dir = tempfile::tempdir().unwrap();
+
+        let first = check_in(&github, "0.1.0", dir.path()).unwrap();
+        // The second check asks conditionally, gets GitHub's empty 304 -- which doesn't count
+        // against the hourly limit -- and reads the same release from what the first one kept.
+        let second = check_in(&github, "0.1.0", dir.path()).unwrap();
+        assert_eq!(
+            *github.conditions.lock(),
+            [None, Some("W/\"release-v0.2.0\"".to_owned())]
+        );
+        assert_eq!(second, first);
+        assert_eq!(
+            second.map(|update| update.version),
+            Some(Version::new(0, 2, 0))
+        );
     }
 
     #[test]

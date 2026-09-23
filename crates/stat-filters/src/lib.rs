@@ -284,16 +284,61 @@ fn settle_exact_kinds(item: &ParsedItem, catalog: &StatCatalog, filters: &mut Ve
 /// The best tier number still searched by default (T1 is a mod's best tier).
 const TOP_TIERS: u32 = 2;
 
+/// Trade stat hashes (any mod type) of the mods a build is picked for whatever their tier -- skill
+/// levels and spirit, the ones PoE Overlay II's ranking gives a fixed bonus (its `modRanking`,
+/// 2026-09-23): `# to Level of all {Attack, Chaos, Chaos Spell, Cold, Cold Spell, Corrupted Spell
+/// Skill Gems, Curse, Elemental, Fire, Fire Spell, Lightning, Lightning Spell, Mark, Melee,
+/// Minion, Physical Spell, Projectile, Spell} Skills`, `# to Level of all Skills`, the one-skill
+/// `+# to Level of all <skill> Skills` (every option of `stat_448592698`), `# to Spirit` and `#%
+/// increased Spirit` (live EN catalog, 2026-09-23). A +1 to a skill's level is a T5 roll and still
+/// what the item sells for.
+const VALUE_STATS: [&str; 24] = [
+    "stat_3035140377",
+    "stat_67169579",
+    "stat_4226189338",
+    "stat_1078455967",
+    "stat_2254480358",
+    "stat_2061237517",
+    "stat_805298720",
+    "stat_2901213448",
+    "stat_599749213",
+    "stat_591105508",
+    "stat_1147690586",
+    "stat_1545858329",
+    "stat_1992191903",
+    "stat_9187492",
+    "stat_2162097452",
+    "stat_1600707273",
+    "stat_1202301673",
+    "stat_4283407333",
+    "stat_124131830",
+    "stat_448592698",
+    "stat_3981240776",
+    "stat_2704225257",
+    "stat_1416406066",
+    "stat_3984865854",
+];
+
+/// Whether `filter` searches one of the [`VALUE_STATS`].
+fn is_value_stat(filter: &SearchFilter) -> bool {
+    filter.trade_ids.iter().any(|id| {
+        let hash = id.split_once('.').map_or(id.as_str(), |(_, hash)| hash);
+        let hash = hash.split_once('|').map_or(hash, |(hash, _)| hash);
+        VALUE_STATS.contains(&hash)
+    })
+}
+
 /// The default selection a player expects, by the game's own measure of a mod: an explicit
 /// prefix or suffix of a rare is searched when it rolled in one of its `TOP_TIERS` best tiers and
 /// left out otherwise -- a low-tier mod doesn't set a rare's price, and requiring it only empties
-/// the search. A magic item's one prefix and one suffix are the whole item, so both are searched
-/// whatever their tier (a T3 `+3 to Level of all Chaos Spell Skills` is what a magic wand sells
-/// for). Pseudo totals start unselected: they restate the mods listed with them -- unless no affix
-/// made the cut, when the totals (EE2's own default) are what the item offers: without them the
-/// search would price the bare base type. Everything else keeps the EE2 default it was built with
-/// (defences/DPS on, implicits and free slots off). Replaces EE2's pseudo-first selection, which
-/// searched a T9 roll while skipping the T1 ones a pseudo total happened to cover.
+/// the search -- unless it is one of the [`VALUE_STATS`] (skill levels, spirit), which set the
+/// price at any tier. A magic item's one prefix and one suffix are the whole item, so both are
+/// searched whatever their tier (a T3 `+3 to Level of all Chaos Spell Skills` is what a magic wand
+/// sells for). Pseudo totals start unselected: they restate the mods listed with them -- unless no
+/// affix made the cut, when the totals (EE2's own default) are what the item offers: without them
+/// the search would price the bare base type. Everything else keeps the EE2 default it was built
+/// with (defences/DPS on, implicits and free slots off). Replaces EE2's pseudo-first selection,
+/// which searched a T9 roll while skipping the T1 ones a pseudo total happened to cover.
 fn select_by_tier(item: &ParsedItem, filters: &mut [SearchFilter]) {
     let is_affix =
         |filter: &SearchFilter| filter.generation.is_some() && filter.tag != FilterTag::EmptyAffix;
@@ -302,7 +347,9 @@ fn select_by_tier(item: &ParsedItem, filters: &mut [SearchFilter]) {
         if filter.tag == FilterTag::Pseudo {
             filter.enabled = false;
         } else if is_affix(filter) {
-            filter.enabled = every_affix || filter.tier.is_some_and(|tier| tier <= TOP_TIERS);
+            filter.enabled = every_affix
+                || is_value_stat(filter)
+                || filter.tier.is_some_and(|tier| tier <= TOP_TIERS);
         }
     }
     let has_affixes = filters.iter().any(is_affix);
@@ -976,6 +1023,49 @@ mod tests {
                 .filter(|filter| filter.tag == FilterTag::Pseudo)
                 .all(|filter| !filter.enabled)
         );
+    }
+
+    #[test]
+    fn skill_levels_and_spirit_are_searched_at_any_tier() {
+        let tiered = |generation, tier, trade_id: &str, text: &str| {
+            let mut modifier = affix(generation, stat_with_id(Some(trade_id), text, 1.0));
+            modifier.info.tier = Some(tier);
+            modifier
+        };
+        let amulet = item(
+            ItemRarity::Rare,
+            "accessory.amulet",
+            vec![
+                tiered(Prefix, 5, "explicit.stat_3981240776", "# to Spirit"),
+                tiered(
+                    Suffix,
+                    4,
+                    "explicit.stat_2162097452",
+                    "# to Level of all Minion Skills",
+                ),
+                tiered(
+                    Suffix,
+                    3,
+                    "explicit.stat_448592698|57",
+                    "+# to Level of all Fireball Skills",
+                ),
+                tiered(Suffix, 6, "explicit.stat_1379411836", "# to all Attributes"),
+            ],
+        );
+
+        let filters = build_filters(&amulet, 10, &StatCatalog::default());
+
+        let enabled = |trade_id: &str| {
+            filters
+                .iter()
+                .find(|filter| filter.trade_ids == [trade_id])
+                .map(|filter| filter.enabled)
+        };
+        assert_eq!(enabled("explicit.stat_3981240776"), Some(true));
+        assert_eq!(enabled("explicit.stat_2162097452"), Some(true));
+        assert_eq!(enabled("explicit.stat_448592698|57"), Some(true));
+        // An ordinary low-tier mod still isn't.
+        assert_eq!(enabled("explicit.stat_1379411836"), Some(false));
     }
 
     #[test]

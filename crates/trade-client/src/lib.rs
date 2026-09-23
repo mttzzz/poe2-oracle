@@ -37,6 +37,7 @@ pub mod scout;
 
 use std::collections::BTreeMap;
 use std::fmt;
+use std::ops::Range;
 use std::sync::Arc;
 
 use anyhow::{Context, Result, anyhow};
@@ -1027,16 +1028,55 @@ struct FetchResultItem {
     listing: FetchListing,
     gone: Option<bool>,
 }
+/// `result[].item`: what [`ListedItem`] reads. The fields only the item card shows go through
+/// [`lenient`], so a line the site words in a shape this crate doesn't expect costs that line,
+/// never the listing: its price and seller still reach the results table.
 #[derive(Deserialize)]
 struct FetchItem {
     name: String,
     #[serde(rename = "typeLine")]
     type_line: String,
+    rarity: Option<String>,
+    #[serde(default, rename = "frameType", deserialize_with = "lenient")]
+    frame_type: Option<u32>,
     ilvl: Option<u32>,
-    /// Only its presence is read (`FetchedItem::has_note`), so the text is skipped unparsed.
-    note: Option<serde::de::IgnoredAny>,
+    identified: Option<bool>,
+    #[serde(default, rename = "unidentifiedTier", deserialize_with = "lenient")]
+    unidentified_tier: Option<u32>,
+    #[serde(default)]
+    corrupted: bool,
+    /// The game's Mirrored: GGG's item field is `duplicated`, the trade site's filter `mirrored`,
+    /// so either counts.
+    #[serde(default)]
+    duplicated: bool,
+    #[serde(default)]
+    mirrored: bool,
+    #[serde(default)]
+    sanctified: bool,
+    #[serde(default)]
+    fractured: bool,
+    icon: Option<String>,
+    note: Option<String>,
     #[serde(rename = "stackSize")]
     stack_size: Option<u32>,
+    #[serde(default, deserialize_with = "lenient")]
+    properties: Vec<RawProperty>,
+    #[serde(default, deserialize_with = "lenient")]
+    requirements: Vec<RawProperty>,
+    #[serde(default, rename = "grantedSkills", deserialize_with = "lenient")]
+    granted_skills: Vec<RawProperty>,
+    /// Only counted: what fills them comes as `socketedItems`.
+    #[serde(default, deserialize_with = "lenient")]
+    sockets: Vec<serde::de::IgnoredAny>,
+    /// A skill gem's support sockets, counted the same way.
+    #[serde(default, rename = "gemSockets", deserialize_with = "lenient")]
+    gem_sockets: Vec<serde::de::IgnoredAny>,
+    #[serde(default, rename = "socketedItems", deserialize_with = "lenient")]
+    socketed_items: Vec<RawSocketed>,
+    #[serde(default, rename = "flavourText", deserialize_with = "lenient")]
+    flavour_text: Vec<String>,
+    #[serde(rename = "descrText")]
+    descr_text: Option<String>,
     #[serde(default, rename = "enchantMods")]
     enchant_mods: Vec<RawMod>,
     #[serde(default, rename = "runeMods")]
@@ -1049,6 +1089,35 @@ struct FetchItem {
     explicit_mods: Vec<RawMod>,
     #[serde(default, rename = "desecratedMods")]
     desecrated_mods: Vec<RawMod>,
+    #[serde(default, rename = "craftedMods")]
+    crafted_mods: Vec<RawMod>,
+}
+/// One `properties`, `requirements` or `grantedSkills` entry: `{"name": "[Evasion|Уклонение]",
+/// "values": [["500", 1]], "displayMode": 0, "type": 17}`.
+#[derive(Deserialize)]
+struct RawProperty {
+    name: String,
+    #[serde(default)]
+    values: Vec<(String, u32)>,
+    #[serde(default, rename = "displayMode")]
+    display_mode: u32,
+}
+/// One `socketedItems` entry: the rune, soul core or talisman in the socket at index `socket`.
+#[derive(Deserialize)]
+struct RawSocketed {
+    #[serde(rename = "typeLine")]
+    type_line: String,
+    socket: Option<usize>,
+}
+/// Reads a field only the item card shows, falling back to its default where the site words it
+/// in a shape this crate doesn't expect (`null` included): a card line lost beats a listing lost.
+fn lenient<'de, D, T>(deserializer: D) -> std::result::Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::de::DeserializeOwned + Default,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value).unwrap_or_default())
 }
 /// One entry of an item's mod list, in either form the trade API sends.
 #[derive(Deserialize)]
@@ -1066,10 +1135,20 @@ enum RawMod {
         mods: Vec<RawModTier>,
     },
 }
+/// One affix behind a described mod line.
 #[derive(Deserialize)]
 struct RawModTier {
     tier: Option<String>,
     level: Option<u32>,
+    /// The range of each number the affix rolls: `[{"min": "142", "max": "161"}]`.
+    #[serde(default, deserialize_with = "lenient")]
+    magnitudes: Vec<RawMagnitude>,
+}
+/// A roll range, whose bounds the live site sends as strings (`"23.1"`).
+#[derive(Deserialize)]
+struct RawMagnitude {
+    min: serde_json::Value,
+    max: serde_json::Value,
 }
 #[derive(Deserialize)]
 struct FetchListing {
@@ -1124,13 +1203,14 @@ pub enum ModKind {
     Fractured,
     Explicit,
     Desecrated,
+    Crafted,
 }
 
 /// One of a listed item's mods, as the trade site describes it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ListedMod {
     pub kind: ModKind,
-    /// The mod's text, the site's `[Link|Text]` markup reduced to the text it shows.
+    /// The mod's text, the site's link markup stripped (`strip_link_markup`).
     pub text: String,
     /// The trade stat id it counts toward (`explicit.stat_4220027924`), when the site gives one.
     pub stat_id: Option<String>,
@@ -1141,13 +1221,18 @@ pub struct ListedMod {
     pub level: Option<u32>,
     /// The roll a stat filter compares (`mod_value`); `None` for a flag mod.
     pub value: Option<f64>,
+    /// The range each of the text's rolled numbers rolls in, in order (`(142.0, 161.0)`), summed
+    /// over the affixes of a line several feed: two hybrid prefixes' `55% увеличение уклонения`
+    /// rolls 27-32 from each, 54-64 in all. Empty when the site gives none, or when the affixes'
+    /// ranges don't line up.
+    pub ranges: Vec<(f64, f64)>,
 }
 
 impl ListedMod {
     fn from_raw(kind: ModKind, raw: RawMod) -> ListedMod {
         match raw {
             RawMod::Text(text) => {
-                let text = plain_mod_text(&text);
+                let text = strip_link_markup(&text);
                 ListedMod {
                     kind,
                     value: mod_value(&text),
@@ -1155,6 +1240,7 @@ impl ListedMod {
                     stat_id: None,
                     tier: None,
                     level: None,
+                    ranges: Vec::new(),
                 }
             }
             RawMod::Described {
@@ -1162,7 +1248,7 @@ impl ListedMod {
                 hash,
                 mods,
             } => {
-                let text = plain_mod_text(&description);
+                let text = strip_link_markup(&description);
                 ListedMod {
                     kind,
                     value: mod_value(&text),
@@ -1172,11 +1258,84 @@ impl ListedMod {
                             .map_or(hash.clone(), str::to_owned)
                     }),
                     level: mods.iter().filter_map(|tier| tier.level).max(),
+                    ranges: roll_ranges(&mods),
                     tier: mods.into_iter().find_map(|tier| tier.tier),
                 }
             }
         }
     }
+
+    /// `text` the way the game's advanced tooltip (Alt held) writes it, each rolled number
+    /// followed by the range it rolls in -- `+38(36-40)% к сопротивлению холоду` -- and where
+    /// each range sits. `text` as it is when the ranges don't pair off one to one with its
+    /// numbers; a fixed number (`25% снижение`, rolled -25 to -25) gets none.
+    pub fn text_with_ranges(&self) -> (String, Vec<Range<usize>>) {
+        use std::fmt::Write as _;
+        let numbers = number_spans(&self.text);
+        if self.ranges.is_empty() || numbers.len() != self.ranges.len() {
+            return (self.text.clone(), Vec::new());
+        }
+        let mut text = String::with_capacity(self.text.len() + 16 * numbers.len());
+        let mut inserted = Vec::with_capacity(numbers.len());
+        let mut copied = 0;
+        for ((digits, number), &(min, max)) in numbers.into_iter().zip(&self.ranges) {
+            text.push_str(&self.text[copied..digits.end]);
+            copied = digits.end;
+            // The site rolls some numbers the other way round from the text: `25% снижение` as
+            // -25, `уменьшение зарядов флакона на 35%` from 35 down to 30.
+            let (min, max) = if number >= 0.0 && min <= 0.0 && max <= 0.0 {
+                (-min, -max)
+            } else {
+                (min, max)
+            };
+            let (low, high) = (min.min(max), min.max(max));
+            if low == high {
+                continue;
+            }
+            let start = text.len();
+            // Writing into a `String` can't fail.
+            let _ = write!(text, "({}-{})", rounded(low), rounded(high));
+            inserted.push(start..text.len());
+        }
+        text.push_str(&self.text[copied..]);
+        (text, inserted)
+    }
+}
+
+/// Each number's roll range, summed over the affixes behind the line (see [`ListedMod::ranges`]).
+fn roll_ranges(affixes: &[RawModTier]) -> Vec<(f64, f64)> {
+    let Some(first) = affixes.first() else {
+        return Vec::new();
+    };
+    let mut ranges = vec![(0.0, 0.0); first.magnitudes.len()];
+    for affix in affixes {
+        if affix.magnitudes.len() != ranges.len() {
+            return Vec::new();
+        }
+        for (range, magnitude) in ranges.iter_mut().zip(&affix.magnitudes) {
+            let (Some(min), Some(max)) = (bound(&magnitude.min), bound(&magnitude.max)) else {
+                return Vec::new();
+            };
+            range.0 += min;
+            range.1 += max;
+        }
+    }
+    ranges
+}
+
+/// A roll range's bound: a number, or a string holding one (`"23.1"`, the live site's form).
+fn bound(value: &serde_json::Value) -> Option<f64> {
+    match value {
+        serde_json::Value::String(text) => text.parse().ok(),
+        other => other.as_f64(),
+    }
+}
+
+/// `value` to two decimals at most, trailing zeros dropped (`142`, `23.1`), as a roll range
+/// writes it.
+fn rounded(value: f64) -> f64 {
+    // `+ 0.0` turns a negative zero into the zero it reads as.
+    (value * 100.0).round() / 100.0 + 0.0
 }
 
 /// The roll a stat filter compares for a mod's `text`, read the way the trade site and EE2's
@@ -1184,17 +1343,17 @@ impl ListedMod {
 /// the first ("+93 to maximum Life", "-10% to Fire Resistance"). `None` for a mod without a
 /// number, a flag.
 fn mod_value(text: &str) -> Option<f64> {
-    let numbers = numbers_in(text);
+    let numbers = number_spans(text);
     match numbers.len() {
         0 => None,
-        2 | 4 => Some(numbers.iter().sum::<f64>() / numbers.len() as f64),
-        _ => Some(numbers[0]),
+        2 | 4 => Some(numbers.iter().map(|(_, number)| number).sum::<f64>() / numbers.len() as f64),
+        _ => Some(numbers[0].1),
     }
 }
 
-/// The numbers in `text`, a `-` right before one making it negative, `.` or `,` its decimal
-/// mark.
-fn numbers_in(text: &str) -> Vec<f64> {
+/// The numbers in `text`: where each one's digits sit, and its value, a `-` right before it
+/// making it negative, `.` or `,` its decimal mark.
+fn number_spans(text: &str) -> Vec<(Range<usize>, f64)> {
     let bytes = text.as_bytes();
     let mut numbers = Vec::new();
     let mut at = 0;
@@ -1218,15 +1377,16 @@ fn numbers_in(text: &str) -> Vec<f64> {
             }
         }
         if let Ok(number) = text[start..at].replace(',', ".").parse::<f64>() {
-            numbers.push(if negative { -number } else { number });
+            numbers.push((start..at, if negative { -number } else { number }));
         }
     }
     numbers
 }
 
-/// `+16% to [Resistances|Cold Resistance]` -> `+16% to Cold Resistance`, `[Lightning] damage` ->
-/// `Lightning damage`: the text the site's links show.
-fn plain_mod_text(text: &str) -> String {
+/// The words the site's link markup shows: `+16% to [Resistances|Cold Resistance]` -> `+16% to
+/// Cold Resistance`, `[Lightning] damage` -> `Lightning damage`. Mod texts, property names and
+/// values all carry it.
+fn strip_link_markup(text: &str) -> String {
     let mut plain = String::with_capacity(text.len());
     let mut rest = text;
     while let Some(open) = rest.find('[') {
@@ -1242,18 +1402,330 @@ fn plain_mod_text(text: &str) -> String {
     plain
 }
 
-/// One resolved listing from `fetch`. Presentation formatting (how to display the price, etc.)
-/// is left to the caller -- this is raw parsed API data, not a UI-ready row.
+/// What frames a listed item's tooltip and colours its name: gear's rarity, or the kind of item
+/// that has none.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ItemFrame {
+    #[default]
+    Normal,
+    Magic,
+    Rare,
+    Unique,
+    Gem,
+    Currency,
+}
+
+impl ItemFrame {
+    /// `frameType` 4 and 5 are gems and currency, whatever `rarity` says; anything else goes by
+    /// `rarity` (`"Rare"`), or by `frameType` 1-3 where there's none.
+    fn of(frame_type: Option<u32>, rarity: Option<&str>) -> ItemFrame {
+        match (frame_type, rarity) {
+            (Some(4), _) => ItemFrame::Gem,
+            (Some(5), _) => ItemFrame::Currency,
+            (_, Some("Unique")) | (Some(3), None) => ItemFrame::Unique,
+            (_, Some("Rare")) | (Some(2), None) => ItemFrame::Rare,
+            (_, Some("Magic")) | (Some(1), None) => ItemFrame::Magic,
+            _ => ItemFrame::Normal,
+        }
+    }
+}
+
+/// The colour the game draws a property's value in: `values[][1]`, GGG's value type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ValueColor {
+    /// 0, and every type this crate doesn't tell apart.
+    Default,
+    /// 1: raised by the item's own mods or quality.
+    Augmented,
+    /// 2: a requirement the character doesn't meet.
+    Unmet,
+    /// 3-7: damage of that kind.
+    Physical,
+    Fire,
+    Cold,
+    Lightning,
+    Chaos,
+}
+
+impl ValueColor {
+    fn from_type(value_type: u32) -> ValueColor {
+        match value_type {
+            1 => ValueColor::Augmented,
+            2 => ValueColor::Unmet,
+            3 => ValueColor::Physical,
+            4 => ValueColor::Fire,
+            5 => ValueColor::Cold,
+            6 => ValueColor::Lightning,
+            7 => ValueColor::Chaos,
+            _ => ValueColor::Default,
+        }
+    }
+}
+
+/// How a property line's name and values make up its text: GGG's `displayMode`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PropertyLayout {
+    /// 0: `name: values` (`Уклонение: 500`), or the name alone where there are none -- the item
+    /// class line. Also 2, a progress bar the game draws under such a line (a gem's experience),
+    /// and any mode this crate doesn't know.
+    NameFirst,
+    /// 1: `values name`, a requirement's `50 Ловк`.
+    ValuesFirst,
+    /// 3: the name with its `{0}`, `{1}` slots filled with the values.
+    Template,
+}
+
+impl PropertyLayout {
+    fn from_mode(display_mode: u32) -> PropertyLayout {
+        match display_mode {
+            1 => PropertyLayout::ValuesFirst,
+            3 => PropertyLayout::Template,
+            _ => PropertyLayout::NameFirst,
+        }
+    }
+}
+
+/// One line of a listed item's properties, requirements or granted skills.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ItemProperty {
+    /// The line's words, link markup stripped (`Уклонение`).
+    pub name: String,
+    /// Its values in order, markup stripped too, each with the colour the game draws it in.
+    pub values: Vec<(String, ValueColor)>,
+    pub layout: PropertyLayout,
+}
+
+impl ItemProperty {
+    fn from_raw(raw: RawProperty) -> ItemProperty {
+        ItemProperty {
+            name: strip_link_markup(&raw.name),
+            values: raw
+                .values
+                .iter()
+                .map(|(value, value_type)| {
+                    (strip_link_markup(value), ValueColor::from_type(*value_type))
+                })
+                .collect(),
+            layout: PropertyLayout::from_mode(raw.display_mode),
+        }
+    }
+
+    /// The line as the game writes it, and where each value sits in it, with its colour.
+    pub fn text(&self) -> (String, Vec<(Range<usize>, ValueColor)>) {
+        let mut text = String::with_capacity(self.name.len() + 16 * self.values.len());
+        let mut spans = Vec::with_capacity(self.values.len());
+        match self.layout {
+            PropertyLayout::NameFirst => {
+                text.push_str(&self.name);
+                if !self.values.is_empty() {
+                    text.push_str(": ");
+                    self.push_values(&mut text, &mut spans);
+                }
+            }
+            PropertyLayout::ValuesFirst => {
+                self.push_values(&mut text, &mut spans);
+                if !self.name.is_empty() {
+                    text.push(' ');
+                    text.push_str(&self.name);
+                }
+            }
+            PropertyLayout::Template => {
+                let mut rest = self.name.as_str();
+                while let Some(open) = rest.find('{') {
+                    let after = &rest[open + 1..];
+                    let slot = after.find('}').and_then(|close| {
+                        let value = self.values.get(after[..close].parse::<usize>().ok()?)?;
+                        Some((close, value))
+                    });
+                    let Some((close, (value, color))) = slot else {
+                        // A brace that opens no slot is text.
+                        text.push_str(&rest[..=open]);
+                        rest = after;
+                        continue;
+                    };
+                    text.push_str(&rest[..open]);
+                    let start = text.len();
+                    text.push_str(value);
+                    spans.push((start..text.len(), *color));
+                    rest = &after[close + 1..];
+                }
+                text.push_str(rest);
+            }
+        }
+        (text, spans)
+    }
+
+    /// The values, comma-separated, onto `text`, noting where each one sits.
+    fn push_values(&self, text: &mut String, spans: &mut Vec<(Range<usize>, ValueColor)>) {
+        for (index, (value, color)) in self.values.iter().enumerate() {
+            if index > 0 {
+                text.push_str(", ");
+            }
+            let start = text.len();
+            text.push_str(value);
+            spans.push((start..text.len(), *color));
+        }
+    }
+}
+
+/// A listed item as the game's own tooltip shows it: `result[].item`, link markup
+/// (`[Evasion|Уклонение]`) reduced to the words it shows. The default is an identified normal
+/// item the site says nothing more about.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ListedItem {
+    /// A rare's or unique's own name (`Штурмовой саван`); empty for any other item, whose type
+    /// line names it.
+    pub name: String,
+    /// The type line: the base type (`Накидка сокольничего`) -- a magic item's wrapped in its
+    /// affixes -- or a currency's or gem's name.
+    pub type_line: String,
+    pub frame: ItemFrame,
+    /// `item.ilvl` (verified live) -- `None` for item types with no item level at all (Currency,
+    /// Divination Cards); gems and currency may list 0 instead.
+    pub item_level: Option<u32>,
+    /// `item.stackSize`; `None` for items that don't stack. [`group_listings`] sums it over a
+    /// seller's folded listings.
+    pub stack_size: Option<u32>,
+    pub unidentified: bool,
+    /// The tier an unidentified item dropped as (the game's `Неопознано (Ранг 3)`), when the site
+    /// gives it.
+    pub unidentified_tier: Option<u32>,
+    pub corrupted: bool,
+    pub mirrored: bool,
+    pub sanctified: bool,
+    /// The game's Fractured Item: some of its mods are fractured, which nothing can change.
+    pub fractured: bool,
+    /// The item's art (`https://web.poecdn.com/gen/image/...png`).
+    pub icon: Option<String>,
+    /// The seller's note (`~b/o 1 exalted`): the item carries its own price. Without one, the
+    /// listing's price comes from its stash tab's name -- a whole dump tab priced at once, which
+    /// EE2 flags with a `?` after the price as "likely not real" (EE2 `docs/faq.md`).
+    pub note: Option<String>,
+    /// The lines under the name: the item class, defences, damage, a waystone's modifiers.
+    pub properties: Vec<ItemProperty>,
+    /// The level and attributes it takes, which the game lists on one line
+    /// ([`ListedItem::requirements_text`]).
+    pub requirements: Vec<ItemProperty>,
+    /// Each socket -- a skill gem's support sockets likewise -- with the name of the rune, soul
+    /// core or talisman in it, `None` while empty.
+    pub sockets: Vec<Option<String>>,
+    /// The skills the item grants: `Дарует умение: Снаряд хаоса 17 уровня`.
+    pub granted_skills: Vec<ItemProperty>,
+    /// The item's mods in the order the site lists them: enchants, runes, implicits, fractured,
+    /// explicits, desecrated, crafted.
+    pub mods: Vec<ListedMod>,
+    /// A unique's flavour text, its lines joined with `\n`.
+    pub flavour: Option<String>,
+    /// What the item is for: `Можно использовать в Машине картоходца, чтобы войти на карту.`
+    pub description: Option<String>,
+}
+
+impl ListedItem {
+    fn from_fetched(item: FetchItem) -> ListedItem {
+        let lines = |raw: Vec<RawProperty>| -> Vec<ItemProperty> {
+            raw.into_iter().map(ItemProperty::from_raw).collect()
+        };
+        let mods = [
+            (ModKind::Enchant, item.enchant_mods),
+            (ModKind::Rune, item.rune_mods),
+            (ModKind::Implicit, item.implicit_mods),
+            (ModKind::Fractured, item.fractured_mods),
+            (ModKind::Explicit, item.explicit_mods),
+            (ModKind::Desecrated, item.desecrated_mods),
+            (ModKind::Crafted, item.crafted_mods),
+        ]
+        .into_iter()
+        .flat_map(|(kind, list)| {
+            list.into_iter()
+                .map(move |raw| ListedMod::from_raw(kind, raw))
+        })
+        .collect();
+        let flavour = item
+            .flavour_text
+            .iter()
+            .flat_map(|line| line.split(['\r', '\n']))
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n");
+        ListedItem {
+            frame: ItemFrame::of(item.frame_type, item.rarity.as_deref()),
+            name: item.name,
+            type_line: item.type_line,
+            item_level: item.ilvl,
+            stack_size: item.stack_size,
+            unidentified: item.identified == Some(false),
+            unidentified_tier: item.unidentified_tier,
+            corrupted: item.corrupted,
+            mirrored: item.duplicated || item.mirrored,
+            sanctified: item.sanctified,
+            fractured: item.fractured,
+            icon: item.icon.filter(|icon| !icon.is_empty()),
+            note: item.note,
+            properties: lines(item.properties),
+            requirements: lines(item.requirements),
+            sockets: filled_sockets(
+                item.sockets.len().max(item.gem_sockets.len()),
+                item.socketed_items,
+            ),
+            granted_skills: lines(item.granted_skills),
+            mods,
+            flavour: (!flavour.is_empty()).then_some(flavour),
+            description: item
+                .descr_text
+                .map(|text| strip_link_markup(&text))
+                .filter(|text| !text.is_empty()),
+        }
+    }
+
+    /// The requirements the way the game's one requirements line lists them after its label --
+    /// `Уровень 75, 50 Ловк, 50 Инт`, the level's name first but without its colon -- and where
+    /// each value sits in it, with its colour.
+    pub fn requirements_text(&self) -> (String, Vec<(Range<usize>, ValueColor)>) {
+        let mut text = String::new();
+        let mut spans = Vec::with_capacity(self.requirements.len());
+        for (index, requirement) in self.requirements.iter().enumerate() {
+            if index > 0 {
+                text.push_str(", ");
+            }
+            let gap = !requirement.name.is_empty() && !requirement.values.is_empty();
+            if requirement.layout == PropertyLayout::ValuesFirst {
+                requirement.push_values(&mut text, &mut spans);
+                text.push_str(if gap { " " } else { "" });
+                text.push_str(&requirement.name);
+            } else {
+                text.push_str(&requirement.name);
+                text.push_str(if gap { " " } else { "" });
+                requirement.push_values(&mut text, &mut spans);
+            }
+        }
+        (text, spans)
+    }
+}
+
+/// `count` sockets, each filled with the item `socketedItems` puts at its index; one whose index
+/// is missing or already taken gets a socket of its own after them.
+fn filled_sockets(count: usize, socketed: Vec<RawSocketed>) -> Vec<Option<String>> {
+    let mut sockets = vec![None; count];
+    for item in socketed {
+        let name = strip_link_markup(&item.type_line);
+        match item.socket.and_then(|at| sockets.get_mut(at)) {
+            Some(slot) if slot.is_none() => *slot = Some(name),
+            _ => sockets.push(Some(name)),
+        }
+    }
+    sockets
+}
+
+/// One resolved listing from `fetch`: the listed item and how it's sold. Presentation formatting
+/// (how to display the price, etc.) is left to the caller -- this is raw parsed API data, not a
+/// UI-ready row.
 #[derive(Debug)]
 pub struct FetchedItem {
-    pub name: String,
-    pub type_line: String,
+    pub item: ListedItem,
     /// `(amount, currency)`, e.g. `(1.0, "transmute")`; `None` if the listing has no set price.
     pub price: Option<(f64, String)>,
     pub account_name: String,
-    /// The listed item's own item level (`item.ilvl`, verified live this session) -- `None` for
-    /// item types with no item level at all (Currency, Divination Cards).
-    pub item_level: Option<u32>,
     /// `listing.indexed`, an ISO-8601 timestamp string (verified live this session, e.g.
     /// `"2026-09-20T04:31:02Z"`) -- kept as raw text; relative "N days ago"-style formatting is a
     /// UI-rendering concern, not this crate's.
@@ -1267,13 +1739,6 @@ pub struct FetchedItem {
     /// online seller needed -- the trade site's "Instant Buyout" (status option `securable` in
     /// `GET /api/trade2/data/filters`, verified 2026-09-22).
     pub instant_buyout: bool,
-    /// `item.note` is present: the item carries its own price. Without one, `price` comes from the
-    /// stash tab's name -- a whole dump tab priced at once, which EE2 flags with a `?` after the
-    /// price as "likely not real" (EE2 `docs/faq.md`).
-    pub has_note: bool,
-    /// `item.stackSize`; `None` for items that don't stack. [`group_listings`] sums it over a
-    /// seller's folded listings.
-    pub stack_size: Option<u32>,
     /// `listing.in_demand`, which EE2 renders as an "in demand" badge.
     pub in_demand: bool,
     /// The result's top-level `gone`, which EE2 renders as a red "Gone" badge.
@@ -1283,9 +1748,6 @@ pub struct FetchedItem {
     /// exalted в лиге Standard (секция "~b/o 1 exalted"; позиция: 22 столбец, 21 ряд)` for a
     /// `ru_RU` seller). `None` for an instant-buyout listing, which needs no whisper.
     pub whisper: Option<String>,
-    /// The item's mods in the order the site lists them: enchants, runes, implicits, fractured,
-    /// explicits, desecrated.
-    pub mods: Vec<ListedMod>,
 }
 
 /// `GET /api/trade2/fetch/{ids}?query={query_id}` for up to 10 listing ids at a time (the trade
@@ -1327,44 +1789,22 @@ fn parse_fetch_response(body: &str) -> Result<Vec<FetchedItem>> {
         .result
         .into_iter()
         .flatten()
-        .map(|entry| {
-            let item = entry.item;
-            let mods = [
-                (ModKind::Enchant, item.enchant_mods),
-                (ModKind::Rune, item.rune_mods),
-                (ModKind::Implicit, item.implicit_mods),
-                (ModKind::Fractured, item.fractured_mods),
-                (ModKind::Explicit, item.explicit_mods),
-                (ModKind::Desecrated, item.desecrated_mods),
-            ]
-            .into_iter()
-            .flat_map(|(kind, list)| {
-                list.into_iter()
-                    .map(move |raw| ListedMod::from_raw(kind, raw))
-            })
-            .collect();
-            FetchedItem {
-                name: item.name,
-                type_line: item.type_line,
-                price: entry.listing.price.map(|p| (p.amount, p.currency)),
-                account_name: entry.listing.account.name,
-                item_level: item.ilvl,
-                indexed: entry.listing.indexed,
-                account_status: match entry.listing.account.online {
-                    None => AccountStatus::Offline,
-                    Some(FetchOnline {
-                        status: Some(FetchOnlineStatus::Afk),
-                    }) => AccountStatus::Afk,
-                    Some(_) => AccountStatus::Online,
-                },
-                instant_buyout: entry.listing.fee.is_some(),
-                has_note: item.note.is_some(),
-                stack_size: item.stack_size,
-                in_demand: entry.listing.in_demand.unwrap_or(false),
-                gone: entry.gone.unwrap_or(false),
-                whisper: entry.listing.whisper.filter(|whisper| !whisper.is_empty()),
-                mods,
-            }
+        .map(|entry| FetchedItem {
+            item: ListedItem::from_fetched(entry.item),
+            price: entry.listing.price.map(|p| (p.amount, p.currency)),
+            account_name: entry.listing.account.name,
+            indexed: entry.listing.indexed,
+            account_status: match entry.listing.account.online {
+                None => AccountStatus::Offline,
+                Some(FetchOnline {
+                    status: Some(FetchOnlineStatus::Afk),
+                }) => AccountStatus::Afk,
+                Some(_) => AccountStatus::Online,
+            },
+            instant_buyout: entry.listing.fee.is_some(),
+            in_demand: entry.listing.in_demand.unwrap_or(false),
+            gone: entry.gone.unwrap_or(false),
+            whisper: entry.listing.whisper.filter(|whisper| !whisper.is_empty()),
         })
         .collect())
 }
@@ -1373,7 +1813,7 @@ fn parse_fetch_response(body: &str) -> Result<Vec<FetchedItem>> {
 #[derive(Debug)]
 pub struct GroupedListing {
     /// The row's first listing in search order, i.e. its cheapest. For a stackable item its
-    /// `stack_size` is the stock of every listing folded into the row.
+    /// `item.stack_size` is the stock of every listing folded into the row.
     pub listing: FetchedItem,
     /// How many listings of an unstackable item the row stands for. EE2 shows `× N` after the
     /// price once this passes 2, in place of the unnoted-price `?`.
@@ -1408,8 +1848,8 @@ pub fn group_listings(
             continue;
         };
         let group = &mut groups[index];
-        match &mut group.listing.stack_size {
-            Some(stock) => *stock += listing.stack_size.unwrap_or(0),
+        match &mut group.listing.item.stack_size {
+            Some(stock) => *stock += listing.item.stack_size.unwrap_or(0),
             None => group.listed_times += 1,
         }
     }
@@ -1527,7 +1967,13 @@ mod fetch_tests {
         let items = parse_fetch_response(PAGE).expect("the page parses");
         let flags: Vec<_> = items
             .iter()
-            .map(|item| (item.account_status, item.instant_buyout, item.has_note))
+            .map(|item| {
+                (
+                    item.account_status,
+                    item.instant_buyout,
+                    item.item.note.is_some(),
+                )
+            })
             .collect();
         assert_eq!(
             flags,
@@ -1540,11 +1986,15 @@ mod fetch_tests {
         );
         let (crossbow, splinters) = (&items[0], &items[3]);
         assert_eq!(
-            (crossbow.stack_size, crossbow.in_demand, crossbow.gone),
+            (crossbow.item.stack_size, crossbow.in_demand, crossbow.gone),
             (None, false, false)
         );
         assert_eq!(
-            (splinters.stack_size, splinters.in_demand, splinters.gone),
+            (
+                splinters.item.stack_size,
+                splinters.in_demand,
+                splinters.gone
+            ),
             (Some(40), true, true)
         );
         // A seller in person gets a whisper; an instant-buyout listing sells without one.
@@ -1581,7 +2031,7 @@ mod fetch_tests {
         }]}"#;
         let items = parse_fetch_response(page).expect("the page parses");
         assert_eq!(
-            items[0].mods,
+            items[0].item.mods,
             [
                 ListedMod {
                     kind: ModKind::Implicit,
@@ -1590,6 +2040,7 @@ mod fetch_tests {
                     tier: None,
                     level: Some(25),
                     value: Some(10.0),
+                    ranges: Vec::new(),
                 },
                 ListedMod {
                     kind: ModKind::Explicit,
@@ -1598,6 +2049,7 @@ mod fetch_tests {
                     tier: Some("P8".to_owned()),
                     level: Some(16),
                     value: Some(8.0),
+                    ranges: Vec::new(),
                 },
                 ListedMod {
                     kind: ModKind::Explicit,
@@ -1606,6 +2058,7 @@ mod fetch_tests {
                     tier: None,
                     level: None,
                     value: Some(12.0),
+                    ranges: Vec::new(),
                 },
             ]
         );
@@ -1628,23 +2081,301 @@ mod fetch_tests {
         assert_eq!(mod_value("Enemies in your Presence are Blinded"), None);
     }
 
-    /// A priced, noted, unflagged listing: only what grouping reads varies.
+    #[test]
+    fn link_markup_reduces_to_the_words_it_shows() {
+        assert_eq!(strip_link_markup("[Evasion|Уклонение]"), "Уклонение");
+        assert_eq!(
+            strip_link_markup(
+                "108% усиление [AilmentApplication|наложения] [ElementalAilments|стихийных] \
+                 состояний у монстров"
+            ),
+            "108% усиление наложения стихийных состояний у монстров"
+        );
+        assert_eq!(strip_link_markup("[Lightning] damage"), "Lightning damage");
+        // Text without markup, and a bracket that closes nothing, stay as they are.
+        assert_eq!(
+            strip_link_markup("+36 к максимуму здоровья"),
+            "+36 к максимуму здоровья"
+        );
+        assert_eq!(strip_link_markup("Ранг [3"), "Ранг [3");
+    }
+
+    /// Live `ru.pathofexile.com` fetch pages (2026-09-23, sellers anonymised): three rare body
+    /// armours and three rare tier-15 waystones.
+    const RU_CHEST: &str = include_str!("../tests/fixtures/fetch-ru-chest.json");
+    const RU_WAYSTONE: &str = include_str!("../tests/fixtures/fetch-ru-waystone.json");
+
+    /// A line's text, and each value's own text and colour.
+    fn with_values(
+        (text, spans): &(String, Vec<(Range<usize>, ValueColor)>),
+    ) -> (&str, Vec<(&str, ValueColor)>) {
+        let values = spans
+            .iter()
+            .map(|(span, color)| (&text[span.clone()], *color))
+            .collect();
+        (text, values)
+    }
+
+    #[test]
+    fn a_live_body_armour_reads_like_its_game_tooltip() {
+        let items = parse_fetch_response(RU_CHEST).expect("the live page parses");
+        assert_eq!(items.len(), 3);
+        let armour = &items[0].item;
+        assert_eq!(
+            (
+                armour.name.as_str(),
+                armour.type_line.as_str(),
+                armour.frame,
+                armour.item_level
+            ),
+            (
+                "Штурмовой саван",
+                "Накидка сокольничего",
+                ItemFrame::Rare,
+                Some(75)
+            )
+        );
+        assert_eq!(armour.note.as_deref(), Some("~b/o 1 exalted"));
+        assert!(
+            armour
+                .icon
+                .as_deref()
+                .is_some_and(|icon| icon.starts_with("https://web.poecdn.com/gen/image/"))
+        );
+        assert!(!armour.unidentified && !armour.corrupted && !armour.mirrored);
+
+        // The item class line has no values; `[Evasion|Уклонение]` shows its words, and the
+        // evasion the item's own mods raise comes augmented.
+        let class = armour.properties[0].text();
+        assert_eq!(with_values(&class), ("Нательный доспех", vec![]));
+        let evasion = armour.properties[1].text();
+        assert_eq!(
+            with_values(&evasion),
+            ("Уклонение: 500", vec![("500", ValueColor::Augmented)])
+        );
+        // The requirements' one line, the attributes lowered by the item's own mod.
+        let requirements = armour.requirements_text();
+        assert_eq!(
+            with_values(&requirements),
+            (
+                "Уровень 75, 50 Ловк, 50 Инт",
+                vec![
+                    ("75", ValueColor::Default),
+                    ("50", ValueColor::Augmented),
+                    ("50", ValueColor::Augmented)
+                ]
+            )
+        );
+
+        // The implicit first, then the explicits with their tiers, levels and roll ranges; a
+        // roll that can't vary (the implicit's 5-5, the attributes' -25 to -25) gets no range.
+        assert_eq!(armour.mods[0].kind, ModKind::Implicit);
+        let evasion_mod = &armour.mods[1];
+        assert_eq!(
+            (
+                evasion_mod.kind,
+                evasion_mod.tier.as_deref(),
+                evasion_mod.level
+            ),
+            (ModKind::Explicit, Some("P1"), Some(75))
+        );
+        let written: Vec<String> = armour
+            .mods
+            .iter()
+            .map(|listed| listed.text_with_ranges().0)
+            .collect();
+        assert_eq!(
+            written,
+            [
+                "5% повышение скорости передвижения",
+                "+125(142-161) к уклонению",
+                "+45(43-48) к максимуму энергетического щита",
+                "34(33-38)% увеличение уклонения и энергетического щита",
+                "+36(33-41) к максимуму здоровья",
+                "25% снижение требований к характеристикам",
+                "+38(36-40)% к сопротивлению холоду",
+                "+32(31-35)% к сопротивлению молнии",
+            ]
+        );
+        let (_, ranges) = armour.mods[1].text_with_ranges();
+        assert_eq!(&written[1][ranges[0].clone()], "(142-161)");
+    }
+
+    #[test]
+    fn a_line_two_affixes_feed_and_a_two_number_roll_get_their_ranges() {
+        let items = parse_fetch_response(RU_CHEST).expect("the live page parses");
+        let armour = &items[2].item;
+        let written: Vec<String> = armour
+            .mods
+            .iter()
+            .map(|listed| listed.text_with_ranges().0)
+            .collect();
+        assert_eq!(
+            written,
+            [
+                "+53(39-53) к уклонению",
+                // Two P3 prefixes' 27-32 each.
+                "55(54-64)% увеличение уклонения",
+                "+28(26-32) к максимуму здоровья",
+                "+14(11-15)% к сопротивлению холоду",
+                "+32(31-35)% к сопротивлению молнии",
+                "Регенерация 23.3(23.1-29) здоровья в секунду",
+                "От 105(101-151) до 173(152-220) физического урона шипами",
+            ]
+        );
+        assert_eq!(armour.mods[1].tier.as_deref(), Some("P3"));
+    }
+
+    #[test]
+    fn a_live_waystone_keeps_its_map_properties_and_description() {
+        let items = parse_fetch_response(RU_WAYSTONE).expect("the live page parses");
+        let waystone = &items[0].item;
+        assert_eq!(
+            (
+                waystone.name.as_str(),
+                waystone.type_line.as_str(),
+                waystone.item_level
+            ),
+            ("Тайная решимость", "Путевой камень (Ур. 15)", Some(82))
+        );
+        let lines: Vec<_> = waystone.properties.iter().map(ItemProperty::text).collect();
+        assert_eq!(
+            with_values(&lines[1]),
+            (
+                "Размер групп монстров: +29%",
+                vec![("+29%", ValueColor::Augmented)]
+            )
+        );
+        assert_eq!(
+            lines
+                .iter()
+                .map(|(text, _)| text.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "Доступно возрождений: 1",
+                "Размер групп монстров: +29%",
+                "Эффективность монстров: +13%",
+                "Шанс выпадения путевого камня: +65%",
+            ]
+        );
+        assert!(waystone.requirements.is_empty());
+        assert_eq!(
+            waystone.description.as_deref(),
+            Some(
+                "Можно использовать в Машине картоходца, чтобы войти на карту. Путевые камни одноразовые."
+            )
+        );
+        assert_eq!(waystone.note.as_deref(), Some("~b/o 1 exalted"));
+        // A flag has no number to range; a roll the site ranges from 35 down to 30 reads 30-35.
+        assert_eq!(
+            waystone.mods[0].text_with_ranges().0,
+            "Область содержит участки заряженной земли"
+        );
+        assert_eq!(
+            waystone.mods[4].text_with_ranges().0,
+            "Игроки получают уменьшение зарядов флакона на 35(30-35)%"
+        );
+    }
+
+    #[test]
+    fn sockets_skills_flags_and_templated_lines_read_like_the_tooltip() {
+        let page = r#"{"result": [{
+            "id": "x",
+            "item": {
+                "name": "", "typeLine": "Сияющий скипетр", "rarity": "Unique", "frameType": 3,
+                "ilvl": 80, "identified": false, "unidentifiedTier": 3, "corrupted": true,
+                "duplicated": true, "sanctified": true, "fractured": true,
+                "sockets": [{"group": 0, "type": "rune"}, {"group": 0, "type": "rune"}],
+                "socketedItems": [{"typeLine": "Большая [Rune|руна] железа", "socket": 1}],
+                "grantedSkills": [{"name": "Дарует умение",
+                    "values": [["[ChaosBolt|Снаряд хаоса] 17 уровня", 0]], "displayMode": 0}],
+                "properties": [{"name": "Хранит {0} из {1} зарядов",
+                    "values": [["3", 1], ["5", 0]], "displayMode": 3}],
+                "craftedMods": ["+10 к силе"],
+                "flavourText": ["Смертные проводят жизнь, гадая,\r", "какая именно судьба их ждёт."]
+            },
+            "listing": {"price": {"amount": 1, "currency": "exalted"}, "account": {"name": "a"},
+                "indexed": "2026-09-23T00:00:00Z"}
+        }]}"#;
+        let items = parse_fetch_response(page).expect("the page parses");
+        let sceptre = &items[0].item;
+        assert_eq!(sceptre.frame, ItemFrame::Unique);
+        assert_eq!(
+            (
+                sceptre.unidentified,
+                sceptre.unidentified_tier,
+                sceptre.corrupted,
+                sceptre.mirrored,
+                sceptre.sanctified,
+                sceptre.fractured
+            ),
+            (true, Some(3), true, true, true, true)
+        );
+        assert_eq!(
+            sceptre.sockets,
+            [None, Some("Большая руна железа".to_owned())]
+        );
+        assert_eq!(
+            sceptre.granted_skills[0].text().0,
+            "Дарует умение: Снаряд хаоса 17 уровня"
+        );
+        let charges = sceptre.properties[0].text();
+        assert_eq!(
+            with_values(&charges),
+            (
+                "Хранит 3 из 5 зарядов",
+                vec![("3", ValueColor::Augmented), ("5", ValueColor::Default)]
+            )
+        );
+        assert_eq!(
+            (sceptre.mods[0].kind, sceptre.mods[0].text.as_str()),
+            (ModKind::Crafted, "+10 к силе")
+        );
+        assert_eq!(
+            sceptre.flavour.as_deref(),
+            Some("Смертные проводят жизнь, гадая,\nкакая именно судьба их ждёт.")
+        );
+    }
+
+    #[test]
+    fn a_card_field_in_an_unexpected_shape_costs_only_itself() {
+        let page = r#"{"result": [{
+            "id": "x",
+            "item": {
+                "name": "", "typeLine": "Сфера хаоса", "frameType": 5, "stackSize": 3,
+                "properties": "misshapen", "sockets": {"group": 0}, "grantedSkills": null,
+                "explicitMods": [{"description": "Изменяет свойство",
+                    "mods": [{"tier": "S1", "magnitudes": "misshapen"}]}]
+            },
+            "listing": {"price": {"amount": 2, "currency": "exalted"}, "account": {"name": "a"},
+                "indexed": "2026-09-23T00:00:00Z"}
+        }]}"#;
+        let items = parse_fetch_response(page).expect("the page parses");
+        let orb = &items[0];
+        assert_eq!(orb.price, Some((2.0, "exalted".to_owned())));
+        assert_eq!(orb.item.frame, ItemFrame::Currency);
+        assert_eq!(orb.item.stack_size, Some(3));
+        assert!(orb.item.properties.is_empty() && orb.item.sockets.is_empty());
+        assert_eq!(orb.item.mods[0].tier.as_deref(), Some("S1"));
+        assert!(orb.item.mods[0].ranges.is_empty());
+    }
+
+    /// A priced, unflagged listing: only what grouping reads varies.
     fn listing(account: &str, amount: f64, stack_size: Option<u32>) -> FetchedItem {
         FetchedItem {
-            name: String::new(),
-            type_line: "Alloy Crossbow".to_owned(),
+            item: ListedItem {
+                type_line: "Alloy Crossbow".to_owned(),
+                stack_size,
+                ..ListedItem::default()
+            },
             price: Some((amount, "exalted".to_owned())),
             account_name: account.to_owned(),
-            item_level: None,
             indexed: String::new(),
             account_status: AccountStatus::Online,
             instant_buyout: false,
-            has_note: true,
-            stack_size,
             in_demand: false,
             gone: false,
             whisper: None,
-            mods: Vec::new(),
         }
     }
 
@@ -1704,7 +2435,7 @@ mod fetch_tests {
             [listing("s", 3.0, Some(40)), listing("s", 3.0, Some(15))],
         );
         assert_eq!(rows(&groups), [("s", 3.0, 1)]);
-        assert_eq!(groups[0].listing.stack_size, Some(55));
+        assert_eq!(groups[0].listing.item.stack_size, Some(55));
     }
 }
 

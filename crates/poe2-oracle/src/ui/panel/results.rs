@@ -1,27 +1,29 @@
 //! Searching and what it finds: the search button, the sellers chip, the search status, the
 //! estimate card and the listings table.
 
+use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use gpui::{
-    AnyElement, App, AppContext as _, Context, FontWeight, IntoElement, MouseButton,
+    AnyElement, AnyView, App, AppContext as _, Context, FontWeight, IntoElement, MouseButton,
     MouseDownEvent, Render, SharedString, Window, div, prelude::*, rgb,
 };
 
 use poe2_domain::ParsedItem;
 use trade_client::live::MAX_LIVE_SEARCHES;
 use trade_client::rates::{Confidence, PriceEstimate, PriceUnit};
-use trade_client::{AccountStatus, ListedMod, ListingStatus, ModKind, PriceCurrency};
+use trade_client::{AccountStatus, ListedItem, ListedMod, ListingStatus, PriceCurrency};
 
 use crate::listing_match::{self, Asked, WantedStat};
 use crate::live_search::LiveSearches;
 use crate::price_check::{ListingRow, PriceCheckApp, SearchState};
 use crate::relative_time;
 use crate::session::SessionStatus;
+use crate::ui::item_card::{CardPrice, ItemCard, ModMark, render_item_card};
 use crate::ui::theme::{
-    BG_BUTTON, BG_BUTTON_HOVER, BG_CONTROL, BG_NAMEPLATE, BG_PANEL, BG_ROW_STRIPE, BORDER,
-    BORDER_GOLD, CONTENT_PADDING, GOLD, PRICE_RISE, TEXT, TEXT_DIM, TEXT_MUTED, TEXT_VALUE,
-    TEXT_WARNING, TIER_TOP, rems_from_px,
+    BG_BUTTON, BG_BUTTON_HOVER, BG_CONTROL, BG_NAMEPLATE, BG_ROW_STRIPE, BORDER, BORDER_GOLD,
+    CONTENT_PADDING, GOLD, PRICE_RISE, TEXT, TEXT_DIM, TEXT_MUTED, TEXT_WARNING, TIER_TOP,
+    rems_from_px,
 };
 
 use super::format::{amount_in, currency_img, format_ru, format_value};
@@ -601,8 +603,9 @@ pub(super) fn render_link(label: impl Into<String>, url: String) -> impl IntoEle
 /// EE2's striped results table, plus the seller column (the player can turn it off; the space
 /// then stays empty so the dates keep their place) and currency icons PoE Overlay II shows. A
 /// seller who sells in person gets a ✉: clicking the row copies the whisper for the game's chat.
-/// Hovering a row lists the listed item's mods (`ListingTooltip`); after a relaxed search
-/// (`relaxed`: at least `.0` of the `.1` stat rows) each row says how many it has.
+/// Hovering a row shows the listed item as the game's tooltip draws it (`ListingTooltip`); after
+/// a relaxed search (`relaxed`: at least `.0` of the `.1` stat rows) each row says how many it
+/// has.
 fn render_results_table(
     state: &PriceCheckApp,
     rows: &[ListingRow],
@@ -614,7 +617,7 @@ fn render_results_table(
         .map_or(0, |elapsed| elapsed.as_secs() as i64);
     let show_seller = state.settings.show_seller_column;
     // The stats the search asks for, for the rows' tooltips to check the listings against.
-    let wanted = WantedStat::from_filters(&state.filters);
+    let wanted: Rc<[WantedStat]> = WantedStat::from_filters(&state.filters).into();
     // Pseudo totals and free slots count toward a relaxed search too, but no listed mod shows
     // them: the rows' counts only add up to the banner's when every searched row is a mod's.
     let count_matches = relaxed.is_some_and(|(_, of)| of as usize == wanted.len());
@@ -647,17 +650,15 @@ fn render_results_table(
                     (None, false) => SharedString::default(),
                 }
             };
-            let tooltip = ListingTooltip::new(&row.mods, &wanted, marker_note(row));
+            let tooltip = listing_tooltip(state, row, wanted.clone());
             let matched = count_matches
-                .then(|| listing_match::matched_count(&row.mods, &wanted))
+                .then(|| listing_match::matched_count(&row.item.mods, &wanted))
                 .flatten()
                 .filter(|_| !copied);
             table_row()
                 .id(("listing", index))
                 .when(index % 2 == 0, |this| this.bg(rgb(BG_ROW_STRIPE)))
-                .when_some(tooltip, |this, tooltip| {
-                    this.tooltip(move |_window, cx| cx.new(|_| tooltip.clone()).into())
-                })
+                .tooltip(tooltip)
                 .when_some(row.whisper.clone(), |this, whisper| {
                     this.cursor_pointer()
                         .hover(|style| style.bg(rgb(BG_BUTTON_HOVER)))
@@ -672,7 +673,8 @@ fn render_results_table(
                 .child(
                     level_cell().text_color(rgb(TEXT_DIM)).child(
                         // Gems and currency list item level 0: nothing to show.
-                        row.item_level
+                        row.item
+                            .item_level
                             .filter(|&level| level > 0)
                             .map(|level| level.to_string())
                             .unwrap_or_default(),
@@ -718,38 +720,76 @@ fn bounds_text(min: Option<f64>, max: Option<f64>) -> String {
     }
 }
 
-/// A results row's tooltip: the listed item's mods, the ones whose stat the search asks for
-/// marked met or short (`listing_match::assess`), the asked-for stats the item lacks -- which a
-/// relaxed search lets through -- and what the row's price marker means.
-#[derive(Clone)]
-struct ListingTooltip {
-    mods: Vec<(ListedMod, Asked)>,
-    /// The asked-for stats' texts the item has no mod for; empty when the site gave no stat
-    /// ids to tell by.
-    missing: Vec<String>,
-    /// `marker_note`'s explanation of the "× N" or "?" beside the price.
-    marker: Option<String>,
+/// A results row's tooltip: the listed item's card (`ui::item_card`), its mods whose stat the
+/// search asks for marked met or short (`listing_match::assess`), and at the card's foot the
+/// asked-for stats the item lacks -- which a relaxed search lets through -- and what the row's
+/// price marker means.
+struct ListingTooltip(ItemCard);
+
+/// The builder `tooltip` takes for `row`. The card is made when the tooltip opens, not for every
+/// row each frame: a row keeps only its item's handle and the search's stats.
+fn listing_tooltip(
+    state: &PriceCheckApp,
+    row: &ListingRow,
+    wanted: Rc<[WantedStat]>,
+) -> impl Fn(&mut Window, &mut App) -> AnyView + 'static {
+    let item = row.item.clone();
+    let site = state.trade_site();
+    let price = card_price(state, row);
+    let marker = marker_note(row);
+    move |_window, cx| {
+        let card = ItemCard::new(&item, site, Some(price.clone()), |listed| {
+            mod_mark(listed, &wanted)
+        })
+        .with_notes(listing_notes(&item, &wanted, marker.clone()));
+        cx.new(|_| ListingTooltip(card)).into()
+    }
 }
 
-impl ListingTooltip {
-    /// `None` for a listing with neither mods (currency, a gem the site lists bare) nor a price
-    /// marker to explain.
-    fn new(
-        mods: &[ListedMod],
-        wanted: &[WantedStat],
-        marker: Option<String>,
-    ) -> Option<ListingTooltip> {
-        if mods.is_empty() && marker.is_none() {
-            return None;
-        }
-        Some(ListingTooltip {
-            missing: listing_match::missing(mods, wanted),
-            mods: mods
-                .iter()
-                .map(|listed| (listed.clone(), listing_match::assess(listed, wanted)))
-                .collect(),
-            marker,
-        })
+/// How `listed` stands against the stats `wanted`, as the card marks it.
+fn mod_mark(listed: &ListedMod, wanted: &[WantedStat]) -> ModMark {
+    match listing_match::assess(listed, wanted) {
+        Asked::No => ModMark::None,
+        Asked::Met => ModMark::Met,
+        Asked::Short { min, max } => ModMark::Short(format!("нужно {}", bounds_text(min, max))),
+    }
+}
+
+/// The card's notes on the listing: the stats `wanted` the item has no mod for -- none when the
+/// site gave no stat ids to tell by -- and `marker`, what the mark beside its price means.
+fn listing_notes(
+    item: &ListedItem,
+    wanted: &[WantedStat],
+    marker: Option<String>,
+) -> Vec<(String, u32)> {
+    let missing = listing_match::missing(&item.mods, wanted);
+    let mut notes = Vec::with_capacity(missing.len() + 2);
+    if !missing.is_empty() {
+        notes.push(("Нет у этого предмета:".to_owned(), TEXT_WARNING));
+        notes.extend(
+            missing
+                .into_iter()
+                .map(|text| (format!("✗ {text}"), TEXT_WARNING)),
+        );
+    }
+    notes.extend(marker.map(|marker| (marker, TEXT_DIM)));
+    notes
+}
+
+/// The row's price, for the card's price note: amount and currency icon, as `render_price` shows
+/// it.
+fn card_price(state: &PriceCheckApp, row: &ListingRow) -> CardPrice {
+    let currency = row.price_currency.as_str();
+    CardPrice {
+        amount: format_ru(row.price_amount).into(),
+        icon: state
+            .currency_icon(currency)
+            .map(|url| url.to_owned().into()),
+        currency_name: state
+            .currency_name(currency)
+            .unwrap_or(currency)
+            .to_owned()
+            .into(),
     }
 }
 
@@ -760,7 +800,7 @@ fn marker_note(row: &ListingRow) -> Option<String> {
             "× {0}: продавец выставил {0} таких по этой цене",
             row.listed_times
         ))
-    } else if !row.has_note {
+    } else if row.item.note.is_none() {
         Some(
             "?: цена взята из названия вкладки тайника, а не из заметки к вещи — возможно, \
              не настоящая"
@@ -772,85 +812,8 @@ fn marker_note(row: &ListingRow) -> Option<String> {
 }
 
 impl Render for ListingTooltip {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .max_w(rems_from_px(400.))
-            .flex()
-            .flex_col()
-            .gap(rems_from_px(2.))
-            .p(rems_from_px(8.))
-            .rounded_xs()
-            .bg(rgb(BG_PANEL))
-            .border_1()
-            .border_color(rgb(BORDER_GOLD))
-            .text_xs()
-            .children(self.mods.iter().map(|(listed, asked)| {
-                let (color, text) = match asked {
-                    Asked::Met => (PRICE_RISE, format!("✓ {}", listed.text)),
-                    Asked::Short { min, max } => (
-                        TEXT_WARNING,
-                        format!("✗ {} (нужно {})", listed.text, bounds_text(*min, *max)),
-                    ),
-                    Asked::No => {
-                        let color = match listed.kind {
-                            ModKind::Implicit | ModKind::Enchant | ModKind::Rune => TEXT_DIM,
-                            ModKind::Fractured => TIER_TOP,
-                            ModKind::Explicit | ModKind::Desecrated => TEXT_VALUE,
-                        };
-                        (color, listed.text.clone())
-                    }
-                };
-                div()
-                    .flex()
-                    .gap(rems_from_px(6.))
-                    .child(
-                        div()
-                            .w(rems_from_px(22.))
-                            .flex_none()
-                            .text_color(rgb(TEXT_MUTED))
-                            .child(listed.tier.clone().unwrap_or_default()),
-                    )
-                    // Width limits on every text line, as the plain hint has: a line that only
-                    // wraps inside the column wraps after the tooltip's height is taken and runs
-                    // out of the box.
-                    .child(
-                        div()
-                            .flex_1()
-                            .max_w(rems_from_px(300.))
-                            .text_color(rgb(color))
-                            .child(text),
-                    )
-                    // The item level the mod needs: whether a lower-level base could roll it.
-                    .children(listed.level.map(|level| {
-                        div()
-                            .flex_none()
-                            .pl(rems_from_px(8.))
-                            .text_color(rgb(TEXT_MUTED))
-                            .child(format!("ур. {level}"))
-                    }))
-            }))
-            .when(!self.missing.is_empty(), |this| {
-                this.child(
-                    div()
-                        .mt(rems_from_px(4.))
-                        .text_color(rgb(TEXT_WARNING))
-                        .child("Нет у этого предмета:"),
-                )
-                .children(self.missing.iter().map(|text| {
-                    div()
-                        .max_w(rems_from_px(384.))
-                        .text_color(rgb(TEXT_WARNING))
-                        .child(format!("✗ {text}"))
-                }))
-            })
-            // See the mods' lines for the width limit.
-            .children(self.marker.clone().map(|marker| {
-                div()
-                    .max_w(rems_from_px(384.))
-                    .when(!self.mods.is_empty(), |this| this.mt(rems_from_px(4.)))
-                    .text_color(rgb(TEXT_DIM))
-                    .child(marker)
-            }))
+    fn render(&mut self, window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        render_item_card(&self.0, window)
     }
 }
 
@@ -898,7 +861,7 @@ fn render_price(state: &PriceCheckApp, row: &ListingRow) -> impl IntoElement {
                         .text_color(rgb(0x2d3748))
                         .child(format!("× {}", row.listed_times)),
                 )
-            } else if !row.has_note {
+            } else if row.item.note.is_none() {
                 this.child(
                     div()
                         .flex_none()
