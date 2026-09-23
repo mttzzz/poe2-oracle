@@ -55,26 +55,28 @@ impl PhysicalRect {
 // experience bar -- the flasks and charms on the left, the skills on the right -- each have a top
 // rail: a grey cap molding whose top highlight (rows 1859-1862) is the HUD's upper edge there,
 // a scroll band under it, and a thin molding at rows 1895-1896 before the panel's ironwork. The
-// XP overlay's plates are inlaid in the rails, from just under the highlight down to that
-// molding, along each rail's straight run between its end caps. PoE2 scales its HUD with the
-// game's height (as `xp_tracker::XpBarGeometry` assumes), so every length is in pixels of a
-// 2160-row game; each panel hangs from its globe in a bottom corner, so each run is measured from
-// its own side's edge -- which only 16:9 has confirmed. A plate shows only where its rail's lip
-// is seen on screen ([`rail_seen`]): the game's other HUD layouts (its centred HUD options), a
-// loading screen, a full-screen panel or another window leave the plate off rather than floating
-// over whatever is there.
+// rails are the game's own gauges -- rage and stun fill them -- so the XP overlay's plates sit on
+// top of them, their bottom on the rail's highlight, along each rail's straight run between its
+// end caps. PoE2 scales its HUD with the game's height (as `xp_tracker::XpBarGeometry` assumes),
+// so every length is in pixels of a 2160-row game; each panel hangs from its globe in a bottom
+// corner, so each run is measured from its own side's edge -- which only 16:9 has confirmed. A
+// plate shows only where its rail's lip is seen on screen ([`rail_seen`]): the game's other HUD
+// layouts (its centred HUD options), a loading screen, a full-screen panel or another window
+// leave the plate off rather than floating over whatever is there.
 
 const HUD_REFERENCE_HEIGHT: f64 = 2160.0;
-/// A plate's top and bottom rows, as distances from the game's bottom edge: rows 1863 and 1895.
-const RAIL_PLATE_ROWS: (f64, f64) = (297.0, 265.0);
+/// A rail's top row, 1859, as a distance from the game's bottom edge: where a plate ends.
+const RAIL_TOP: f64 = 301.0;
+/// A plate's height: the rail's own cap molding over a face for one line of words.
+const PLATE_HEIGHT: f64 = 40.0;
 /// The flask rail's straight run, x 467-927: its ends' distances from the game's left edge.
 const FLASK_RAIL_RUN: (f64, f64) = (467.0, 927.0);
 /// The skill rail's straight run, x 2905-3374: its ends' distances from the game's right edge.
 const SKILL_RAIL_RUN: (f64, f64) = (935.0, 466.0);
-/// Rows of a rail's lip read at a 2160-row game: its highlight, just above a plate.
+/// Rows of a rail's lip read at a 2160-row game: its highlight, just under a plate.
 const LIP_ROWS: f64 = 4.0;
 /// What reads as the lip in a column: its brightest row at least this light and this grey, and
-/// this much lighter than the row under it -- the rail's dark groove, or the plate's shaded rim.
+/// this much lighter than the row under it, the rail's dark groove.
 const LIP_MIN_LUMA: f64 = 85.0;
 const LIP_MAX_CHROMA: u8 = 40;
 const LIP_MIN_STEP: f64 = 40.0;
@@ -86,9 +88,9 @@ const LIP_MIN_SHARE: f64 = 0.6;
 /// Where the XP overlay's plates go in a game whose client area is `game`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HudRails {
-    /// In the flask panel's rail, left of the experience bar.
+    /// On the flask panel's rail, left of the experience bar.
     pub flask: PhysicalRect,
-    /// In the skill panel's rail, right of it.
+    /// On the skill panel's rail, right of it.
     pub skill: PhysicalRect,
 }
 
@@ -96,15 +98,15 @@ pub struct HudRails {
 pub fn hud_rails(game: PhysicalRect) -> HudRails {
     let scale = f64::from(game.height) / HUD_REFERENCE_HEIGHT;
     let bottom = f64::from(game.y + game.height);
-    let top = (bottom - RAIL_PLATE_ROWS.0 * scale).round() as i32;
-    let height = (bottom - RAIL_PLATE_ROWS.1 * scale).round() as i32 - top;
+    let rail = (bottom - RAIL_TOP * scale).round() as i32;
+    let top = (bottom - (RAIL_TOP + PLATE_HEIGHT) * scale).round() as i32;
     let run = |from: f64, to: f64| {
         let x = from.round() as i32;
         PhysicalRect {
             x,
             y: top,
             width: to.round() as i32 - x,
-            height,
+            height: rail - top,
         }
     };
     let left = f64::from(game.x);
@@ -122,12 +124,12 @@ pub fn hud_rails(game: PhysicalRect) -> HudRails {
 }
 
 /// The strip read to tell whether `plate`'s rail is on screen ([`rail_seen`]): the lip's rows
-/// just above the plate -- four at 2160 rows, at least two -- and the plate's own first row.
+/// right under the plate -- four at 2160 rows, at least two -- and the row under them.
 pub fn rail_lip(plate: PhysicalRect, game_height: i32) -> PhysicalRect {
     let rows = ((LIP_ROWS * f64::from(game_height) / HUD_REFERENCE_HEIGHT).ceil() as i32).max(2);
     PhysicalRect {
         x: plate.x,
-        y: plate.y - rows,
+        y: plate.y + plate.height,
         width: plate.width,
         height: rows + 1,
     }
@@ -295,11 +297,11 @@ mod tests {
 
     #[test]
     fn a_rail_is_seen_by_its_lip_and_nothing_else_passes_for_it() {
-        // The flask rail with its plate shown under the lip, the bare skill rail, and the flask
-        // rail of the same capture scaled to 1080 rows.
+        // The bare flask and skill rails, and the flask rail of the same capture scaled to 1080
+        // rows.
         for (capture, width) in [
             (
-                &include_bytes!("../tests/fixtures/rail_lip_4k_flask_plate.rgb")[..],
+                &include_bytes!("../tests/fixtures/rail_lip_4k_flask_bare.rgb")[..],
                 460,
             ),
             (
@@ -321,7 +323,7 @@ mod tests {
     }
 
     #[test]
-    fn the_lip_strip_sits_just_over_the_plate_and_keeps_two_rows_when_small() {
+    fn the_lip_strip_sits_just_under_the_plate_and_keeps_two_rows_when_small() {
         let plate = hud_rails(GAME_4K).flask;
         assert_eq!(
             rail_lip(plate, 2160),
@@ -342,24 +344,24 @@ mod tests {
     }
 
     #[test]
-    fn plates_sit_in_the_rails_they_were_measured_in() {
+    fn plates_sit_on_the_rails_they_were_measured_on() {
         let rails = hud_rails(GAME_4K);
         assert_eq!(
             rails.flask,
             PhysicalRect {
                 x: 467,
-                y: 1863,
+                y: 1819,
                 width: 460,
-                height: 32,
+                height: 40,
             }
         );
         assert_eq!(
             rails.skill,
             PhysicalRect {
                 x: 2905,
-                y: 1863,
+                y: 1819,
                 width: 469,
-                height: 32,
+                height: 40,
             }
         );
     }
@@ -374,7 +376,7 @@ mod tests {
             height: 1080,
         });
         assert_eq!((windowed.flask.x, windowed.flask.width), (334, 230));
-        assert_eq!((windowed.flask.y, windowed.flask.height), (982, 16));
+        assert_eq!((windowed.flask.y, windowed.flask.height), (960, 20));
         assert_eq!((windowed.skill.x, windowed.skill.width), (1553, 234));
         // A wider game of the same height: the flask rail stays by the left edge, the skill
         // rail moves with the right one.

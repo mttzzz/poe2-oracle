@@ -16,8 +16,8 @@ items sell for on the official trade site, with the item's modifiers as filters 
   check shows them.
 - **[Quick actions](quick-actions.md).** Hotkeys that send chat commands such as `/hideout` or paste
   a stash search.
-- **[XP overlay](xp-overlay.md).** Experience per hour and the time to the next level, built into
-  the game's flask panel, and a map timer on its skill panel.
+- **[XP overlay](xp-overlay.md).** Experience per hour and the time to the next level, above the
+  game's flask panel, and a map timer above its skill panel.
 - **[Updates](updates.md)** from the project's GitHub releases, checked against their SHA-256
   checksums.
 

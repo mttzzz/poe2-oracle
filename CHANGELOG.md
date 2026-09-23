@@ -55,11 +55,13 @@ The first public release.
   and arrival. Buttons answer in the game chat (invite, trade, one moment, sold, thanks, kick) or
   search the open stash for the item; clicking them leaves the keyboard with the game. An optional
   sound announces a new request.
-- **XP overlay** built into the game's HUD, in the rails along the top of its flask and skill
-  panels: on the flask panel the levelling rate (percent of a level per hour, averaged over 5 to 30
-  minutes), the time to the next level, optionally the level percentage, and a ⚙ that opens the
-  settings; on the skill panel a map timer with the map's experience and the session's average
-  map time. It takes the HUD's size and colours, and says as much as its rail has room for.
+- **XP overlay** on top of the game's HUD, on the rails along the top of its flask and skill
+  panels -- never over them: the rails are the game's rage and stun gauges. Above the flask panel
+  the levelling rate (percent of a level per hour, averaged over 5 to 30 minutes), the time to the
+  next level, optionally the level percentage, and a ⚙ that opens the settings; above the skill
+  panel a map timer with the map's experience and the session's average map time. The plates are
+  built of the rails' own molding, take the HUD's size, let clicks through to the game but for the
+  ⚙, and say as much as they have room for.
 - **Quick actions:** up to 12 hotkeys that type a chat command (`/hideout` is preset, `@last`
   answers whoever whispered last) or paste a stash search string.
 - **Settings window:** league, client language, hotkeys, quick actions, value tolerance (±10 % by

@@ -142,9 +142,9 @@ Section **XP overlay**, group **XP line**. See [XP overlay](xp-overlay.md) for w
 
 | Setting | Default | Meaning |
 |---|---|---|
-| **Show the XP overlay** | on | Show the experience rate and the time to the next level on the flask panel |
+| **Show the XP overlay** | on | Show the experience rate and the time to the next level above the flask panel |
 | **Level percentage** | off | Also show how much of the current level is done |
-| **Map timer** | on | Show the time in the current map, the experience it gave and the session's average map time on the skill panel |
+| **Map timer** | on | Show the time in the current map, the experience it gave and the session's average map time above the skill panel |
 | **Rate smoothing** | 10m | 5, 10, 20 or 30 minutes. Shorter shows a change of farming sooner, longer reads steadier |
 
 ## Account

@@ -54,9 +54,9 @@ basics on the first launch.
   the marks are remembered and highlighted on every waystone you check.
 - **Vendor gamble offers** are recognised: the panel says the item is only revealed after buying
   instead of searching for it.
-- **XP overlay** built into the game's HUD: on the flask panel, how fast you level (percent of a
+- **XP overlay** on top of the game's HUD: above the flask panel, how fast you level (percent of a
   level per hour), the time to the next level and optionally the level percentage, with a ⚙ for
-  the settings; on the skill panel, a timer for the current map.
+  the settings; above the skill panel, a timer for the current map.
 - **Quick actions:** your own hotkeys that type a chat command (`/hideout`, `@last thanks`) or a
   stash search string (for example one made with poe2.re).
 - **Updates** from the tray menu: the new installer is downloaded from GitHub Releases, checked

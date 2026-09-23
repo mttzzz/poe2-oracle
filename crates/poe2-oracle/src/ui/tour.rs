@@ -660,10 +660,10 @@ fn words(stop: Stop, g: &Guide, cx: &App) -> Words {
         Stop::XpLine => Words {
             title: tr!("XP overlay"),
             text: tr!(
-                "The line on the flask panel shows how fast you level — percent of a level per \
+                "The line above the flask panel shows how fast you level — percent of a level per \
                  hour — and how much play is left to the next level; its ⚙ opens the settings. \
                  In town, in your hideout and after five minutes without experience it pauses: \
-                 it dims and shows how long the pause has lasted. The map timer sits on the \
+                 it dims and shows how long the pause has lasted. The map timer sits above the \
                  skill panel."
             )
             .into(),

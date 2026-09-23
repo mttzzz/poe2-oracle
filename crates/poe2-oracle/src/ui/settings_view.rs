@@ -155,7 +155,7 @@ impl Section {
             Section::General => tr!("League, client language, scale and starting with Windows"),
             Section::PriceCheck => tr!("Hotkey, sellers, results table and Waystones"),
             Section::QuickActions => tr!("Keys that type chat commands and searches into the game"),
-            Section::XpOverlay => tr!("Experience rate and map timer in the game's own panels"),
+            Section::XpOverlay => tr!("Experience rate and map timer, on top of the game's panels"),
             Section::Account => {
                 tr!("Signing in to pathofexile.com: private leagues and live search")
             }
@@ -1626,7 +1626,7 @@ impl SettingsView {
                     "xp-overlay",
                     tr!("Show the XP overlay"),
                     Some(tr!(
-                        "Experience rate and time to the next level, on the flask panel"
+                        "Experience rate and time to the next level, above the flask panel"
                     )),
                     settings.xp_overlay,
                     |settings| &mut settings.xp_overlay,
@@ -1645,7 +1645,7 @@ impl SettingsView {
                     tr!("Map timer"),
                     Some(tr!(
                         "Time in the current map, the experience it gave and the session's \
-                         average map time, on the skill panel"
+                         average map time, above the skill panel"
                     )),
                     settings.xp_map_timer,
                     |settings| &mut settings.xp_map_timer,

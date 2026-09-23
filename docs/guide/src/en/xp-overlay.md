@@ -1,21 +1,22 @@
 # XP overlay
 
-![The XP overlay built into the game's HUD](../images/xp-overlay.png)
+![The XP overlay above the game's flask panel](../images/xp-overlay.png)
 
-PoE2 Oracle builds its experience readout into the game's own HUD. The rail along the top of the
-flask panel, left of the experience bar, carries a line that tells how fast you gain experience and
-when the next level comes, with a ⚙ at its end that opens the [settings](settings.md). With the
-map timer on, the rail along the top of the skill panel carries the current map. The overlay is on
-by default; the [settings](settings.md#xp-overlay) section **XP overlay** turns it and its parts on
-and off.
+PoE2 Oracle sets its experience readout on top of the game's own HUD. On the rail along the top
+of the flask panel, left of the experience bar, stands a plate that tells how fast you gain
+experience and when the next level comes, with a ⚙ at its end that opens the
+[settings](settings.md). With the map timer on, a plate on the skill panel's rail shows the current
+map. The plates stand on the rails, never over them -- the game fills the rails with its rage and
+stun gauges -- and are built of the same molding. The overlay is on by default; the
+[settings](settings.md#xp-overlay) section **XP overlay** turns it and its parts on and off.
 
-On the flask panel:
+Above the flask panel:
 
 ```text
 64.8% ◆ +12.4%/h · level 75 in 2h 50m
 ```
 
-On the skill panel:
+Above the skill panel:
 
 ```text
 map 4:07 +1.2% · avg 6:30
@@ -29,7 +30,7 @@ map 4:07 +1.2% · avg 6:30
 | `map 4:07 +1.2%` | Time in the current map and the experience it gave. Shown with **Map timer**, on by default. Dimmed once you leave the map; five minutes later it reads `last map`. |
 | `avg 6:30` | Average time of the maps finished this session. |
 
-Each line says as much as its rail has room for. When the whole wording doesn't fit, the flask
+Each line says as much as its plate has room for. When the whole wording doesn't fit, the flask
 panel's line drops the level (`+12.4%/h · 2h 50m`) and then the percentage; the map line drops the
 average and `last`. For the first couple of minutes the line reads `measuring rate…`. Times use
 `m` for minutes, `h` for hours and `d` for days. With the Russian
@@ -71,5 +72,6 @@ without the average. The pause does not change the rate: it is back as it was wh
 - The game window must be at least 720 pixels tall and not minimised.
 - The game must run in Windowed or Windowed Fullscreen mode, like everything PoE2 Oracle draws over
   it.
-- The lines are the size of the game's HUD at the game's resolution; the **Interface scale**
-  setting does not change them. The price panel hides one only when you drag the panel over it.
+- The plates are the size of the game's HUD at the game's resolution; the **Interface scale**
+  setting does not change them. They let clicks through to the game, all but the ⚙, and the price
+  panel hides one only when you drag the panel over it.
