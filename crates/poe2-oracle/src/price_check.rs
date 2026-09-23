@@ -733,14 +733,13 @@ impl PriceCheckApp {
 
     /// Writes the settings as they stand. What changed applies whether or not the file takes it;
     /// a write it didn't take would be lost at the next launch, so the settings window says so
-    /// (`save_failure`) until a later one gets through.
+    /// (`save_failure`) until a later one gets through -- with the system's own reason, in the
+    /// system's language; the log keeps the whole chain, file path included.
     pub fn save_settings(&mut self, cx: &mut Context<Self>) {
-        let failure = settings::save(&self.settings)
-            .err()
-            .map(|err| format!("{err:#}"));
-        if let Some(err) = &failure {
-            log::warn!("saving the settings failed: {err}");
-        }
+        let failure = settings::save(&self.settings).err().map(|err| {
+            log::warn!("saving the settings failed: {err:#}");
+            err.root_cause().to_string()
+        });
         if self.save_failure != failure {
             self.save_failure = failure;
             cx.notify();

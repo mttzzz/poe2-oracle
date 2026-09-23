@@ -1110,10 +1110,12 @@ impl SettingsView {
                                     .text_size(px(13.))
                                     .text_color(rgb(TEXT_WARNING))
                                     .child(div().flex_none().child("⚠"))
-                                    .child(tr!(
+                                    // Wrapped in the content's width: the system's reason can be
+                                    // long.
+                                    .child(div().flex_1().min_w_0().child(tr!(
                                         "Couldn't save the settings: {error}",
                                         error = error
-                                    ))
+                                    )))
                             }))
                             .child(div().pt(px(12.)).child(ornament_rule(BORDER_GOLD))),
                     )
