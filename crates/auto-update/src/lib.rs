@@ -25,7 +25,7 @@ use anyhow::{Context as _, Result, bail, ensure};
 use futures::AsyncReadExt as _;
 use http_client::http::header::{ETAG, IF_NONE_MATCH};
 use http_client::{
-    AsyncBody, HttpClient, HttpRequestExt as _, RedirectPolicy, Request, StatusCode,
+    AsyncBody, HttpClient, HttpRequestExt as _, RedirectPolicy, Request, StatusCode, Url,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
@@ -34,11 +34,27 @@ pub use semver::Version;
 
 /// Where the latest release is asked for: this repository's GitHub releases, unless the build sets
 /// `POE2_ORACLE_RELEASES_URL` to another URL answering the same way -- the releases of a separate
-/// public repository while this one stays private, or a local stand-in serving a test release.
+/// public repository while this one stays private. It must be https (checked below, at build
+/// time): the answer names the installer the app runs, and a plain-http one could come from
+/// anyone along the way.
+///
+/// Testing an update end to end without a public release takes a local stand-in serving a test
+/// release over plain http on 127.0.0.1, which only a build with the `local-release-server`
+/// feature accepts -- for this URL and for the downloads the release lists. The release script
+/// refuses that feature:
+///
+/// ```text
+/// $env:POE2_ORACLE_RELEASES_URL = 'http://127.0.0.1:8765/releases/latest'
+/// cargo build -p poe2-oracle --release --features auto-update/local-release-server
+/// ```
 const LATEST_RELEASE_URL: &str = match option_env!("POE2_ORACLE_RELEASES_URL") {
     Some(url) => url,
     None => "https://api.github.com/repos/mttzzz/poe2-oracle/releases/latest",
 };
+const _: () = assert!(
+    is_allowed_release_url(LATEST_RELEASE_URL),
+    "POE2_ORACLE_RELEASES_URL must be https; http://127.0.0.1 needs the local-release-server feature"
+);
 /// GitHub rejects API requests without a User-Agent; its docs ask for the app's name. Every crate
 /// shares the workspace version, so this is the running app's version too.
 const USER_AGENT: &str = concat!("PoE2-Oracle/", env!("CARGO_PKG_VERSION"));
@@ -184,17 +200,22 @@ pub async fn check_for_update(
     if version.cmp_precedence(current).is_le() {
         return Ok(None);
     }
-    let asset = |name: &str| {
-        release
+    let asset = |name: &str| -> Result<Asset> {
+        let asset = release
             .assets
             .iter()
             .find(|asset| asset.name == name)
-            .map(|asset| Asset {
-                name: asset.name.clone(),
-                url: asset.browser_download_url.clone(),
-                size: asset.size,
-            })
-            .with_context(|| format!("release {tag} has no {name} asset"))
+            .with_context(|| format!("release {tag} has no {name} asset"))?;
+        ensure!(
+            is_release_download(&asset.browser_download_url),
+            "release {tag}'s {name} isn't on GitHub: {}",
+            asset.browser_download_url
+        );
+        Ok(Asset {
+            name: asset.name.clone(),
+            url: asset.browser_download_url.clone(),
+            size: asset.size,
+        })
     };
     Ok(Some(UpdateInfo {
         installer: asset(&format!("{INSTALLER_PREFIX}{version}.exe"))?,
@@ -369,6 +390,45 @@ fn expected_sha256(sums: &str, file_name: &str) -> Result<[u8; 32]> {
             Some(digest)
         })
         .with_context(|| format!("SHA256SUMS lists no SHA-256 for {file_name}"))
+}
+
+/// Whether the update check may ask `url`: https -- or, in a `local-release-server` build, plain
+/// http to 127.0.0.1. A `const fn`, so that a build baking in any other URL fails
+/// (`LATEST_RELEASE_URL`).
+const fn is_allowed_release_url(url: &str) -> bool {
+    starts_with(url, "https://")
+        || (cfg!(feature = "local-release-server")
+            && (starts_with(url, "http://127.0.0.1:") || starts_with(url, "http://127.0.0.1/")))
+}
+
+/// `str::starts_with`, which isn't a `const fn`.
+const fn starts_with(text: &str, prefix: &str) -> bool {
+    let (text, prefix) = (text.as_bytes(), prefix.as_bytes());
+    if text.len() < prefix.len() {
+        return false;
+    }
+    let mut index = 0;
+    while index < prefix.len() {
+        if text[index] != prefix[index] {
+            return false;
+        }
+        index += 1;
+    }
+    true
+}
+
+/// Whether a release's asset may be downloaded from `url`: https on GitHub's own hosts -- a
+/// release's download links are on github.com, which redirects to its storage -- or, in a
+/// `local-release-server` build, plain http on 127.0.0.1. The installer it names is run.
+fn is_release_download(url: &str) -> bool {
+    let Ok(url) = Url::parse(url) else {
+        return false;
+    };
+    match (url.scheme(), url.host_str()) {
+        ("https", Some("github.com" | "objects.githubusercontent.com")) => url.port().is_none(),
+        ("http", Some("127.0.0.1")) => cfg!(feature = "local-release-server"),
+        _ => false,
+    }
 }
 
 #[cfg(test)]
@@ -632,6 +692,83 @@ mod tests {
         assert!(
             error.to_string().contains("PoE2-Oracle-Setup-0.2.0.exe"),
             "{error:#}"
+        );
+    }
+
+    #[test]
+    fn a_release_whose_installer_is_off_github_is_an_error() {
+        // Refused at the check: the tray never offers what it couldn't install.
+        let release = json!({
+            "html_url": "https://github.com/mttzzz/poe2-oracle/releases/tag/v0.2.0",
+            "tag_name": "v0.2.0",
+            "assets": [
+                {
+                    "name": CHECKSUMS_ASSET,
+                    "size": 100,
+                    "browser_download_url": download_url("v0.2.0", CHECKSUMS_ASSET),
+                },
+                {
+                    "name": "PoE2-Oracle-Setup-0.2.0.exe",
+                    "size": 100,
+                    "browser_download_url": "http://downloads.example.org/PoE2-Oracle-Setup-0.2.0.exe",
+                },
+            ],
+        });
+        let github = CannedClient::new([(
+            LATEST_RELEASE_URL.to_owned(),
+            200,
+            release.to_string().into_bytes(),
+        )]);
+        let error = check(&github, "0.1.0").unwrap_err();
+        assert!(
+            error.to_string().contains("downloads.example.org"),
+            "{error:#}"
+        );
+    }
+
+    #[test]
+    fn assets_come_from_github_over_https_only() {
+        for url in [
+            "https://github.com/mttzzz/poe2-oracle/releases/download/v0.2.0/PoE2-Oracle-Setup-0.2.0.exe",
+            "https://github.com:443/mttzzz/poe2-oracle/releases/download/v0.2.0/SHA256SUMS",
+            "https://objects.githubusercontent.com/github-production-release-asset-2e65be/1/2",
+        ] {
+            assert!(is_release_download(url), "{url}");
+        }
+        for url in [
+            "http://github.com/mttzzz/poe2-oracle/releases/download/v0.2.0/SHA256SUMS",
+            "https://github.com.example.org/mttzzz/poe2-oracle/releases/download/v0.2.0/SHA256SUMS",
+            "https://github.com@example.org/SHA256SUMS",
+            "https://example.org/github.com/SHA256SUMS",
+            "https://github.com:8443/mttzzz/poe2-oracle/releases/download/v0.2.0/SHA256SUMS",
+            "https://api.github.com/repos/mttzzz/poe2-oracle/releases/assets/1",
+            "file:///C:/Users/Public/PoE2-Oracle-Setup-0.2.0.exe",
+            "PoE2-Oracle-Setup-0.2.0.exe",
+        ] {
+            assert!(!is_release_download(url), "{url}");
+        }
+        // A local stand-in's, only in a build made for one.
+        assert_eq!(
+            is_release_download("http://127.0.0.1:8765/PoE2-Oracle-Setup-0.2.0.exe"),
+            cfg!(feature = "local-release-server")
+        );
+    }
+
+    #[test]
+    fn the_update_check_asks_over_https_only() {
+        assert!(is_allowed_release_url(
+            "https://api.github.com/repos/mttzzz/poe2-oracle/releases/latest"
+        ));
+        for url in [
+            "http://api.github.com/repos/mttzzz/poe2-oracle/releases/latest",
+            "http://127.0.0.1.example.org/releases/latest",
+            "",
+        ] {
+            assert!(!is_allowed_release_url(url), "{url}");
+        }
+        assert_eq!(
+            is_allowed_release_url("http://127.0.0.1:8765/releases/latest"),
+            cfg!(feature = "local-release-server")
         );
     }
 

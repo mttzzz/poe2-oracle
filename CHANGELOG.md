@@ -29,6 +29,12 @@ The first public release.
   game's item tooltip does: properties, requirements, sockets, item level and every mod with its
   tier and roll range, the searched ones marked. When nothing matches every selected stat, the
   search is relaxed to most of them and says so.
+- **Search profiles** in the row above the filters: **Quick price** (up to 4 most valuable stats,
+  your rolls as minimums), **Exact match**, **Broad −10%** and **Crafting base** (implicit and
+  fractured stats on the same base). **Tier minimum** sets each checked stat's minimum to the
+  bottom of its tier.
+- **The league on the panel:** the top bar names the league being searched, and a click switches
+  it there, saved to the settings. Beside it, the Divine Orb's price in Exalted Orbs.
 - **Search chips:** base type or the whole item class; rarity (a magic item is compared with magic
   items, a rare with all non-unique items); corrupted listings in or out; every stat or none;
   which sellers to include; the currency of the price. A magic item's prefix and suffix are both
@@ -37,12 +43,12 @@ The first public release.
   unidentified unique is compared with unidentified uniques of its base.
 - **Whispers:** a click on a listing whose seller trades in person copies the trade site's whisper
   for the game chat.
-- **Currency Exchange items** priced from poe.ninja in a market card: value in divine, exalted and
-  chaos orbs, the week's chart and change, hourly volume, the most traded pair and the value of the
-  copied stack. An item poe.ninja doesn't track in the league (common in small leagues such as
-  Standard) shows poe2scout's price with a note saying so, and its trade listings are searched only
-  on **Trade site listings**; without a poe2scout price either, the trade site is searched right
-  away.
+- **Currency Exchange items** priced from GGG's own hourly record of the exchange's trades, in a
+  market card: value in divine, exalted and chaos orbs, the week's chart and change from
+  poe2scout, hourly volume, the most traded pair and the value of the copied stack. An item nobody
+  traded on the exchange in the league lately (common in small leagues such as Standard) shows
+  poe2scout's price with a note saying so, and its trade listings are searched only on **Trade site
+  listings**; without a poe2scout price either, the trade site is searched right away.
 - **Unique prices** from poe2scout, shown beside the trade search.
 - **Trade site limits kept:** after the trade site refuses a request (HTTP 429), nothing is sent to
   it until the lockout ends, and the panel says when to try again. The limit is per IP address and
@@ -55,6 +61,14 @@ The first public release.
   and arrival. Buttons answer in the game chat (invite, trade, one moment, sold, thanks, kick) or
   search the open stash for the item; clicking them leaves the keyboard with the game. An optional
   sound announces a new request.
+- **Sign-in to pathofexile.com**, optional: Settings → Account → **Sign in** opens the site's own
+  sign-in page in a window of the app (Microsoft Edge WebView2), Steam included. The app doesn't
+  read or keep the password; the site's session is kept in Windows Credential Manager, sent only
+  to pathofexile.com, and removed by **Sign out** or uninstalling. Signed in, the app searches
+  private leagues (Settings → Account → **League name**) and the trade site's “sum” rows, and
+  watches searches.
+- **Live search:** the panel's **Live search** switch watches a search on the trade site, up to 20
+  at once as the site allows; each new listing arrives as a card over the game.
 - **XP overlay** on top of the game's HUD, on the rails along the top of its flask and skill
   panels -- never over them: the rails are the game's rage and stun gauges. Above the flask panel
   the levelling rate (percent of a level per hour, averaged over 5 to 30 minutes), the time to the
@@ -85,16 +99,16 @@ The first public release.
   session; starting it again opens the settings.
 - **Bug reports from the app:** **Report a bug**, in the tray menu and the settings, writes the
   diagnostics report to the desktop, shows it in Explorer and opens GitHub's bug form with the
-  version, the client language and the report's file name filled in. The panel's **report a
-  problem ↗** link under the item name, and **Report to the developer** under an item the app
-  couldn't read, open the item form with the item text filled in. The player submits the form
-  from their own GitHub account; the app sends nothing.
+  version, the client language and the report's file name filled in. **Report a problem**, under
+  the item name on the panel and under an item the app couldn't read, opens the item form with the
+  item text filled in. The player submits the form from their own GitHub account; the app sends
+  nothing.
 - **Updates** from GitHub Releases: the installer is downloaded, verified against the release's
   `SHA256SUMS`, installed silently, and the app restarts.
 - **Installer** for the current user, without administrator rights: Start menu shortcut, optional
-  start with Windows, the license texts and third-party notices next to the app. Uninstalling keeps
-  settings and caches unless asked to remove them.
+  start with Windows, the license texts and third-party notices next to the app. Uninstalling
+  removes the saved sign-in and keeps settings and caches unless asked to remove them.
 - **Diagnostics report:** a zip on the desktop with the logs, settings, unread item texts and a
-  summary of the system, with the Windows user name masked.
+  summary of the system, with the Windows user name and the user's folder paths masked.
 
 [0.1.0]: https://github.com/mttzzz/poe2-oracle/releases/tag/v0.1.0

@@ -18,6 +18,7 @@
 
 use std::rc::Rc;
 use std::sync::Arc;
+use std::time::Duration;
 
 use gpui::{
     App, Bounds, Context, DisplayId, Entity, Focusable, IntoElement, Render, TitlebarOptions,
@@ -57,6 +58,12 @@ use crate::ui::xp_overlay::{self, XpCover, XpOverlay, XpOverlayOptions};
 use crate::updates::Updates;
 
 const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+/// A server that goes quiet this long -- before its answer or in the middle of it -- fails the
+/// request, and the caller's own retry or error takes over (the catalog load retries), instead of
+/// "Loading…" for the rest of the run. Each part of the answer that arrives starts it anew, so a
+/// long download that keeps coming -- an update's installer, an hour of the exchange's record
+/// (2.7 MB) -- isn't cut short.
+const READ_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Wraps `Entity<PriceCheckApp>` with the platform-window state that has to follow it: the
 /// `Win32Overlay` handle (resolved once the real platform window exists), what was last applied to
@@ -611,8 +618,15 @@ pub fn run() {
     // The player's pathofexile.com session, from the Credential Manager: the HTTP client adds it
     // to the trade sites' requests, and to theirs only (`session`).
     let trade_session = session::load();
-    let inner_client: Arc<dyn HttpClient> =
-        Arc::new(ReqwestClient::user_agent(USER_AGENT).expect("failed to build HTTP client"));
+    // Built by reqwest_client's only constructor that takes a read timeout, which also verifies
+    // certificates through Windows (rustls-platform-verifier, as Zed does) and offers no ALPN, so
+    // it speaks HTTP/1.1. The trade sites, poe2scout, GGG's CDN and GitHub all answer it (checked
+    // 2026-09-23). Its answers are read only through `SessionHttpClient`, which reads them the way
+    // the read timeout needs.
+    let inner_client: Arc<dyn HttpClient> = Arc::new(
+        ReqwestClient::proxy_user_agent_and_read_timeout(None, USER_AGENT, Some(READ_TIMEOUT))
+            .expect("failed to build HTTP client"),
+    );
     application()
         .with_http_client(Arc::new(SessionHttpClient::new(
             inner_client.clone(),

@@ -66,7 +66,7 @@ At the top of the panel:
 - the link **report a problem ↗**, for when the item was read or priced wrong. It opens GitHub's
   item problem form in your browser with the item's text, the app's version and your client's
   language filled in; you describe what is wrong and submit it from your GitHub account. See
-  [Reporting a problem](troubleshooting.md#reporting-a-bug).
+  [An item is not recognised](troubleshooting.md#an-item-is-not-recognised).
 
 ## The chip row
 
@@ -214,15 +214,15 @@ box or click **Search**.
 ## Search options
 
 Under the filters, the **Search** button runs the search again; while a search runs, it reads
-**Searching…**. The row under it holds two more choices. Each click on them moves to the next value
-and searches again at once.
+**Searching…**. Beside it (under it, on a narrow panel) are two more choices. Each click on them
+moves to the next value and searches again at once.
 
-- **Sellers:** **Instant Buyout or In Person** → **Instant Buyout only** (the default: the game's
-  own auction sells the item without the seller online) → **In Person, online only** (sellers
-  online, to trade with them in the game) → **Any, offline included**. The starting value comes
-  from the [settings](settings.md#search).
-- **Price:** **any currency** → the Exalted Orb **or** the Divine Orb (shown by their icons) →
-  **only** the Exalted Orb → only the Divine Orb → only the Chaos Orb.
+- **Sellers:** **Buyout or In Person** → **Instant Buyout** (the default: the game's own auction
+  sells the item without the seller online) → **In Person** (sellers online, to trade with them in
+  the game) → **Any** (offline sellers too). The starting value comes from the
+  [settings](settings.md#search).
+- **Price:** **Any currency** → the Exalted Orb **or** the Divine Orb (shown by their icons) →
+  **Only** the Exalted Orb → only the Divine Orb → only the Chaos Orb.
 
 ## Results
 
@@ -378,7 +378,7 @@ trade site."
 | "GGG's Currency Exchange data is unavailable right now." | GGG's exchange data could not be reached; poe2scout's price or the trade site's listings are shown instead. |
 | "No listings on the trade site" | The trade site has no listings of this exchange item. |
 | "The game doesn't copy the item: another program takes Ctrl+Alt+C…" | Another program holds the copy shortcut, so the game never copied the item. See [Troubleshooting](troubleshooting.md#the-hotkey-does-nothing). |
-| "Couldn't read the item…" | The item text could not be read. The button **Report to the developer** under the message opens the item problem form with the text filled in. See [Troubleshooting](troubleshooting.md#an-item-is-not-recognised). |
+| "Couldn't read the item…" | The item text could not be read. The button **Report a problem** under the message opens the item problem form with the text filled in. See [Troubleshooting](troubleshooting.md#an-item-is-not-recognised). |
 
 ### Request limits
 

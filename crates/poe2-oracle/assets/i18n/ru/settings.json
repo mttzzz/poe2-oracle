@@ -138,7 +138,7 @@
   "The report {file} is saved on your desktop and shown in File Explorer: drag it here.": "Отчёт {file} сохранён на рабочем столе и открыт в Проводнике: перетащите его сюда.",
   "The report couldn't be collected: {error}": "Отчёт собрать не удалось: {error}",
   "Item: {name}": "Предмет: {name}",
-  "English client": "English client",
+  "English client": "Английский клиент",
   "Russian client": "Русский клиент",
   "\n… (text cut short; the diagnostics report has all of it)": "\n… (текст обрезан, полностью он есть в отчёте диагностики)",
   "Live search needs a sign-in to pathofexile.com": "Слежение работает только со входом на pathofexile.com",
@@ -150,7 +150,7 @@
   "The /clear_ignore_list command clears your whole ignore list — quick actions don't send it": "Команда /clear_ignore_list очищает весь список игнорируемых — быстрые действия её не отправляют",
   "The /convertracereward command destroys the item, turning it into a skin — quick actions don't send it": "Команда /convertracereward уничтожает предмет, превращая его в облик — быстрые действия её не отправляют",
   "The /ResetAtlas command resets the Atlas — quick actions don't send it": "Команда /ResetAtlas сбрасывает атлас — быстрые действия её не отправляют",
-  "PoE2 Oracle — sign in to pathofexile.com": "PoE2 Oracle — вход на pathofexile.com",
+  "{host} — PoE2 Oracle: signing in to pathofexile.com": "{host} — PoE2 Oracle: вход на pathofexile.com",
   "The game runs in “Fullscreen” mode: the panel can't show over it. Choose “Windowed Fullscreen” in the game's graphics options.": "Игра в режиме «Полноэкранный»: поверх него панель не видна. Выберите в настройках графики игры режим «Оконный полноэкранный».",
   "{combo}, which the game copies items with, is taken by another program — price checks won't work until it's freed (most often a graphics card overlay, screen recording or Discord).": "Сочетание {combo}, которым игра копирует предмет, занято другой программой — проверка цены не сработает, пока его не освободить (чаще всего это оверлей видеокарты, запись экрана или Discord)."
 }

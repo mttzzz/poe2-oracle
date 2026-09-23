@@ -8,6 +8,11 @@
 //!
 //! The query parameters are the forms' field ids; renaming a field in a form breaks its prefill
 //! here, so both change together.
+//!
+//! What would name the player is masked in all a report carries ([`Masker`]): the diagnostics
+//! report is meant for a public issue, and a Windows user name is often a real name.
+
+use std::cmp::Reverse;
 
 use item_parser::ItemLanguage;
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
@@ -73,15 +78,19 @@ pub fn report_bug(summary: String, language: Option<ItemLanguage>, cx: &mut gpui
             .await;
         let report = match written {
             Ok(path) => {
-                log::info!("diagnostics report written to {}", path.display());
-                diagnostics::reveal(&path);
-                Ok(path
+                let file = path
                     .file_name()
-                    .map_or_else(String::new, |name| name.to_string_lossy().into_owned()))
+                    .map_or_else(String::new, |name| name.to_string_lossy().into_owned());
+                // The name only: the folder is the player's desktop, and the log goes into the
+                // next report.
+                log::info!("diagnostics report written: {file}");
+                diagnostics::reveal(&path);
+                Ok(file)
             }
             Err(err) => {
                 log::warn!("writing the diagnostics report failed: {err:#}");
-                Err(format!("{err:#}"))
+                // Into the form, whose error names the folder the report couldn't go to.
+                Err(Masker::for_this_user().mask(&format!("{err:#}")))
             }
         };
         let url = bug_report_url(language, report.as_deref().map_err(String::as_str));
@@ -137,6 +146,132 @@ fn fit_item_text(text: &str, room: usize) -> String {
         }
     }
     format!("{}{cut_note}", kept.trim_end())
+}
+
+/// Either slash: Windows takes both in a path.
+const SEPARATORS: [char; 2] = ['\\', '/'];
+
+/// A user name shorter than this is part of too many other words to mask on its own.
+const MIN_MASKED_NAME: usize = 3;
+
+/// Replaces what would name the player in a text: their user folder with `%USERPROFILE%`; their
+/// Desktop, Documents and AppData folders -- wherever Windows keeps them, another drive or a
+/// OneDrive folder named after an employer -- with `%DESKTOP%`, `%DOCUMENTS%`, `%APPDATA%` and
+/// `%LOCALAPPDATA%`; and their user name, wherever else it stands, with `%USERNAME%`. In any
+/// letter case and with either slash, as Windows reads a path. A match counts only as a whole
+/// word: the user name "anna" leaves "Hanna" alone.
+pub(crate) struct Masker {
+    /// Each text with its stand-in, longest first: at one place, the most specific one masks.
+    masks: Vec<(String, &'static str)>,
+}
+
+impl Masker {
+    /// This Windows user's own folders and names.
+    #[cfg(target_os = "windows")]
+    pub(crate) fn for_this_user() -> Masker {
+        use std::path::{Path, PathBuf};
+
+        let base = directories::BaseDirs::new();
+        let user = directories::UserDirs::new();
+        let profile = std::env::var_os("USERPROFILE")
+            .map(PathBuf::from)
+            .or_else(|| Some(base.as_ref()?.home_dir().to_path_buf()));
+        let text = |folder: Option<&Path>| Some(folder?.to_string_lossy().into_owned());
+        let folders = [
+            (text(profile.as_deref()), "%USERPROFILE%"),
+            (
+                text(base.as_ref().map(|dirs| dirs.home_dir())),
+                "%USERPROFILE%",
+            ),
+            (text(base.as_ref().map(|dirs| dirs.data_dir())), "%APPDATA%"),
+            (
+                text(base.as_ref().map(|dirs| dirs.data_local_dir())),
+                "%LOCALAPPDATA%",
+            ),
+            (
+                text(user.as_ref().and_then(|dirs| dirs.desktop_dir())),
+                "%DESKTOP%",
+            ),
+            (
+                text(user.as_ref().and_then(|dirs| dirs.document_dir())),
+                "%DOCUMENTS%",
+            ),
+        ];
+        // The user folder's own name too: a renamed account keeps its old folder.
+        let names = [
+            std::env::var("USERNAME").ok(),
+            profile
+                .as_deref()
+                .and_then(Path::file_name)
+                .map(|name| name.to_string_lossy().into_owned()),
+        ];
+        Masker::new(
+            folders
+                .into_iter()
+                .filter_map(|(folder, stand_in)| Some((folder?, stand_in))),
+            names.into_iter().flatten(),
+        )
+    }
+
+    fn new<F: AsRef<str>, N: AsRef<str>>(
+        folders: impl IntoIterator<Item = (F, &'static str)>,
+        names: impl IntoIterator<Item = N>,
+    ) -> Masker {
+        let folders = folders.into_iter().filter_map(|(folder, stand_in)| {
+            let folder = folder.as_ref().trim_end_matches(SEPARATORS);
+            // A drive's root is in every path on that drive.
+            folder
+                .contains(SEPARATORS)
+                .then(|| (folder.to_owned(), stand_in))
+        });
+        let names = names.into_iter().filter_map(|name| {
+            let name = name.as_ref();
+            (name.chars().count() >= MIN_MASKED_NAME).then(|| (name.to_owned(), "%USERNAME%"))
+        });
+        let mut masks: Vec<_> = folders.chain(names).collect();
+        masks.sort_by_key(|(text, _)| Reverse(text.chars().count()));
+        Masker { masks }
+    }
+
+    pub(crate) fn mask(&self, text: &str) -> String {
+        let mut masked = String::with_capacity(text.len());
+        let mut rest = text;
+        // Whether `rest` follows a letter or a digit, where no match may start.
+        let mut in_word = false;
+        'text: while let Some(c) = rest.chars().next() {
+            if !in_word {
+                for (mask, stand_in) in &self.masks {
+                    if let Some(len) = match_len(rest, mask)
+                        && !rest[len..].starts_with(char::is_alphanumeric)
+                    {
+                        masked.push_str(stand_in);
+                        rest = &rest[len..];
+                        continue 'text;
+                    }
+                }
+            }
+            masked.push(c);
+            in_word = c.is_alphanumeric();
+            rest = &rest[c.len_utf8()..];
+        }
+        masked
+    }
+}
+
+/// The length of the start of `text` that reads as `mask`, in any letter case and with either
+/// slash for a separator.
+fn match_len(text: &str, mask: &str) -> Option<usize> {
+    let mut chars = text.char_indices();
+    for expected in mask.chars() {
+        let (_, actual) = chars.next()?;
+        let same = actual == expected
+            || (SEPARATORS.contains(&actual) && SEPARATORS.contains(&expected))
+            || actual.to_lowercase().eq(expected.to_lowercase());
+        if !same {
+            return None;
+        }
+    }
+    Some(chars.next().map_or(text.len(), |(index, _)| index))
 }
 
 #[cfg(test)]
@@ -223,12 +358,13 @@ mod tests {
                 .any(|c| matches!(c, 'а'..='я' | 'А'..='Я' | 'ё' | 'Ё'))
         };
         // An item text with no Russian in it, so that only the app's own words could have some;
-        // long enough to be cut, so that the note saying so is among them.
+        // long enough to be cut, so that the note saying so is among them. The two forms name
+        // different clients, so both names are checked.
         let filled = || {
             let bug = bug_report_url(Some(ItemLanguage::Russian), Ok("report.zip"));
             let failed = bug_report_url(None, Err("disk full"));
             let item =
-                item_problem_url(Some(ItemLanguage::Russian), "Ring", &"Ring\n".repeat(2000));
+                item_problem_url(Some(ItemLanguage::English), "Ring", &"Ring\n".repeat(2000));
             [
                 param(&bug, "diagnostics"),
                 param(&bug, "game-language"),
@@ -243,5 +379,87 @@ mod tests {
         assert!(!english.iter().any(russian), "{english:#?}");
         let in_russian = i18n::with_lang(Lang::Russian, filled);
         assert!(in_russian.iter().all(russian), "{in_russian:#?}");
+    }
+
+    /// Kiril's folders: the user folder, AppData in it, the desktop moved to another drive and the
+    /// documents in a work OneDrive.
+    fn kirils_masker() -> Masker {
+        Masker::new(
+            [
+                (r"C:\Users\Kiril", "%USERPROFILE%"),
+                (r"C:\Users\Kiril\AppData\Roaming", "%APPDATA%"),
+                (r"C:\Users\Kiril\AppData\Local\", "%LOCALAPPDATA%"),
+                (r"D:\Kiril\Desktop", "%DESKTOP%"),
+                (
+                    r"C:\Users\Kiril\OneDrive - Contoso\Documents",
+                    "%DOCUMENTS%",
+                ),
+            ],
+            ["Kiril"],
+        )
+    }
+
+    #[test]
+    fn the_player_s_folders_are_masked_as_windows_reads_a_path() {
+        let masker = kirils_masker();
+        for (text, masked) in [
+            // The most specific folder, whatever the letter case or the slash.
+            (
+                r"log: C:\Users\Kiril\AppData\Local\poe2-oracle\data\logs",
+                r"log: %LOCALAPPDATA%\poe2-oracle\data\logs",
+            ),
+            (r"c:\users\KIRIL\Saved Games", r"%USERPROFILE%\Saved Games"),
+            (
+                "C:/Users/kiril/AppData/Roaming/poe2-oracle",
+                "%APPDATA%/poe2-oracle",
+            ),
+            (
+                r"written to D:\Kiril\Desktop\PoE2-Oracle-report.zip",
+                r"written to %DESKTOP%\PoE2-Oracle-report.zip",
+            ),
+            (
+                r"C:\Users\Kiril\OneDrive - Contoso\Documents\My Games\Path of Exile 2",
+                r"%DOCUMENTS%\My Games\Path of Exile 2",
+            ),
+            // Another user's folder that merely starts the same.
+            (r"C:\Users\Kirill\Desktop", r"C:\Users\Kirill\Desktop"),
+        ] {
+            assert_eq!(masker.mask(text), masked, "{text}");
+        }
+    }
+
+    #[test]
+    fn the_user_name_is_masked_wherever_it_stands_as_a_word() {
+        let masker = kirils_masker();
+        assert_eq!(
+            masker.mask(r"E:\Games\kiril\PoE2 and backup_Kiril.zip"),
+            r"E:\Games\%USERNAME%\PoE2 and backup_%USERNAME%.zip"
+        );
+        assert_eq!(
+            masker.mask("Kirill, Kirilov and MrKiril keep their names"),
+            "Kirill, Kirilov and MrKiril keep their names"
+        );
+        // Cyrillic letter case too: a Russian player's folder is often named in Russian.
+        let masker = Masker::new([(r"C:\Users\Кирилл", "%USERPROFILE%")], ["Кирилл"]);
+        assert_eq!(
+            masker.mask(r"C:\USERS\КИРИЛЛ\Desktop, кирилл"),
+            r"%USERPROFILE%\Desktop, %USERNAME%"
+        );
+        // Two letters are in too many words to be told apart.
+        let masker = Masker::new([(r"C:\Users\Al", "%USERPROFILE%")], ["Al"]);
+        assert_eq!(
+            masker.mask(r"C:\Users\Al\Desktop: Al"),
+            r"%USERPROFILE%\Desktop: Al"
+        );
+    }
+
+    #[test]
+    fn a_folder_at_a_drive_s_root_is_left_alone() {
+        // Documents moved to the root of D: would otherwise mask every path on that drive.
+        let masker = Masker::new([(r"D:\", "%DOCUMENTS%")], std::iter::empty::<&str>());
+        assert_eq!(
+            masker.mask(r"D:\Games\Path of Exile 2"),
+            r"D:\Games\Path of Exile 2"
+        );
     }
 }

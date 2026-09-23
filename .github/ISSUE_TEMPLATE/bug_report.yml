@@ -20,7 +20,7 @@ body:
     id: game-language
     attributes:
       label: Game client language / Язык клиента игры
-      placeholder: English client / Russian client / Русский клиент
+      placeholder: English client / Russian client / Английский клиент / Русский клиент
     validations:
       required: true
   - type: textarea

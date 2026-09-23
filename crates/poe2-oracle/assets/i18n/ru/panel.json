@@ -3,7 +3,7 @@
   "No data from the trade site — no internet connection, or the site is down. Retrying automatically.\n\n{error}": "Нет данных сайта торговли — нет интернета или сайт недоступен. Повторяю попытку сам.\n\n{error}",
   "Hover over an item and press {hotkey}": "Наведите курсор на предмет и нажмите {hotkey}",
   "Opens a GitHub form with this item's text filled in: all that's left is to describe what's wrong and send it.": "Откроет на GitHub форму с текстом этого предмета: останется описать, что не так, и отправить.",
-  "Report to the developer": "Сообщить разработчику",
+  "Report a problem": "Сообщить о проблеме",
 
   "The game doesn't copy the item: another program takes {combo} — most often a graphics card overlay, a screen recorder or Discord. Free the shortcut in that program's settings.": "Игра не копирует предмет: сочетание {combo} перехватывает другая программа — чаще всего оверлей видеокарты, запись экрана или Discord. Освободите его в настройках той программы.",
   "The item's text was saved to {path}": "Текст предмета сохранён: {path}",
@@ -26,7 +26,7 @@
   "Private league · {league}": "Своя лига · {league}",
 
   "wiki ↗": "вики ↗",
-  "report a problem ↗": "сообщить об ошибке ↗",
+  "report a problem ↗": "сообщить о проблеме ↗",
   "Item read or priced wrong? Opens a GitHub form with the item's text: all that's left is to describe what's wrong.": "Предмет разобран или оценён неверно? Откроет на GitHub форму с текстом предмета: останется описать, что не так.",
   "Base:": "База:",
   "Searches this base only. Click to search every item of the class.": "Поиск только по этой базе. Нажмите, чтобы искать среди всех вещей класса.",
@@ -197,7 +197,7 @@
   "{n} mo ago": "{n} мес. назад",
   "{n} yr ago": "{n} г. назад",
 
-  "The trade site searches the “sum” rows only for a signed-in account, and it isn't accepting this app's sign-in now. Search without them, or sign in again under Settings → Account.": "Строки «сумма» сайт торговли ищет только для вошедших в аккаунт, а вход программы он сейчас не принимает. Найдите без них или войдите снова: Настройки → Аккаунт.",
+  "The trade site searches the “sum” rows only for a signed-in account, and it isn't accepting this app's sign-in now. Search without them, or sign in again in the settings, “Account” section.": "Строки «сумма» сайт торговли ищет только для вошедших в аккаунт, а вход программы он сейчас не принимает. Найдите без них или войдите снова в настройках, раздел «Аккаунт».",
   "The trade site finds this search too complex: uncheck some rows and search again. Signed in, the site allows more.": "Сайт торговли счёл запрос слишком сложным: снимите часть отметок и повторите поиск. Вошедшим в аккаунт сайт разрешает больше.",
   "Search without sums": "Искать без сумм",
   "Check the item again without the “sum” rows: their mods are searched one by one. One search on the trade site.": "Проверить предмет заново без строк «сумма»: их моды ищутся по отдельности. Один поиск на сайте торговли.",

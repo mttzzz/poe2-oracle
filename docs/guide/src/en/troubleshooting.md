@@ -59,7 +59,7 @@ See [Request limits](price-check.md#request-limits).
 ## An item is not recognised
 
 When the item text cannot be read, the panel says "Couldn't read the item" with the reason, "The
-item's text was saved to …" with the file's path, and a button **Report to the developer**.
+item's text was saved to …" with the file's path, and a button **Report a problem**.
 
 - "…only the English and Russian game clients are supported": the item text is in another
   language, or not in the one chosen as **Game client language** in the
@@ -70,9 +70,9 @@ Texts are saved to `%LOCALAPPDATA%\poe2-oracle\data\unparsed`; the last 100 are 
 saves there, without a message, items it read only partly: a modifier line it could not match
 simply has no filter row.
 
-Please report such items: click **Report to the developer**, or the link **report a problem ↗**
-under the item's name when an item was read but got wrong filters or a price that looks wrong.
-Either opens the [item problem form](https://github.com/mttzzz/poe2-oracle/issues/new?template=item_problem.yml)
+Please report such items with **Report a problem**: the button under the message, or the link under
+the item's name when an item was read but got wrong filters or a price that looks wrong. It opens
+the [item problem form](https://github.com/mttzzz/poe2-oracle/issues/new?template=item_problem.yml)
 in your browser with the item's text, the app's version and your client's language filled in.
 Describe what went wrong and submit it; you need a GitHub account. You can also fill the form by
 hand: copy the item in the game with <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>C</kbd> and paste it.
@@ -93,9 +93,10 @@ The zip holds plain text files:
 - `settings.json`: your settings;
 - `unparsed/`: the saved item texts.
 
-Everywhere in it, the path of your Windows user folder is replaced with `%USERPROFILE%`, which
-hides your Windows user name. Nothing is sent anywhere: you attach the file yourself, and you can
-open it and read it first.
+Everywhere in it, your Windows user name is replaced with `%USERNAME%`, and the paths of your user
+folder and of your Desktop, Documents and AppData folders, wherever Windows keeps them, with
+`%USERPROFILE%`, `%DESKTOP%`, `%DOCUMENTS%`, `%APPDATA%` and `%LOCALAPPDATA%`. Nothing is sent
+anywhere: you attach the file yourself, and you can open it and read it first.
 
 **Logs folder** → **Open** in the same section opens `%LOCALAPPDATA%\poe2-oracle\data\logs`, with
 `poe2-oracle.log` for the current run and `poe2-oracle.previous.log` for the one before.
@@ -132,8 +133,10 @@ the Windows display language before the game has ever run. Only PoE2 Oracle's ow
 item names, modifiers and the trade site's texts keep their own language.
 
 **Does it need my account, password or session cookie?**
-No. PoE2 Oracle searches the trade site like a visitor who is not signed in. See
-[Privacy](privacy.md).
+No. PoE2 Oracle prices items like a visitor who is not signed in. Signing in is optional: it opens
+private leagues, live search and the "sum" rows. You sign in on pathofexile.com's own page in a
+window of the app; PoE2 Oracle doesn't read or keep your password, only the site's session, in
+Windows Credential Manager. See [Account](settings.md#account) and [Privacy](privacy.md).
 
 **Does it play for me?**
 No. Each hotkey press does one thing: it copies one item, sends one chat message or pastes one

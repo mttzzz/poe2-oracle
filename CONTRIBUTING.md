@@ -21,23 +21,23 @@ the app reads wrong; code is welcome too. Everyone taking part follows the
    - the app version: Windows Settings → Apps → Installed apps shows it next to PoE2 Oracle;
    - the game client language (English or Russian);
    - what you did, what you expected and what happened instead.
-5. **For an item problem, include the item text.** The quickest way is the **сообщить об ошибке ↗**
-   link under the item name on the price panel, or **Сообщить разработчику** in the message about
-   an item the app couldn't read: it opens the item form with the text filled in. By hand: in the
-   game, hover the item and press `Ctrl+Alt+C` (the game's advanced copy, the same one the app
-   uses: it includes the mod tiers), then paste it into the form. Texts the app couldn't read are
-   also kept in `%LOCALAPPDATA%\poe2-oracle\data\unparsed`.
-6. **Attach the diagnostics report** when the problem isn't about one item. **Сообщить об ошибке**
-   (Report a bug) in the tray menu, or the button of the same name in the **Диагностика** section
-   of the settings, writes `PoE2-Oracle-report-<date>.zip` to your desktop, shows it in Explorer
-   and opens the bug form with the version, the client language and the zip's name filled in;
-   drag the zip into the form. (**Собрать отчёт**, Collect report, only writes the zip.) It holds
-   the logs of the current and the previous run, your settings, the item texts the app couldn't
-   read and a summary of the system (Windows version, monitors, the game window's size, the game's
-   display mode, language and copy key, the cached files). Your user folder's path, which contains
-   your Windows user name, is replaced with `%USERPROFILE%` in every file. You can open the zip and
-   check it before attaching it. The app sends nothing itself: you submit the form from your own
-   GitHub account.
+5. **For an item problem, include the item text.** The quickest way is **Report a problem**, under
+   the item name on the price panel or in the message about an item the app couldn't read: it opens
+   the item form with the text filled in. By hand: in the game, hover the item and press
+   `Ctrl+Alt+C` (the game's advanced copy, the same one the app uses: it includes the mod tiers),
+   then paste it into the form. Texts the app couldn't read are also kept in
+   `%LOCALAPPDATA%\poe2-oracle\data\unparsed`.
+6. **Attach the diagnostics report** when the problem isn't about one item. **Report a bug** in the
+   tray menu, or **Report ↗** in the **Help** section of the settings, writes
+   `PoE2-Oracle-report-<date>.zip` to your desktop, shows it in Explorer and opens the bug form
+   with the version, the client language and the zip's name filled in; drag the zip into the form.
+   (**Collect report** only writes the zip.) It holds the logs of the current and the previous run,
+   your settings, the item texts the app couldn't read and a summary of the system (Windows
+   version, monitors, the game window's size, the game's display mode, language and copy key, the
+   cached files). Your Windows user name is replaced with `%USERNAME%` in every file, and the paths
+   of your user, Desktop, Documents and AppData folders with `%USERPROFILE%`, `%DESKTOP%`,
+   `%DOCUMENTS%`, `%APPDATA%` and `%LOCALAPPDATA%`. You can open the zip and check it before
+   attaching it. The app sends nothing itself: you submit the form from your own GitHub account.
 
 **Never post** passwords, your pathofexile.com session cookie (`POESESSID`) or any other token in
 issues, logs or screenshots: whoever has them can act as you on the site.

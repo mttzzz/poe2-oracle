@@ -13,6 +13,9 @@
   writes the third-party notices from about.toml and about.hbs; a missing one, or another version
   than the pinned one, is installed with `cargo install` first. The installer carries the notices
   and the two license texts next to the exe.
+  The build stops if a test build's update settings are on: POE2_ORACLE_RELEASES_URL in the
+  environment, or crates\auto-update's local-release-server feature (see LATEST_RELEASE_URL in
+  crates\auto-update\src\lib.rs). A release's updater asks this repository's GitHub releases only.
   .github\workflows\release.yml runs this same script.
 
 .PARAMETER Tag
@@ -90,11 +93,28 @@ function Install-CargoAbout {
 $root = Split-Path -Parent $PSScriptRoot
 Push-Location $root
 try {
+    # Read at build time into the updater (option_env!): a test release server's address left in
+    # this shell would ship in the exe.
+    if (Test-Path Env:POE2_ORACLE_RELEASES_URL) {
+        throw "POE2_ORACLE_RELEASES_URL is set to '$env:POE2_ORACLE_RELEASES_URL': a release asks GitHub. Remove it (Remove-Item Env:POE2_ORACLE_RELEASES_URL) and build again."
+    }
     $metadata = (Invoke-Native cargo @('metadata', '--format-version', '1', '--no-deps', '--locked') |
         Out-String) | ConvertFrom-Json
     $version = ($metadata.packages | Where-Object { $_.name -eq 'poe2-oracle' }).version
     if ($Tag -and $Tag -ne "v$version") {
         throw "Tag $Tag does not match the workspace version $version (root Cargo.toml)"
+    }
+    # The features the release build gives auto-update, as cargo resolves them: `{f}` lists them
+    # after the package. local-release-server, on only in a test build, lets the updater take a
+    # release over plain http.
+    $updater = Invoke-Native cargo @('tree', '--locked', '-p', 'poe2-oracle', '-i', 'auto-update',
+        '-e', 'normal', '--prefix', 'none', '--format', '{p} {f}') |
+        Where-Object { $_ -like 'auto-update *' }
+    if (-not $updater) {
+        throw "cargo tree did not list auto-update, so its features are unknown"
+    }
+    if ($updater -match 'local-release-server') {
+        throw "auto-update is built with its test-only local-release-server feature: $updater"
     }
 
     # Before the long build, so a cargo-about that can't be installed stops the release early.

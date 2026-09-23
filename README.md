@@ -59,6 +59,10 @@ basics on the first launch.
   the settings; above the skill panel, a timer for the current map.
 - **Quick actions:** your own hotkeys that type a chat command (`/hideout`, `@last thanks`) or a
   stash search string (for example one made with poe2.re).
+- **Trade requests:** buyers' whispers from the trade site appear as cards at the top of the
+  screen, with buttons that answer in the game chat or search the open stash for the item.
+- **Sign-in to pathofexile.com**, optional, on the site's own page: it opens private leagues and
+  **Live search**, which watches a search and brings each new listing as a card over the game.
 - **Updates** from the tray menu: the new installer is downloaded from GitHub Releases, checked
   against its published SHA-256 sum and installed; the app restarts by itself.
 
@@ -125,9 +129,8 @@ own GitHub account; the app sends nothing by itself.
   a diagnostics report to your desktop (a zip with the logs and settings, your Windows user name
   masked), shows it in Explorer and opens the bug form with the version, the client language and
   the report's file name filled in. Drag the zip into the form.
-- **report a problem ↗** under the item name on the price panel, or **Report to the developer** in
-  the message about an item the app couldn't read, opens the item form with the item text filled
-  in.
+- **Report a problem**, under the item name on the price panel or in the message about an item the
+  app couldn't read, opens the item form with the item text filled in.
 
 You can also open a form yourself:
 
@@ -152,10 +155,13 @@ PoE2 Oracle has no telemetry, no analytics and no accounts of its own. It connec
 
 | Where | What for |
 |---|---|
-| www.pathofexile.com, ru.pathofexile.com | The trade site's API: leagues, stat and item catalogs, your searches (the item's stats) and the listings they find |
+| www.pathofexile.com, ru.pathofexile.com | The trade site's API: leagues, stat and item catalogs, your searches (the item's stats) and the listings they find; once you sign in, the site's session goes along, and each live search keeps a connection open |
 | api.poe2scout.com | Prices of uniques; the week's prices and pages of Currency Exchange items, and prices of those that haven't traded in your league lately |
 | web.poecdn.com | Item images, and GGG's hourly record of the trades made on the Currency Exchange (one file per hour for all leagues, the same for everyone) |
 | api.github.com, github.com | The update check (30 seconds after start while update checks are on, or from the tray menu) and the installer download |
+
+Signing in is optional. It happens on pathofexile.com's own page, in a window of the app (Microsoft
+Edge WebView2); PoE2 Oracle doesn't read or keep your password, only the site's session.
 
 Everything else stays on your computer. The app reads the item text the game copies, the game's
 own log (`Client.txt`: level-ups, area changes), the game's settings file and the screen
@@ -167,6 +173,7 @@ pixels of the experience bar itself. It keeps its files here:
 | Logs of this run and the previous one | `%LOCALAPPDATA%\poe2-oracle\data\logs` |
 | Item texts it couldn't read | `%LOCALAPPDATA%\poe2-oracle\data\unparsed` |
 | Downloaded catalogs, prices and updates | `%LOCALAPPDATA%\poe2-oracle\cache` |
+| The pathofexile.com session, once you sign in | Windows Credential Manager, `PoE2 Oracle/pathofexile.com`; **Sign out** in the settings or uninstalling removes it |
 
 The diagnostics report is made only when you ask for it, and the app never sends it anywhere:
 reporting a bug only opens GitHub's form in your browser, and you decide what to submit. Links on

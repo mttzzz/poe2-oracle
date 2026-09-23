@@ -4492,6 +4492,7 @@ dependencies = [
  "directories",
  "embed-resource",
  "env_logger",
+ "futures",
  "global-hotkey",
  "gpui",
  "gpui_platform",

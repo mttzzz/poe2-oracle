@@ -30,7 +30,8 @@ items sell for on the official trade site, with the item's modifiers as filters 
   game and the trade site give them.
 - You need Windows 10 or 11 (64-bit), the English or Russian game client, and the game in Windowed
   or Windowed Fullscreen mode. See [Install and first run](install.md).
-- PoE2 Oracle needs no account and sends no telemetry. See [Privacy](privacy.md).
+- PoE2 Oracle needs no account for price checks and sends no telemetry. Signing in to
+  pathofexile.com is optional: it opens private leagues and live search. See [Privacy](privacy.md).
 
 ## About
 

@@ -623,7 +623,10 @@ impl SettingsView {
                 .await;
             let report = match written {
                 Ok(path) => {
-                    log::info!("diagnostics report written to {}", path.display());
+                    // The name only: the folder is the player's desktop, and the log goes into
+                    // the next report.
+                    let name = path.file_name().unwrap_or_default().display();
+                    log::info!("diagnostics report written: {name}");
                     diagnostics::reveal(&path);
                     ReportState::Written(path)
                 }

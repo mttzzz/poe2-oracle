@@ -16,9 +16,9 @@
 ;               failed. crates/auto-update starts updates as `/S /relaunch`, then quits the app.
 ;   /D=<dir>    install directory (NSIS built-in, must come last)
 ;
-; The uninstaller removes the program with its license files, the shortcut, the autostart entry and
-; the "Installed apps" entry; settings and caches only when the user ticks "Settings and cache"
-; (never in /S mode).
+; The uninstaller removes the program with its license files, the shortcut, the autostart entry,
+; the "Installed apps" entry and the saved pathofexile.com sign-in; settings and caches only when
+; the user ticks "Settings and cache" (never in /S mode).
 
 Unicode true
 ManifestDPIAware true
@@ -58,6 +58,12 @@ AllowSkipFiles off
 ; directories::ProjectDirs::from("", "", "poe2-oracle"): settings under %APPDATA%\poe2-oracle,
 ; caches (prices, catalogs, downloaded updates) under %LOCALAPPDATA%\poe2-oracle.
 !define DATA_DIR "poe2-oracle"
+; The player's pathofexile.com session: a generic Windows credential under this target name
+; (crates/poe2-oracle/src/session.rs, CREDENTIAL_TARGET). It is a key to their web account, not a
+; setting, so every uninstall deletes it, "Settings and cache" ticked or not.
+!define CREDENTIAL_TARGET "PoE2 Oracle/pathofexile.com"
+; CredDeleteW's type for a generic credential (wincred.h).
+!define CRED_TYPE_GENERIC 1
 
 ; VIProductVersion takes four numbers: cut a pre-release suffix ("0.2.0-rc.1" -> "0.2.0").
 !searchparse "${VERSION}-" "" VERSION_CORE "-"
@@ -117,8 +123,8 @@ LangString AppNotClosed ${LANG_ENGLISH} "PoE2 Oracle could not be closed. Quit i
 LangString AppNotClosed ${LANG_RUSSIAN} "Не удалось закрыть PoE2 Oracle. Закройте его через значок в трее и нажмите «Повторить»."
 LangString ClosingApp ${LANG_ENGLISH} "Closing PoE2 Oracle..."
 LangString ClosingApp ${LANG_RUSSIAN} "Закрываю PoE2 Oracle..."
-LangString ProgramDescription ${LANG_ENGLISH} "The program, its Start menu shortcut and its autostart entry."
-LangString ProgramDescription ${LANG_RUSSIAN} "Программа, её ярлык в меню «Пуск» и автозапуск."
+LangString ProgramDescription ${LANG_ENGLISH} "The program, its Start menu shortcut, its autostart entry and the saved pathofexile.com sign-in."
+LangString ProgramDescription ${LANG_RUSSIAN} "Программа, её ярлык в меню «Пуск», автозапуск и сохранённый вход на pathofexile.com."
 LangString SettingsSection ${LANG_ENGLISH} "Settings and cache"
 LangString SettingsSection ${LANG_RUSSIAN} "Настройки и кэш"
 LangString SettingsDescription ${LANG_ENGLISH} "Also delete your settings and the downloaded price data. Leave unticked to keep them for a reinstall."
@@ -301,6 +307,8 @@ Section "un.${PRODUCT_NAME}" UninstallProgram
   DeleteRegValue HKCU "${RUN_KEY}" "${RUN_VALUE}"
   DeleteRegValue HKCU "${STARTUP_APPROVED_KEY}" "${RUN_VALUE}"
   DeleteRegKey HKCU "${UNINSTALL_KEY}"
+  ; No credential (never signed in, or signed out) is already the wanted end: the result is ignored.
+  System::Call 'advapi32::CredDeleteW(w "${CREDENTIAL_TARGET}", i ${CRED_TYPE_GENERIC}, i 0)'
 SectionEnd
 
 Section /o "un.$(SettingsSection)" UninstallSettings

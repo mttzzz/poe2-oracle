@@ -297,8 +297,8 @@ impl SearchFailure {
                 weighted_sums: true,
             } => tr!(
                 "The trade site searches the “sum” rows only for a signed-in account, and it isn't \
-                 accepting this app's sign-in now. Search without them, or sign in again under \
-                 Settings → Account."
+                 accepting this app's sign-in now. Search without them, or sign in again in the \
+                 settings, “Account” section."
             )
             .to_owned(),
             SearchFailure::TooComplex {

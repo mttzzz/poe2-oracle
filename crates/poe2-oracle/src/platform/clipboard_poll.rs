@@ -2,7 +2,10 @@
 //! what the player had copied, via GPUI's own native clipboard
 //! (`App::read_from_clipboard`/`write_to_clipboard`) -- not any third-party clipboard crate (see
 //! `poe2-oracle/Cargo.toml`'s own comment on why `arboard` is deliberately not a dependency: a
-//! second clipboard client would just race GPUI's own for clipboard ownership).
+//! second clipboard client would just race GPUI's own for clipboard ownership). Only what GPUI
+//! can't express goes to the Win32 clipboard directly, from the same thread GPUI's own calls run
+//! on: the privacy marks of what the player copied ([`holds_private_content`]) and of a quick
+//! action's text ([`write_private_text`]).
 //!
 //! Sequence and default timing (`initial_delay`/`poll_interval` = 48ms, `timeout` = 500ms) are
 //! ported from `exiled-exchange-2/main/src/shortcuts/HostClipboard.ts`'s real, working
@@ -18,6 +21,13 @@
 //! still has to read what EE2 put on the clipboard -- here the reader is this module, and it has
 //! already read.
 //!
+//! What the player copied goes back only if its source didn't mark it private. A password manager
+//! (KeePass, Bitwarden, 1Password) marks a copied password to stay out of Windows' clipboard
+//! history and cloud clipboard, and GPUI would write it back as plain text, into both. Such content
+//! is never captured ([`Saved::Private`]): the check or quick action replaces it, and the clipboard
+//! is emptied afterwards -- the password leaves the clipboard, as the manager's own timer would
+//! take it, and is copied again when needed.
+//!
 //! Verified live 2026-09-22 against a real Russian PoE2 client on the test machine: hovering an
 //! inventory item and sending `Ctrl+Alt+C` puts `Класс предмета: ...` text on the clipboard,
 //! which is exactly what this poll now waits for.
@@ -25,13 +35,156 @@
 //! [`paste_restoring`] is the other direction, for quick actions: text the game pastes, and the
 //! player's clipboard back after EE2's `RESTORE_AFTER`.
 
+use std::sync::LazyLock;
+use std::time::Duration;
+
 use gpui::{AsyncApp, ClipboardEntry, ClipboardItem};
 use item_parser::looks_like_item_text;
-use std::time::Duration;
+use windows::Win32::Foundation::{HANDLE, HGLOBAL};
+use windows::Win32::System::DataExchange::{
+    CloseClipboard, EmptyClipboard, GetClipboardData, IsClipboardFormatAvailable, OpenClipboard,
+    RegisterClipboardFormatW, SetClipboardData,
+};
+use windows::Win32::System::Memory::{
+    GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock,
+};
+use windows::Win32::System::Ole::CF_UNICODETEXT;
+use windows::core::{Owned, PCWSTR, w};
 
 /// How long the game has to read what a paste put on the clipboard before the player's own
 /// content goes back -- EE2's `RESTORE_AFTER`. A game lagging past it pastes the restored text.
 const RESTORE_AFTER: Duration = Duration::from_millis(120);
+
+/// The marks a program puts on content it copied that nobody should keep -- a password manager
+/// on a password. This one, present at all, asks every program watching the clipboard to leave
+/// the content alone.
+static EXCLUDE_FROM_MONITORING: LazyLock<u32> =
+    LazyLock::new(|| register_format(w!("ExcludeClipboardContentFromMonitorProcessing")));
+/// A DWORD: 0 keeps the content out of Windows' clipboard history (Win+V).
+static CAN_INCLUDE_IN_HISTORY: LazyLock<u32> =
+    LazyLock::new(|| register_format(w!("CanIncludeInClipboardHistory")));
+/// A DWORD: 0 keeps the content off the cloud clipboard, which syncs it to the player's other
+/// devices.
+static CAN_UPLOAD_TO_CLOUD: LazyLock<u32> =
+    LazyLock::new(|| register_format(w!("CanUploadToCloudClipboard")));
+
+/// `name`'s clipboard format; 0 -- which no clipboard holds -- if Windows can't register it.
+fn register_format(name: PCWSTR) -> u32 {
+    // SAFETY: `name` is a static NUL-terminated string.
+    unsafe { RegisterClipboardFormatW(name) }
+}
+
+/// What the clipboard held before a check or a quick action used it.
+enum Saved {
+    /// What GPUI read of it -- `None` for nothing, an empty clipboard among others -- which goes
+    /// back as far as GPUI can write it.
+    Content(Option<ClipboardItem>),
+    /// Content its source marked private ([`holds_private_content`]): not read, and never
+    /// written back -- the clipboard is emptied instead.
+    Private,
+}
+
+impl Saved {
+    fn capture(cx: &mut AsyncApp) -> Saved {
+        if holds_private_content() {
+            Saved::Private
+        } else {
+            Saved::Content(read_clipboard(cx))
+        }
+    }
+
+    fn restore(self, cx: &mut AsyncApp) {
+        match self {
+            Saved::Content(content) => set_clipboard(cx, content),
+            Saved::Private => set_clipboard(cx, None),
+        }
+    }
+}
+
+/// Whether the clipboard holds content its source marked private: with
+/// [`EXCLUDE_FROM_MONITORING`], or with 0 for [`CAN_INCLUDE_IN_HISTORY`] or
+/// [`CAN_UPLOAD_TO_CLOUD`]. A mark whose value can't be read counts as a 0.
+fn holds_private_content() -> bool {
+    let present = |format: u32| {
+        // SAFETY: a plain query; it needs no open clipboard.
+        unsafe { IsClipboardFormatAvailable(format) }.is_ok()
+    };
+    if present(*EXCLUDE_FROM_MONITORING) {
+        return true;
+    }
+    let marks = [*CAN_INCLUDE_IN_HISTORY, *CAN_UPLOAD_TO_CLOUD];
+    if !marks.into_iter().any(present) {
+        return false;
+    }
+    // SAFETY: opened by this thread and closed right below.
+    if unsafe { OpenClipboard(None) }.is_err() {
+        // Another program has it open at this instant.
+        return true;
+    }
+    let private = marks
+        .into_iter()
+        .filter(|&format| present(format))
+        .any(|format| read_dword(format).is_none_or(|value| value == 0));
+    // SAFETY: this thread opened it above.
+    let _ = unsafe { CloseClipboard() };
+    private
+}
+
+/// The DWORD the clipboard, open on this thread, holds as `format`.
+fn read_dword(format: u32) -> Option<u32> {
+    // SAFETY: the handle is the clipboard's, valid while it stays open; the block is read only
+    // between its lock and unlock, and only as far as its size.
+    unsafe {
+        let memory = HGLOBAL(GetClipboardData(format).ok()?.0);
+        if GlobalSize(memory) < size_of::<u32>() {
+            return None;
+        }
+        let data = GlobalLock(memory);
+        if data.is_null() {
+            return None;
+        }
+        let value = data.cast::<u32>().read_unaligned();
+        let _ = GlobalUnlock(memory);
+        Some(value)
+    }
+}
+
+/// Puts `text` on the clipboard marked to stay out of Windows' clipboard history and cloud
+/// clipboard: a quick action's text is there for the game to paste, not for the player to keep.
+fn write_private_text(text: &str) -> windows::core::Result<()> {
+    let text: Vec<u16> = text.encode_utf16().chain([0]).collect();
+    // SAFETY: opened by this thread, written while open, and closed on every path.
+    unsafe {
+        OpenClipboard(None)?;
+        let written = EmptyClipboard().and_then(|()| set_data(u32::from(CF_UNICODETEXT.0), &text));
+        if written.is_ok() {
+            for format in [*CAN_INCLUDE_IN_HISTORY, *CAN_UPLOAD_TO_CLOUD] {
+                // Best effort: a mark that fails only lets the text into the history or the cloud.
+                let _ = set_data(format, &[0u32]);
+            }
+        }
+        let _ = CloseClipboard();
+        written
+    }
+}
+
+/// Puts `data` on the clipboard, open on this thread, as `format`.
+fn set_data<T: Copy>(format: u32, data: &[T]) -> windows::core::Result<()> {
+    // SAFETY: the block holds exactly `data`, copied in between its lock and unlock; `Owned` frees
+    // it on a failure, and once the clipboard has taken it, it is the clipboard's to free.
+    unsafe {
+        let memory = Owned::new(GlobalAlloc(GMEM_MOVEABLE, size_of_val(data))?);
+        let target = GlobalLock(*memory);
+        if target.is_null() {
+            return Err(windows::core::Error::from_thread());
+        }
+        std::ptr::copy_nonoverlapping(data.as_ptr(), target.cast::<T>(), data.len());
+        let _ = GlobalUnlock(*memory);
+        SetClipboardData(format, Some(HANDLE(memory.0)))?;
+        std::mem::forget(memory);
+    }
+    Ok(())
+}
 
 /// `None` when GPUI reads nothing: an empty clipboard, one holding no format GPUI reads, or one
 /// another process has open at this instant.
@@ -74,7 +227,8 @@ fn item_text(item: &ClipboardItem) -> Option<&str> {
 /// The capture goes back as far as GPUI can write it: text, and images as PNG, GIF, JPEG or SVG --
 /// never as a bitmap, so an app that pastes only bitmaps won't see a restored screenshot.
 /// A copied file list, rich text's HTML/RTF and app-private formats are lost; the game's own copy
-/// already replaced them. (EE2 captures text only.) On a timeout EE2 restores as well; here only
+/// already replaced them. (EE2 captures text only.) Content marked private isn't captured, and the
+/// clipboard is left empty after the answer instead. On a timeout EE2 restores as well; here only
 /// when the clipboard no longer reads as the check left it. If the game copied nothing (no item
 /// under the cursor), the player's clipboard is still intact, and rewriting it would only strip
 /// the formats GPUI can't write back. A clipboard GPUI reads as nothing counts as untouched.
@@ -88,10 +242,10 @@ pub async fn poll_item_clipboard(
     poll_interval: Duration,
     timeout: Duration,
 ) -> Option<String> {
-    let saved = match read_clipboard(cx) {
-        Some(item) if item_text(&item).is_some() => {
+    let saved = match Saved::capture(cx) {
+        Saved::Content(Some(item)) if item_text(&item).is_some() => {
             set_clipboard(cx, None);
-            None
+            Saved::Content(None)
         }
         other => other,
     };
@@ -104,13 +258,17 @@ pub async fn poll_item_clipboard(
     loop {
         let current = read_clipboard(cx);
         if let Some(text) = current.as_ref().and_then(item_text) {
-            set_clipboard(cx, saved);
+            saved.restore(cx);
             return Some(text.to_owned());
         }
 
         elapsed += poll_interval;
         if elapsed >= timeout {
-            if current.is_some() && current != saved {
+            // Private content the game didn't replace is still there as it was.
+            if let Saved::Content(saved) = saved
+                && current.is_some()
+                && current != saved
+            {
                 set_clipboard(cx, saved);
             }
             return None;
@@ -119,16 +277,23 @@ pub async fn poll_item_clipboard(
     }
 }
 
-/// Puts `text` on the clipboard, runs `paste` (expected to synthesize the keys that make the game
-/// paste it, e.g. via `synth_input::press_keys`), and after [`RESTORE_AFTER`] puts back what the
-/// clipboard held -- EE2's `HostClipboard.restoreShortly` with `restoreClipboard` on. Only if
-/// the clipboard still holds `text`: whatever the player copied in the meantime stays.
+/// Puts `text` on the clipboard ([`write_private_text`]), runs `paste` (expected to synthesize
+/// the keys that make the game paste it, e.g. via `synth_input::press_keys`), and after
+/// [`RESTORE_AFTER`] puts back what the clipboard held -- EE2's `HostClipboard.restoreShortly`
+/// with `restoreClipboard` on. Only if the clipboard still holds `text`: whatever the player
+/// copied in the meantime stays. Content marked private isn't put back; the clipboard is emptied.
+///
+/// Nothing is pasted when `text` can't go on the clipboard: the keys would paste what is there
+/// instead -- the player's own copy, a password even -- and send it to the chat.
 pub async fn paste_restoring(cx: &mut AsyncApp, text: &str, paste: impl FnOnce()) {
-    let saved = read_clipboard(cx);
-    cx.update(|app| app.write_to_clipboard(ClipboardItem::new_string(text.to_owned())));
+    let saved = Saved::capture(cx);
+    if let Err(err) = write_private_text(text) {
+        log::warn!("putting a quick action's text on the clipboard failed, nothing typed: {err}");
+        return;
+    }
     paste();
     cx.background_executor().timer(RESTORE_AFTER).await;
     if read_clipboard(cx).and_then(|item| item.text()).as_deref() == Some(text) {
-        set_clipboard(cx, saved);
+        saved.restore(cx);
     }
 }

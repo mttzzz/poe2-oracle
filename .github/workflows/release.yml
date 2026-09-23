@@ -6,25 +6,43 @@ name: Release
 # the same script used by hand on a Windows machine -- and refuses a tag that is not "v" + the
 # workspace version. The installer carries LICENSE-MIT, LICENSE-APACHE and the
 # THIRD-PARTY-NOTICES.html the script writes next to the exe, so the release attaches nothing else.
+#
+# Two jobs, so that nothing the build runs can publish: the build compiles the whole dependency
+# graph -- build scripts and proc-macros included -- with a read-only token it doesn't keep in the
+# checkout, and hands its output over as an artifact; only the publish job, which runs `gh release
+# create` and nothing else, may write releases. Actions are pinned to commits, their version in the
+# comment beside each.
 on:
   push:
     tags: ["v*"]
 
-permissions:
-  contents: write
+permissions: {}
 
 jobs:
-  windows-installer:
+  build:
     # windows-latest (Windows Server 2025, checked 2026-09-22) ships Rust 1.98, the Windows SDK
     # (fxc.exe for gpui's release-mode shaders, rc.exe for the exe's icon and version) and the
     # GitHub CLI. NSIS is not on it; build-release.ps1 fetches its pinned zip. Nor is cargo-about;
     # build-release.ps1 installs its pinned version, which rust-cache keeps (~/.cargo/bin) for the
     # next tag.
     runs-on: windows-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      # The updater reads POE2_ORACLE_RELEASES_URL at build time: a test release server's address
+      # must never ship. build-release.ps1 checks it too, and the updater's test-only feature.
+      - name: Refuse a test build's update settings
+        shell: pwsh
+        run: |
+          if (Test-Path Env:POE2_ORACLE_RELEASES_URL) {
+            throw 'POE2_ORACLE_RELEASES_URL is set: a release asks GitHub'
+          }
 
       - name: Build the exe, the installer and SHA256SUMS
         shell: pwsh
@@ -32,12 +50,30 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: ./packaging/build-release.ps1 -Tag $env:TAG
 
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dist
+          path: target/dist
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: dist
+          path: dist
+
       # `gh release create` with files keeps the release a draft until every file is uploaded, so
       # the updater never sees a latest release without its installer.
       - name: Publish the release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
         run: |
           $version = $env:TAG.Substring(1)
@@ -45,5 +81,5 @@ jobs:
           # GitHub's "latest" release never points at a pre-release, so a vX.Y.Z-rc.N reaches
           # only those who install it by hand.
           if ($version.Contains('-')) { $flags += '--prerelease' }
-          gh release create $env:TAG "target/dist/PoE2-Oracle-Setup-$version.exe" target/dist/SHA256SUMS @flags
+          gh release create $env:TAG "dist/PoE2-Oracle-Setup-$version.exe" dist/SHA256SUMS @flags
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

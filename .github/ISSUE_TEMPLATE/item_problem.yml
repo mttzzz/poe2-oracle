@@ -5,9 +5,9 @@ body:
   - type: markdown
     attributes:
       value: |
-        The item's text is what lets us reproduce the problem, so it is required. The app fills it in for you: use **report a problem ↗** under the item name on the price panel, or **Report to the developer** in the message about an item it couldn't read. Please search the [existing issues](https://github.com/mttzzz/poe2-oracle/issues?q=is%3Aissue) first: the same item may already be reported.
+        The item's text is what lets us reproduce the problem, so it is required. The app fills it in for you: use **Report a problem**, under the item name on the price panel or in the message about an item it couldn't read. Please search the [existing issues](https://github.com/mttzzz/poe2-oracle/issues?q=is%3Aissue) first: the same item may already be reported.
 
-        Без текста предмета проблему не воспроизвести, поэтому он обязателен. Программа вставит его сама: нажмите «сообщить об ошибке ↗» под названием предмета на панели или «Сообщить разработчику» в сообщении о предмете, который она не смогла прочитать. Сначала поищите среди [существующих задач](https://github.com/mttzzz/poe2-oracle/issues?q=is%3Aissue): о таком предмете, возможно, уже сообщили.
+        Без текста предмета проблему не воспроизвести, поэтому он обязателен. Программа вставит его сама: нажмите «Сообщить о проблеме» под названием предмета на панели или в сообщении о предмете, который она не смогла прочитать. Сначала поищите среди [существующих задач](https://github.com/mttzzz/poe2-oracle/issues?q=is%3Aissue): о таком предмете, возможно, уже сообщили.
   - type: input
     id: version
     attributes:
@@ -20,7 +20,7 @@ body:
     id: game-language
     attributes:
       label: Game client language / Язык клиента игры
-      placeholder: English client / Russian client / Русский клиент
+      placeholder: English client / Russian client / Английский клиент / Русский клиент
     validations:
       required: true
   - type: textarea

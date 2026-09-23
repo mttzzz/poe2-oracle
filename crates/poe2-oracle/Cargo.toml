@@ -77,6 +77,10 @@ rustls-native-certs = "0.8"
 # The locks around the pathofexile.com session (src/session.rs) and live search's per-socket stop
 # signal (src/live_search.rs): no poisoning to unwrap. Already in the tree through GPUI.
 parking_lot = "0.12"
+# The `AsyncRead` the app's HTTP client wraps each answer's body in (src/session.rs), so that
+# reqwest's read timeout can start its timer while GPUI's executors read. Already in the tree
+# through http_client.
+futures = "0.3"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 # The diagnostics report is one zip the player attaches to a bug report (src/diagnostics.rs).
@@ -110,6 +114,9 @@ zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2
 # src/ui/panel/market.rs).
 # `Win32_Globalization` (the Windows display language, which «Авто» interface language follows
 # before the game's first run -- src/i18n.rs).
+# `Win32_System_DataExchange`, `Win32_System_Memory` and `Win32_System_Ole` (the clipboard formats
+# GPUI doesn't write or read: the privacy marks on a quick action's text, and those of what the
+# player copied -- src/platform/clipboard_poll.rs).
 windows = { version = "0.62", features = [
     "Win32_Foundation",
     "Win32_Globalization",
@@ -117,7 +124,10 @@ windows = { version = "0.62", features = [
     "Win32_Graphics_Gdi",
     "Win32_Security_Credentials",
     "Win32_System_Console",
+    "Win32_System_DataExchange",
     "Win32_System_LibraryLoader",
+    "Win32_System_Memory",
+    "Win32_System_Ole",
     "Win32_System_Registry",
     "Win32_System_SystemInformation",
     "Win32_System_Threading",

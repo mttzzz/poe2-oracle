@@ -19,9 +19,11 @@
 //! Both are GPUI globals.
 
 use std::fmt;
+use std::io;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::task::{Context, Poll};
 
 use gpui::{App, Global};
 use http_client::http::HeaderValue;
@@ -30,7 +32,8 @@ use http_client::{AsyncBody, HttpClient, Request, Response, Uri, Url};
 use parking_lot::RwLock;
 use trade_client::account::{self, AccountCheck};
 
-/// The Credential Manager entry the session is saved under.
+/// The Credential Manager entry the session is saved under. `packaging/installer.nsi` deletes it
+/// by this same name on uninstall: a rename changes both.
 pub const CREDENTIAL_TARGET: &str = "PoE2 Oracle/pathofexile.com";
 /// The entry's user name: what the secret is.
 #[cfg(target_os = "windows")]
@@ -101,6 +104,11 @@ fn is_session_host(uri: &Uri) -> bool {
 /// trade site host (`is_session_host`) while the player is signed in. Everything else passes
 /// through untouched. The app's own requests carry no other cookie, so the header is set, not
 /// merged.
+///
+/// Every answer's body is read inside reqwest's tokio runtime ([`InRuntime`]): the client the app
+/// builds has a read timeout, and reqwest starts its timer on a body's first read -- a tokio timer,
+/// which panics when started outside a tokio runtime. GPUI's executors, where the app reads
+/// bodies, aren't tokio's.
 pub struct SessionHttpClient {
     inner: Arc<dyn HttpClient>,
     session: TradeSession,
@@ -130,7 +138,27 @@ impl HttpClient for SessionHttpClient {
         {
             request.headers_mut().insert(COOKIE, cookie);
         }
-        self.inner.send(request)
+        let response = self.inner.send(request);
+        Box::pin(async move {
+            Ok(response
+                .await?
+                .map(|body| AsyncBody::from_reader(InRuntime(body))))
+        })
+    }
+}
+
+/// An answer's body, each read of it made inside reqwest's tokio runtime (see
+/// [`SessionHttpClient`]).
+struct InRuntime(AsyncBody);
+
+impl futures::AsyncRead for InRuntime {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut [u8],
+    ) -> Poll<io::Result<usize>> {
+        let _runtime = reqwest_client::runtime().enter();
+        Pin::new(&mut self.0).poll_read(cx, buf)
     }
 }
 
@@ -321,7 +349,14 @@ pub fn sum_refused(cx: &mut App) {
 
 #[cfg(test)]
 mod tests {
+    use std::io::{Read as _, Write as _};
+    use std::net::TcpListener;
+    use std::time::{Duration, Instant};
+
+    use futures::AsyncReadExt as _;
+    use futures::executor::block_on;
     use parking_lot::Mutex;
+    use reqwest_client::ReqwestClient;
 
     use super::*;
 
@@ -445,5 +480,55 @@ mod tests {
         assert_eq!(parse("короткий"), None);
         assert_eq!(parse("abc"), None);
         assert_eq!(parse(""), None);
+    }
+
+    /// A server on this machine that reads one request, sends `answer` and then keeps the
+    /// connection open without a word for `quiet`.
+    fn quiet_server(answer: &'static [u8], quiet: Duration) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/", listener.local_addr().unwrap());
+        std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let _ = stream.read(&mut [0; 4096]);
+            let _ = stream.write_all(answer);
+            std::thread::sleep(quiet);
+        });
+        url
+    }
+
+    #[test]
+    fn a_server_gone_quiet_fails_the_read_instead_of_holding_it() {
+        let reqwest = ReqwestClient::proxy_user_agent_and_read_timeout(
+            None,
+            "test",
+            Some(Duration::from_secs(1)),
+        )
+        .unwrap();
+        let client = SessionHttpClient::new(Arc::new(reqwest), TradeSession::default());
+        // Off tokio, as on GPUI's executors.
+        let read = |url: String| {
+            let started = Instant::now();
+            let body = block_on(async {
+                let mut response = client.get(&url, AsyncBody::default(), false).await?;
+                let mut body = String::new();
+                response.body_mut().read_to_string(&mut body).await?;
+                anyhow::Ok(body)
+            });
+            (body.ok(), started.elapsed())
+        };
+
+        let (whole, _) = read(quiet_server(
+            b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok",
+            Duration::ZERO,
+        ));
+        assert_eq!(whole.as_deref(), Some("ok"));
+        // Two of the ten bytes promised, then silence: the read gives up long before the server
+        // would hang up.
+        let (cut, waited) = read(quiet_server(
+            b"HTTP/1.1 200 OK\r\nContent-Length: 10\r\n\r\nok",
+            Duration::from_secs(10),
+        ));
+        assert_eq!(cut, None);
+        assert!(waited < Duration::from_secs(5), "waited {waited:?}");
     }
 }

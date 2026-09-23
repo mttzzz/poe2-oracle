@@ -31,10 +31,10 @@ removes the old one.
 2. Find **PoE2 Oracle** (publisher mttzzz) and choose **Uninstall**.
 3. If PoE2 Oracle is running, the uninstaller closes it.
 
-The uninstaller removes the program, its Start menu shortcut and its start-with-Windows entry.
-Your settings and the downloaded data stay, ready for a reinstall, unless you tick **Settings and
-cache**: "Also delete your settings and the downloaded price data. Leave unticked to keep them for
-a reinstall." Ticked, it deletes the folders `%APPDATA%\poe2-oracle` and
-`%LOCALAPPDATA%\poe2-oracle`, logs and saved item texts included.
+The uninstaller removes the program, its Start menu shortcut, its start-with-Windows entry and the
+saved pathofexile.com sign-in. Your settings and the downloaded data stay, ready for a reinstall,
+unless you tick **Settings and cache**: "Also delete your settings and the downloaded price data.
+Leave unticked to keep them for a reinstall." Ticked, it deletes the folders
+`%APPDATA%\poe2-oracle` and `%LOCALAPPDATA%\poe2-oracle`, logs and saved item texts included.
 
 To remove them later by hand, delete those two folders.

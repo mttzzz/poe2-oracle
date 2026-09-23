@@ -207,7 +207,7 @@ fn render_problem(problem: &Problem, cx: &Context<PriceCheckApp>) -> impl IntoEl
                     )))
                     .child(button(
                         "button",
-                        tr!("Report to the developer"),
+                        tr!("Report a problem"),
                         ButtonKind::Secondary,
                         fonts::interface_font(),
                         cx.listener(|view, _event: &MouseDownEvent, _window, cx| {

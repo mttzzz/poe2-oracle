@@ -1,7 +1,8 @@
 //! The report the player sends with a bug: one zip on their desktop holding this run's and the
 //! previous run's log, the settings, the kept item texts and a summary of the app and the system.
-//! The player's user folder is masked as `%USERPROFILE%` in every file: it's in each path the logs
-//! mention, and its last part is their Windows user name.
+//! What would name the player is masked in every file (`bug_report::Masker`): their Windows user
+//! name, and their user folder and the Desktop, Documents and AppData folders wherever Windows
+//! keeps them -- they're in each path the logs mention.
 
 use std::fs::{self, File};
 use std::io::Write as _;
@@ -26,6 +27,7 @@ use windows::core::{BOOL, PCWSTR, w};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
+use crate::bug_report::Masker;
 use crate::logging::{LOG_FILE, PREVIOUS_LOG_FILE};
 use crate::paths;
 use crate::platform::game_config::{self, DisplayMode, GameConfig};
@@ -43,7 +45,7 @@ pub fn write_report(app_summary: &str) -> Result<PathBuf> {
     fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
     let path = dir.join(format!("PoE2-Oracle-report-{}.zip", now.for_file_name()));
 
-    let masker = Masker::from_env();
+    let masker = Masker::for_this_user();
     let file = File::create(&path).with_context(|| format!("creating {}", path.display()))?;
     let mut zip = ZipWriter::new(file);
     let summary = format!(
@@ -85,7 +87,9 @@ pub fn reveal(path: &Path) {
         .raw_arg(format!("/select,\"{}\"", path.display()))
         .spawn();
     if let Err(err) = spawned {
-        log::warn!("opening Explorer at {} failed: {err}", path.display());
+        // The name only: the folder is the player's desktop.
+        let name = path.file_name().unwrap_or_default().display();
+        log::warn!("showing {name} in Explorer failed: {err}");
     }
 }
 
@@ -103,28 +107,6 @@ fn add_text(zip: &mut ZipWriter<File>, name: &str, text: &str) -> Result<()> {
         .with_context(|| format!("adding {name} to the report"))?;
     zip.write_all(text.as_bytes())
         .with_context(|| format!("writing {name} into the report"))
-}
-
-/// Replaces the player's user folder with `%USERPROFILE%`.
-struct Masker {
-    profile: Option<String>,
-}
-
-impl Masker {
-    fn from_env() -> Masker {
-        Masker {
-            profile: std::env::var("USERPROFILE")
-                .ok()
-                .filter(|profile| !profile.is_empty()),
-        }
-    }
-
-    fn mask(&self, text: &str) -> String {
-        match &self.profile {
-            Some(profile) => text.replace(profile.as_str(), "%USERPROFILE%"),
-            None => text.to_owned(),
-        }
-    }
 }
 
 /// Something in the player's setup that keeps checks from working: the settings window lists

@@ -3,6 +3,10 @@
 //! plain Win32 window of the app's. It is an ordinary window: not topmost, in the taskbar, closed by
 //! its × at any moment, the browser's start included.
 //!
+//! It has no address bar, and a sign-in goes through other sites' pages (Steam, PlayStation,
+//! Xbox), so its title names the host of the page it shows, page after page ([`page_title`]). It
+//! opens https pages only.
+//!
 //! WebView2 lives on the thread that creates it and answers through that thread's message loop:
 //! GPUI's main thread, which GPUI has already made an OLE single-threaded apartment. Nothing here
 //! waits for the browser: it starts, shows pages and reads cookies in completion handlers the loop
@@ -36,7 +40,8 @@ use webview2_com::Microsoft::Web::WebView2::Win32::{
 use webview2_com::{
     BrowserProcessExitedEventHandler, CreateCoreWebView2ControllerCompletedHandler,
     CreateCoreWebView2EnvironmentCompletedHandler, GetCookiesCompletedHandler,
-    NavigationCompletedEventHandler, NewWindowRequestedEventHandler, take_pwstr,
+    NavigationCompletedEventHandler, NavigationStartingEventHandler,
+    NewWindowRequestedEventHandler, SourceChangedEventHandler, take_pwstr,
 };
 use windows::Win32::Foundation::{
     E_POINTER, ERROR_CLASS_ALREADY_EXISTS, GetLastError, HINSTANCE, HWND, LPARAM, LRESULT, RECT,
@@ -52,9 +57,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
     BringWindowToTop, CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect,
     GetForegroundWindow, HICON, IDC_ARROW, IMAGE_ICON, IsIconic, LR_DEFAULTSIZE, LR_SHARED,
     LoadCursorW, LoadImageW, PostMessageW, RegisterClassExW, SIZE_MINIMIZED, SW_RESTORE, SW_SHOW,
-    SWP_NOACTIVATE, SWP_NOZORDER, SetForegroundWindow, SetWindowPos, ShowWindow, WINDOW_EX_STYLE,
-    WM_CLOSE, WM_DESTROY, WM_DPICHANGED, WM_MOVE, WM_SETFOCUS, WM_SIZE, WNDCLASSEXW,
-    WS_OVERLAPPEDWINDOW,
+    SWP_NOACTIVATE, SWP_NOZORDER, SetForegroundWindow, SetWindowPos, SetWindowTextW, ShowWindow,
+    WINDOW_EX_STYLE, WM_CLOSE, WM_DESTROY, WM_DPICHANGED, WM_MOVE, WM_SETFOCUS, WM_SIZE,
+    WNDCLASSEXW, WS_OVERLAPPEDWINDOW,
 };
 use windows::core::{HSTRING, Interface, PCWSTR, PWSTR, w};
 
@@ -135,7 +140,8 @@ pub fn open(page: &str, events: Sender<LoginEvent>) -> Result<()> {
     let id = LAST_ID.get() + 1;
     LAST_ID.set(id);
     let profile = paths::login_browser_dir().join(id.to_string());
-    let hwnd = create_window()?;
+    let title = page_title(page).context("the sign-in page has no host")?;
+    let hwnd = create_window(&title)?;
     LOGIN.set(Some(Login {
         hwnd,
         id,
@@ -301,6 +307,30 @@ fn show_login_page(
         }
         Ok(())
     }));
+    // A plain-http page could be anyone's along the way, and other schemes aren't sites at all.
+    let page_starting = NavigationStartingEventHandler::create(Box::new(|_, args| {
+        let Some(args) = args else {
+            return Ok(());
+        };
+        let mut uri = PWSTR::null();
+        // SAFETY: on success `uri` is a string the browser allocated; `take_pwstr` frees it.
+        unsafe {
+            args.Uri(&mut uri)?;
+            let uri = take_pwstr(uri);
+            if !is_https(&uri) {
+                let scheme = uri.split_once(':').map_or("", |(scheme, _)| scheme);
+                log::info!("the sign-in window refused a page that isn't https ({scheme})");
+                args.SetCancel(true)?;
+            }
+        }
+        Ok(())
+    }));
+    let page_changed = SourceChangedEventHandler::create(Box::new(move |webview, _| {
+        if let Some(webview) = webview {
+            show_page_host(id, &webview);
+        }
+        Ok(())
+    }));
     // What a page opens in a new window opens here instead: one window to close, and one browser
     // to wait for before the profile can go.
     let new_window = NewWindowRequestedEventHandler::create(Box::new(|webview, args| {
@@ -328,12 +358,14 @@ fn show_login_page(
         settings.SetAreDevToolsEnabled(false)?;
         settings.SetAreHostObjectsAllowed(false)?;
         settings.SetIsWebMessageEnabled(false)?;
-        // No SmartScreen: it would send Microsoft the address of every page, all of them
-        // pathofexile.com's or those of the services it signs in through.
+        // No SmartScreen: it would send Microsoft the address of every page the sign-in goes
+        // through. The title names each page's host, so the player sees where they are.
         if let Ok(settings) = settings.cast::<ICoreWebView2Settings8>() {
             settings.SetIsReputationCheckingRequired(false)?;
         }
         let mut token = 0;
+        webview.add_NavigationStarting(&page_starting, &mut token)?;
+        webview.add_SourceChanged(&page_changed, &mut token)?;
         webview.add_NavigationCompleted(&page_loaded, &mut token)?;
         webview.add_NewWindowRequested(&new_window, &mut token)?;
         webview.Navigate(page)?;
@@ -396,6 +428,42 @@ fn is_site_page(page: &str) -> bool {
                 .host_str()
                 .is_some_and(|host| host == "pathofexile.com" || host.ends_with(".pathofexile.com"))
     })
+}
+
+fn is_https(page: &str) -> bool {
+    Url::parse(page).is_ok_and(|url| url.scheme() == "https")
+}
+
+/// The window's title while it shows `page`: the page's host -- as the URL parser writes it, so
+/// a look-alike international name shows as its `xn--` form -- then what the window is for.
+fn page_title(page: &str) -> Option<HSTRING> {
+    let url = Url::parse(page).ok()?;
+    let host = url.host_str()?;
+    Some(HSTRING::from(tr!(
+        "{host} — PoE2 Oracle: signing in to pathofexile.com",
+        host = host
+    )))
+}
+
+/// Window `id` moved to another page: its title names that page's host.
+fn show_page_host(id: u64, webview: &ICoreWebView2) {
+    let Some(hwnd) = LOGIN.with_borrow(|login| {
+        login
+            .as_ref()
+            .filter(|login| login.id == id)
+            .map(|login| login.hwnd)
+    }) else {
+        return;
+    };
+    let mut source = PWSTR::null();
+    // SAFETY: on success `source` is a string the browser allocated; `take_pwstr` frees it.
+    if unsafe { webview.Source(&mut source) }.is_err() {
+        return;
+    }
+    if let Some(title) = page_title(&take_pwstr(source)) {
+        // SAFETY: a window this thread created and hasn't destroyed (it would have left `LOGIN`).
+        let _ = unsafe { SetWindowTextW(hwnd, &title) };
+    }
 }
 
 /// The values of the `POESESSID` cookies among `cookies`.
@@ -504,10 +572,10 @@ fn controller(hwnd: HWND) -> Option<ICoreWebView2Controller> {
     })
 }
 
-/// A top-level window for the view: centered on the monitor of the window in front (the settings
-/// window «Войти» was clicked in), `WIDTH` × `HEIGHT` at its scale but no larger than nine tenths
-/// of its work area.
-fn create_window() -> Result<HWND> {
+/// A top-level window for the view, titled `title`: centered on the monitor of the window in front
+/// (the settings window «Войти» was clicked in), `WIDTH` × `HEIGHT` at its scale but no larger
+/// than nine tenths of its work area.
+fn create_window(title: &HSTRING) -> Result<HWND> {
     // SAFETY: this module's own module handle.
     let instance = HINSTANCE::from(unsafe { GetModuleHandleW(None) }.context("GetModuleHandleW")?);
     let class = WNDCLASSEXW {
@@ -559,13 +627,12 @@ fn create_window() -> Result<HWND> {
     let (area_width, area_height) = (area.right - area.left, area.bottom - area.top);
     let width = ((WIDTH * scale) as i32).min(area_width * 9 / 10);
     let height = ((HEIGHT * scale) as i32).min(area_height * 9 / 10);
-    let title = HSTRING::from(tr!("PoE2 Oracle — sign in to pathofexile.com"));
     // SAFETY: the class is registered, and the strings outlive the call.
     unsafe {
         CreateWindowExW(
             WINDOW_EX_STYLE::default(),
             CLASS_NAME,
-            &title,
+            title,
             WS_OVERLAPPEDWINDOW,
             area.left + (area_width - width) / 2,
             area.top + (area_height - height) / 2,

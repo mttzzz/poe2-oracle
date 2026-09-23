@@ -22,6 +22,12 @@ semver = "1"
 # The installer is verified against the release's SHA256SUMS before it is ever started.
 sha2 = "0.10"
 
+[features]
+# Test builds only: the update check and its downloads may also use plain http on 127.0.0.1 -- a
+# local stand-in serving a test release (`LATEST_RELEASE_URL` in src/lib.rs has the recipe).
+# packaging/build-release.ps1 refuses to build a release with it.
+local-release-server = []
+
 [dev-dependencies]
 parking_lot = "0.12"
 tempfile = "3"
