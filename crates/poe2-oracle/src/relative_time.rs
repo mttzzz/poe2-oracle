@@ -1,11 +1,15 @@
-//! "N мин. назад"-style listing ages for the results table, from the trade API's `indexed`
-//! timestamps (`2026-09-20T04:31:02Z` -- UTC, whole seconds, verified live). Pure and not
-//! Windows-gated, so the native CI test pass covers it.
+//! "4 мин. назад" / "4 min ago" listing ages for the results table, from the trade API's `indexed`
+//! timestamps (`2026-09-20T04:31:02Z` -- UTC, whole seconds, verified live), in the interface
+//! language. Pure and not Windows-gated, so the native CI test pass covers it.
+
+use crate::{tr, tr_n};
 
 /// The age of a listing `indexed` at the given ISO-8601 UTC timestamp, as of `now_unix`, in the
-/// short Russian form `Intl.RelativeTimeFormat("ru", { style: "short" })` produces (the form
-/// EE2's Russian UI shows): `5 мин. назад`, `2 ч. назад`, `3 дн. назад`, `1 мес. назад`.
-/// `None` for a timestamp that isn't in the trade API's shape.
+/// interface language's short form: the Russian that `Intl.RelativeTimeFormat("ru", { style:
+/// "short" })` produces (the form EE2's Russian UI shows) -- `5 мин. назад`, `2 ч. назад`,
+/// `3 дн. назад`, `1 мес. назад` -- and the English one without its dots: `5 min ago`,
+/// `2 hr ago`, `3 days ago`, `1 mo ago`. `None` for a timestamp that isn't in the trade API's
+/// shape.
 pub fn listed_ago(indexed: &str, now_unix: i64) -> Option<String> {
     // A clock slightly behind the server's must not produce "in the future" ages.
     let elapsed = (now_unix - parse_utc(indexed)?).max(0);
@@ -13,12 +17,12 @@ pub fn listed_ago(indexed: &str, now_unix: i64) -> Option<String> {
     const HOUR: i64 = 60 * MINUTE;
     const DAY: i64 = 24 * HOUR;
     Some(match elapsed {
-        s if s < MINUTE => "только что".to_owned(),
-        s if s < HOUR => format!("{} мин. назад", s / MINUTE),
-        s if s < DAY => format!("{} ч. назад", s / HOUR),
-        s if s < 30 * DAY => format!("{} дн. назад", s / DAY),
-        s if s < 365 * DAY => format!("{} мес. назад", s / (30 * DAY)),
-        s => format!("{} г. назад", s / (365 * DAY)),
+        s if s < MINUTE => tr!("just now").to_owned(),
+        s if s < HOUR => tr!("{n} min ago", n = s / MINUTE),
+        s if s < DAY => tr!("{n} hr ago", n = s / HOUR),
+        s if s < 30 * DAY => tr_n!((s / DAY) as u64, "{n} day ago|{n} days ago"),
+        s if s < 365 * DAY => tr!("{n} mo ago", n = s / (30 * DAY)),
+        s => tr!("{n} yr ago", n = s / (365 * DAY)),
     })
 }
 
@@ -58,6 +62,7 @@ fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::i18n::{Lang, with_lang};
 
     #[test]
     fn parses_trade_timestamps_across_century_and_leap_days() {
@@ -68,19 +73,38 @@ mod tests {
         assert_eq!(parse_utc("2026-09-20T04:31:02Z"), Some(1_789_878_662));
     }
 
+    /// The age of a listing made `elapsed` seconds ago, in `lang`.
+    fn at(lang: Lang, elapsed: i64) -> String {
+        with_lang(lang, || {
+            listed_ago("2026-09-20T04:31:02Z", 1_789_878_662 + elapsed).unwrap()
+        })
+    }
+
     #[test]
     fn picks_the_largest_whole_unit() {
-        let indexed = "2026-09-20T04:31:02Z";
-        let at = |elapsed: i64| listed_ago(indexed, 1_789_878_662 + elapsed).unwrap();
-        assert_eq!(at(59), "только что");
-        assert_eq!(at(60), "1 мин. назад");
-        assert_eq!(at(3_599), "59 мин. назад");
-        assert_eq!(at(3_600), "1 ч. назад");
-        assert_eq!(at(2 * 86_400 + 5), "2 дн. назад");
-        assert_eq!(at(40 * 86_400), "1 мес. назад");
-        assert_eq!(at(400 * 86_400), "1 г. назад");
+        let russian = |elapsed| at(Lang::Russian, elapsed);
+        assert_eq!(russian(59), "только что");
+        assert_eq!(russian(60), "1 мин. назад");
+        assert_eq!(russian(3_599), "59 мин. назад");
+        assert_eq!(russian(3_600), "1 ч. назад");
+        assert_eq!(russian(2 * 86_400 + 5), "2 дн. назад");
+        assert_eq!(russian(21 * 86_400), "21 дн. назад");
+        assert_eq!(russian(40 * 86_400), "1 мес. назад");
+        assert_eq!(russian(400 * 86_400), "1 г. назад");
         // Local clock behind the server's.
-        assert_eq!(at(-30), "только что");
+        assert_eq!(russian(-30), "только что");
+    }
+
+    #[test]
+    fn speaks_english_with_its_own_plurals() {
+        let english = |elapsed| at(Lang::English, elapsed);
+        assert_eq!(english(59), "just now");
+        assert_eq!(english(4 * 60 + 30), "4 min ago");
+        assert_eq!(english(3_600), "1 hr ago");
+        assert_eq!(english(86_400), "1 day ago");
+        assert_eq!(english(21 * 86_400), "21 days ago");
+        assert_eq!(english(40 * 86_400), "1 mo ago");
+        assert_eq!(english(800 * 86_400), "2 yr ago");
     }
 
     #[test]

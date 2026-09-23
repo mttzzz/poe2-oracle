@@ -12,8 +12,8 @@ items sell for on the official trade site, with the item's modifiers as filters 
   Currency and other Currency Exchange items are priced from GGG's own record of the
   exchange's trades, with poe2scout's chart of the week; unique items also show poe2scout's price.
   A click copies the whisper to a seller.
-- **Waystone marks.** Mark waystone modifiers as dangerous, doubtful or wanted, and every waystone
-  you check shows them.
+- **Waystone marks.** Mark Waystone modifiers as danger, caution or wanted, and every Waystone you
+  check shows them.
 - **[Quick actions](quick-actions.md).** Hotkeys that send chat commands such as `/hideout` or paste
   a stash search.
 - **[XP overlay](xp-overlay.md).** Experience per hour and the time to the next level, above the
@@ -23,8 +23,11 @@ items sell for on the official trade site, with the item's modifiers as filters 
 
 ## Before you start
 
-- **The interface is in Russian.** This guide quotes every label as it appears in the app, in
-  «angle quotes», followed by its English meaning, for example «Поиск» (Search).
+- **The interface is in English or Russian.** By default it follows the game client's language,
+  or Windows' before the game has ever run; **Interface language** in the
+  [settings](settings.md#interface-language) changes it. This guide names the labels as the English
+  interface shows them, in **bold**. Item names, mod lines and league names keep the language the
+  game and the trade site give them.
 - You need Windows 10 or 11 (64-bit), the English or Russian game client, and the game in Windowed
   or Windowed Fullscreen mode. See [Install and first run](install.md).
 - PoE2 Oracle needs no account and sends no telemetry. See [Privacy](privacy.md).

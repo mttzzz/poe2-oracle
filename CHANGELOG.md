@@ -21,8 +21,8 @@ The first public release.
   double-click on the title bar puts it back next to the inventory or the stash.
 - **The price panel:** the item's name in its rarity colour, its art and links to poe2db and the
   wiki, and for an item you can craft, to Craft of Exile, which opens it with its base, item
-  level, rarity and mods (in the site's Russian interface for the Russian client); one filter row
-  per stat with min/max values, mod tier and source, pseudo totals, weapon DPS
+  level, rarity and mods (in the site's Russian interface when the app's interface is Russian);
+  one filter row per stat with min/max values, mod tier and source, pseudo totals, weapon DPS
   and defences; the cheapest listings, one page of 10 per search, with price, item level, seller
   and listing age; a price estimate with its range and confidence, and a warning when the listings
   look price-fixed. Prices are shown with currency icons. Hovering a listing shows it the way the
@@ -41,8 +41,8 @@ The first public release.
   chaos orbs, the week's chart and change, hourly volume, the most traded pair and the value of the
   copied stack. An item poe.ninja doesn't track in the league (common in small leagues such as
   Standard) shows poe2scout's price with a note saying so, and its trade listings are searched only
-  on «Лоты на площадке» (Trade listings); without a poe2scout price either, the trade site is
-  searched right away.
+  on **Trade site listings**; without a poe2scout price either, the trade site is searched right
+  away.
 - **Unique prices** from poe2scout, shown beside the trade search.
 - **Trade site limits kept:** after the trade site refuses a request (HTTP 429), nothing is sent to
   it until the lockout ends, and the panel says when to try again. The limit is per IP address and
@@ -64,15 +64,27 @@ The first public release.
   default, up to ±50 %), default sellers, seller column, interface scale (80 to 150 %), XP overlay,
   trade requests, start with Windows, update checks, bug reporting and the diagnostics report. It
   warns when the game runs in exclusive fullscreen or another program holds the item-copy
-  combination, and opens with a short welcome on the first launch.
+  combination.
+- **Guided tour** at launch, until finished or skipped, and again from Settings → Help →
+  **Tutorial**: the screen dims around one thing at a time, with a card beside it — the league in
+  the settings, a first price check in the game, the price panel's filters, Search, listings and
+  league, and the XP overlay. Next, Back and Skip tour on every card; a step that waits for the
+  player (the first check, a search) moves on by itself when it happens.
+- **English or Russian interface:** Settings → General → **Interface language**: **Auto** (the
+  game client's language; before the game's first run, Windows' display language), **Русский** or
+  **English**, applied at once, the tray menu included. Only the app's own words change: item
+  names and mods stay in the language the game copied them in. Numbers follow the interface
+  (`1.72` and `15%` in English, `1,72` and `15 %` in Russian), and so do the league names (as the
+  trade site in that language names them), the pathofexile.com sign-in page, Craft of Exile's
+  language and the GitHub forms the app fills in.
 - **Tray icon** with Settings, the update check, Report a bug and Quit. One copy runs per Windows
   session; starting it again opens the settings.
-- **Bug reports from the app:** «Сообщить об ошибке» (Report a bug), in the tray menu and the
-  settings, writes the diagnostics report to the desktop, shows it in Explorer and opens GitHub's
-  bug form with the version, the client language and the report's file name filled in. The
-  panel's «сообщить об ошибке ↗» link under the item name, and «Сообщить разработчику» under an
-  item the app couldn't read, open the item form with the item text filled in. The player submits
-  the form from their own GitHub account; the app sends nothing.
+- **Bug reports from the app:** **Report a bug**, in the tray menu and the settings, writes the
+  diagnostics report to the desktop, shows it in Explorer and opens GitHub's bug form with the
+  version, the client language and the report's file name filled in. The panel's **report a
+  problem ↗** link under the item name, and **Report to the developer** under an item the app
+  couldn't read, open the item form with the item text filled in. The player submits the form
+  from their own GitHub account; the app sends nothing.
 - **Updates** from GitHub Releases: the installer is downloaded, verified against the release's
   `SHA256SUMS`, installed silently, and the app restarts.
 - **Installer** for the current user, without administrator rights: Start menu shortcut, optional

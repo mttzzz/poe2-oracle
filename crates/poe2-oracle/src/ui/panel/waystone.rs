@@ -8,6 +8,7 @@ use stat_filters::{FilterTag, SearchFilter};
 
 use crate::price_check::PriceCheckApp;
 use crate::settings::WaystoneMark;
+use crate::tr;
 use crate::ui::style::{CARD_RADIUS, ease_hover};
 use crate::ui::theme::{
     BG_CARD, BORDER_CARD, GOLD_LIGHT, MARK_DANGER, MARK_WANTED, MARK_WARNING, TEXT_MUTED, blend,
@@ -49,9 +50,9 @@ pub(super) fn mark_color(mark: WaystoneMark) -> u32 {
 
 fn mark_label(mark: WaystoneMark) -> &'static str {
     match mark {
-        WaystoneMark::Danger => "Опасно:",
-        WaystoneMark::Warning => "Осторожно:",
-        WaystoneMark::Wanted => "Желанно:",
+        WaystoneMark::Danger => tr!("Danger:"),
+        WaystoneMark::Warning => tr!("Caution:"),
+        WaystoneMark::Wanted => tr!("Wanted:"),
     }
 }
 
@@ -136,11 +137,9 @@ pub(super) fn render_waystone_marks(
                     .child(div().min_w_0().child(text.clone()))
             }))
             .when(marked.is_empty(), |this| {
-                this.child(
-                    div()
-                        .text_color(rgb(TEXT_MUTED))
-                        .child("◇ в конце свойства — пометить его опасным, спорным или желанным"),
-                )
+                this.child(div().text_color(rgb(TEXT_MUTED)).child(tr!(
+                    "◇ at the end of a modifier marks it: danger, caution or wanted"
+                )))
             }),
     )
 }

@@ -8,10 +8,18 @@ the cheapest current listings from the official trade site. Currency and other C
 items are priced from GGG's own hourly record of the trades made on the exchange; poe2scout adds a
 chart of the week and prices uniques and exchange items that haven't traded lately. It is a native
 Windows program written in Rust with
-[GPUI](https://github.com/zed-industries/zed/tree/main/crates/gpui), without Electron, a browser
-engine or Overwolf.
+[GPUI](https://github.com/zed-industries/zed/tree/main/crates/gpui), without Electron or Overwolf;
+only signing in to pathofexile.com opens a page in Windows' own Edge component (WebView2).
 
-The app's own interface is in Russian. The game client can be English or Russian.
+The game has had a price check of its own since patch 0.5 (<kbd>Shift</kbd>+<kbd>Alt</kbd>+click):
+it opens the in-game market, in town or your hideout, with every modifier of the item as a filter.
+PoE2 Oracle works over the game anywhere, maps included, picks the modifiers that decide the price
+for you, prices currency from the exchange's own trade record, and adds an XP rate line and a few
+quick chat actions.
+
+The app's interface is in English and Russian: by default it follows the game client's language,
+and the settings can switch it. The game client can be English or Russian. A short tour shows the
+basics on the first launch.
 
 ![The price panel open next to the game inventory](docs/guide/src/images/hero.png)
 
@@ -23,12 +31,11 @@ The app's own interface is in Russian. The game client can be English or Russian
   how long ago it was listed. Searches go to www.pathofexile.com or ru.pathofexile.com, matching
   the language of the item. `Esc` closes the panel.
 - **Search profiles** set up which stats are searched and how far below your rolls, as PoE Overlay
-  II's do: «Быстрая цена» (Quick Price: up to four of the most valuable stats, picked by PoE
-  Overlay II's scoring of tier, tags and roll), «Точное совпадение» (Exact Match), «Широкий −10 %»
-  (Broad) and «База для крафта» (Crafting Base). A modifier row's slider spans its rolls across all
-  tiers, and its tier badge tells the item level the tier needs and the best tier the item's level
-  allows. When nothing is found, the panel offers a broader search instead of spending the trade
-  site's limit on its own.
+  II's do: **Quick price** (up to four of the most valuable stats, picked by PoE Overlay II's
+  scoring of tier, tags and roll), **Exact match**, **Broad −10%** and **Crafting base**. A
+  modifier row's slider spans its rolls across all tiers, and its tier badge tells the item level
+  the tier needs and the best tier the item's level allows. When nothing is found, the panel offers
+  a broader search instead of spending the trade site's limit on its own.
 - **Search chips** narrow or widen the search with one click: the item's base type or its whole
   class, its rarity (a magic item is compared with magic items, a rare with every non-unique item),
   corrupted listings in or out, every stat or none, which sellers to include (instant buyout only by
@@ -40,10 +47,10 @@ The app's own interface is in Russian. The game client can be English or Russian
   for the last complete hour (up to three for a rarely traded item; the card names the hours),
   poe2scout's chart of the week, the hourly volume and what the copied stack is worth. When an item
   hasn't traded in your league in the last hours (common in small leagues such as Standard), the
-  panel shows poe2scout's price instead and searches the trade site only when you press «Лоты на
-  площадке» (Trade listings), since every search counts against the trade site's limit. Without a
+  panel shows poe2scout's price instead and searches the trade site only when you press
+  **Trade site listings**, since every search counts against the trade site's limit. Without a
   poe2scout price either, the trade site is searched right away.
-- **Waystones.** Click the ◇ at the end of a modifier to mark it as dangerous, doubtful or wanted;
+- **Waystones.** Click the ◇ at the end of a modifier to mark it as danger, caution or wanted;
   the marks are remembered and highlighted on every waystone you check.
 - **Vendor gamble offers** are recognised: the panel says the item is only revealed after buying
   instead of searching for it.
@@ -80,14 +87,15 @@ PoE2 Oracle → Uninstall. Your settings and downloaded price data are kept unle
 
 ## First run
 
-1. The settings window opens with a short welcome. After that the app runs in the background: its
-   icon is in the notification area next to the clock, sometimes behind the "Show hidden icons"
-   arrow. Its menu has **Настройки** (Settings), **Проверить обновления** (Check for updates),
-   **Сообщить об ошибке** (Report a bug) and **Выход** (Quit).
+1. A short guided tour starts in the settings window, at the league, and walks you through a first
+   price check, the price panel and the XP overlay; skip it any time, and replay it from Settings →
+   Help → **Tutorial**. The app runs in the background: its icon is in the notification area next
+   to the clock, sometimes behind the "Show hidden icons" arrow. Its menu has **Settings**,
+   **Check for updates**, **Report a bug** and **Quit**.
 2. In the game's graphics options, set the display mode to Windowed Fullscreen.
 3. Hover an item in the game and press `Ctrl+E`. Right after the first launch the app spends a few
-   seconds downloading the trade site's catalogs; until then the panel says «Загрузка каталога…»
-   (Loading catalog).
+   seconds downloading the trade site's catalogs; until then the panel says "Loading trade site
+   data…".
 
 Good to know:
 
@@ -112,14 +120,13 @@ The full guide, with every setting explained, is at
 The quickest way is from the app itself. It fills in the form for you, and you submit it from your
 own GitHub account; the app sends nothing by itself.
 
-- **Сообщить об ошибке** (Report a bug) in the tray menu, or **Сообщить ↗** in the **Помощь**
-  (Help) section of the settings, saves a diagnostics report to your desktop (a zip with
-  the logs and settings, your Windows user name masked), shows it in Explorer and opens the bug
-  form with the version, the client language and the report's file name filled in. Drag the zip
-  into the form.
-- **сообщить об ошибке ↗** under the item name on the price panel, or **Сообщить разработчику**
-  (Tell the developer) in the message about an item the app couldn't read, opens the item form
-  with the item text filled in.
+- **Report a bug** in the tray menu, or **Report ↗** in the **Help** section of the settings, saves
+  a diagnostics report to your desktop (a zip with the logs and settings, your Windows user name
+  masked), shows it in Explorer and opens the bug form with the version, the client language and
+  the report's file name filled in. Drag the zip into the form.
+- **report a problem ↗** under the item name on the price panel, or **Report to the developer** in
+  the message about an item the app couldn't read, opens the item form with the item text filled
+  in.
 
 You can also open a form yourself:
 
@@ -133,11 +140,10 @@ For an item problem, paste the item text: hover the item in the game, press `Ctr
 paste into the form. Never post passwords or session cookies. Security problems go through private
 reporting, see [SECURITY.md](SECURITY.md).
 
-If searches stop with «Сайт торговли временно ограничил поиск» (the trade site has temporarily
-restricted searching), you have hit the trade site's limit on requests from one IP address, which
-is shared with the trade site open in your browser. After the site refuses a request, the app sends
-it nothing until the lockout ends: wait for the time the panel shows and try again. Currency
-Exchange prices keep working meanwhile.
+If searches stop with "The trade site has limited searches for a while", you have hit the trade
+site's limit on requests from one IP address, which is shared with the trade site open in your
+browser. After the site refuses a request, the app sends it nothing until the lockout ends: wait
+for the time the panel shows and try again. Currency Exchange prices keep working meanwhile.
 
 ## Privacy
 

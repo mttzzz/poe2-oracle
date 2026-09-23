@@ -2,27 +2,36 @@
 //! number formats. Game text keeps the language it arrives in: item names and mod lines as the
 //! client copied them, league names as the trade site gives them.
 //!
-//! The words are written in English in the code and translated through one table per language,
-//! as EE2's `app_i18n.json`: `assets/i18n/ru.json` maps each English text to its Russian. A new
-//! language is a new table, not a code change.
+//! The words are written in English in the code and translated through tables, as EE2's
+//! `app_i18n.json`: `assets/i18n/ru/*.json` map each English text to its Russian, one file per
+//! area of the app (settings, panel, overlays, tour) so a change to one area touches one file. A
+//! new language is new tables, not a code change.
 //!
 //! - [`tr!`]`("Search")` is the text in the interface language, and
 //!   `tr!("Found: {count}", count = total)` fills in named placeholders.
 //! - [`tr_n!`]`(total, "{n} listing|{n} listings")` also picks the plural form for the count:
 //!   English has two forms, `|`-separated; Russian's table entry has three
 //!   (`"{n} лот|{n} лота|{n} лотов"`). `{n}` is the count.
-//! - [`decimal`] writes a number with the language's decimal separator.
+//! - [`decimal`] writes a number with the language's decimal separator; [`number`] and
+//!   [`compact`] write prices and rates the way the panel shows them, [`integer`] a count,
+//!   [`percent`] a percentage, [`duration`] and [`duration_secs`] a length of time, [`day_month`]
+//!   a date.
 //!
-//! A test reads every `tr!`/`tr_n!` in the sources and checks that each has a Russian text, that
-//! the table holds nothing else, and that every placeholder survives the translation.
+//! A test reads every `tr!`/`tr_n!` in the sources and checks that each has a Russian text in
+//! exactly one file, that the tables hold nothing else, and that every placeholder survives the
+//! translation.
 //!
 //! One process-wide language, read anywhere without a context through [`lang`]. [`apply`] sets it
-//! from the settings on start and on every change; the windows then redraw.
+//! from the settings on start and on every change; the windows then redraw. A test speaks either
+//! language on its own thread through `with_lang`.
 
 use std::collections::HashMap;
 use std::fmt::{Display, Write as _};
 use std::sync::LazyLock;
 use std::sync::atomic::{AtomicU8, Ordering};
+use std::time::Duration;
+
+use trade_client::TradeSite;
 
 use crate::settings::InterfaceLanguage;
 
@@ -39,6 +48,15 @@ impl Lang {
         match self {
             Lang::Russian => "ru",
             Lang::English => "en",
+        }
+    }
+
+    /// The trade site in this language, where the interface's league names come from:
+    /// `ru.pathofexile.com` for Russian, `www` for English.
+    pub fn trade_site(self) -> TradeSite {
+        match self {
+            Lang::Russian => TradeSite::Russian,
+            Lang::English => TradeSite::International,
         }
     }
 
@@ -64,12 +82,33 @@ static CURRENT: AtomicU8 = AtomicU8::new(0);
 
 /// The language the app's words are in now.
 pub fn lang() -> Lang {
+    #[cfg(test)]
+    if let Some(lang) = TEST_LANG.get() {
+        return lang;
+    }
     match CURRENT.load(Ordering::Relaxed) {
         0 => Lang::Russian,
         _ => Lang::English,
     }
 }
 
+#[cfg(test)]
+thread_local! {
+    /// The language [`with_lang`] makes a test's thread speak, whatever the process-wide one is.
+    static TEST_LANG: std::cell::Cell<Option<Lang>> = const { std::cell::Cell::new(None) };
+}
+
+/// `f`'s result with this thread speaking `lang`: the tests run in parallel, and one checking the
+/// English words must not flip the language under another checking the Russian ones.
+#[cfg(test)]
+pub fn with_lang<T>(lang: Lang, f: impl FnOnce() -> T) -> T {
+    let previous = TEST_LANG.replace(Some(lang));
+    let result = f();
+    TEST_LANG.set(previous);
+    result
+}
+
+#[cfg(target_os = "windows")]
 fn set_lang(lang: Lang) {
     let value = match lang {
         Lang::Russian => 0,
@@ -99,16 +138,36 @@ pub fn resolve(
     }
 }
 
-/// Makes `choice` the app's language: [`resolve`]d against the game's config and the Windows
-/// display language as they are now. Whether the language changed -- the windows need a redraw
-/// then.
+/// What «Авто» stands for now: the game client's language from its config, or -- before the
+/// game's first run -- the Windows display language ([`resolve`]).
 #[cfg(target_os = "windows")]
-pub fn apply(choice: InterfaceLanguage) -> bool {
+pub fn auto() -> Lang {
+    let (game_language, windows_is_russian) = system_languages();
+    resolve(
+        InterfaceLanguage::Auto,
+        game_language.as_deref(),
+        windows_is_russian,
+    )
+}
+
+/// The game client's language as its config names it, and whether the Windows display language
+/// is Russian: what «Авто» goes by.
+#[cfg(target_os = "windows")]
+fn system_languages() -> (Option<String>, bool) {
     let game_language = crate::platform::game_config::read().language;
     // `GetUserDefaultUILanguage` is the display language; its low 10 bits are the primary
     // language, and 0x19 is LANG_RUSSIAN (`winnt.h`).
     let windows_is_russian =
         unsafe { windows::Win32::Globalization::GetUserDefaultUILanguage() } & 0x3ff == 0x19;
+    (game_language, windows_is_russian)
+}
+
+/// Makes `choice` the app's language: [`resolve`]d against the game's config and the Windows
+/// display language as they are now. Whether the language changed -- the windows need a redraw
+/// then.
+#[cfg(target_os = "windows")]
+pub fn apply(choice: InterfaceLanguage) -> bool {
+    let (game_language, windows_is_russian) = system_languages();
     let new = resolve(choice, game_language.as_deref(), windows_is_russian);
     let changed = new != lang();
     set_lang(new);
@@ -118,11 +177,26 @@ pub fn apply(choice: InterfaceLanguage) -> bool {
     changed
 }
 
-/// The Russian table: English text -> Russian text.
-static RUSSIAN: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
-    serde_json::from_str(include_str!("../assets/i18n/ru.json"))
-        .expect("assets/i18n/ru.json is a JSON object of strings")
-});
+/// The Russian tables, each area's file as (its name, its JSON).
+const RUSSIAN_FILES: [(&str, &str); 4] = [
+    ("settings", include_str!("../assets/i18n/ru/settings.json")),
+    ("panel", include_str!("../assets/i18n/ru/panel.json")),
+    ("overlays", include_str!("../assets/i18n/ru/overlays.json")),
+    ("tour", include_str!("../assets/i18n/ru/tour.json")),
+];
+
+/// Each Russian table's entries, by file: English text -> Russian text.
+fn russian_files() -> impl Iterator<Item = (&'static str, HashMap<String, String>)> {
+    RUSSIAN_FILES.into_iter().map(|(name, json)| {
+        let entries = serde_json::from_str(json)
+            .unwrap_or_else(|err| panic!("assets/i18n/ru/{name}.json: {err}"));
+        (name, entries)
+    })
+}
+
+/// The Russian tables merged: English text -> Russian text.
+static RUSSIAN: LazyLock<HashMap<String, String>> =
+    LazyLock::new(|| russian_files().flat_map(|(_, entries)| entries).collect());
 
 /// `english` in the current language: itself in English; its table entry otherwise, or the
 /// English again when the table misses it (the sources test keeps that from shipping).
@@ -171,11 +245,159 @@ pub fn fill(template: &str, args: &[(&str, &dyn Display)]) -> String {
 /// `value` with `places` decimals and the language's separator: `15,1` in Russian, `15.1` in
 /// English.
 pub fn decimal(value: f64, places: usize) -> String {
-    let text = format!("{value:.places$}");
+    separated(format!("{value:.places$}"))
+}
+
+/// `text`, a number Rust wrote, with the language's decimal separator.
+fn separated(text: String) -> String {
     match lang() {
         Lang::English => text,
         Lang::Russian => text.replace('.', ","),
     }
+}
+
+/// A price or a rate the way the panel writes it (PoE Overlay II's style): trailing zeros
+/// dropped, two decimals under 10, one under 100, none above -- `1,72`, `20,2`, `350` -- and two
+/// significant digits below 1, so a cheap currency never reads as zero: `0,15`, `0,0041`. The
+/// language's decimal separator (`1.72` in English).
+pub fn number(value: f64) -> String {
+    let places = if value >= 100.0 {
+        0
+    } else if value >= 10.0 {
+        1
+    } else if value >= 1.0 || value <= 0.0 {
+        2
+    } else {
+        (1 - value.log10().floor() as i32).clamp(2, 8) as usize
+    };
+    let fixed = format!("{value:.places$}");
+    let trimmed = if fixed.contains('.') {
+        fixed.trim_end_matches('0').trim_end_matches('.')
+    } else {
+        &fixed
+    };
+    separated(trimmed.to_owned())
+}
+
+/// A [`number`] in short form: `891`, `4,1k`, `159k`, `1,2M` (`4.1k` in English).
+pub fn compact(value: f64) -> String {
+    if value >= 1e6 {
+        format!("{}M", number(value / 1e6))
+    } else if value >= 1e3 {
+        format!("{}k", number(value / 1e3))
+    } else {
+        number(value)
+    }
+}
+
+/// A count, such as a search's matches: English groups its thousands, `12,345`; the Russian
+/// interface writes the digits alone, `12345`, as it always has.
+pub fn integer(value: u64) -> String {
+    let digits = value.to_string();
+    match lang() {
+        Lang::Russian => digits,
+        Lang::English => {
+            let mut out = String::with_capacity(digits.len() + digits.len() / 3);
+            for (index, digit) in digits.chars().enumerate() {
+                if index > 0 && (digits.len() - index).is_multiple_of(3) {
+                    out.push(',');
+                }
+                out.push(digit);
+            }
+            out
+        }
+    }
+}
+
+/// A day of the year without its year: `22.09` in Russian, `Sep 22` in English.
+pub fn day_month(day: u16, month: u16) -> String {
+    const MONTHS: [&str; 12] = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+    match lang() {
+        Lang::Russian => format!("{day:02}.{month:02}"),
+        Lang::English => match MONTHS.get(usize::from(month).wrapping_sub(1)) {
+            Some(name) => format!("{name} {day}"),
+            None => format!("{month}/{day}"),
+        },
+    }
+}
+
+/// `value`, a number already written, as a percentage: Russian spaces the sign off, `15,1 %`;
+/// English doesn't, `15.1%`.
+pub fn percent(value: impl Display) -> String {
+    match lang() {
+        Lang::Russian => format!("{value} %"),
+        Lang::English => format!("{value}%"),
+    }
+}
+
+/// A time to level or a pause's length, to the nearest minute, in its two largest units:
+/// `1 ч 32 мин`, `45 мин`, `2 д 3 ч`, `1 д`, `< 1 мин` in Russian; `1h 32m`, `45m`, `2d 3h`,
+/// `1d`, `<1m` in English.
+pub fn duration(duration: Duration) -> String {
+    let minutes = (duration.as_secs_f64() / 60.0).round() as u64;
+    let hours = minutes / 60;
+    match minutes {
+        0 => match lang() {
+            Lang::Russian => "< 1 мин".to_owned(),
+            Lang::English => "<1m".to_owned(),
+        },
+        1..60 => units(&[(minutes, TimeUnit::Minute)]),
+        _ if hours < 24 => units(&[(hours, TimeUnit::Hour), (minutes % 60, TimeUnit::Minute)]),
+        _ => units(&[(hours / 24, TimeUnit::Day), (hours % 24, TimeUnit::Hour)]),
+    }
+}
+
+/// A wait to the second, in minutes and seconds: `45 с`, `10 мин`, `9 мин 50 с` in Russian;
+/// `45s`, `10m`, `9m 50s` in English.
+pub fn duration_secs(secs: u64) -> String {
+    match secs / 60 {
+        0 => units(&[(secs, TimeUnit::Second)]),
+        minutes => units(&[(minutes, TimeUnit::Minute), (secs % 60, TimeUnit::Second)]),
+    }
+}
+
+/// A unit a length of time is counted in.
+#[derive(Clone, Copy)]
+enum TimeUnit {
+    Day,
+    Hour,
+    Minute,
+    Second,
+}
+
+impl TimeUnit {
+    /// What follows a count of it: Russian's short word after a space, English's letter.
+    fn suffix(self, lang: Lang) -> &'static str {
+        match (lang, self) {
+            (Lang::Russian, TimeUnit::Day) => " д",
+            (Lang::Russian, TimeUnit::Hour) => " ч",
+            (Lang::Russian, TimeUnit::Minute) => " мин",
+            (Lang::Russian, TimeUnit::Second) => " с",
+            (Lang::English, TimeUnit::Day) => "d",
+            (Lang::English, TimeUnit::Hour) => "h",
+            (Lang::English, TimeUnit::Minute) => "m",
+            (Lang::English, TimeUnit::Second) => "s",
+        }
+    }
+}
+
+/// `parts`, largest first, each count with its unit, space-separated; a part after the first that
+/// counts zero is left out: `1 ч`, not `1 ч 0 мин`.
+fn units(parts: &[(u64, TimeUnit)]) -> String {
+    let lang = lang();
+    let mut out = String::new();
+    for (index, &(count, unit)) in parts.iter().enumerate() {
+        if index > 0 && count == 0 {
+            continue;
+        }
+        if !out.is_empty() {
+            out.push(' ');
+        }
+        let _ = write!(out, "{count}{}", unit.suffix(lang));
+    }
+    out
 }
 
 /// The app's words in the interface language (see the module doc): `tr!("Search")` is a
@@ -302,12 +524,20 @@ mod tests {
         let unused: Vec<_> = table.difference(&keys).collect();
         assert!(
             missing.is_empty(),
-            "no Russian text in assets/i18n/ru.json for {missing:#?}"
+            "no Russian text in assets/i18n/ru/*.json for {missing:#?}"
         );
         assert!(
             unused.is_empty(),
-            "assets/i18n/ru.json holds texts no code uses: {unused:#?}"
+            "assets/i18n/ru/*.json hold texts no code uses: {unused:#?}"
         );
+        let mut seen: HashMap<String, &str> = HashMap::new();
+        for (file, entries) in russian_files() {
+            for english in entries.into_keys() {
+                if let Some(first) = seen.insert(english.clone(), file) {
+                    panic!("{english:?} is in both ru/{first}.json and ru/{file}.json");
+                }
+            }
+        }
     }
 
     #[test]
@@ -430,5 +660,71 @@ mod tests {
         );
         assert_eq!(fill("no braces", &args), "no braces");
         assert_eq!(fill("{count}", &args), "214");
+    }
+
+    /// What `f` writes in Russian, then in English.
+    fn in_both(f: impl Fn() -> String) -> (String, String) {
+        (with_lang(Lang::Russian, &f), with_lang(Lang::English, &f))
+    }
+
+    #[test]
+    fn numbers_take_each_languages_separator_and_percent_sign() {
+        assert_eq!(
+            in_both(|| [1.72, 20.24, 350.4, 0.15, 0.0041, 3.0, 0.0]
+                .map(number)
+                .join(" ")),
+            (
+                "1,72 20,2 350 0,15 0,0041 3 0".to_owned(),
+                "1.72 20.2 350 0.15 0.0041 3 0".to_owned()
+            )
+        );
+        assert_eq!(
+            in_both(|| [891.0, 4_120.0, 159_000.0, 1_240_000.0]
+                .map(compact)
+                .join(" ")),
+            (
+                "891 4,12k 159k 1,24M".to_owned(),
+                "891 4.12k 159k 1.24M".to_owned()
+            )
+        );
+        assert_eq!(
+            in_both(|| percent(decimal(15.06, 1))),
+            ("15,1 %".to_owned(), "15.1%".to_owned())
+        );
+        assert_eq!(
+            in_both(|| [7, 999, 1_000, 12_345, 1_234_567].map(integer).join(" ")),
+            (
+                "7 999 1000 12345 1234567".to_owned(),
+                "7 999 1,000 12,345 1,234,567".to_owned()
+            )
+        );
+        assert_eq!(
+            in_both(|| format!("{} · {}", day_month(22, 9), day_month(1, 12))),
+            ("22.09 · 01.12".to_owned(), "Sep 22 · Dec 1".to_owned())
+        );
+    }
+
+    #[test]
+    fn durations_keep_their_two_largest_units() {
+        let minutes = |secs: u64| duration(Duration::from_secs(secs));
+        assert_eq!(
+            in_both(
+                || [20, 45 * 60, 92 * 60, 3588, 26 * 3600 + 10 * 60, 48 * 3600]
+                    .map(minutes)
+                    .join(" · ")
+            ),
+            (
+                "< 1 мин · 45 мин · 1 ч 32 мин · 1 ч · 1 д 2 ч · 2 д".to_owned(),
+                "<1m · 45m · 1h 32m · 1h · 1d 2h · 2d".to_owned()
+            ),
+            "59.8 minutes round up to a whole hour, not 60 minutes"
+        );
+        assert_eq!(
+            in_both(|| [45, 600, 590].map(duration_secs).join(" · ")),
+            (
+                "45 с · 10 мин · 9 мин 50 с".to_owned(),
+                "45s · 10m · 9m 50s".to_owned()
+            )
+        );
     }
 }

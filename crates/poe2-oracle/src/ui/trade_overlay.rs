@@ -19,7 +19,6 @@ use gpui::{
     MouseDownEvent, Render, WeakEntity, Window, WindowBounds, WindowKind, WindowOptions, div,
     linear_color_stop, linear_gradient, point, prelude::*, px, relative, rgb, size,
 };
-use trade_client::TradeSite;
 use windows::Win32::System::SystemInformation::GetLocalTime;
 
 use crate::live_search::{LiveCard, LiveListing, SHOWN_LISTINGS};
@@ -29,7 +28,7 @@ use crate::platform::win32::Win32Overlay;
 use crate::price_check::PriceCheckApp;
 use crate::settings::Settings;
 use crate::ui::fonts;
-use crate::ui::panel::format::{currency_img, format_ru};
+use crate::ui::panel::format::currency_img;
 use crate::ui::style::{
     ButtonKind, CARD_RADIUS, appear, game_frame, game_hint, heading, icon_button, small_button,
     tooltip_shadow,
@@ -38,6 +37,7 @@ use crate::ui::theme::{
     BASE_REM_SIZE, BG_CARD, BG_PANEL, BORDER_CARD, GOLD, GOLD_LIGHT, PRICE_RISE, TEXT, TEXT_DIM,
     TEXT_MUTED, TEXT_WARNING, blend, rems_from_px,
 };
+use crate::{i18n, tr};
 
 const POLL_INTERVAL: Duration = Duration::from_secs(1);
 /// The window's logical width, a card's height, the gap between cards and the frame's padding --
@@ -50,8 +50,6 @@ const PADDING: f32 = 12.;
 const ACCENT_GLOW: f32 = 0.08;
 /// Room the card's title leaves at its right for the ×, at 100 % scale.
 const DISMISS_ROOM: f32 = 24.;
-const WHISPER_HINT: &str =
-    "Сообщение продавцу — в буфер обмена: вставьте его в чат игры и отправьте сами";
 /// Where the window's top sits below the game's, as a share of the game's height: under the top
 /// edge's boss bar and area banner.
 const TOP: f64 = 0.1;
@@ -106,7 +104,7 @@ pub fn open(
     cx: &mut App,
 ) -> anyhow::Result<Entity<TradeOverlay>> {
     let window = cx.open_window(window_options(), |window, cx| {
-        window.set_window_title("PoE2 Oracle — торговля");
+        window.set_window_title(tr!("PoE2 Oracle — Trade"));
         cx.new(|_| TradeOverlay {
             live: Vec::new(),
             next_id: 0,
@@ -337,7 +335,7 @@ impl TradeOverlay {
         cx: &Context<Self>,
     ) -> impl IntoElement {
         let id = shown.id;
-        let face = fonts::name_font(TradeSite::Russian);
+        let face = fonts::interface_font();
         let header = |title: String, color: u32| {
             div()
                 .flex()
@@ -378,17 +376,26 @@ impl TradeOverlay {
                     .as_ref()
                     .map(|(amount, currency)| price_tag(*amount, currency, icon));
                 let whisper = if listing.whisper.is_none() {
-                    status_note("мгновенный выкуп", TEXT_DIM).into_any_element()
+                    status_note(tr!("Instant Buyout listing"), TEXT_DIM).into_any_element()
                 } else if shown.copied {
-                    status_note("Скопировано ✓", PRICE_RISE).into_any_element()
+                    status_note(tr!("Copied ✓"), PRICE_RISE).into_any_element()
                 } else {
                     div()
                         .id(("whisper", id))
                         .flex_none()
-                        .tooltip(game_hint(face, None, vec![(WHISPER_HINT.into(), TEXT)]))
+                        .tooltip(game_hint(
+                            face,
+                            None,
+                            vec![(
+                                tr!("Copies the whisper to the seller: paste it into the game \
+                                     chat and send it yourself")
+                                .into(),
+                                TEXT,
+                            )],
+                        ))
                         .child(small_button(
                             ("copy-whisper", id),
-                            "Скопировать шёпот",
+                            tr!("Copy whisper"),
                             ButtonKind::Secondary,
                             face,
                             cx.listener(move |view, _: &MouseDownEvent, _, cx| {
@@ -401,7 +408,10 @@ impl TradeOverlay {
                 // Its three rows spread over the card, what they leave shared between them.
                 card(GOLD)
                     .justify_between()
-                    .child(header(format!("Слежение · {}", listing.search), GOLD_LIGHT))
+                    .child(header(
+                        tr!("Live search · {search}", search = listing.search),
+                        GOLD_LIGHT,
+                    ))
                     .child(
                         div()
                             .flex()
@@ -432,7 +442,7 @@ impl TradeOverlay {
                                         div()
                                             .flex_none()
                                             .text_color(rgb(TEXT_MUTED))
-                                            .child("продаёт"),
+                                            .child(tr!("sold by")),
                                     )
                                     .child(
                                         div()
@@ -445,7 +455,7 @@ impl TradeOverlay {
                             .child(whisper)
                             .child(small_button(
                                 ("open-site", id),
-                                "Открыть на сайте",
+                                tr!("Open on trade site"),
                                 ButtonKind::Secondary,
                                 face,
                                 move |_: &MouseDownEvent, _: &mut Window, cx: &mut App| {
@@ -456,14 +466,14 @@ impl TradeOverlay {
             }
             LiveCard::Ended { label, reason } => card(TEXT_WARNING)
                 .child(header(
-                    format!("Слежение остановлено · {label}"),
+                    tr!("Live search ended · {label}", label = label),
                     TEXT_WARNING,
                 ))
                 .child(
                     div()
                         .text_size(rems_from_px(12.))
                         .text_color(rgb(TEXT_DIM))
-                        .child(format!("Причина: {reason}.")),
+                        .child(tr!("Reason: {reason}.", reason = reason)),
                 ),
         };
         appear(("card", id), card.child(dismiss))
@@ -516,7 +526,7 @@ fn price_tag(amount: f64, currency: &str, icon: Option<String>) -> impl IntoElem
         .text_size(rems_from_px(15.))
         .text_color(rgb(TEXT))
         .font_weight(FontWeight::SEMIBOLD)
-        .child(format_ru(amount))
+        .child(i18n::number(amount))
         .children(currency_img(icon.as_deref(), 20.))
         .children(name)
 }

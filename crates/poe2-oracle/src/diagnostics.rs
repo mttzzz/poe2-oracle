@@ -30,6 +30,7 @@ use crate::logging::{LOG_FILE, PREVIOUS_LOG_FILE};
 use crate::paths;
 use crate::platform::game_config::{self, DisplayMode, GameConfig};
 use crate::platform::{game_window, synth_input};
+use crate::tr;
 
 /// Writes the report and returns where it went: the desktop, or the log folder without one.
 /// `app_summary` is the app's own state (league, catalogs, hotkey, ...), gathered by the caller
@@ -126,25 +127,45 @@ impl Masker {
     }
 }
 
-/// What in the player's setup keeps checks from working, worded for the player: the settings
-/// window lists these at its top, and the report carries them too.
-pub fn setup_problems(config: &GameConfig) -> Vec<String> {
+/// Something in the player's setup that keeps checks from working: the settings window lists
+/// these at its top, and the report carries them too.
+pub enum SetupProblem {
+    /// The game runs in exclusive Fullscreen, over which nothing shows.
+    Fullscreen,
+    /// Another program holds the combination the game copies items with, as the player reads it.
+    CopyComboTaken(String),
+}
+
+impl SetupProblem {
+    /// The problem worded for the player, in the interface language.
+    pub fn text(&self) -> String {
+        match self {
+            SetupProblem::Fullscreen => tr!(
+                "The game runs in “Fullscreen” mode: the panel can't show over it. Choose \
+                 “Windowed Fullscreen” in the game's graphics options."
+            )
+            .to_owned(),
+            SetupProblem::CopyComboTaken(combo) => tr!(
+                "{combo}, which the game copies items with, is taken by another program — price \
+                 checks won't work until it's freed (most often a graphics card overlay, screen \
+                 recording or Discord).",
+                combo = combo
+            ),
+        }
+    }
+}
+
+/// What in the player's setup keeps checks from working.
+pub fn setup_problems(config: &GameConfig) -> Vec<SetupProblem> {
     let mut problems = Vec::new();
     if config.display_mode == Some(DisplayMode::Fullscreen) {
-        problems.push(
-            "Игра в режиме «Полноэкранный»: поверх него панель не видна. Выберите в настройках \
-             графики игры режим «Оконный полноэкранный»."
-                .to_owned(),
-        );
+        problems.push(SetupProblem::Fullscreen);
     }
     let copy_key = VIRTUAL_KEY(config.advanced_mod_desc_key);
     if synth_input::copy_combo_taken(copy_key) {
-        problems.push(format!(
-            "Сочетание {}, которым игра копирует предмет, занято другой программой — проверка \
-             цены не сработает, пока его не освободить (чаще всего это оверлей видеокарты, запись \
-             экрана или Discord).",
-            synth_input::copy_combo_label(copy_key)
-        ));
+        problems.push(SetupProblem::CopyComboTaken(synth_input::copy_combo_label(
+            copy_key,
+        )));
     }
     problems
 }
@@ -182,7 +203,7 @@ fn system_summary() -> String {
         config.advanced_mod_desc_key
     );
     for problem in setup_problems(&config) {
-        out += &format!("problem: {problem}\n");
+        out += &format!("problem: {}\n", problem.text());
     }
     out += &format!("\n[cache: {}]\n", paths::cache_dir().display());
     let mut files: Vec<_> = fs::read_dir(paths::cache_dir())

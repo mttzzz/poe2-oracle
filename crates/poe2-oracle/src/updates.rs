@@ -13,12 +13,11 @@ use http_client::HttpClient;
 use tray_icon::menu::MenuItem;
 
 use crate::paths;
+use crate::tr;
 
 /// Delay before the automatic check after launch: the price catalogs load first, since they
 /// matter more.
 const STARTUP_CHECK_DELAY: Duration = Duration::from_secs(30);
-
-const CHECK_LABEL: &str = "Проверить обновления";
 
 enum State {
     Idle,
@@ -27,9 +26,39 @@ enum State {
     Available(UpdateInfo),
 }
 
+/// What the entry says, kept to say it again in another interface language ([`Updates::relabel`]).
+enum Label {
+    Check,
+    Checking,
+    UpToDate,
+    CheckFailed,
+    Install(Version),
+    Downloading(Version),
+    InstallFailed(Version),
+}
+
+impl Label {
+    fn text(&self) -> String {
+        match self {
+            Label::Check => tr!("Check for updates").to_owned(),
+            Label::Checking => tr!("Checking for updates…").to_owned(),
+            Label::UpToDate => tr!("You have the latest version").to_owned(),
+            Label::CheckFailed => tr!("Couldn't check for updates").to_owned(),
+            Label::Install(version) => tr!("Install version {version}", version = version),
+            Label::Downloading(version) => {
+                tr!("Downloading version {version}…", version = version)
+            }
+            Label::InstallFailed(version) => {
+                tr!("Update failed — retry ({version})", version = version)
+            }
+        }
+    }
+}
+
 pub struct Updates {
     item: MenuItem,
     state: RefCell<State>,
+    label: RefCell<Label>,
     client: Arc<dyn HttpClient>,
     current: Version,
 }
@@ -37,17 +66,23 @@ pub struct Updates {
 impl Updates {
     /// A fresh menu entry to hand to the tray menu and, later, to [`Updates::new`].
     pub fn menu_item() -> MenuItem {
-        MenuItem::new(CHECK_LABEL, true, None)
+        MenuItem::new(Label::Check.text(), true, None)
     }
 
     pub fn new(item: MenuItem, client: Arc<dyn HttpClient>) -> Rc<Self> {
         Rc::new(Updates {
             item,
             state: RefCell::new(State::Idle),
+            label: RefCell::new(Label::Check),
             client,
             current: Version::parse(env!("CARGO_PKG_VERSION"))
                 .expect("the crate version is valid semver"),
         })
+    }
+
+    /// Says what the entry says again, in the interface language as it is now.
+    pub fn relabel(&self) {
+        self.item.set_text(self.label.borrow().text());
     }
 
     /// The automatic check after launch. It reports quietly: nothing new and failures leave the
@@ -77,7 +112,7 @@ impl Updates {
     }
 
     fn check(self: &Rc<Self>, cx: &mut AsyncApp, manual: bool) {
-        self.set_busy("Проверка обновлений…");
+        self.set_busy(Label::Checking);
         let this = self.clone();
         cx.spawn(async move |_| {
             let found =
@@ -85,22 +120,22 @@ impl Updates {
                     .await;
             let (label, state) = match found {
                 Ok(Some(update)) => (
-                    format!("Установить версию {}", update.version),
+                    Label::Install(update.version.clone()),
                     State::Available(update),
                 ),
-                Ok(None) if manual => ("Установлена последняя версия".to_owned(), State::Idle),
-                Ok(None) => (CHECK_LABEL.to_owned(), State::Idle),
+                Ok(None) if manual => (Label::UpToDate, State::Idle),
+                Ok(None) => (Label::Check, State::Idle),
                 Err(err) => {
                     log::warn!("checking failed: {err:#}");
                     let label = if manual {
-                        "Не удалось проверить обновления"
+                        Label::CheckFailed
                     } else {
-                        CHECK_LABEL
+                        Label::Check
                     };
-                    (label.to_owned(), State::Idle)
+                    (label, State::Idle)
                 }
             };
-            this.settle(&label, state);
+            this.settle(label, state);
         })
         .detach();
     }
@@ -108,7 +143,7 @@ impl Updates {
     /// Downloads and verifies the installer, starts it silently, and quits so it can replace the
     /// exe; the installer relaunches the app. A failed download leaves the offer standing.
     fn install(self: &Rc<Self>, update: UpdateInfo, cx: &mut AsyncApp) {
-        self.set_busy(&format!("Загрузка версии {}…", update.version));
+        self.set_busy(Label::Downloading(update.version.clone()));
         let this = self.clone();
         cx.spawn(async move |cx| {
             let client = this.client.clone();
@@ -123,23 +158,28 @@ impl Updates {
                 Ok(()) => cx.update(|cx| cx.quit()),
                 Err(err) => {
                     log::warn!("installing {} failed: {err:#}", update.version);
-                    let label = format!("Ошибка обновления — повторить ({})", update.version);
-                    this.settle(&label, State::Available(update));
+                    let label = Label::InstallFailed(update.version.clone());
+                    this.settle(label, State::Available(update));
                 }
             }
         })
         .detach();
     }
 
-    fn set_busy(&self, label: &str) {
+    fn set_busy(&self, label: Label) {
         *self.state.borrow_mut() = State::Busy;
-        self.item.set_text(label);
+        self.show(label);
         self.item.set_enabled(false);
     }
 
-    fn settle(&self, label: &str, state: State) {
+    fn settle(&self, label: Label, state: State) {
         *self.state.borrow_mut() = state;
-        self.item.set_text(label);
+        self.show(label);
         self.item.set_enabled(true);
+    }
+
+    fn show(&self, label: Label) {
+        self.item.set_text(label.text());
+        *self.label.borrow_mut() = label;
     }
 }

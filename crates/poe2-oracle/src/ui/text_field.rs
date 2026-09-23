@@ -26,7 +26,9 @@ pub struct TextField {
     text: String,
     /// The text as last committed: what Esc puts back.
     committed: String,
-    placeholder: SharedString,
+    /// What the empty field shows until focused, worded each time it's shown: a placeholder in
+    /// the app's words follows the interface language.
+    placeholder: fn() -> &'static str,
     focus_handle: FocusHandle,
     /// Everything is selected: the next character or paste replaces it, Backspace clears it.
     all_selected: bool,
@@ -43,7 +45,7 @@ impl EventEmitter<Committed> for TextField {}
 impl TextField {
     pub fn new(
         text: impl Into<String>,
-        placeholder: impl Into<SharedString>,
+        placeholder: fn() -> &'static str,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> TextField {
@@ -53,7 +55,7 @@ impl TextField {
         TextField {
             committed: text.clone(),
             text,
-            placeholder: placeholder.into(),
+            placeholder,
             focus_handle,
             all_selected: false,
             _blur: blur,
@@ -74,8 +76,8 @@ impl TextField {
     }
 
     /// What the empty field shows until focused.
-    pub fn set_placeholder(&mut self, placeholder: impl Into<SharedString>) {
-        self.placeholder = placeholder.into();
+    pub fn set_placeholder(&mut self, placeholder: fn() -> &'static str) {
+        self.placeholder = placeholder;
     }
 
     /// Takes the text as it reads, telling the owner when it changed.
@@ -151,7 +153,7 @@ impl Render for TextField {
         let focused = self.focus_handle.is_focused(window);
         let empty = self.text.is_empty();
         let shown: SharedString = if empty && !focused {
-            self.placeholder.clone()
+            (self.placeholder)().into()
         } else {
             self.text.clone().into()
         };

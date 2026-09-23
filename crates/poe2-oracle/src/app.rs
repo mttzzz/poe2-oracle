@@ -16,6 +16,7 @@
 //! The tray icon is the app's only visible "running" signal, and its menu opens the settings and
 //! quits: a `PopUp` window has no taskbar button.
 
+use std::rc::Rc;
 use std::sync::Arc;
 
 use gpui::{
@@ -35,20 +36,22 @@ use windows::Win32::UI::HiDpi::{
 use crate::brand;
 use crate::bug_report;
 use crate::diagnostics;
+use crate::i18n::{self, Lang};
 use crate::live_search::{self, LiveCard, LiveSearches};
 use crate::logging;
 use crate::login;
 use crate::overlay_layout::PhysicalRect;
-use crate::paths;
 use crate::platform::instance::{self, Request};
 use crate::platform::win32::Win32Overlay;
 use crate::platform::{autostart, game_config, game_window};
 use crate::price_check::{self, BootstrapState, PriceCheckApp};
 use crate::session::{self, SessionHttpClient};
 use crate::settings::{self, Hotkey};
+use crate::tr;
 use crate::ui::fonts;
-use crate::ui::settings_view::{Intro, SettingsView};
+use crate::ui::settings_view::{self, Intro, SettingsView};
 use crate::ui::theme::BASE_REM_SIZE;
+use crate::ui::tour;
 use crate::ui::trade_overlay::{self, TradeOverlay, TradeOverlayOptions};
 use crate::ui::xp_overlay::{self, XpOverlay, XpOverlayOptions};
 use crate::updates::Updates;
@@ -57,7 +60,7 @@ const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/
 
 /// Wraps `Entity<PriceCheckApp>` with the platform-window state that has to follow it: the
 /// `Win32Overlay` handle (resolved once the real platform window exists), what was last applied to
-/// it, and the tray icon.
+/// it, and the tray.
 struct PriceCheckRoot {
     inner: Entity<PriceCheckApp>,
     overlay: Option<Win32Overlay>,
@@ -72,9 +75,10 @@ struct PriceCheckRoot {
     default_bounds: Option<PhysicalRect>,
     default_bounds_scale: Option<f32>,
     was_visible: bool,
-    tray: TrayIcon,
-    /// The hotkey the tray tooltip names; `None` until the first sync.
-    tray_hotkey: Option<Hotkey>,
+    tray: Tray,
+    /// The hotkey and the interface language the tray was last worded for; `None` until the first
+    /// sync.
+    tray_words: Option<(Hotkey, Lang)>,
     /// The XP overlay, opened while the setting allows it (see `sync_xp`).
     xp: Option<Entity<XpOverlay>>,
     /// An overlay open is under way (the setting was just turned on), so it isn't started twice.
@@ -198,17 +202,15 @@ impl PriceCheckRoot {
         .detach();
     }
 
-    /// Names the current hotkey in the tray tooltip -- the only place it's shown besides the
-    /// panel's own hint.
+    /// Words the tray in the interface language and names the current hotkey in its tooltip --
+    /// the only place it's shown besides the panel's own hint.
     fn sync_tray(&mut self, cx: &mut Context<Self>) {
-        let hotkey = self.inner.read(cx).settings.hotkey;
-        if self.tray_hotkey == Some(hotkey) {
+        let words = (self.inner.read(cx).settings.hotkey, i18n::lang());
+        if self.tray_words == Some(words) {
             return;
         }
-        if let Err(err) = self.tray.set_tooltip(Some(tray_tooltip(hotkey))) {
-            log::warn!("{err:#}");
-        }
-        self.tray_hotkey = Some(hotkey);
+        self.tray.word(words.0);
+        self.tray_words = Some(words);
     }
 
     /// Hides the XP overlay while the price window is shown (the panel spans the bar's middle) or
@@ -343,40 +345,71 @@ fn tray_icon_image() -> Icon {
 }
 
 fn tray_tooltip(hotkey: Hotkey) -> String {
-    format!("PoE2 Oracle — проверка цены: {hotkey}")
+    tr!("PoE2 Oracle — price check: {hotkey}", hotkey = hotkey)
 }
 
-/// Notification-area icon with "Настройки", the update entry (`crate::updates`), "Сообщить об
-/// ошибке" (`bug_report::report_bug`) and "Выход".
+/// The notification-area icon and its menu's entries, kept to word them again in another
+/// interface language ([`Tray::word`]).
+struct Tray {
+    icon: TrayIcon,
+    settings: MenuItem,
+    updates: Rc<Updates>,
+    report: MenuItem,
+    quit: MenuItem,
+}
+
+impl Tray {
+    /// Words the menu in the interface language, and the tooltip naming `hotkey`.
+    fn word(&self, hotkey: Hotkey) {
+        self.settings.set_text(tr!("Settings"));
+        self.updates.relabel();
+        self.report.set_text(tr!("Report a bug"));
+        self.quit.set_text(tr!("Quit"));
+        if let Err(err) = self.icon.set_tooltip(Some(tray_tooltip(hotkey))) {
+            log::warn!("{err:#}");
+        }
+    }
+}
+
+/// Notification-area icon with «Настройки», the update entry (`crate::updates`), «Сообщить об
+/// ошибке» (`bug_report::report_bug`) and «Выход», worded in the interface language.
 /// Created on GPUI's main thread, whose message loop also drives the tray's hidden window; menu
 /// clicks come through `MenuEvent`'s handler into a channel a task here awaits.
-fn build_tray(cx: &mut App, app: &Entity<PriceCheckApp>) -> anyhow::Result<TrayIcon> {
+fn build_tray(cx: &mut App, app: &Entity<PriceCheckApp>) -> anyhow::Result<Tray> {
     // Before the menu exists: `muda` settles on its channel for good with the first event.
     let (click_tx, clicks) = async_channel::unbounded();
     MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
         let _ = click_tx.try_send(event);
     }));
-    let open_settings_item = MenuItem::new("Настройки", true, None);
-    let settings_id = open_settings_item.id().clone();
+    // `Tray::word` gives the entries their words.
+    let settings_item = MenuItem::new("", true, None);
+    let settings_id = settings_item.id().clone();
     let update_item = Updates::menu_item();
     let update_id = update_item.id().clone();
-    let report_item = MenuItem::new("Сообщить об ошибке", true, None);
+    let report_item = MenuItem::new("", true, None);
     let report_id = report_item.id().clone();
-    let quit = MenuItem::new("Выход", true, None);
-    let quit_id = quit.id().clone();
+    let quit_item = MenuItem::new("", true, None);
+    let quit_id = quit_item.id().clone();
     let menu = Menu::new();
-    menu.append(&open_settings_item)?;
+    menu.append(&settings_item)?;
     menu.append(&update_item)?;
     menu.append(&report_item)?;
     menu.append(&PredefinedMenuItem::separator())?;
-    menu.append(&quit)?;
-    let tray = TrayIconBuilder::new()
-        .with_tooltip(tray_tooltip(app.read(cx).settings.hotkey))
+    menu.append(&quit_item)?;
+    let icon = TrayIconBuilder::new()
         .with_icon(tray_icon_image())
         .with_menu(Box::new(menu))
         .build()?;
-
     let updates = Updates::new(update_item, cx.http_client());
+    let tray = Tray {
+        icon,
+        settings: settings_item,
+        updates: updates.clone(),
+        report: report_item,
+        quit: quit_item,
+    };
+    tray.word(app.read(cx).settings.hotkey);
+
     let check_after_launch = app.read(cx).settings.check_updates;
     let app = app.downgrade();
     cx.spawn(async move |cx| {
@@ -391,7 +424,7 @@ fn build_tray(cx: &mut App, app: &Entity<PriceCheckApp>) -> anyhow::Result<TrayI
             if event.id == settings_id
                 && let Some(app) = app.upgrade()
             {
-                cx.update(|cx| open_settings(&app, false, cx));
+                cx.update(|cx| open_settings(&app, cx));
             }
             if event.id == update_id {
                 updates.clicked(cx);
@@ -422,12 +455,12 @@ const SETTINGS_MIN_SIZE: (f32, f32) = (900., 600.);
 /// Opens the settings window (`ui::settings_view`) -- or brings the open one forward -- centred
 /// on the monitor the game is on. The price panel steps aside while it's open: the price-check
 /// hotkey belongs to the window's recorder then, so no check could bring the panel back, and one
-/// left up would cover part of the window. `welcome` heads it with the first-launch welcome; the
-/// setup problems (`diagnostics::setup_problems`) head it always.
+/// left up would cover part of the window. The setup problems (`diagnostics::setup_problems`)
+/// head it.
 ///
 /// Autostart is read from the registry first: that is where it lives -- the installer and Task
 /// Manager change it too -- so the window shows what Windows will do.
-pub fn open_settings(app: &Entity<PriceCheckApp>, welcome: bool, cx: &mut App) {
+pub fn open_settings(app: &Entity<PriceCheckApp>, cx: &mut App) {
     if let Some(handle) = app.read(cx).settings_window()
         && handle
             .update(cx, |_, window, _| window.activate_window())
@@ -440,7 +473,6 @@ pub fn open_settings(app: &Entity<PriceCheckApp>, welcome: bool, cx: &mut App) {
         state.settings.autostart = autostart::autostart_enabled();
     });
     let intro = Intro {
-        welcome,
         problems: diagnostics::setup_problems(&game_config::read()),
     };
     // `gpui_windows` names a display by its monitor handle; one it doesn't list falls back to
@@ -458,7 +490,7 @@ pub fn open_settings(app: &Entity<PriceCheckApp>, welcome: bool, cx: &mut App) {
         ))),
         // Transparent: the view draws its own title bar and frame.
         titlebar: Some(TitlebarOptions {
-            title: Some("PoE2 Oracle — настройки".into()),
+            title: Some(settings_view::window_title().into()),
             appears_transparent: true,
             ..Default::default()
         }),
@@ -488,15 +520,15 @@ pub fn open_settings(app: &Entity<PriceCheckApp>, welcome: bool, cx: &mut App) {
     }
 }
 
-/// Opens the settings window with the welcome once the catalogs are in (or failed): its league
-/// list comes with them.
-fn welcome_when_ready(app: &Entity<PriceCheckApp>, cx: &mut App) {
+/// Starts the tour (`ui::tour`) once the catalogs are in (or failed): its first stop is the
+/// settings window's league select, whose list comes with them.
+fn tour_when_ready(app: &Entity<PriceCheckApp>, cx: &mut App) {
     let mut pending = true;
     cx.observe(app, move |app, cx| {
         if pending && !matches!(app.read(cx).bootstrap, BootstrapState::Loading) {
             pending = false;
             // Not from inside the notification that reported it.
-            cx.defer(move |cx| open_settings(&app, true, cx));
+            cx.defer(move |cx| tour::start(&app, cx));
         }
     })
     .detach();
@@ -520,7 +552,7 @@ fn serve_instance_requests(
                 }
                 Request::ShowSettings => {
                     if let Some(app) = app.upgrade() {
-                        cx.update(|cx| open_settings(&app, false, cx));
+                        cx.update(|cx| open_settings(&app, cx));
                     }
                 }
             }
@@ -566,19 +598,16 @@ pub fn run() {
             }
             session::init(trade_session, inner_client, cx);
             let http_client: Arc<dyn HttpClient> = cx.http_client();
-            // No settings file yet: the first launch. Its defaults are saved at once, so the
-            // welcome shows this once only.
-            let first_launch = paths::settings_file().is_some_and(|path| !path.exists());
             let settings = settings::load();
             crate::i18n::apply(settings.interface_language);
-            if first_launch && let Err(err) = settings::save(&settings) {
-                log::warn!("saving the first settings failed: {err:#}");
-            }
+            // Until the player finishes or skips it, the tour starts with every launch -- the
+            // first one's welcome.
+            let start_tour = !settings.tour_done;
             let inner = price_check::create_app(cx, http_client, settings);
-            login::init(&inner, cx);
+            login::init(cx);
             let live_cards = live_search::init(&inner, USER_AGENT, cx);
-            if first_launch {
-                welcome_when_ready(&inner, cx);
+            if start_tour {
+                tour_when_ready(&inner, cx);
             }
 
             price_check::register_hotkeys(cx, inner.clone())
@@ -610,7 +639,7 @@ pub fn run() {
                         default_bounds_scale: None,
                         was_visible: false,
                         tray,
-                        tray_hotkey: None,
+                        tray_words: None,
                         xp: None,
                         xp_opening: false,
                         last_xp_suppressed: None,

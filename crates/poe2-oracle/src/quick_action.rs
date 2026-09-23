@@ -10,6 +10,7 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use crate::settings::{Hotkey, QuickAction, QuickActionKind};
+use crate::tr;
 
 /// EE2's stand-in for the last player who whispered: `@last спасибо` answers them,
 /// `/invite @last` names them in a command, and `@last` alone opens a whisper to them. The
@@ -100,34 +101,50 @@ fn pasted(text: &str, before: Vec<Key>, after: Vec<Key>) -> Typing {
 pub struct DeniedCommand {
     /// As the game's command list writes it; matched ignoring case.
     pub command: &'static str,
-    /// What the settings window says under an action that would send it.
-    pub warning: &'static str,
+    /// Words [`DeniedCommand::warning`].
+    warning: fn() -> &'static str,
+}
+
+impl DeniedCommand {
+    /// What the settings window says under an action that would send it, in the interface
+    /// language.
+    pub fn warning(&self) -> &'static str {
+        (self.warning)()
+    }
 }
 
 static DENIED_COMMANDS: [DeniedCommand; 4] = [
     // "destroys the item on your cursor (be careful!)" -- the wiki; VibeTools denies it.
     DeniedCommand {
         command: "/destroy",
-        warning: "Команда /destroy уничтожает предмет — быстрые действия её не отправляют",
+        warning: || tr!("The /destroy command destroys the item — quick actions don't send it"),
     },
     // "removes all accounts from your ignore list" -- the wiki; VibeTools denies it.
     DeniedCommand {
         command: "/clear_ignore_list",
-        warning: "Команда /clear_ignore_list очищает весь список игнорируемых — быстрые действия \
-                  её не отправляют",
+        warning: || {
+            tr!(
+                "The /clear_ignore_list command clears your whole ignore list — quick actions \
+                 don't send it"
+            )
+        },
     },
     // Destroys the race reward unique on the cursor for an account-bound skin that "cannot be
     // traded to other players or turned back into the original item" (poewiki.net/wiki/Chat);
     // in PoE2 since 0.1.1e.
     DeniedCommand {
         command: "/convertracereward",
-        warning: "Команда /convertracereward уничтожает предмет, превращая его в облик — быстрые \
-                  действия её не отправляют",
+        warning: || {
+            tr!(
+                "The /convertracereward command destroys the item, turning it into a skin — quick \
+                 actions don't send it"
+            )
+        },
     },
     // Resets the Atlas; the game takes it only when no map is left to run (0.1.1c).
     DeniedCommand {
         command: "/ResetAtlas",
-        warning: "Команда /ResetAtlas сбрасывает атлас — быстрые действия её не отправляют",
+        warning: || tr!("The /ResetAtlas command resets the Atlas — quick actions don't send it"),
     },
 ];
 

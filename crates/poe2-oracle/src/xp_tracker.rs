@@ -14,13 +14,15 @@
 //!   to the next level, whether the player is playing or paused ([`Activity`]), and the current
 //!   or last map run ([`MapStatus`]): its time, its experience, and the average time of the maps
 //!   before it.
-//! - [`format_rate`], [`format_duration`], [`format_percent`], [`format_clock`]: the overlay's
-//!   wording.
+//! - [`Word`] and [`percent_words`], [`rate_words`], [`pause_words`], [`map_words`]: the
+//!   overlay's line, word by word, in the interface language (`crate::i18n`).
 
+use std::borrow::Cow;
 use std::ops::{Range, RangeInclusive};
 use std::time::Duration;
 
 use crate::overlay_layout::PhysicalRect;
+use crate::{i18n, tr};
 
 // --- Where the bar is ---------------------------------------------------------------------------
 //
@@ -432,6 +434,10 @@ const DROP_THRESHOLD: f64 = 0.004;
 /// A drop by more than half a level can only be a level-up: the death penalty costs a fraction
 /// of that (10 % of a level in PoE2 -- not verified live).
 const WRAP_DROP: f64 = 0.5;
+/// A single step up this big (5 % of a level between two readings, a fraction of a second apart)
+/// is worth a log line: real play earns that only from a big kill, and a misread bar that comes
+/// back looks the same.
+const BIG_GAIN: f64 = 0.05;
 /// How far apart a logged level-up and the bar's wrap may be and still be the same level-up.
 const LEVEL_UP_MATCH: Duration = Duration::from_secs(30);
 /// The bar counts as on screen until it has been unreadable this long, so a tooltip passing over
@@ -742,12 +748,21 @@ impl XpTracker {
     fn gain_to(&mut self, value: f64, at: Duration) -> f64 {
         let drop = self.best - value;
         let gain = if drop > WRAP_DROP || (self.level_up_balance > 0 && drop > DROP_THRESHOLD) {
+            log::info!(
+                "xp: bar {:.4} -> {value:.4}, taken as a level-up (balance {})",
+                self.best,
+                self.level_up_balance
+            );
             self.level_up_balance -= 1;
             self.balance_at = at;
             1.0 - self.best + value
         } else if drop < 0.0 {
+            if -drop > BIG_GAIN {
+                log::info!("xp: bar {:.4} -> {value:.4} in one step", self.best);
+            }
             -drop
         } else if drop > DROP_THRESHOLD {
+            log::info!("xp: bar {:.4} -> {value:.4}, taken as a loss", self.best);
             0.0
         } else {
             // Jitter below the best reading.
@@ -989,54 +1004,120 @@ impl MapRuns {
 
 // --- Wording ------------------------------------------------------------------------------------
 
-/// `+12,4 %/ч`: percent of a level per hour of play.
-pub fn format_rate(rate_per_hour: f64) -> String {
-    format!("+{} %/ч", format_percent(rate_per_hour))
+/// A word of the overlay's line, by what it says -- which decides how `ui::xp_overlay` draws it.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Word {
+    /// The rate, the line's headline: `+12,4 %/ч`.
+    Rate(Cow<'static, str>),
+    /// A value, or a word read as one: `1 ч 32 мин`, `4:07`, `пауза`.
+    Value(Cow<'static, str>),
+    /// A word saying what a value is: `до 75 ур.`, `игры`, `карта`.
+    Label(Cow<'static, str>),
+    /// The dot between a part's groups: `·`.
+    Dot,
 }
 
-/// A fraction as a percentage number in the price panel's style (PoE Overlay II's): decimal
-/// comma, two decimals under 10, one under 100, none above, trailing zeros dropped -- `3,25`,
-/// `64,8`, `120`.
-pub fn format_percent(fraction: f64) -> String {
+/// How much of the level is earned: `64,8 %`.
+pub fn percent_words(fraction: f64) -> Vec<Word> {
+    vec![Word::Value(i18n::percent(format_percent(fraction)).into())]
+}
+
+/// How fast the character levels and how much play is left to the next level: `+12,4 %/ч · до
+/// 75 ур. 1 ч 32 мин игры` -- `до ур.` until the log names the level, `—` for the time when
+/// nothing has been gained to go by -- or, the first two minutes of play, the wait for a rate.
+pub fn rate_words(status: &XpStatus) -> Vec<Word> {
+    let Some(rate) = status.rate_per_hour else {
+        return vec![Word::Label(tr!("measuring rate…").into())];
+    };
+    let target: Cow<'static, str> = match status.level {
+        Some(level) => tr!("level {level} in", level = level + 1).into(),
+        None => tr!("next level in").into(),
+    };
+    let mut words = vec![
+        Word::Rate(format_rate(rate).into()),
+        Word::Dot,
+        Word::Label(target),
+    ];
+    match status.time_to_level() {
+        Some(eta) => words.extend([
+            Word::Value(i18n::duration(eta).into()),
+            Word::Label(tr!("of play").into()),
+        ]),
+        None => words.push(Word::Label("—".into())),
+    }
+    words
+}
+
+/// How long the player has been out of play, in the rate's place: `пауза · 12 мин`.
+pub fn pause_words(elapsed: Duration) -> Vec<Word> {
+    vec![
+        Word::Value(tr!("paused").into()),
+        Word::Dot,
+        Word::Value(i18n::duration(elapsed).into()),
+    ]
+}
+
+/// The map run: `карта 4:07 +1,2 % · ср. 6:30`, and `последняя карта 9:00 +3,66 %` once it is
+/// the last one; without the average in a pause.
+pub fn map_words(map: &MapStatus, paused: bool) -> Vec<Word> {
+    let label = if map.state == RunState::Last {
+        tr!("last map")
+    } else {
+        tr!("map")
+    };
+    let mut words = vec![
+        Word::Label(label.into()),
+        Word::Value(format_clock(map.time).into()),
+    ];
+    if map.gained > 0.0 {
+        let gained = i18n::percent(format_percent(map.gained));
+        words.push(Word::Value(format!("+{gained}").into()));
+    }
+    if let Some(average) = map.average.filter(|_| !paused) {
+        words.extend([
+            Word::Dot,
+            Word::Label(tr!("avg").into()),
+            Word::Label(format_clock(average).into()),
+        ]);
+    }
+    words
+}
+
+/// `+12,4 %/ч`: percent of a level per hour of play.
+fn format_rate(rate_per_hour: f64) -> String {
+    tr!(
+        "+{percent}/h",
+        percent = i18n::percent(format_percent(rate_per_hour))
+    )
+}
+
+/// A fraction as a percentage number in the price panel's style (PoE Overlay II's): two
+/// decimals under 10, one under 100, none above, trailing zeros dropped, and the interface
+/// language's decimal separator -- `3,25`, `64,8`, `120` (`64.8` in English). Unlike
+/// [`i18n::number`], no more decimals below 1: a map's `0,07` stays short.
+fn format_percent(fraction: f64) -> String {
     let value = fraction * 100.0;
-    let decimals = if value < 10.0 {
+    let places = if value < 10.0 {
         2
     } else if value < 100.0 {
         1
     } else {
         0
     };
-    let fixed = format!("{value:.decimals$}");
-    let trimmed = if fixed.contains('.') {
-        fixed.trim_end_matches('0').trim_end_matches('.')
-    } else {
-        &fixed
-    };
-    trimmed.replace('.', ",")
-}
-
-/// A time to level or a pause's length: `1 ч 32 мин`, `45 мин`, `2 д 3 ч`, `< 1 мин` -- to the
-/// nearest minute.
-pub fn format_duration(duration: Duration) -> String {
-    let minutes = (duration.as_secs_f64() / 60.0).round() as u64;
-    let hours = minutes / 60;
-    match minutes {
-        0 => "< 1 мин".to_owned(),
-        1..60 => format!("{minutes} мин"),
-        _ if hours < 24 => match minutes % 60 {
-            0 => format!("{hours} ч"),
-            rest => format!("{hours} ч {rest} мин"),
-        },
-        _ => match hours % 24 {
-            0 => format!("{} д", hours / 24),
-            rest => format!("{} д {rest} ч", hours / 24),
-        },
+    let mut text = i18n::decimal(value, places);
+    if places > 0 {
+        let kept = text
+            .trim_end_matches('0')
+            .trim_end_matches(['.', ','])
+            .len();
+        text.truncate(kept);
     }
+    text
 }
 
 /// `0:07`, `4:07`, `1:02:03`: a map's time as a stopwatch shows it -- the whole seconds elapsed,
 /// no leading zero on the first field.
-pub fn format_clock(elapsed: Duration) -> String {
+fn format_clock(elapsed: Duration) -> String {
     let secs = elapsed.as_secs();
     let (hours, minutes, seconds) = (secs / 3600, secs / 60 % 60, secs % 60);
     if hours > 0 {
@@ -1756,14 +1837,125 @@ mod tests {
         assert_eq!(format_rate(0.0325), "+3,25 %/ч");
         assert_eq!(format_rate(1.5), "+150 %/ч");
         assert_eq!(format_percent(0.64752), "64,8");
-        assert_eq!(format_duration(Duration::from_secs(20)), "< 1 мин");
-        assert_eq!(format_duration(Duration::from_secs(45 * 60)), "45 мин");
-        assert_eq!(format_duration(Duration::from_secs(92 * 60)), "1 ч 32 мин");
-        // 59.8 minutes round up to a whole hour, not "60 мин".
-        assert_eq!(format_duration(Duration::from_secs(3588)), "1 ч");
+        // Two decimals below 1 too, not the panel's two significant digits (`0,065`).
+        assert_eq!(format_percent(0.000654), "0,07");
+        i18n::with_lang(i18n::Lang::English, || {
+            assert_eq!(format_rate(0.1244), "+12.4%/h");
+            assert_eq!(format_rate(0.0325), "+3.25%/h");
+            assert_eq!(format_rate(1.5), "+150%/h");
+            assert_eq!(format_percent(0.64752), "64.8");
+        });
+    }
+
+    /// `words` as the overlay shows them, a space apart.
+    fn read(words: &[Word]) -> String {
+        let texts: Vec<&str> = words
+            .iter()
+            .map(|word| match word {
+                Word::Rate(text) | Word::Value(text) | Word::Label(text) => text,
+                Word::Dot => "·",
+            })
+            .collect();
+        texts.join(" ")
+    }
+
+    /// The whole line for `status`, the parts as `ui::xp_overlay` puts them together: the
+    /// percent, the rate or the pause, the map -- a diamond apart there, a `·` here.
+    fn line(status: &XpStatus) -> String {
+        let paused = matches!(status.activity, Activity::Paused { .. });
+        let mut parts: Vec<Vec<Word>> = status.fraction.map(percent_words).into_iter().collect();
+        parts.push(match status.activity {
+            Activity::Playing => rate_words(status),
+            Activity::Paused { elapsed, .. } => pause_words(elapsed),
+        });
+        parts.extend(status.map.map(|map| map_words(&map, paused)));
+        let parts: Vec<String> = parts.iter().map(|words| read(words)).collect();
+        parts.join(" · ")
+    }
+
+    #[test]
+    fn the_line_reads_in_the_interface_language() {
+        let map = MapStatus {
+            time: Duration::from_secs(4 * 60 + 7),
+            gained: 0.012,
+            state: RunState::Running,
+            finished: 3,
+            average: Some(Duration::from_secs(6 * 60 + 30)),
+        };
+        let playing = XpStatus {
+            fraction: Some(0.648),
+            rate_per_hour: Some(0.124),
+            level: Some(74),
+            bar_visible: true,
+            activity: Activity::Playing,
+            map: Some(map),
+        };
+        // An ascendancy trial five minutes on: play, and the map left for it is the last one.
+        let trial = XpStatus {
+            map: Some(MapStatus {
+                state: RunState::Last,
+                ..map
+            }),
+            ..playing
+        };
+        let paused = XpStatus {
+            activity: Activity::Paused {
+                since: Duration::ZERO,
+                elapsed: Duration::from_secs(12 * 60),
+            },
+            map: Some(MapStatus {
+                time: Duration::from_secs(9 * 60),
+                gained: 0.0366,
+                state: RunState::Last,
+                ..map
+            }),
+            ..playing
+        };
+        let measuring = XpStatus {
+            rate_per_hour: None,
+            map: None,
+            ..playing
+        };
+        let level_unknown = XpStatus {
+            level: None,
+            map: None,
+            ..playing
+        };
+        let nothing_gained = XpStatus {
+            rate_per_hour: Some(0.0),
+            map: None,
+            ..playing
+        };
+        let states = [
+            &playing,
+            &trial,
+            &paused,
+            &measuring,
+            &level_unknown,
+            &nothing_gained,
+        ];
         assert_eq!(
-            format_duration(Duration::from_secs(26 * 3600 + 10 * 60)),
-            "1 д 2 ч"
+            i18n::with_lang(i18n::Lang::Russian, || states.map(line)),
+            [
+                "64,8 % · +12,4 %/ч · до 75 ур. 2 ч 50 мин игры · карта 4:07 +1,2 % · ср. 6:30",
+                "64,8 % · +12,4 %/ч · до 75 ур. 2 ч 50 мин игры · последняя карта 4:07 +1,2 % · \
+                 ср. 6:30",
+                "64,8 % · пауза · 12 мин · последняя карта 9:00 +3,66 %",
+                "64,8 % · замер скорости…",
+                "64,8 % · +12,4 %/ч · до ур. 2 ч 50 мин игры",
+                "64,8 % · +0 %/ч · до 75 ур. —",
+            ]
+        );
+        assert_eq!(
+            i18n::with_lang(i18n::Lang::English, || states.map(line)),
+            [
+                "64.8% · +12.4%/h · level 75 in 2h 50m of play · map 4:07 +1.2% · avg 6:30",
+                "64.8% · +12.4%/h · level 75 in 2h 50m of play · last map 4:07 +1.2% · avg 6:30",
+                "64.8% · paused · 12m · last map 9:00 +3.66%",
+                "64.8% · measuring rate…",
+                "64.8% · +12.4%/h · next level in 2h 50m of play",
+                "64.8% · +0%/h · level 75 in —",
+            ]
         );
     }
 

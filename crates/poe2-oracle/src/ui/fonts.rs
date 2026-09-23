@@ -36,6 +36,13 @@ pub fn name_font(site: TradeSite) -> &'static NameFont {
     }
 }
 
+/// The face of the app's own headings and buttons: the name face of the game client in the
+/// interface language (`i18n::lang`), as the game sets its own headings -- the Russian client's
+/// for Russian words, the English client's for English ones.
+pub fn interface_font() -> &'static NameFont {
+    name_font(crate::i18n::lang().trade_site())
+}
+
 /// Makes the bundled faces available to every window. A family that failed to register falls
 /// back to GPUI's default stack (Segoe UI), so a failure costs only the look.
 pub fn register(cx: &App) -> anyhow::Result<()> {

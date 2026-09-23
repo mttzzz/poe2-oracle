@@ -4,7 +4,9 @@
 //! current map's timer: `64,8 % · +12,4 %/ч · до 75 ур. 1 ч 32 мин игры · карта 4:07 +1,2 % ·
 //! ср. 6:30`. In a pause (a town or hideout, or five minutes without a gain) the rate and the
 //! time to level would pass for current ones, so the line dims and says how long the pause has
-//! lasted instead: `64,8 % · пауза · 12 мин · последняя карта 9:00 +3,66 %`.
+//! lasted instead: `64,8 % · пауза · 12 мин · последняя карта 9:00 +3,66 %`. The words are the
+//! interface language's (`xp_tracker::rate_words` and the rest): `64.8% · +12.4%/h · level 75 in
+//! 1h 32m of play · map 4:07 +1.2% · avg 6:30` in English.
 //!
 //! A task samples every two seconds, off the UI thread: the game log's new lines
 //! (`platform::client_log`), then the bar's pixels (`platform::xp_bar`) -- in that order, so a
@@ -26,8 +28,8 @@
 use std::time::{Duration, Instant};
 
 use gpui::{
-    AnyElement, App, AsyncApp, Bounds, Context, Div, Entity, FontWeight, IntoElement, Render,
-    SharedString, WeakEntity, Window, WindowBounds, WindowKind, WindowOptions, div, point,
+    AnyElement, App, AsyncApp, Bounds, Context, Div, Entity, FontWeight, Global, IntoElement,
+    Render, SharedString, WeakEntity, Window, WindowBounds, WindowKind, WindowOptions, div, point,
     prelude::*, px, rgb, size,
 };
 
@@ -41,8 +43,8 @@ use crate::ui::theme::{
     BASE_REM_SIZE, BORDER_GOLD, GOLD, GOLD_LIGHT, TEXT, TEXT_DIM, TEXT_MUTED, blend, rems_from_px,
 };
 use crate::xp_tracker::{
-    Activity, MapStatus, RunState, XpStatus, XpTracker, format_clock, format_duration,
-    format_percent, format_rate, parse_log_line,
+    Activity, MapStatus, RunState, Word, XpStatus, XpTracker, map_words, parse_log_line,
+    pause_words, percent_words, rate_words,
 };
 
 const SAMPLE_INTERVAL: Duration = Duration::from_secs(2);
@@ -52,7 +54,9 @@ const HEIGHT: f32 = 26.;
 /// its end diamonds sit -- and the diamond between parts: `+123 %/ч · до 100 ур. 23 ч 59 мин
 /// игры` for the rate and `пауза · 23 ч 59 мин` in its place in a pause; `карта 1:23:45 +12,5 %`
 /// for the map, with `последняя ` before it for the last one and ` · ср. 12:34` after it outside
-/// a pause.
+/// a pause. The English words fit every part with room to spare -- in Segoe UI's metrics (its
+/// stand-in Selawik), `+123%/h · next level in 23h 59m of play` is 248, `paused · 23h 59m` 110,
+/// `map 1:23:45 +12.5%` 126, `last ` 25 and ` · avg 12:34` 70.
 const PADDING_WIDTH: f32 = 24.;
 const SEPARATOR_WIDTH: f32 = 16.;
 const PERCENT_WIDTH: f32 = 64.;
@@ -86,6 +90,13 @@ impl XpOverlayOptions {
         }
     }
 }
+
+/// Where the XP line is on screen now, in physical pixels -- `None` while it is hidden: the tour
+/// (`ui::tour`) points its spotlight at it.
+#[derive(Clone, Copy, Default)]
+pub struct XpLineOnScreen(pub Option<PhysicalRect>);
+
+impl Global for XpLineOnScreen {}
 
 /// The overlay window's root view: the tracker, what it says, and the platform window state that
 /// follows it.
@@ -297,6 +308,7 @@ impl XpOverlay {
         if bounds.is_none() && shown.is_none() {
             return;
         }
+        cx.set_global(XpLineOnScreen(placement.filter(|_| want_shown)));
         if bounds.is_some() {
             self.last_bounds = bounds;
         }
@@ -338,75 +350,24 @@ impl Tones {
     }
 }
 
-/// A part's words in a row, a space apart.
-fn words() -> Div {
-    div().flex().items_center().gap(rems_from_px(WORD_GAP))
-}
-
 /// A word -- or a value read as one, `1 ч 32 мин` -- in `color`.
 fn word(text: impl Into<SharedString>, color: u32) -> Div {
     div().text_color(rgb(color)).child(text.into())
 }
 
-/// `+12,4 %/ч · до 75 ур. 1 ч 32 мин игры`, or the wait for a first rate.
-fn rate_part(status: XpStatus, tones: Tones) -> AnyElement {
-    let Some(rate) = status.rate_per_hour else {
-        // The first two minutes of play, before there is a rate to show.
-        return word("замер скорости…", tones.label).into_any_element();
-    };
-    let target = match status.level {
-        Some(level) => format!("до {} ур.", level + 1),
-        None => "до ур.".to_owned(),
-    };
-    words()
-        .child(word(format_rate(rate), tones.rate).font_weight(FontWeight::SEMIBOLD))
-        .child(word("·", TEXT_MUTED))
-        .child(word(target, tones.label))
-        .map(|this| match status.time_to_level() {
-            Some(eta) => this
-                .child(word(format_duration(eta), tones.value))
-                .child(word("игры", tones.label)),
-            None => this.child(word("—", tones.label)),
-        })
-        .into_any_element()
-}
-
-/// `пауза · 12 мин`: how long the player has been out of play, in place of the rate.
-fn pause_part(elapsed: Duration, tones: Tones) -> AnyElement {
-    words()
-        .child(word("пауза", tones.value))
-        .child(word("·", TEXT_MUTED))
-        .child(word(format_duration(elapsed), tones.value))
-        .into_any_element()
-}
-
-/// `карта 4:07 +1,2 % · ср. 6:30`, dimmed once the character has left the run, and
-/// `последняя карта 9:00 +3,66 %` once it is the last one; without the average in a pause.
-fn map_part(map: MapStatus, paused: bool, tones: Tones) -> AnyElement {
-    let tones = if map.state == RunState::Running {
-        tones
-    } else {
-        Tones::at(0.)
-    };
-    let label = if map.state == RunState::Last {
-        "последняя карта"
-    } else {
-        "карта"
-    };
-    words()
-        .child(word(label, tones.label))
-        .child(word(format_clock(map.time), tones.value))
-        .when(map.gained > 0.0, |this| {
-            this.child(word(
-                format!("+{} %", format_percent(map.gained)),
-                tones.value,
-            ))
-        })
-        .when_some(map.average.filter(|_| !paused), |this, average| {
-            this.child(word("·", TEXT_MUTED))
-                .child(word("ср.", tones.label))
-                .child(word(format_clock(average), tones.label))
-        })
+/// A part of the line (`xp_tracker::rate_words` and the rest): its words in a row, a space apart,
+/// each in its tone -- the rate semibold, the dot between groups muted.
+fn part(words: Vec<Word>, tones: Tones) -> AnyElement {
+    div()
+        .flex()
+        .items_center()
+        .gap(rems_from_px(WORD_GAP))
+        .children(words.into_iter().map(|each| match each {
+            Word::Rate(text) => word(text, tones.rate).font_weight(FontWeight::SEMIBOLD),
+            Word::Value(text) => word(text, tones.value),
+            Word::Label(text) => word(text, tones.label),
+            Word::Dot => word("·", TEXT_MUTED),
+        }))
         .into_any_element()
 }
 
@@ -435,16 +396,21 @@ impl Render for XpOverlay {
             let tones = Tones::at(lit);
             let mut parts: Vec<AnyElement> = Vec::new();
             if let Some(fraction) = percent {
-                parts.push(
-                    word(format!("{} %", format_percent(fraction)), tones.value).into_any_element(),
-                );
+                parts.push(part(percent_words(fraction), tones));
             }
-            parts.push(match status.activity {
-                Activity::Playing => rate_part(status, tones),
-                Activity::Paused { elapsed, .. } => pause_part(elapsed, tones),
-            });
+            let rate = match status.activity {
+                Activity::Playing => rate_words(&status),
+                Activity::Paused { elapsed, .. } => pause_words(elapsed),
+            };
+            parts.push(part(rate, tones));
             if let Some(map) = map {
-                parts.push(map_part(map, paused, tones));
+                // Dimmed once the character has left the run.
+                let tones = if map.state == RunState::Running {
+                    tones
+                } else {
+                    Tones::at(0.)
+                };
+                parts.push(part(map_words(&map, paused), tones));
             }
             let mut line = div().flex().items_center().gap(rems_from_px(PART_GAP));
             for (index, part) in parts.into_iter().enumerate() {

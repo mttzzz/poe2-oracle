@@ -19,6 +19,8 @@ use trade_client::TradeSite;
 use crate::platform::win32::Win32Overlay;
 use crate::price_check::{FilterRowUi, PriceCheckApp};
 use crate::roll_slider::{Handle, Slider};
+use crate::tr;
+use crate::ui::fonts;
 use crate::ui::hint as hints;
 use crate::ui::style::{
     alpha, checkbox, ease_hover, ease_state, ease_value, game_hint, glow, link, section_heading,
@@ -31,7 +33,6 @@ use crate::ui::theme::{
 };
 
 use super::format::format_value;
-use super::ui_face;
 use super::waystone::{is_waystone, mark_color, render_mark_button, waystone_mark_of};
 
 /// Indent of a filter row's second line: the checkbox plus the gap after it.
@@ -100,26 +101,32 @@ pub(super) fn render_sections(
         .iter()
         .any(|filter| filter.generation.is_some());
     let sections = [
-        (Section::Properties, "Свойства предмета".to_owned()),
-        (Section::Implicits, "Собственные свойства".to_owned()),
+        (Section::Properties, tr!("Item properties").to_owned()),
+        (Section::Implicits, tr!("Implicit modifiers").to_owned()),
         (
             Section::Prefixes,
-            format!("Префиксы · {}", generation_count(ModGeneration::Prefix)),
+            tr!(
+                "Prefixes · {count}",
+                count = generation_count(ModGeneration::Prefix)
+            ),
         ),
         (
             Section::Suffixes,
-            format!("Суффиксы · {}", generation_count(ModGeneration::Suffix)),
+            tr!(
+                "Suffixes · {count}",
+                count = generation_count(ModGeneration::Suffix)
+            ),
         ),
         (
             Section::Other,
             if has_affixes {
-                "Прочие свойства"
+                tr!("Other modifiers")
             } else {
-                "Свойства"
+                tr!("Modifiers")
             }
             .to_owned(),
         ),
-        (Section::Totals, "Суммарные (псевдо)".to_owned()),
+        (Section::Totals, tr!("Totals (pseudo)").to_owned()),
     ];
     let folded = state
         .filters
@@ -150,7 +157,7 @@ pub(super) fn render_sections(
                         div()
                             .pt(rems_from_px(10.))
                             .pb(rems_from_px(2.))
-                            .child(section_heading(ui_face(), &title)),
+                            .child(section_heading(fonts::interface_font(), &title)),
                     )
                     .children(rows)
             })
@@ -168,9 +175,9 @@ fn render_hidden_toggle(
     cx: &Context<PriceCheckApp>,
 ) -> impl IntoElement {
     let label = if shown {
-        format!("▴ Свернуть суммарные и второстепенные ({count})")
+        tr!("▴ Hide totals and minor rows ({count})", count = count)
     } else {
-        format!("▾ Суммарные и второстепенные: ещё {count}")
+        tr!("▾ Totals and minor rows: {count} more", count = count)
     };
     div()
         .flex()
@@ -252,7 +259,7 @@ fn render_filter_row(
                 .flex_none()
                 .pt(rems_from_px(2.))
                 .when_some(filter.tier_info.as_ref(), |this, info| {
-                    this.tooltip(game_hint(ui_face(), None, tier_hint(info)))
+                    this.tooltip(game_hint(fonts::interface_font(), None, tier_hint(info)))
                 })
                 .child(render_tier(tier))
         }))
@@ -299,7 +306,7 @@ fn render_filter_row(
                                 div()
                                     .text_size(rems_from_px(12.))
                                     .text_color(rgb(TEXT_MUTED))
-                                    .child("не участвует в поиске"),
+                                    .child(tr!("not part of the search")),
                             )
                         }),
                 )
@@ -315,30 +322,47 @@ fn render_filter_row(
     }
 }
 
-/// The tier badge's hint, from the tier table: «Тир 3 из 9», the bottom of the tier's rolls,
-/// every tier's rolls, the item level the tier needs, and the best tier the item's level lets
-/// roll.
+/// The tier badge's hint, from the tier table: «Тир 3 из 9» (`Tier 3 of 9`), the bottom of the
+/// tier's rolls, every tier's rolls, the item level the tier needs, and the best tier the item's
+/// level lets roll.
 fn tier_hint(info: &TierInfo) -> Vec<(gpui::SharedString, u32)> {
     let mut lines = Vec::with_capacity(5);
     lines.push((
-        format!("Тир {} из {}", info.current, info.count).into(),
+        tr!(
+            "Tier {tier} of {count}",
+            tier = info.current,
+            count = info.count
+        )
+        .into(),
         GOLD_LIGHT,
     ));
     if let Some(floor) = info.tier_floor {
-        lines.push((format!("Этот тир: от {}", format_value(floor)).into(), TEXT));
+        lines.push((
+            tr!("This tier: from {value}", value = format_value(floor)).into(),
+            TEXT,
+        ));
     }
     if let Some((low, high)) = info.range {
         lines.push((
-            format!("Все тиры: {}–{}", format_value(low), format_value(high)).into(),
+            tr!(
+                "All tiers: {low}–{high}",
+                low = format_value(low),
+                high = format_value(high)
+            )
+            .into(),
             TEXT_DIM,
         ));
     }
     lines.push((
-        format!("Нужен уровень предмета {}", info.min_level).into(),
+        tr!("Requires item level {level}", level = info.min_level).into(),
         TEXT_DIM,
     ));
     lines.push((
-        format!("Лучший тир на уровне этой вещи: T{}", info.best_available).into(),
+        tr!(
+            "Best tier at this item's level: T{tier}",
+            tier = info.best_available
+        )
+        .into(),
         TEXT_DIM,
     ));
     lines
@@ -357,11 +381,11 @@ fn weighted_sum_badge() -> impl IntoElement {
         .text_size(rems_from_px(11.))
         .line_height(rems_from_px(14.))
         .text_color(rgb(GOLD))
-        .tooltip(hints::hint(
-            "Сумма: значение сложено из всех модификаторов вещи с этим свойством, и сайт \
-             торговли ищет по такой же сумме у лотов.",
-        ))
-        .child("сумма")
+        .tooltip(hints::hint(tr!(
+            "Sum: the value adds up this stat from every modifier of the item that has it, and \
+             the trade site sums listings the same way."
+        )))
+        .child(tr!("sum"))
 }
 
 /// A mod row's roll slider (`roll_slider::Slider`): a track from the
@@ -395,14 +419,18 @@ fn render_roll_slider(
     let view = cx.entity();
     let (low, high) = (format_value(slider.low), format_value(slider.high));
     let hint = match slider.handle {
-        Handle::Min => format!(
-            "Края — самое низкое ({low}) и самое высокое ({high}) значение этого свойства во \
-             всех тирах, светлая метка — значение этой вещи, кружок — минимум поиска."
+        Handle::Min => tr!(
+            "The ends are this stat's lowest ({low}) and highest ({high}) rolls across all tiers, \
+             the bright mark is this item's roll, the circle is the search's minimum.",
+            low = low,
+            high = high
         ),
-        Handle::Max => format!(
-            "Края — самое низкое ({low}) и самое высокое ({high}) значение этого свойства во \
-             всех тирах, светлая метка — значение этой вещи, кружок — максимум поиска: здесь чем \
-             меньше, тем лучше."
+        Handle::Max => tr!(
+            "The ends are this stat's lowest ({low}) and highest ({high}) rolls across all tiers, \
+             the bright mark is this item's roll, the circle is the search's maximum: lower is \
+             better here.",
+            low = low,
+            high = high
         ),
     };
     div()
@@ -546,14 +574,15 @@ fn slider_track(
     .h(rems_from_px(SLIDER_HEIGHT))
 }
 
-/// A free affix slot row -- searchable as "at least this many empty prefixes/suffixes".
+/// A free affix slot row -- searchable as "at least this many empty prefixes/suffixes", the trade
+/// site's `# Empty Prefix Modifiers`.
 fn free_slot_text(filter: &SearchFilter) -> String {
     let count = filter.roll.as_ref().map_or(0.0, |roll| roll.value) as u32;
     match (filter.generation, count) {
-        (Some(ModGeneration::Prefix), 1) => "Свободный префикс".to_owned(),
-        (Some(ModGeneration::Prefix), count) => format!("Свободных префиксов: {count}"),
-        (_, 1) => "Свободный суффикс".to_owned(),
-        (_, count) => format!("Свободных суффиксов: {count}"),
+        (Some(ModGeneration::Prefix), 1) => tr!("Empty prefix").to_owned(),
+        (Some(ModGeneration::Prefix), count) => tr!("Empty prefixes: {count}", count = count),
+        (_, 1) => tr!("Empty suffix").to_owned(),
+        (_, count) => tr!("Empty suffixes: {count}", count = count),
     }
 }
 
@@ -605,7 +634,8 @@ fn stat_line(filter: &SearchFilter, site: TradeSite) -> StyledText {
 }
 
 /// `filter.display_text`, except the base-property rows `stat_filters` labels in English: those
-/// read in the game's own Russian wording on the Russian site.
+/// read in the game's own Russian wording on the Russian site. They follow the item's language,
+/// not the interface's: they are the item's own property lines, as its tooltip words them.
 fn display_template(filter: &SearchFilter, site: TradeSite) -> &str {
     if filter.tag != FilterTag::Property || site != TradeSite::Russian {
         return &filter.display_text;
@@ -645,16 +675,20 @@ fn display_template(filter: &SearchFilter, site: TradeSite) -> &str {
     }
 }
 
-/// EE2's coloured source badges (`FilterModifier.vue`'s `.tag-*` classes, Russian locale
-/// wording) for the kinds that change what an item is worth; `None` for the plain ones the
-/// section header already names.
+/// EE2's coloured source badges (`FilterModifier.vue`'s `.tag-*` classes; the trade site's names
+/// of the stat groups) for the kinds that change what an item is worth; `None` for the plain ones
+/// the section header already names.
 fn source_badge(tag: FilterTag) -> Option<impl IntoElement> {
     let (label, bg, fg) = match tag {
-        FilterTag::Rune => ("усилитель", BADGE_RUNE_BG, BADGE_RUNE_TEXT),
-        FilterTag::Crafted => ("мастер", BADGE_RUNE_BG, BADGE_RUNE_TEXT),
-        FilterTag::Fractured => ("расколотый", BADGE_FRACTURED_BG, BADGE_INK),
-        FilterTag::Enchant => ("зачарование", BADGE_ENCHANT_BG, BADGE_ENCHANT_TEXT),
-        FilterTag::Desecrated => ("очернённый", BADGE_DESECRATED_BG, BADGE_DESECRATED_TEXT),
+        FilterTag::Rune => (tr!("augment"), BADGE_RUNE_BG, BADGE_RUNE_TEXT),
+        FilterTag::Crafted => (tr!("crafted"), BADGE_RUNE_BG, BADGE_RUNE_TEXT),
+        FilterTag::Fractured => (tr!("fractured"), BADGE_FRACTURED_BG, BADGE_INK),
+        FilterTag::Enchant => (tr!("enchant"), BADGE_ENCHANT_BG, BADGE_ENCHANT_TEXT),
+        FilterTag::Desecrated => (
+            tr!("desecrated"),
+            BADGE_DESECRATED_BG,
+            BADGE_DESECRATED_TEXT,
+        ),
         FilterTag::Explicit
         | FilterTag::Implicit
         | FilterTag::Property
@@ -728,7 +762,7 @@ fn render_bounds(
         ))
 }
 
-/// One min/max box: shows `text` (or the "мин"/"макс" placeholder while empty), its edge warming
+/// One min/max box: shows `text` (or the min/max placeholder while empty), its edge warming
 /// to gold under the pointer so it reads as editable, takes focus on click so
 /// `PriceCheckApp::handle_filter_key` receives the keystrokes, and while focused keeps the gold
 /// edge and shows a caret after the value -- highlighted as selected right after the click
@@ -747,9 +781,9 @@ fn render_bound_input(
     let focused = focus_handle.is_focused(window);
     let focus_for_click = focus_handle.clone();
     let (key, placeholder) = if is_min {
-        ("min", "мин")
+        ("min", tr!("min"))
     } else {
-        ("max", "макс")
+        ("max", tr!("max"))
     };
 
     let element = div()

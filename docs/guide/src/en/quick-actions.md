@@ -2,27 +2,26 @@
 
 Quick actions are hotkeys that type into the game for you: a chat command or message, or a search
 string for the stash or a vendor's window. Set them up in the [settings](settings.md), section
-«Быстрые действия» (quick actions). You can have up to 12.
+**Quick actions**. You can have up to 12.
 
 Out of the box there is one action, `/hideout`, without a hotkey: record a key for it to use it.
 
 ## Setting up an action
 
-1. Click «+ Добавить действие» (add action). A new row appears with the cursor in its text box.
-2. Pick its kind: «Чат» (chat) or «Тайник» (stash).
+1. Click **+ Add action**. A new row appears with the cursor in its text box.
+2. Pick its kind: **Chat** or **Stash**.
 3. Type the text: a command or message for chat (the box suggests `/hideout, /exit, @last
-   спасибо…`), or a search string for the stash (the box suggests «Строка поиска, например с
-   poe2.re»: a search string, for example from poe2.re). The action is saved as soon as you press
-   <kbd>Enter</kbd> or leave the box.
-4. Click the key field, which reads «без клавиши» (no key), and press a combination: one of
+   thanks…`), or a search string for the stash (the box suggests "Search text, e.g. from
+   poe2.re"). The action is saved as soon as you press <kbd>Enter</kbd> or leave the box.
+4. Click the key field, which reads "no key", and press a combination: one of
    <kbd>F1</kbd>–<kbd>F12</kbd>, or <kbd>Ctrl</kbd> or <kbd>Alt</kbd> with a letter or a digit.
    The key works at once. <kbd>Backspace</kbd> leaves the action without a key; <kbd>Esc</kbd>
    keeps the old one.
 
 Like everything in the settings, changes apply at once: there is no Save button. The **×** at the
 right of a row removes the action. An action without text is not saved. A key cannot be the
-price-check hotkey («Это сочетание уже у проверки цены») or another action's («Это сочетание уже у
-другого быстрого действия»); otherwise the same rules apply as for the
+price-check hotkey ("The price check already uses this combination") or another action's
+("Another quick action already uses this combination"); otherwise the same rules apply as for the
 [price-check hotkey](settings.md#hotkey).
 
 ## Chat actions
@@ -62,11 +61,10 @@ so quick actions never send these, in any letter case and also after a chat chan
 | `/convertracereward` | Destroys the race reward unique on the cursor, turning it into an account-bound skin |
 | `/ResetAtlas` | Resets your Atlas (the game allows it only when no map is left to run) |
 
-If an action's text is one of them, a warning appears under it, for example «Команда /destroy
-уничтожает предмет — быстрые действия её не отправляют» (/destroy destroys an item; quick actions
-don't send it), and that text is not saved: the action keeps its last allowed text (a new action,
-none) until you write another. Stash search actions are checked the same way. Any other text, such
-as `@last thanks`, is sent as you wrote it.
+If an action's text is one of them, a warning appears under it, for example "The /destroy command
+destroys the item — quick actions don't send it", and that text is not saved: the action keeps its
+last allowed text (a new action, none) until you write another. Stash search actions are checked
+the same way. Any other text, such as `@last thanks`, is sent as you wrote it.
 
 ## Good to know
 
@@ -76,6 +74,5 @@ as `@last thanks`, is sent as you wrote it.
   keyboard layout. Your clipboard is put back right after.
 - Each press sends one message: holding the key down sends it once, and a press while an action
   is still typing is ignored.
-- If another program already holds the key you press, the row says so, for example «F7 занято
-  другой программой — осталось F5» (F7 is taken by another program; F5 stays), and the action
-  keeps its previous key (a new one, none).
+- If another program already holds the key you press, the row says so, for example "F7 is taken by
+  another program — F5 stays", and the action keeps its previous key (a new one, none).

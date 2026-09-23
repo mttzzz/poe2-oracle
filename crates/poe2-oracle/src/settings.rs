@@ -92,6 +92,9 @@ pub struct Settings {
     /// side without one keeps EE2's placement.
     #[serde(deserialize_with = "or_default")]
     pub panel_positions: PanelPositions,
+    /// The onboarding tour (`ui::tour`) was finished or skipped. Until then it starts by itself
+    /// at launch; after, only from «Помощь».
+    pub tour_done: bool,
 }
 
 impl Default for Settings {
@@ -119,6 +122,7 @@ impl Default for Settings {
                 hotkey: None,
             }],
             panel_positions: PanelPositions::default(),
+            tour_done: false,
         }
     }
 }

@@ -45,6 +45,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 use crate::bound_input;
 use crate::bug_report;
 use crate::game_chat;
+use crate::i18n;
 use crate::item_refs::{self, RefKind};
 use crate::live_search::{self, WatchedSearch};
 use crate::overlay_layout::{self, PanelSide, PhysicalRect};
@@ -53,6 +54,7 @@ use crate::platform::game_window::{Foreground, GameScreen};
 use crate::platform::{clipboard_poll, esc_hook, game_config, game_window, synth_input};
 use crate::roll_slider::{self, Handle, Slider};
 use crate::settings::{self, Hotkey, LeagueChoice, QuickAction, Settings, WaystoneMark};
+use crate::tr;
 
 /// Defaults matching `HostClipboard.ts`'s real, working constants (see `clipboard_poll`'s own
 /// doc comment): 48ms initial delay and poll interval, 500ms total budget.
@@ -160,7 +162,7 @@ pub enum SearchState {
         wait_secs: u64,
     },
     Searching,
-    Failed(String),
+    Failed(SearchFailure),
     /// Nothing matched; `relaxed` as in `Matched`, when that was the player's relaxed search.
     Empty {
         relaxed: Option<(u32, u32)>,
@@ -186,6 +188,110 @@ pub enum SearchState {
         value: f64,
         unit: PriceUnit,
     },
+}
+
+/// What went wrong with a check, shown in place of an item. Kept as what happened rather than as
+/// words: the panel says it in the interface language as it draws it ([`Problem::message`]), so a
+/// change of language reaches it too.
+#[derive(Debug)]
+pub enum Problem {
+    /// No item text came, and another program holds the copy combo named.
+    ComboTaken(String),
+    /// The parser rejected the item text -- a gamble offer too -- and where the text was kept
+    /// for a report, once it is.
+    Unparsed {
+        error: ParseError,
+        saved: Option<PathBuf>,
+    },
+}
+
+impl Problem {
+    /// The problem in the interface language.
+    pub fn message(&self) -> String {
+        match self {
+            Problem::ComboTaken(combo) => tr!(
+                "The game doesn't copy the item: another program takes {combo} — most often a \
+                 graphics card overlay, a screen recorder or Discord. Free the shortcut in that \
+                 program's settings.",
+                combo = combo
+            ),
+            Problem::Unparsed { error, saved } => {
+                let mut message = describe_parse_error(error);
+                if let Some(path) = saved {
+                    message.push_str("\n\n");
+                    message.push_str(&tr!(
+                        "The item's text was saved to {path}",
+                        path = path.display()
+                    ));
+                }
+                message
+            }
+        }
+    }
+
+    /// Whether it is an item the parser rejected: one to report (`PriceCheckApp::report_item`),
+    /// unlike a gamble offer or a copy combo another program holds.
+    pub fn reportable(&self) -> bool {
+        matches!(self, Problem::Unparsed { error, .. } if *error != ParseError::Unrevealed)
+    }
+}
+
+/// Why a search failed, kept as what happened like [`Problem`] and said in the interface language
+/// as the panel draws it ([`SearchFailure::message`]).
+#[derive(Debug)]
+pub enum SearchFailure {
+    /// The trade site restricted this IP: the seconds until it takes requests again, if it said.
+    RateLimited(Option<u64>),
+    /// The trade API refused the request, with its HTTP status and message.
+    Refused { status: u16, message: String },
+    /// The request never got through -- no network, no DNS, a refused or dropped connection: the
+    /// player's connection, not the search. With the error's own words.
+    Unreachable(String),
+    /// Anything else, with the error's own words.
+    Other(String),
+}
+
+impl SearchFailure {
+    /// What a failed search's `err` means for the player.
+    fn of(err: &anyhow::Error) -> Self {
+        if let Some(RateLimitedFor(wait)) = err.downcast_ref::<RateLimitedFor>() {
+            return SearchFailure::RateLimited(Some(wait.as_secs()));
+        }
+        if let Some(api) = err.downcast_ref::<TradeApiError>() {
+            if api.is_rate_limited() {
+                return SearchFailure::RateLimited(api.retry_after_secs);
+            }
+            return SearchFailure::Refused {
+                status: api.status,
+                message: api.message.clone(),
+            };
+        }
+        if err
+            .chain()
+            .any(|cause| cause.downcast_ref::<std::io::Error>().is_some())
+        {
+            return SearchFailure::Unreachable(format!("{err:#}"));
+        }
+        SearchFailure::Other(format!("{err:#}"))
+    }
+
+    /// The failure in the interface language.
+    pub fn message(&self) -> String {
+        match self {
+            SearchFailure::RateLimited(retry_after_secs) => rate_limit_message(*retry_after_secs),
+            SearchFailure::Refused { status, message } => tr!(
+                "The trade API refused the request (HTTP {status}): {message}",
+                status = status,
+                message = message
+            ),
+            SearchFailure::Unreachable(error) => tr!(
+                "Can't reach the trade site — check your internet connection and try again.\n\n\
+                 {error}",
+                error = error
+            ),
+            SearchFailure::Other(error) => tr!("Search failed: {error}", error = error),
+        }
+    }
 }
 
 /// Per-filter-row UI state paired 1:1 with `PriceCheckApp.filters` (same index) -- the editable
@@ -337,7 +443,7 @@ pub struct PriceCheckApp {
     pub item: Option<ParsedItem>,
     /// What went wrong with the last check -- an item the parser rejected, a copy combo another
     /// program holds -- shown in place of an item.
-    pub problem: Option<String>,
+    pub problem: Option<Problem>,
     pub filters: Vec<stat_filters::SearchFilter>,
     pub filter_ui: Vec<FilterRowUi>,
     /// How the rows were set up (`choose_profile`): the item's own default profile
@@ -394,9 +500,6 @@ pub struct PriceCheckApp {
     /// The last checked item's text, as the game copied it -- parsed or not: what a report of a
     /// misread or mispriced item carries (`report_item`).
     item_text: Option<String>,
-    /// The problem shown is an item the parser rejected -- one to report (`report_item`), unlike
-    /// a gamble offer or a copy combo another program holds.
-    problem_reportable: bool,
     /// The listing whose whisper was just copied -- the search generation that listed it and its
     /// row -- which the row says for a few seconds.
     copied_whisper: Option<(u64, usize)>,
@@ -464,7 +567,6 @@ impl PriceCheckApp {
             listings_wanted: false,
             one_fewer_next: false,
             item_text: None,
-            problem_reportable: false,
             copied_whisper: None,
             search_generation: 0,
             search_cache: Vec::new(),
@@ -485,14 +587,10 @@ impl PriceCheckApp {
         &self.leagues
     }
 
-    /// The trade site's leagues named in the game client's language (`item_language`): the
-    /// Russian site's list for a Russian client, the international one's otherwise.
+    /// The trade site's leagues named in the interface language (`i18n::lang`): the Russian
+    /// site's list for a Russian interface, the international one's otherwise.
     pub fn league_names(&self) -> &[League] {
-        let site = match self.item_language() {
-            Some(ItemLanguage::Russian) => TradeSite::Russian,
-            Some(ItemLanguage::English) | None => TradeSite::International,
-        };
-        &self.catalog(site).leagues
+        &self.catalog(i18n::lang().trade_site()).leagues
     }
 
     /// The open settings window, if any.
@@ -561,7 +659,7 @@ impl PriceCheckApp {
                     .map_or("-", |category| category.id.as_str()),
                 self.site
             ),
-            (None, Some(error)) => format!("not parsed: {error}"),
+            (None, Some(problem)) => format!("not parsed: {}", problem.message()),
             (None, None) => "none yet".to_owned(),
         };
         format!(
@@ -573,8 +671,8 @@ impl PriceCheckApp {
         )
     }
 
-    /// Shows `message` in the panel in place of an item: what went wrong with the check.
-    fn show_problem(&mut self, message: String) {
+    /// Shows `problem` in the panel in place of an item: what went wrong with the check.
+    fn show_problem(&mut self, problem: Problem) {
         self.item = None;
         self.priced_by_market = false;
         self.filters.clear();
@@ -582,8 +680,7 @@ impl PriceCheckApp {
         self.profile = None;
         self.profile_menu = false;
         self.roll_drag = None;
-        self.problem = Some(message);
-        self.problem_reportable = false;
+        self.problem = Some(problem);
         self.search = SearchState::NotSearched;
     }
 
@@ -910,11 +1007,6 @@ impl PriceCheckApp {
         }
     }
 
-    /// Whether the problem the panel shows is a rejected item, which `report_item` reports.
-    pub fn problem_reportable(&self) -> bool {
-        self.problem_reportable
-    }
-
     /// Opens the item problem form (`bug_report::item_problem_url`) for the last checked item --
     /// misread, or priced wrong -- with its text as the game copied it.
     pub fn report_item(&self, cx: &mut App) {
@@ -924,7 +1016,7 @@ impl PriceCheckApp {
         let name = self
             .item
             .as_ref()
-            .map_or("не распознан", |item| item.name.as_str());
+            .map_or(tr!("not recognized"), |item| item.name.as_str());
         cx.open_url(&bug_report::item_problem_url(
             self.item_language(),
             name,
@@ -1507,7 +1599,7 @@ async fn current_market(
     }
     let market = trade_client::cx::fetch_market(client, league, &paths::cache_dir())
         .await
-        .context("загрузка цен биржи")?;
+        .context("loading the exchange market")?;
     // A market that arrives after the player switched leagues is not this league's.
     view.update(cx, |state, cx| {
         if state.league == league {
@@ -1537,7 +1629,7 @@ async fn current_scout(
     }
     let prices = trade_client::scout::fetch_prices(client, league, &paths::cache_dir())
         .await
-        .context("загрузка цен poe2scout")?;
+        .context("loading poe2scout's prices")?;
     // Prices that arrive after the player switched leagues are not this league's.
     view.update(cx, |state, cx| {
         if state.league == league {
@@ -1807,11 +1899,7 @@ async fn run_price_check(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
             view.update(cx, |state, cx| {
                 state.show_panel(placement);
                 state.league_menu = false;
-                state.show_problem(format!(
-                    "Игра не копирует предмет: сочетание {combo} перехватывает другая \
-                     программа — чаще всего оверлей видеокарты, запись экрана или Discord. \
-                     Освободите его в настройках той программы."
-                ));
+                state.show_problem(Problem::ComboTaken(combo));
                 cx.notify();
             });
         }
@@ -1895,8 +1983,10 @@ async fn run_price_check(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
             }
             Err(err) => {
                 log::warn!("not parsed: {err:?}");
-                state.show_problem(describe_parse_error(&err));
-                state.problem_reportable = err != ParseError::Unrevealed;
+                state.show_problem(Problem::Unparsed {
+                    error: err,
+                    saved: None,
+                });
             }
         }
         cx.notify();
@@ -1910,8 +2000,8 @@ async fn run_price_check(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
         match save_unparsed(&paths::unparsed_dir(), &text, reason) {
             // A rejected item says where its text went, so the player can send it in.
             Ok(path) if reason == UnparsedReason::Rejected => view.update(cx, |state, cx| {
-                if let Some(message) = &mut state.problem {
-                    message.push_str(&format!("\n\nТекст предмета сохранён: {}", path.display()));
+                if let Some(Problem::Unparsed { saved, .. }) = &mut state.problem {
+                    *saved = Some(path);
                     cx.notify();
                 }
             }),
@@ -2183,7 +2273,7 @@ pub async fn run_search(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
                 trade_url: results.trade_url,
                 relaxed: results.relaxed,
             },
-            Err(err) => SearchState::Failed(describe_search_error(&err)),
+            Err(err) => SearchState::Failed(SearchFailure::of(&err)),
         };
         cx.notify();
     });
@@ -2525,49 +2615,29 @@ fn store_limiter(
     });
 }
 
+/// A rejected item text's problem in the interface language.
 fn describe_parse_error(err: &ParseError) -> String {
     match err {
-        ParseError::Empty => "Не удалось разобрать предмет".to_string(),
+        ParseError::Empty => tr!("Couldn't read the item").to_owned(),
         // The clipboard poll only returns text that looks like an item in *some* client
         // language, so reaching this means a client language the parser doesn't cover.
         ParseError::UnknownLanguage | ParseError::WrongLanguage { .. } => {
-            "Не удалось разобрать предмет: поддерживаются только русский и английский клиенты"
-                .to_string()
+            tr!("Couldn't read the item: only the English and Russian game clients are supported")
+                .to_owned()
         }
         ParseError::MissingNameplate => {
-            "Не удалось разобрать предмет: не найдено название".to_string()
+            tr!("Couldn't read the item: its name wasn't found").to_owned()
         }
-        ParseError::UnrecognizedItemClass(class) => {
-            format!("Не удалось разобрать предмет: неизвестный класс «{class}»")
-        }
-        ParseError::Unrevealed => "Это ставка у торговца: какой предмет выпадет, станет \
-            известно только после покупки. На площадке такие не продаются."
-            .to_string(),
+        ParseError::UnrecognizedItemClass(class) => tr!(
+            "Couldn't read the item: unknown item class “{class}”",
+            class = class
+        ),
+        ParseError::Unrevealed => tr!(
+            "This is a vendor's gamble: which item it is shows only once you buy it. Items like \
+             this aren't sold on the trade site."
+        )
+        .to_owned(),
     }
-}
-
-fn describe_search_error(err: &anyhow::Error) -> String {
-    if let Some(RateLimitedFor(wait)) = err.downcast_ref::<RateLimitedFor>() {
-        return rate_limit_message(Some(wait.as_secs()));
-    }
-    if let Some(api) = err.downcast_ref::<TradeApiError>() {
-        if api.is_rate_limited() {
-            return rate_limit_message(api.retry_after_secs);
-        }
-        return format!(
-            "Trade API отклонил запрос (HTTP {}): {}",
-            api.status, api.message
-        );
-    }
-    // A request that never got through (no network, no DNS, a refused or dropped connection):
-    // the player's connection, not the search.
-    if err
-        .chain()
-        .any(|cause| cause.downcast_ref::<std::io::Error>().is_some())
-    {
-        return format!("Нет связи с сайтом торговли — проверьте интернет и повторите.\n\n{err:#}");
-    }
-    format!("Ошибка поиска: {err:#}")
 }
 
 /// The trade site's refusal, said the way the player can act on it: when to try again, and that
@@ -2575,22 +2645,15 @@ fn describe_search_error(err: &anyhow::Error) -> String {
 /// -- while the market prices, which don't go through it, still work.
 fn rate_limit_message(retry_after_secs: Option<u64>) -> String {
     let when = match retry_after_secs {
-        Some(secs) => format!("через {}", format_wait(secs)),
-        None => "чуть позже".to_owned(),
+        Some(secs) => tr!("in {wait}", wait = i18n::duration_secs(secs)),
+        None => tr!("a little later").to_owned(),
     };
-    format!(
-        "Сайт торговли временно ограничил поиск — повторите {when}.\n\nЛимит общий для всех \
-         запросов с вашего IP, в том числе из браузера. Цены валютной биржи работают и сейчас."
+    tr!(
+        "The trade site has limited searches for a while — try again {when}.\n\nThe limit counts \
+         every request from your IP, your browser's included. Currency Exchange prices still \
+         work.",
+        when = when
     )
-}
-
-/// A wait as minutes and seconds: `45 с`, `10 мин`, `9 мин 50 с`.
-fn format_wait(secs: u64) -> String {
-    match (secs / 60, secs % 60) {
-        (0, secs) => format!("{secs} с"),
-        (mins, 0) => format!("{mins} мин"),
-        (mins, secs) => format!("{mins} мин {secs} с"),
-    }
 }
 
 fn ctrl_is_down() -> bool {

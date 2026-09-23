@@ -49,17 +49,24 @@ top.
 PoE2 Oracle has no main window. It runs in the background, and its only sign is an icon in the
 notification area next to the clock. If you do not see it, it may be under the **^** arrow (show
 hidden icons); you can drag it out onto the taskbar. Hover the icon to see the price-check
-hotkey: «PoE2 Oracle — проверка цены: Ctrl+E».
+hotkey: "PoE2 Oracle — price check: Ctrl+E".
 
 On the very first start the app downloads the trade site's data, which takes a few seconds, and
-then opens its settings window with «Добро пожаловать!» (Welcome!) at the top and a short
-reminder: the icon is by the clock, the settings open from the icon's menu and the gear on the
-panel, and in the game you point at an item and press <kbd>Ctrl</kbd>+<kbd>E</kbd>, <kbd>Esc</kbd>
-closes the panel.
+then walks you through a short tour. It dims the screen around one thing at a time and explains it
+on a card: the league in the settings window; then, in the game, pointing at an item and pressing
+<kbd>Ctrl</kbd>+<kbd>E</kbd>; then the filters, **Search**, the listings and the league on the
+price panel that opens; and last the XP overlay. **Next** and **Back** move between the steps, and a
+step that waits for you, like the first price check, moves on by itself once you do it. **Skip
+tour** ends it. The tour starts with every launch until you finish or skip it; after that,
+**Help** → **Tutorial** → **Replay** in the settings runs it again.
 
-Look through the [settings](settings.md): the league, the client language and the hotkey are the
-main ones. Changes apply and are saved at once. Warnings marked **⚠** at the top mean something in
-your setup keeps price checks from working; see [Troubleshooting](troubleshooting.md).
+PoE2 Oracle speaks English or Russian. At first it follows the game client's language, or
+Windows' before the game has ever run; **Interface language** in the settings changes it. See
+[Interface language](settings.md#interface-language).
+
+Look through the [settings](settings.md): the league, the client and interface languages and the
+hotkey are the main ones. Changes apply and are saved at once. Warnings marked **⚠** at the top mean
+something in your setup keeps price checks from working; see [Troubleshooting](troubleshooting.md).
 
 Then, in the game, point at an item and press <kbd>Ctrl</kbd>+<kbd>E</kbd>. See
 [Price check](price-check.md).
@@ -68,12 +75,11 @@ Then, in the game, point at an item and press <kbd>Ctrl</kbd>+<kbd>E</kbd>. See
 
 Click the icon (a right-click works too) to open its menu:
 
-- «Настройки» (Settings) opens the [settings](settings.md);
-- «Проверить обновления» (check for updates) looks for a new version; see
-  [Updates and uninstall](updates.md);
-- «Сообщить об ошибке» (report a bug) saves a diagnostics report to your desktop and opens
-  GitHub's bug report form in your browser; see [Reporting a bug](troubleshooting.md#reporting-a-bug);
-- «Выход» (Quit) closes PoE2 Oracle.
+- **Settings** opens the [settings](settings.md);
+- **Check for updates** looks for a new version; see [Updates and uninstall](updates.md);
+- **Report a bug** saves a diagnostics report to your desktop and opens GitHub's bug report form
+  in your browser; see [Reporting a bug](troubleshooting.md#reporting-a-bug);
+- **Quit** closes PoE2 Oracle.
 
 ## One copy at a time
 
@@ -83,6 +89,5 @@ one runs quietly exits.
 
 ## Start with Windows
 
-Turn on «Запускать вместе с Windows» (start with Windows) in the settings, section «Общие»
-(general), or tick the box on the installer's last page. Started with Windows, PoE2 Oracle waits
-in the tray until you play.
+Turn on **Start with Windows** in the settings, section **General**, or tick the box on the
+installer's last page. Started with Windows, PoE2 Oracle waits in the tray until you play.

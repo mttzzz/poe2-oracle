@@ -8,13 +8,14 @@ use gpui::{
     linear_color_stop, linear_gradient, prelude::*, rgb,
 };
 
-use item_parser::ItemLanguage;
 use poe2_domain::{ItemRarity, ParsedItem};
 use trade_client::{RarityFilter, TradeSite};
 
 use crate::craft_link;
+use crate::i18n;
 use crate::item_refs;
 use crate::price_check::PriceCheckApp;
+use crate::tr;
 use crate::ui::fonts;
 use crate::ui::hint as hints;
 use crate::ui::style::{self, chip, heading, link, ornament_rule};
@@ -32,8 +33,8 @@ const ART_SIZE: f32 = 48.;
 /// and in the stand-in for its tooltip face on the item's client language (see `fonts`), like its
 /// tooltip header; beside it the item's art, and under it links to the item's poe2db and wiki
 /// pages (`item_refs`), when the item database knows it, to the item in Craft of Exile
-/// (`craft_link`), when the site crafts it, and to the form that reports the item read or priced
-/// wrong (`PriceCheckApp::report_item`).
+/// (`craft_link`, the site in the interface language), when the site crafts it, and to the form
+/// that reports the item read or priced wrong (`PriceCheckApp::report_item`).
 pub(super) fn render_nameplate(
     item: &ParsedItem,
     site: TradeSite,
@@ -43,10 +44,6 @@ pub(super) fn render_nameplate(
     let refs = item_refs::refs_for(item);
     let art = refs.and_then(|found| found.icon_url());
     let color = name_color(item);
-    let language = match site {
-        TradeSite::Russian => ItemLanguage::Russian,
-        TradeSite::International => ItemLanguage::English,
-    };
     let names = div()
         .flex()
         .flex_col()
@@ -78,22 +75,22 @@ pub(super) fn render_nameplate(
         .children(
             refs.map(|found| render_link("poe2db ↗", found.poe2db_url(site == TradeSite::Russian))),
         )
-        .children(refs.map(|found| render_link("вики ↗", found.wiki_url())))
+        .children(refs.map(|found| render_link(tr!("wiki ↗"), found.wiki_url())))
         .children(
-            craft_link::url(item, craft_link::site_language(language))
+            craft_link::url(item, craft_link::site_language(i18n::lang()))
                 .map(|url| render_link("Craft of Exile ↗", url)),
         )
         .child(
             div()
                 .id("report-item")
                 .flex_none()
-                .tooltip(hints::hint(
-                    "Предмет разобран или оценён неверно? Откроет на GitHub форму с текстом \
-                     предмета: останется описать, что не так.",
-                ))
+                .tooltip(hints::hint(tr!(
+                    "Item read or priced wrong? Opens a GitHub form with the item's text: all \
+                     that's left is to describe what's wrong."
+                )))
                 .child(link(
                     "link",
-                    "сообщить об ошибке ↗",
+                    tr!("report a problem ↗"),
                     cx.listener(|view, _event: &MouseDownEvent, _window, cx| {
                         view.report_item(cx);
                     }),
@@ -182,14 +179,14 @@ pub(super) fn render_chips(
         Some(choice) => {
             let (label, value, hint) = match &choice.current().base_type {
                 Some(base_type) => (
-                    "База:",
+                    tr!("Base:"),
                     base_type.clone(),
-                    "Поиск только по этой базе. Нажмите, чтобы искать среди всех вещей класса.",
+                    tr!("Searches this base only. Click to search every item of the class."),
                 ),
                 None => (
-                    "Класс:",
+                    tr!("Class:"),
                     class.unwrap_or_default(),
-                    "Поиск среди всех вещей класса. Нажмите, чтобы искать только по базе этой вещи.",
+                    tr!("Searches every item of the class. Click to search only this item's base."),
                 ),
             };
             Some(
@@ -210,20 +207,26 @@ pub(super) fn render_chips(
     let corruption = state.corruption.map(|choice| {
         let (value, hint) = match (choice.value, choice.on) {
             (false, true) => (
-                "Можно изменить",
-                "Только лоты, которые ещё можно изменить: осквернённые не учитываются — их \
-                 нельзя улучшить, и у них бывают свойства, которых нет у этой вещи. Нажмите, \
-                 чтобы учитывать и их.",
+                tr!("Modifiable"),
+                tr!(
+                    "Only listings that can still be modified: corrupted ones are left out — they \
+                     can't be improved, and they can have modifiers this item doesn't. Click to \
+                     include them."
+                ),
             ),
             (true, true) => (
-                "Только осквернённые",
-                "Эта вещь осквернена: учитываются только осквернённые лоты, у которых скверна \
-                 так же изменила свойства. Нажмите, чтобы учитывать и неосквернённые.",
+                tr!("Corrupted only"),
+                tr!(
+                    "This item is corrupted: only corrupted listings count, whose corruption \
+                     changed their modifiers the same way. Click to include uncorrupted ones too."
+                ),
             ),
             (_, false) => (
-                "И осквернённые, и нет",
-                "Скверна не учитывается. Нажмите, чтобы искать только лоты в том же состоянии, \
-                 что и эта вещь.",
+                tr!("Corrupted or not"),
+                tr!(
+                    "Corruption is ignored. Click to search only for listings in the same state \
+                     as this item."
+                ),
             ),
         };
         toggle_chip(
@@ -238,14 +241,16 @@ pub(super) fn render_chips(
     let identification = state.identification.map(|choice| {
         let (value, hint) = if choice.on {
             (
-                "Неопознанные",
-                "Эта вещь не опознана: учитываются только неопознанные лоты — опознанные \
-                 продаются за свои свойства. Нажмите, чтобы учитывать и опознанные.",
+                tr!("Unidentified only"),
+                tr!(
+                    "This item is unidentified: only unidentified listings count — identified \
+                     ones sell for their modifiers. Click to include identified ones."
+                ),
             )
         } else {
             (
-                "И опознанные",
-                "Учитываются и опознанные лоты. Нажмите, чтобы искать только неопознанные.",
+                tr!("Identified too"),
+                tr!("Identified listings count too. Click to search only for unidentified ones."),
             )
         };
         toggle_chip(
@@ -260,29 +265,28 @@ pub(super) fn render_chips(
     let rarity = state.rarity.map(|choice| {
         let (value, hint) = match choice.current() {
             RarityFilter::Magic => (
-                "волшебные",
-                "Поиск только среди волшебных вещей. Нажмите, чтобы искать среди всех, \
-                 кроме уникальных.",
+                tr!("Magic"),
+                tr!("Searches Magic items only. Click to search every rarity but Unique."),
             ),
             RarityFilter::Rare => (
-                "редкие",
-                "Поиск только среди редких вещей. Нажмите, чтобы искать среди всех, \
-                 кроме уникальных.",
+                tr!("Rare"),
+                tr!("Searches Rare items only. Click to search every rarity but Unique."),
             ),
             RarityFilter::Normal => (
-                "обычные",
-                "Поиск только среди обычных вещей. Нажмите, чтобы искать среди всех, \
-                 кроме уникальных.",
+                tr!("Normal"),
+                tr!("Searches Normal items only. Click to search every rarity but Unique."),
             ),
             RarityFilter::NonUnique | RarityFilter::Unique => (
-                "все, кроме уникальных",
-                "Поиск среди вещей любой редкости, кроме уникальных. Нажмите, чтобы искать \
-                 только среди вещей той же редкости, что и эта.",
+                tr!("Any Non-Unique"),
+                tr!(
+                    "Searches items of every rarity but Unique. Click to search only items of \
+                     this one's rarity."
+                ),
             ),
         };
         toggle_chip(
             "rarity",
-            Some("Редкость:"),
+            Some(tr!("Rarity:")),
             value,
             hint,
             PriceCheckApp::toggle_rarity,
@@ -300,21 +304,23 @@ pub(super) fn render_chips(
         .children(item_type)
         .children(
             item.item_level
-                .map(|level| chip(Some("Ур. предмета:"), level.to_string(), TEXT)),
+                .map(|level| chip(Some(tr!("Item Level:")), level.to_string(), TEXT)),
         )
-        .children(required_level.map(|level| chip(Some("Требуется ур.:"), level.to_string(), TEXT)))
-        .children(sockets.map(|count| chip(Some("Гнёзда:"), count.to_string(), TEXT)))
+        .children(
+            required_level.map(|level| chip(Some(tr!("Required Level:")), level.to_string(), TEXT)),
+        )
+        .children(sockets.map(|count| chip(Some(tr!("Sockets:")), count.to_string(), TEXT)))
         .children(
             item.quality
-                .map(|quality| chip(Some("Качество:"), format!("+{quality}%"), TEXT_VALUE)),
+                .map(|quality| chip(Some(tr!("Quality:")), format!("+{quality}%"), TEXT_VALUE)),
         )
         .children(
             item.is_corrupted
-                .then(|| chip(None, "Осквернено", TEXT_WARNING)),
+                .then(|| chip(None, tr!("Corrupted"), TEXT_WARNING)),
         )
         .children(
             item.stack_size
-                .map(|(count, _)| chip(Some("В стопке:"), count.to_string(), TEXT)),
+                .map(|(count, _)| chip(Some(tr!("Stack Size:")), count.to_string(), TEXT)),
         )
         .children(rarity)
         .children(identification)
@@ -322,9 +328,13 @@ pub(super) fn render_chips(
         .children((searchable > 0).then(|| {
             toggle_chip(
                 "stats",
-                Some("Св-ва:"),
-                format!("{selected} из {searchable}"),
-                "Сколько свойств выбрано для поиска. Нажмите, чтобы отметить все или снять все.",
+                Some(tr!("Stats:")),
+                tr!(
+                    "{selected} of {total}",
+                    selected = selected,
+                    total = searchable
+                ),
+                tr!("How many stats the search uses. Click to check them all or uncheck them all."),
                 PriceCheckApp::toggle_all_filters,
                 cx,
             )

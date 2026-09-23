@@ -35,6 +35,7 @@ use tungstenite::stream::MaybeTlsStream;
 use tungstenite::{Connector, HandshakeError, Message, WebSocket};
 
 use crate::session::TradeSession;
+use crate::tr;
 
 /// The wait before a dropped socket's first new try; each further one waits twice as long, up to
 /// `LAST_RETRY`.
@@ -50,10 +51,6 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 /// The most listing cards the overlay keeps, newest first; a burst of new listings fetches only
 /// that many, the newest.
 pub const SHOWN_LISTINGS: usize = 3;
-
-/// Why "Следить" was refused: the site's own limit per account.
-const TOO_MANY: &str = "Слежение возможно не больше чем за 20 поисками сразу — снимите его с \
-                        другого поиска";
 
 /// A search as the trade site knows it: what a watch opens its socket for and fetches with.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -209,10 +206,13 @@ impl LiveSearches {
 
     fn watch(&mut self, search: WatchedSearch) -> Result<(), &'static str> {
         if !self.session.is_signed_in() {
-            return Err("Слежение работает только со входом на pathofexile.com");
+            return Err(tr!("Live search needs a sign-in to pathofexile.com"));
         }
         if self.watches.len() >= MAX_LIVE_SEARCHES {
-            return Err(TOO_MANY);
+            // The site's own limit per account.
+            return Err(tr!(
+                "Live search works on at most 20 searches at once — stop it on another search"
+            ));
         }
         self.next_id += 1;
         let id = self.next_id;
@@ -231,7 +231,7 @@ impl LiveSearches {
             .spawn(move || socket.run())
             .map_err(|err| {
                 log::warn!("starting a live search thread failed: {err}");
-                "Не удалось запустить слежение"
+                tr!("Couldn't start the live search")
             })?;
         log::info!(
             "live search {id}: watching {} in {} ({:?} site)",
@@ -536,6 +536,7 @@ mod app_side {
     use super::{LiveCard, LiveEvent, LiveListing, LiveSearches, SHOWN_LISTINGS};
     use crate::price_check::{self, PriceCheckApp};
     use crate::session::{self, SessionStatus, TradeSession};
+    use crate::tr;
 
     /// Starts live search: the global the panel's "Следить" drives, and the task that turns what
     /// the sockets hear into cards -- handed back as the channel the trade overlay reads. Needs
@@ -649,9 +650,12 @@ mod app_side {
         log::warn!("live search {watch}: ended ({end:?})");
         let reason = if end == LiveEnd::Unauthorized {
             session::refused(cx);
-            "сайт не принял вход — сессия истекла, войдите заново в настройках, раздел «Аккаунт»"
+            tr!(
+                "the site no longer accepts the sign-in — the session expired, sign in again in \
+                 the settings, “Account” section"
+            )
         } else {
-            "поиска больше нет на сайте — повторите его и включите слежение снова"
+            tr!("the search is gone from the site — run it again and turn live search back on")
         };
         let _ = cards.try_send(LiveCard::Ended {
             label: search.label,

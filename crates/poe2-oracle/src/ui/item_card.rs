@@ -19,6 +19,7 @@ use gpui::{
 };
 use trade_client::{ItemFrame, ListedItem, ListedMod, ModKind, TradeSite, ValueColor};
 
+use crate::tr;
 use crate::ui::fonts::{self, NameFont};
 use crate::ui::panel::format::currency_img;
 use crate::ui::style::{game_frame, switch_in, tooltip_shadow};
@@ -47,7 +48,7 @@ pub(crate) enum ModMark {
     None,
     /// Asked for and rolled within the search's bounds: `✓`.
     Met,
-    /// Asked for and rolled outside them: `✗`, and what the search needs (`нужно от 40`).
+    /// Asked for and rolled outside them: `✗`, and what the search needs (`needs at least 40`).
     Short(String),
 }
 
@@ -55,7 +56,7 @@ pub(crate) enum ModMark {
 /// amount and its currency's icon.
 #[derive(Clone)]
 pub(crate) struct CardPrice {
-    /// The amount as the panel writes amounts (`panel::format::format_ru`).
+    /// The amount as the panel writes amounts (`i18n::number`).
     pub amount: SharedString,
     pub icon: Option<SharedString>,
     /// Stands in for the icon where the catalog has none, as in `panel::format::amount_in`.
@@ -116,6 +117,7 @@ impl ItemCard {
             }
         };
 
+        // The labels carry the space after their colon, as the game's tooltip lines do.
         section(
             item.properties
                 .iter()
@@ -123,11 +125,14 @@ impl ItemCard {
                 .collect(),
         );
         if !item.requirements.is_empty() {
-            section(vec![valued_line("Требуется: ", item.requirements_text())]);
+            section(vec![valued_line(
+                tr!("Requires: "),
+                item.requirements_text(),
+            )]);
         }
         if !item.sockets.is_empty() {
             section(vec![labelled(
-                "Гнёзда: ",
+                tr!("Sockets: "),
                 &sockets_text(&item.sockets),
                 TEXT,
             )]);
@@ -135,7 +140,7 @@ impl ItemCard {
         // Gems and currency list item level 0: nothing to show.
         if let Some(level) = item.item_level.filter(|&level| level > 0) {
             section(vec![labelled(
-                "Уровень предмета: ",
+                tr!("Item Level: "),
                 &level.to_string(),
                 TEXT,
             )]);
@@ -170,16 +175,16 @@ impl ItemCard {
         }
         if item.unidentified {
             let text = match item.unidentified_tier {
-                Some(tier) => format!("Неопознано (Ранг {tier})"),
-                None => "Неопознано".to_owned(),
+                Some(tier) => tr!("Unidentified (Tier {tier})", tier = tier),
+                None => tr!("Unidentified").to_owned(),
             };
             section(vec![plain(text, GAME_RED, false)]);
         }
         let flags = [
-            (item.corrupted, "Осквернено", GAME_RED),
-            (item.mirrored, "Отражено", TEXT_VALUE),
-            (item.sanctified, "Освящено", MOD_FRACTURED),
-            (item.fractured, "Расколотый предмет", MOD_FRACTURED),
+            (item.corrupted, tr!("Corrupted"), GAME_RED),
+            (item.mirrored, tr!("Mirrored"), TEXT_VALUE),
+            (item.sanctified, tr!("Sanctified"), MOD_FRACTURED),
+            (item.fractured, tr!("Fractured Item"), MOD_FRACTURED),
         ];
         for (set, flag, color) in flags {
             if set {
@@ -197,10 +202,10 @@ impl ItemCard {
                 .filter(|kind| kind.starts_with('~'));
             let line = match (kind, price) {
                 (Some(kind), Some(price)) => CardLine::Note {
-                    label: format!("Примечание: {kind}").into(),
+                    label: tr!("Note: {kind}", kind = kind).into(),
                     price,
                 },
-                _ => labelled("Примечание: ", note, TEXT),
+                _ => labelled(tr!("Note: "), note, TEXT),
             };
             section(vec![line]);
         }
@@ -392,7 +397,7 @@ fn plain(text: String, color: u32, italic: bool) -> CardLine {
     })
 }
 
-/// `label` in the tooltip's label grey, then `value` in `color`: `Уровень предмета: 75`.
+/// `label` in the tooltip's label grey, then `value` in `color`: `Item Level: 75`.
 fn labelled(label: &str, value: &str, color: u32) -> CardLine {
     valued(
         format!("{label}{value}"),
@@ -473,14 +478,14 @@ fn mod_line(listed: &ListedMod, mark: ModMark) -> CardLine {
         tier: listed.tier.clone().unwrap_or_default().into(),
         level: listed
             .level
-            .map(|level| format!("ур. {level}"))
+            .map(|level| tr!("lvl {level}", level = level))
             .unwrap_or_default()
             .into(),
         text,
     }
 }
 
-/// `3` for empty sockets; `2 — Большая руна железа, пусто` once something sits in one.
+/// `3` for empty sockets; `2 — Greater Iron Rune, empty` once something sits in one.
 fn sockets_text(sockets: &[Option<String>]) -> String {
     let count = sockets.len().to_string();
     if sockets.iter().all(Option::is_none) {
@@ -488,7 +493,7 @@ fn sockets_text(sockets: &[Option<String>]) -> String {
     }
     let filled: Vec<&str> = sockets
         .iter()
-        .map(|socket| socket.as_deref().unwrap_or("пусто"))
+        .map(|socket| socket.as_deref().unwrap_or(tr!("empty")))
         .collect();
     format!("{count} — {}", filled.join(", "))
 }

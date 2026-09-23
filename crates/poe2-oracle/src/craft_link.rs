@@ -15,7 +15,6 @@
 //! those ids opens the site's start page, not the item (checked in the browser 2026-09-23), and
 //! this app doesn't know the site's numbering.
 
-use item_parser::ItemLanguage;
 use item_parser::roll::{NumericRun, find_numeric_runs};
 use percent_encoding::utf8_percent_encode;
 use poe2_domain::{
@@ -26,6 +25,7 @@ use serde_json::Number;
 use stat_filters::Roll;
 
 use crate::bug_report::QUERY_VALUE;
+use crate::i18n::Lang;
 use crate::item_refs::{self, Base, Implicit};
 
 /// Craft of Exile's current site; the old craftofexile.com is a patch behind.
@@ -35,13 +35,13 @@ const SITE: &str = "https://beta.craftofexile.com/";
 /// radius jewels. A mod it doesn't know fails the whole import, so these stay out of the link.
 const UNLISTED_MODS: &[&str] = &["AbyssModRadiusJewel"];
 
-/// The site's interface language for a player of the game client in `language`: its Russian one
-/// for the Russian client, its default, English, for the English one. The client's language
-/// stands in for the interface language the settings are to offer.
-pub fn site_language(language: ItemLanguage) -> Option<&'static str> {
-    match language {
-        ItemLanguage::Russian => Some("ru"),
-        ItemLanguage::English => None,
+/// The site's interface language for the app's, `lang` (`i18n::lang`): its Russian one for a
+/// Russian interface, its default, English, otherwise -- whatever the item's language, which the
+/// link doesn't depend on.
+pub fn site_language(lang: Lang) -> Option<&'static str> {
+    match lang {
+        Lang::Russian => Some("ru"),
+        Lang::English => None,
     }
 }
 
@@ -338,7 +338,7 @@ fn json_number(value: f64) -> Option<Number> {
 
 #[cfg(test)]
 mod tests {
-    use item_parser::parse_clipboard;
+    use item_parser::{ItemLanguage, parse_clipboard};
     use poe2_domain::{StatCatalog, TradeStat};
     use serde_json::{Value, json};
 
@@ -366,9 +366,8 @@ mod tests {
         }
     }
 
-    /// The link of `item-parser`'s fixture `name` -- its client's language by its name -- and
-    /// the export the link carries.
-    fn link(name: &str) -> Option<(String, Value)> {
+    /// `item-parser`'s fixture `name`, parsed in its client's language -- which its name tells.
+    fn parsed(name: &str) -> ParsedItem {
         let (language, slice) = if name.starts_with("ru_") {
             (
                 ItemLanguage::Russian,
@@ -385,8 +384,18 @@ mod tests {
             env!("CARGO_MANIFEST_DIR")
         ))
         .expect("the fixture");
-        let item = parse_clipboard(&text, language, &catalog(slice)).expect("the item parses");
-        let url = url(&item, site_language(language))?;
+        parse_clipboard(&text, language, &catalog(slice)).expect("the item parses")
+    }
+
+    /// The link of fixture `name` for a player whose interface speaks its client's language, and
+    /// the export the link carries.
+    fn link(name: &str) -> Option<(String, Value)> {
+        let lang = if name.starts_with("ru_") {
+            Lang::Russian
+        } else {
+            Lang::English
+        };
+        let url = url(&parsed(name), site_language(lang))?;
         let export = url
             .strip_prefix("https://beta.craftofexile.com/?game=poe2&eimport=")
             .and_then(|query| query.split('&').next())
@@ -413,7 +422,7 @@ mod tests {
         let (url, export) = link("rare_with_implicit_en.txt").expect("a link");
         assert!(
             !url.contains("&language="),
-            "the English client keeps the site's default"
+            "the English interface keeps the site's default"
         );
         assert_eq!(export["i"], "Metadata/Items/Rings/FourRing9");
         assert_eq!((&export["l"], &export["r"]), (&json!(79), &json!("rare")));
@@ -447,6 +456,16 @@ mod tests {
                 ("ColdResist1", json!([6])),
             ]
         );
+    }
+
+    #[test]
+    fn craft_link_opens_the_site_in_the_interface_language_whatever_the_items() {
+        let russian_item = parsed("ru_live_krutyaschiy_obodok.txt");
+        let english_item = parsed("rare_with_implicit_en.txt");
+        let in_english = url(&russian_item, site_language(Lang::English)).expect("a link");
+        assert!(!in_english.contains("&language="));
+        let in_russian = url(&english_item, site_language(Lang::Russian)).expect("a link");
+        assert!(in_russian.ends_with("&language=ru"));
     }
 
     #[test]

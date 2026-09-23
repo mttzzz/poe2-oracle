@@ -1,11 +1,12 @@
 //! The price panel's league chip (`ui::panel::title_bar`): what it says, and the choices its menu
 //! offers -- the ones the settings window's league chips offer -- each league named the way the
-//! trade site names it in the game client's language. Pure and not Windows-gated, so the native
-//! CI test pass covers it.
+//! trade site in the interface language names it. Pure and not Windows-gated, so the native CI
+//! test pass covers it.
 
 use trade_client::League;
 
 use crate::settings::LeagueChoice;
+use crate::tr;
 
 /// League `id`'s name in `names` -- one trade site's league list, in that site's language -- or the
 /// id itself for a league the list lacks: a typed private league, or a list that didn't load.
@@ -17,11 +18,12 @@ pub fn league_name<'a>(id: &'a str, names: &'a [League]) -> &'a str {
 }
 
 /// What the chip says: `league` -- the one searches go to, as `LeagueChoice::resolve` gave it --
-/// by its name in `names`, after «Авто · » while `choice` leaves the league to the trade site.
+/// by its name in `names`, after «Авто · » (`Auto · `) while `choice` leaves the league to the
+/// trade site.
 pub fn chip_label(choice: &LeagueChoice, league: &str, names: &[League]) -> String {
     let name = league_name(league, names);
     match choice {
-        LeagueChoice::Auto => format!("Авто · {name}"),
+        LeagueChoice::Auto => tr!("Auto · {league}", league = name),
         LeagueChoice::Named(_) | LeagueChoice::Custom(_) => name.to_owned(),
     }
 }
@@ -36,12 +38,15 @@ pub fn menu(
     names: &[League],
 ) -> Vec<(LeagueChoice, String)> {
     let auto = match listed.first() {
-        Some(id) => format!("Авто · {}", league_name(id, names)),
-        None => "Авто".to_owned(),
+        Some(id) => tr!("Auto · {league}", league = league_name(id, names)),
+        None => tr!("Auto").to_owned(),
     };
     let unlisted = match current {
         LeagueChoice::Named(id) if !listed.contains(id) => Some((current.clone(), id.clone())),
-        LeagueChoice::Custom(name) => Some((current.clone(), format!("Своя лига · {name}"))),
+        LeagueChoice::Custom(name) => Some((
+            current.clone(),
+            tr!("Private league · {league}", league = name),
+        )),
         LeagueChoice::Auto | LeagueChoice::Named(_) => None,
     };
     std::iter::once((LeagueChoice::Auto, auto))
@@ -58,6 +63,7 @@ pub fn menu(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::i18n::{Lang, with_lang};
 
     /// A trade site's league list: `(id, text)` pairs.
     fn site(leagues: &[(&str, &str)]) -> Vec<League> {
@@ -102,7 +108,7 @@ mod tests {
     }
 
     #[test]
-    fn the_chip_names_the_league_searched_in_the_client_language() {
+    fn the_chip_names_the_league_searched_as_the_interface_languages_site_does() {
         let aldur = named("Runes of Aldur");
         assert_eq!(
             chip_label(&aldur, "Runes of Aldur", &russian()),
@@ -139,7 +145,7 @@ mod tests {
     }
 
     #[test]
-    fn the_menu_offers_auto_then_every_listed_league_in_the_client_language() {
+    fn the_menu_offers_auto_then_every_listed_league_as_the_chip_names_them() {
         let labels = |choices: Vec<(LeagueChoice, String)>| -> Vec<String> {
             choices.into_iter().map(|(_, label)| label).collect()
         };
@@ -201,5 +207,26 @@ mod tests {
             menu(&ended, &listed(), &russian()).len(),
             listed().len() + 2
         );
+    }
+
+    #[test]
+    fn an_english_interface_says_auto_and_private_league_in_english() {
+        with_lang(Lang::English, || {
+            assert_eq!(
+                chip_label(&LeagueChoice::Auto, "Forbidden Rites", &international()),
+                "Auto · Forbidden Rites"
+            );
+            let typed = LeagueChoice::Custom("My League (PL12345)".to_owned());
+            let labels: Vec<String> = menu(&typed, &listed(), &international())
+                .into_iter()
+                .map(|(_, label)| label)
+                .collect();
+            assert_eq!(labels.first().unwrap(), "Auto · Forbidden Rites");
+            assert_eq!(
+                labels.last().unwrap(),
+                "Private league · My League (PL12345)"
+            );
+            assert_eq!(menu(&typed, &[], &[])[0].1, "Auto");
+        });
     }
 }

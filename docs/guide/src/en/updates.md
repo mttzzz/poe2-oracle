@@ -5,20 +5,18 @@
 PoE2 Oracle updates from the [GitHub releases](https://github.com/mttzzz/poe2-oracle/releases) of
 the project. Nothing is installed without your click.
 
-- With «Проверять обновления» (check for updates) on, the default, the app asks GitHub for the
-  latest release 30 seconds after it starts. There is no pop-up: when a newer version exists, the
-  update entry in the tray menu changes to «Установить версию X.Y.Z» (install version X.Y.Z).
-- To check yourself, click «Проверить обновления» (check for updates) in the tray menu. It shows
-  «Проверка обновлений…» (checking), then «Установлена последняя версия» (you have the latest
-  version) or «Не удалось проверить обновления» (the check failed; click to try again).
-- Click «Установить версию X.Y.Z» to update. The entry shows «Загрузка версии X.Y.Z…»
-  (downloading) while PoE2 Oracle downloads the installer and checks it against the `SHA256SUMS`
-  file of the release. Then the app closes, the installer runs silently, and the new version starts
-  by itself a few seconds later. Your settings and your start-with-Windows choice stay as they
-  were.
-- If the download or the check fails, the entry reads «Ошибка обновления — повторить (X.Y.Z)»
-  (update error, retry); click it to try again. A download that does not match its checksum is
-  deleted and never run.
+- With **Check for updates automatically** on in the settings, the default, the app asks GitHub for
+  the latest release 30 seconds after it starts. There is no pop-up: when a newer version exists,
+  the update entry in the tray menu changes to **Install version X.Y.Z**.
+- To check yourself, click **Check for updates** in the tray menu. It shows "Checking for
+  updates…", then "You have the latest version" or "Couldn't check for updates" (click it to try
+  again).
+- Click **Install version X.Y.Z** to update. The entry shows "Downloading version X.Y.Z…" while
+  PoE2 Oracle downloads the installer and checks it against the `SHA256SUMS` file of the release.
+  Then the app closes, the installer runs silently, and the new version starts by itself a few
+  seconds later. Your settings and your start-with-Windows choice stay as they were.
+- If the download or the check fails, the entry reads **Update failed — retry (X.Y.Z)**; click it
+  to try again. A download that does not match its checksum is deleted and never run.
 
 You can also update by hand: download the new installer from the
 [latest release](https://github.com/mttzzz/poe2-oracle/releases/latest) and run it. It installs

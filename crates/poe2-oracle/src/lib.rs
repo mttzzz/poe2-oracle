@@ -17,6 +17,7 @@ pub mod relative_time;
 pub mod roll_slider;
 pub mod session;
 pub mod settings;
+pub mod tour;
 pub mod xp_tracker;
 // Windows-only, like `platform`'s own native submodules: they transitively depend on
 // `platform::{game_config, synth_input, clipboard_poll}`, which only exist on that target (see

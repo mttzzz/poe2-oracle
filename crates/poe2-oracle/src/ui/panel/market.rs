@@ -13,14 +13,16 @@ use windows::Win32::Foundation::{FILETIME, SYSTEMTIME};
 use windows::Win32::System::SystemInformation::GetLocalTime;
 use windows::Win32::System::Time::{FileTimeToSystemTime, SystemTimeToTzSpecificLocalTime};
 
+use crate::i18n;
 use crate::price_check::PriceCheckApp;
+use crate::tr;
 use crate::ui::style::CARD_RADIUS;
 use crate::ui::theme::{
     BG_CARD, BORDER_CARD, BORDER_ROW, CONTENT_PADDING, PRICE_FALL, PRICE_RISE, TEXT_DIM,
     TEXT_MUTED, rems_from_px,
 };
 
-use super::format::{amount_in, currency_img, format_compact, format_ru};
+use super::format::{amount_in, currency_img};
 use super::results::render_link;
 
 /// A Currency Exchange item's market: the value in the unit that reads best with its icon, the
@@ -59,7 +61,7 @@ pub(super) fn render_market_card(
         if index > 0 {
             equivalents = equivalents.child("·");
         }
-        equivalents = equivalents.child(amount_in(state, format_ru(amount), id, 14.));
+        equivalents = equivalents.child(amount_in(state, i18n::number(amount), id, 14.));
     }
     let change_color = match price.change_7d {
         Some(change) if change < 0.0 => PRICE_FALL,
@@ -98,7 +100,7 @@ pub(super) fn render_market_card(
                                 .gap(rems_from_px(6.))
                                 .text_size(rems_from_px(24.))
                                 .font_weight(FontWeight::SEMIBOLD)
-                                .child(format!("≈ {}", format_ru(value)))
+                                .child(format!("≈ {}", i18n::number(value)))
                                 .children(currency_img(state.currency_icon(unit.trade_id()), 24.)),
                         )
                         .child(equivalents)
@@ -114,7 +116,7 @@ pub(super) fn render_market_card(
                                     .child("=")
                                     .child(amount_in(
                                         state,
-                                        format_compact(1.0 / divines),
+                                        i18n::compact(1.0 / divines),
                                         &price.id,
                                         14.,
                                     )),
@@ -136,14 +138,14 @@ pub(super) fn render_market_card(
                         .flex()
                         .justify_between()
                         .text_xs()
-                        .child(div().text_color(rgb(TEXT_DIM)).child("За 7 дней"))
+                        .child(div().text_color(rgb(TEXT_DIM)).child(tr!("Last 7 days")))
                         .child(
                             div()
                                 .text_color(rgb(change_color))
                                 .font_weight(FontWeight::SEMIBOLD)
                                 .child(match price.change_7d {
-                                    Some(change) => format!("{change:+.0} %"),
-                                    None => "мало данных".to_owned(),
+                                    Some(change) => i18n::percent(format!("{change:+.0}")),
+                                    None => tr!("not enough data").to_owned(),
                                 }),
                         ),
                 )
@@ -160,31 +162,31 @@ pub(super) fn render_market_card(
                 .border_color(rgb(BORDER_ROW))
                 .text_xs()
                 .child(market_line(
-                    "Оборот в час",
+                    tr!("Volume per hour"),
                     div()
                         .flex()
                         .items_center()
                         .gap(rems_from_px(3.))
-                        .child(format_compact(price.volume_divine))
+                        .child(i18n::compact(price.volume_divine))
                         .children(currency_img(state.currency_icon("divine"), 14.)),
                 ))
                 .child(market_line(
-                    "Чаще всего меняют",
+                    tr!("Most traded pair"),
                     most_traded_pair(state, price),
                 ))
                 .children(stack.map(|count| {
                     let (total, total_unit) =
                         value_not_in_itself(market, price, divines * f64::from(count));
                     market_line(
-                        "Ваша стопка",
+                        tr!("Your stack"),
                         div()
                             .flex()
                             .items_center()
                             .gap(rems_from_px(4.))
-                            .child(format!("{count} шт. ≈"))
+                            .child(tr!("×{count} ≈", count = count))
                             .child(amount_in(
                                 state,
-                                format_ru(total),
+                                i18n::number(total),
                                 total_unit.trade_id(),
                                 14.,
                             )),
@@ -202,10 +204,10 @@ pub(super) fn render_market_card(
                 .border_color(rgb(BORDER_ROW))
                 .text_xs()
                 .text_color(rgb(TEXT_MUTED))
-                .child(format!(
-                    "{} · курс за {}",
-                    category_ru(&price.category),
-                    local_hours(price.hours)
+                .child(tr!(
+                    "{category} · rate for {hours}",
+                    category = category_name(&price.category),
+                    hours = local_hours(price.hours)
                 ))
                 .children(
                     price
@@ -253,38 +255,39 @@ fn most_traded_pair(state: &PriceCheckApp, price: &MarketPrice) -> impl IntoElem
         .flex()
         .items_center()
         .gap(rems_from_px(3.))
-        .child(format_compact(currency_amount))
+        .child(i18n::compact(currency_amount))
         .children(currency_img(
             state.currency_icon(&price.most_traded_with),
             14.,
         ))
-        .child(format!("⇆ {}", format_compact(item_amount)))
+        .child(format!("⇆ {}", i18n::compact(item_amount)))
         .children(currency_img(state.currency_icon(&price.id), 14.))
 }
 
-/// The trade site's groups of exchange items, as its Russian site names them.
-fn category_ru(category: &str) -> &str {
+/// The trade site's group of exchange items `category` (its id there), named as the site in the
+/// interface language names it.
+fn category_name(category: &str) -> &str {
     match category {
-        "Currency" => "Валюта",
-        "Fragments" => "Фрагменты",
-        "Verisium" => "Веризий",
-        "Runes" => "Руны",
-        "Expedition" => "Экспедиция",
-        "Vaal" => "Ваал",
-        "Delirium" => "Делириум",
-        "Breach" => "Разлом",
-        "Ritual" => "Ритуал",
-        "Abyss" => "Кости Бездны",
-        "Essences" => "Сущности",
-        "UncutGems" => "Неогранённые камни",
-        "LineageSupportGems" => "Династические камни поддержки",
-        "Waystones" => "Путевые камни",
+        "Currency" => tr!("Currency"),
+        "Fragments" => tr!("Fragments"),
+        "Verisium" => tr!("Verisium"),
+        "Runes" => tr!("Runes"),
+        "Expedition" => tr!("Expedition"),
+        "Vaal" => tr!("Vaal"),
+        "Delirium" => tr!("Delirium"),
+        "Breach" => tr!("Breach"),
+        "Ritual" => tr!("Ritual"),
+        "Abyss" => tr!("Abyssal Bones"),
+        "Essences" => tr!("Essences"),
+        "UncutGems" => tr!("Uncut Gems"),
+        "LineageSupportGems" => tr!("Lineage Support Gems"),
+        "Waystones" => tr!("Waystones"),
         other => other,
     }
 }
 
 /// The hours a price comes from on the player's clock: `09:00–10:00`, dated when not today's:
-/// `22.09 09:00–10:00`.
+/// `22.09 09:00–10:00`, `Sep 22 09:00–10:00`.
 fn local_hours(hours: TradedHours) -> String {
     let (start, end) = (local_time(hours.start), local_time(hours.end));
     let today = unsafe { GetLocalTime() };
@@ -292,7 +295,7 @@ fn local_hours(hours: TradedHours) -> String {
     {
         String::new()
     } else {
-        format!("{:02}.{:02} ", start.wDay, start.wMonth)
+        format!("{} ", i18n::day_month(start.wDay, start.wMonth))
     };
     format!(
         "{date}{:02}:{:02}–{:02}:{:02}",

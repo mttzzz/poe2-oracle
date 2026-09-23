@@ -7,19 +7,24 @@ use gpui::{
     prelude::*, rgb,
 };
 
+use crate::i18n;
 use crate::league_chip;
 use crate::price_check::PriceCheckApp;
+use crate::tour::Stop;
+use crate::tr;
 use crate::ui::hint as hints;
 use crate::ui::style::{menu_row, select, title_button, title_gradient};
 use crate::ui::theme::{BORDER_GOLD, TEXT_DIM, rems_from_px};
+use crate::ui::tour;
 
-use super::format::{currency_img, format_compact};
+use super::format::currency_img;
 use super::menu::render_menu;
 
 const TITLE_HEIGHT: f32 = 32.;
 /// Width of the title bar's ⚙ and ×.
 const BUTTON_WIDTH: f32 = 34.;
-/// The league menu is at least this wide, so «Авто · <league>» fits on one line.
+/// The league menu is at least this wide, so «Авто · <league>» (`Auto · <league>`) fits on one
+/// line.
 const LEAGUE_MENU_WIDTH: f32 = 250.;
 /// The least of the drag area that stays when the panel is narrow.
 const DRAG_MIN_WIDTH: f32 = 24.;
@@ -40,7 +45,10 @@ pub(super) fn render_title_bar(
         .bg(title_gradient())
         .border_b_1()
         .border_color(rgb(BORDER_GOLD))
-        .child(render_league_select(state, window, cx))
+        .child(tour::spot(
+            Stop::PanelLeague,
+            render_league_select(state, window, cx),
+        ))
         .child(render_drag_area(state, cx))
         .child(title_button(
             "settings",
@@ -51,7 +59,7 @@ pub(super) fn render_title_bar(
                 // Deferred: opening the window updates this very entity, which is mid-update
                 // while its own listener runs.
                 let app = cx.entity();
-                cx.defer(move |cx| crate::app::open_settings(&app, false, cx));
+                cx.defer(move |cx| crate::app::open_settings(&app, cx));
             }),
         ))
         .child(title_button(
@@ -66,10 +74,10 @@ pub(super) fn render_title_bar(
         ))
 }
 
-/// The league searches go to, named as the trade site names it in the game client's language --
-/// «Авто · Запретные ритуалы ▾» -- which opens the menu of leagues to switch to: the choices the
-/// settings window offers, the current one marked. It gives way before the rate and the buttons
-/// when the panel is narrow.
+/// The league searches go to, named as the trade site in the interface language names it --
+/// «Авто · Запретные ритуалы ▾», `Auto · Forbidden Rites ▾` -- which opens the menu of leagues to
+/// switch to: the choices the settings window offers, the current one marked. It gives way before
+/// the rate and the buttons when the panel is narrow.
 fn render_league_select(
     state: &PriceCheckApp,
     window: &Window,
@@ -82,10 +90,10 @@ fn render_league_select(
         .flex()
         .flex_col()
         .min_w_0()
-        .tooltip(hints::hint(
-            "Лига, в которой идёт поиск. Нажмите, чтобы сменить: выбор сохранится в настройках, \
-             а поиск повторится в новой лиге.",
-        ))
+        .tooltip(hints::hint(tr!(
+            "The league the search runs in. Click to change it: the choice is saved to the \
+             settings, and the search runs again in the new league."
+        )))
         .child(select(
             "select",
             label,
@@ -141,7 +149,7 @@ fn render_drag_area(state: &PriceCheckApp, cx: &Context<PriceCheckApp>) -> impl 
             .text_color(rgb(TEXT_DIM))
             .child("1")
             .children(currency_img(state.currency_icon("divine"), 16.))
-            .child(format!("= {}", format_compact(market.exalted_per_divine)))
+            .child(format!("= {}", i18n::compact(market.exalted_per_divine)))
             .children(currency_img(state.currency_icon("exalted"), 16.))
     });
     div()
@@ -163,10 +171,10 @@ fn render_drag_area(state: &PriceCheckApp, cx: &Context<PriceCheckApp>) -> impl 
         )
         // Not over a drag under way, where the pointer stays still over the moving panel.
         .when(!state.dragging_panel(), |this| {
-            this.tooltip(hints::hint(
-                "Потяните, чтобы сдвинуть панель вбок: следующие проверки с этой стороны откроют \
-                 её там же. Двойной щелчок вернёт панель на обычное место.",
-            ))
+            this.tooltip(hints::hint(tr!(
+                "Drag to move the panel sideways: the next checks on this side open it there too. \
+                 Double-click to put it back in its usual place."
+            )))
         })
         .child(div().flex_1().min_w(rems_from_px(DRAG_MIN_WIDTH)))
         .children(rate)

@@ -16,11 +16,14 @@ use trade_client::live::MAX_LIVE_SEARCHES;
 use trade_client::rates::PriceUnit;
 use trade_client::{AccountStatus, ListedItem, ListedMod, ListingStatus, PriceCurrency};
 
+use crate::i18n;
 use crate::listing_match::{self, Asked, WantedStat};
 use crate::live_search::LiveSearches;
 use crate::price_check::{ListingRow, PriceCheckApp, SearchState};
 use crate::relative_time;
 use crate::session::SessionStatus;
+use crate::tr;
+use crate::ui::fonts;
 use crate::ui::hint as hints;
 use crate::ui::item_card::{CardPrice, ItemCard, ModMark, render_item_card};
 use crate::ui::style::{
@@ -32,10 +35,9 @@ use crate::ui::theme::{
     STATUS_ONLINE, TEXT, TEXT_DIM, TEXT_MUTED, TEXT_WARNING, TIER_TOP, blend, rems_from_px,
 };
 
-use super::format::{amount_in, currency_img, format_ru, format_value};
+use super::format::{amount_in, currency_img, format_value};
 use super::market::render_market_card;
 use super::menu::render_menu;
-use super::ui_face;
 
 const PRICE_COLUMN: f32 = 150.;
 const LEVEL_COLUMN: f32 = 30.;
@@ -74,7 +76,7 @@ pub(super) fn render_toolbar(
                     .flex_none()
                     .text_size(rems_from_px(12.))
                     .text_color(rgb(TEXT_DIM))
-                    .child("Профиль:"),
+                    .child(tr!("Profile:")),
             )
             .child(
                 div()
@@ -82,10 +84,10 @@ pub(super) fn render_toolbar(
                     .flex()
                     .flex_col()
                     .min_w_0()
-                    .tooltip(hints::hint(
-                        "Как искать эту вещь: какие свойства отмечены и какие у них минимумы. \
-                         Выбор сразу повторяет поиск.",
-                    ))
+                    .tooltip(hints::hint(tr!(
+                        "How to search for this item: which stats are checked and their \
+                         minimums. Picking a profile searches again at once."
+                    )))
                     .child(select(
                         "select",
                         profile_label(profile),
@@ -111,10 +113,12 @@ pub(super) fn render_toolbar(
                 this.child(
                     action_button(
                         "tier-minimums",
-                        "Минимум тира",
-                        "Минимум каждого отмеченного свойства с известным тиром — нижняя граница \
-                         этого тира: найдутся вещи с тем же тиром и лучше. Искать — кнопкой \
-                         «Поиск».",
+                        tr!("Tier minimum"),
+                        tr!(
+                            "Sets the minimum of every checked stat with a known tier to the \
+                             bottom of that tier: the search finds items with the same tier or \
+                             better. Search with the “Search” button."
+                        ),
                         PriceCheckApp::set_tier_minimums,
                         cx,
                     )
@@ -127,20 +131,20 @@ pub(super) fn render_toolbar(
 /// A profile's name, as the select and its menu say it.
 fn profile_label(profile: SearchProfile) -> &'static str {
     match profile {
-        SearchProfile::QuickPrice => "Быстрая цена",
-        SearchProfile::ExactMatch => "Точное совпадение",
-        SearchProfile::Broad => "Широкий −10 %",
-        SearchProfile::CraftingBase => "База для крафта",
+        SearchProfile::QuickPrice => tr!("Quick price"),
+        SearchProfile::ExactMatch => tr!("Exact match"),
+        SearchProfile::Broad => tr!("Broad −10%"),
+        SearchProfile::CraftingBase => tr!("Crafting base"),
     }
 }
 
 /// What a profile searches, under its name in the menu.
 fn profile_note(profile: SearchProfile) -> &'static str {
     match profile {
-        SearchProfile::QuickPrice => "до 4 самых ценных свойств, от ваших значений",
-        SearchProfile::ExactMatch => "все свойства, от ваших значений",
-        SearchProfile::Broad => "отмеченные свойства, минимумы на 10 % ниже",
-        SearchProfile::CraftingBase => "собственные и расколотые свойства на этой же базе",
+        SearchProfile::QuickPrice => tr!("up to 4 most valuable stats, your rolls as minimums"),
+        SearchProfile::ExactMatch => tr!("all stats, your rolls as minimums"),
+        SearchProfile::Broad => tr!("checked stats, minimums 10% lower"),
+        SearchProfile::CraftingBase => tr!("implicit and fractured stats on the same base"),
     }
 }
 
@@ -191,7 +195,7 @@ pub(super) fn render_search_button(
         state.search,
         SearchState::Searching | SearchState::RateLimiting { .. }
     );
-    let face = ui_face();
+    let face = fonts::interface_font();
     let search = div()
         .id("search")
         .flex()
@@ -206,7 +210,7 @@ pub(super) fn render_search_button(
         .text_size(rems_from_px(16.))
         .map(|this| {
             if busy {
-                this.child("Поиск…")
+                this.child(tr!("Searching…"))
             } else {
                 this.cursor_pointer()
                     .on_mouse_down(
@@ -215,7 +219,7 @@ pub(super) fn render_search_button(
                             view.trigger_search(cx);
                         }),
                     )
-                    .child("Поиск")
+                    .child(tr!("Search"))
             }
         });
     ease_hover("search", search, move |search, hover| {
@@ -242,24 +246,24 @@ pub(super) fn render_search_choices(
     cx: &Context<PriceCheckApp>,
 ) -> impl IntoElement {
     let sellers = match state.listing_status {
-        ListingStatus::Available => "выкуп и онлайн",
-        ListingStatus::Securable => "только мгновенный выкуп",
-        ListingStatus::Online => "только онлайн",
-        ListingStatus::OnlineLeague => "онлайн в лиге",
-        ListingStatus::Any => "все, включая офлайн",
+        ListingStatus::Available => tr!("Instant Buyout or In Person"),
+        ListingStatus::Securable => tr!("Instant Buyout only"),
+        ListingStatus::Online => tr!("In Person, online only"),
+        ListingStatus::OnlineLeague => tr!("In Person (Online in League)"),
+        ListingStatus::Any => tr!("Any, offline included"),
     };
     // Currencies by their icons, as everywhere in the panel.
     let icon = |id: &str| currency_img(state.currency_icon(id), 14.);
     let currency = div().flex().items_center().gap(rems_from_px(3.));
     let currency = match state.price_currency {
-        PriceCurrency::Any => currency.child("любая валюта"),
+        PriceCurrency::Any => currency.child(tr!("any currency")),
         PriceCurrency::ExaltedOrDivine => currency
             .children(icon("exalted"))
-            .child("или")
+            .child(tr!("or"))
             .children(icon("divine")),
-        PriceCurrency::Exalted => currency.child("только").children(icon("exalted")),
-        PriceCurrency::Divine => currency.child("только").children(icon("divine")),
-        PriceCurrency::Chaos => currency.child("только").children(icon("chaos")),
+        PriceCurrency::Exalted => currency.child(tr!("only")).children(icon("exalted")),
+        PriceCurrency::Divine => currency.child(tr!("only")).children(icon("divine")),
+        PriceCurrency::Chaos => currency.child(tr!("only")).children(icon("chaos")),
     };
     // Each label stays with its select: on a narrow panel the row wraps between the two.
     div()
@@ -272,18 +276,22 @@ pub(super) fn render_search_choices(
         .text_size(rems_from_px(12.))
         .child(stepping_select(
             "sellers",
-            "Продавцы:",
+            tr!("Sellers:"),
             sellers.into_any_element(),
-            "Каких продавцов искать: выкуп — купить сразу, онлайн — договориться в игре. \
-             Нажмите, чтобы сменить; поиск повторится.",
+            tr!(
+                "Which sellers to search: Instant Buyout — buy at once, In Person — agree on the \
+                 trade in the game. Click to change; the search runs again."
+            ),
             PriceCheckApp::cycle_listing_status,
             cx,
         ))
         .child(stepping_select(
             "currency",
-            "Цена:",
+            tr!("Price:"),
             currency.into_any_element(),
-            "В какой валюте должна быть цена лота. Нажмите, чтобы сменить; поиск повторится.",
+            tr!(
+                "The currency a listing's price must be in. Click to change; the search runs again."
+            ),
             PriceCheckApp::cycle_price_currency,
             cx,
         ))
@@ -332,7 +340,7 @@ fn action_button(
             "button",
             label,
             ButtonKind::Secondary,
-            ui_face(),
+            fonts::interface_font(),
             cx.listener(move |view, _event: &MouseDownEvent, _window, cx| press(view, cx)),
         ))
 }
@@ -366,12 +374,12 @@ fn render_scout_line(state: &PriceCheckApp, (value, unit): (f64, PriceUnit)) -> 
         .justify_center()
         .gap(rems_from_px(5.))
         .text_color(rgb(TEXT_DIM))
-        .child("Цена по poe2scout:")
+        .child(tr!("poe2scout price:"))
         .child(
             div()
                 .text_color(rgb(TEXT))
                 .font_weight(FontWeight::SEMIBOLD)
-                .child(format!("≈ {}", format_ru(value))),
+                .child(format!("≈ {}", i18n::number(value))),
         )
         .children(currency_img(state.currency_icon(unit.trade_id()), 18.))
 }
@@ -381,11 +389,11 @@ fn render_scout_line(state: &PriceCheckApp, (value, unit): (f64, PriceUnit)) -> 
 /// record is out of reach -- said above whatever prices it instead.
 fn render_market_gap(state: &PriceCheckApp) -> impl IntoElement {
     let text = match state.market().and_then(|market| market.hours) {
-        Some(_) => format!(
-            "На бирже в лиге {} этот предмет за последние часы не меняли.",
-            state.league()
+        Some(_) => tr!(
+            "Nobody traded this item on the Currency Exchange in {league} in the last hours.",
+            league = state.league()
         ),
-        None => "Данные биржи GGG сейчас недоступны.".to_owned(),
+        None => tr!("GGG's Currency Exchange data is unavailable right now.").to_owned(),
     };
     div()
         .mt(rems_from_px(12.))
@@ -400,9 +408,11 @@ fn render_market_gap(state: &PriceCheckApp) -> impl IntoElement {
 fn render_listings_button(cx: &Context<PriceCheckApp>) -> impl IntoElement {
     action_button(
         "listings-on-trade-site",
-        "Лоты на площадке",
-        "Найти лоты этого предмета на сайте торговли. Каждый поиск расходует лимит запросов \
-         площадки.",
+        tr!("Trade site listings"),
+        tr!(
+            "Find this item's listings on the trade site. Each search spends part of the site's \
+             request limit."
+        ),
         PriceCheckApp::search_listings,
         cx,
     )
@@ -414,7 +424,7 @@ fn render_outcome(
     item: &ParsedItem,
     cx: &Context<PriceCheckApp>,
 ) -> AnyElement {
-    let status = |text: String, color: u32| {
+    let status = |text: SharedString, color: u32| {
         div()
             .mt(rems_from_px(12.))
             .text_color(rgb(color))
@@ -424,26 +434,33 @@ fn render_outcome(
     match &state.search {
         SearchState::NotSearched => div().into_any_element(),
         SearchState::Searching if state.priced_by_market => {
-            status("Загрузка цен биржи…".to_owned(), TEXT_DIM)
+            status(tr!("Loading exchange prices…").into(), TEXT_DIM)
         }
-        SearchState::Searching => status("Поиск…".to_owned(), TEXT_DIM),
+        SearchState::Searching => status(tr!("Searching…").into(), TEXT_DIM),
         SearchState::RateLimiting { wait_secs } => status(
-            format!("Лимит запросов trade API — ждём {wait_secs} с…"),
+            tr!(
+                "Trade API request limit — waiting {secs}s…",
+                secs = wait_secs
+            )
+            .into(),
             TEXT_DIM,
         ),
-        SearchState::Failed(msg) => status(msg.clone(), TEXT_WARNING),
+        SearchState::Failed(failure) => status(failure.message().into(), TEXT_WARNING),
         SearchState::Empty { .. } if state.priced_by_market => div()
             .flex()
             .flex_col()
             .child(render_market_gap(state))
-            .child(status("На площадке лотов нет".to_owned(), TEXT_DIM))
+            .child(status(
+                tr!("No listings on the trade site").into(),
+                TEXT_DIM,
+            ))
             .into_any_element(),
         SearchState::Empty { relaxed } => {
             render_nothing_found(state, *relaxed, cx).into_any_element()
         }
         SearchState::Market(price) => match state.market() {
             Some(market) => render_market_card(state, item, market, price).into_any_element(),
-            None => status("Загрузка цен биржи…".to_owned(), TEXT_DIM),
+            None => status(tr!("Loading exchange prices…").into(), TEXT_DIM),
         },
         SearchState::Scouted { value, unit } => div()
             .flex()
@@ -472,9 +489,11 @@ fn render_outcome(
                     .mb(rems_from_px(8.))
                     .text_center()
                     .text_color(rgb(TIER_TOP))
-                    .child(format!(
-                        "Точных совпадений нет — показаны предметы хотя бы с {least} из {of} \
-                         выбранных свойств"
+                    .child(tr!(
+                        "No exact matches — showing items with at least {least} of {of} selected \
+                         stats",
+                        least = least,
+                        of = of
                     ))
             }))
             .child(render_matched_line(state, *total, trade_url.clone(), cx))
@@ -483,21 +502,24 @@ fn render_outcome(
     }
 }
 
-/// «Ничего не найдено», and the broader searches the player can ask for from there, each one
-/// search spent only on the press (PoE Overlay II has no automatic one either): the same rows at
-/// minimums 10 % below the rolls (`PriceCheckApp::choose_profile`), unless that's the profile
-/// already, and listings with all the checked stat rows but one (`PriceCheckApp::search_one_fewer`),
-/// unless this was that search (`relaxed`: it asked for `.0` of `.1`).
+/// «Ничего не найдено» (`Nothing found`), and the broader searches the player can ask for from
+/// there, each one search spent only on the press (PoE Overlay II has no automatic one either):
+/// the same rows at minimums 10 % below the rolls (`PriceCheckApp::choose_profile`), unless that's
+/// the profile already, and listings with all the checked stat rows but one
+/// (`PriceCheckApp::search_one_fewer`), unless this was that search (`relaxed`: it asked for `.0`
+/// of `.1`).
 fn render_nothing_found(
     state: &PriceCheckApp,
     relaxed: Option<(u32, u32)>,
     cx: &Context<PriceCheckApp>,
 ) -> impl IntoElement {
     let text = match relaxed {
-        Some((least, of)) => {
-            format!("Ничего не найдено — даже с {least} из {of} выбранных свойств")
-        }
-        None => "Ничего не найдено".to_owned(),
+        Some((least, of)) => tr!(
+            "Nothing found — not even with {least} of {of} selected stats",
+            least = least,
+            of = of
+        ),
+        None => tr!("Nothing found").to_owned(),
     };
     let broad = state
         .profile
@@ -524,8 +546,10 @@ fn render_nothing_found(
                         this.child(action_button(
                             "nothing-found-broad",
                             profile_label(SearchProfile::Broad),
-                            "Искать те же отмеченные свойства с минимумами на 10 % ниже ваших \
-                             значений. Один поиск на сайте торговли.",
+                            tr!(
+                                "Search the same checked stats with minimums 10% below your \
+                                 rolls. One search on the trade site."
+                            ),
                             |view, cx| view.choose_profile(SearchProfile::Broad, cx),
                             cx,
                         ))
@@ -533,11 +557,13 @@ fn render_nothing_found(
                     .children(one_fewer.map(|(least, of)| {
                         action_button(
                             "nothing-found-one-fewer",
-                            format!("Совпадение {least} из {of}"),
-                            format!(
-                                "Искать лоты хотя бы с {least} из {of} отмеченных модификаторов; \
-                                 отмеченные характеристики вещи вроде защиты и строки «сумма» \
-                                 остаются обязательными. Один поиск на сайте торговли."
+                            tr!("Match {least} of {of}", least = least, of = of),
+                            tr!(
+                                "Search for listings with at least {least} of {of} checked \
+                                 modifiers; checked item properties such as defences and the \
+                                 “sum” rows stay required. One search on the trade site.",
+                                least = least,
+                                of = of
                             ),
                             PriceCheckApp::search_one_fewer,
                             cx,
@@ -575,8 +601,8 @@ fn render_matched_line(
                     div()
                         .flex()
                         .gap(rems_from_px(4.))
-                        .child(div().text_color(rgb(TEXT_DIM)).child("Найдено:"))
-                        .child(total.to_string()),
+                        .child(div().text_color(rgb(TEXT_DIM)).child(tr!("Found:")))
+                        .child(i18n::integer(total)),
                 )
                 .child(
                     div()
@@ -590,7 +616,8 @@ fn render_matched_line(
         .children(render_watch_refusal(state, cx))
 }
 
-/// Under "Ничего не найдено": a search nothing matches yet is just what watching is for.
+/// Under «Ничего не найдено» (`Nothing found`): a search nothing matches yet is just what watching
+/// is for.
 pub(super) fn render_empty_watch(
     state: &PriceCheckApp,
     cx: &Context<PriceCheckApp>,
@@ -615,7 +642,7 @@ pub(super) fn render_empty_watch(
                         div()
                             .text_size(rems_from_px(12.))
                             .text_color(rgb(TEXT_DIM))
-                            .child("Сообщить, когда появится:"),
+                            .child(tr!("Notify me when one is listed:")),
                     )
                     .child(toggle),
             )
@@ -623,9 +650,9 @@ pub(super) fn render_empty_watch(
     )
 }
 
-/// "Следить": the search's new listings come as cards over the game (`crate::live_search`) --
-/// with how many searches are watched. Only for a signed-in player (`crate::session`) and a
-/// search the trade site answered.
+/// «Следить» (`Live search`, the trade site's name for it): the search's new listings come as
+/// cards over the game (`crate::live_search`) -- with how many searches are watched. Only for a
+/// signed-in player (`crate::session`) and a search the trade site answered.
 fn render_watch(state: &PriceCheckApp, cx: &Context<PriceCheckApp>) -> Option<impl IntoElement> {
     let search = state.watchable.clone()?;
     if !cx.try_global::<SessionStatus>()?.signed_in() {
@@ -635,10 +662,9 @@ fn render_watch(state: &PriceCheckApp, cx: &Context<PriceCheckApp>) -> Option<im
     let watching = live.is_watched(&search.query_id);
     let count = live.count();
     let hint = if watching {
-        "Слежение включено — нажмите, чтобы снять"
+        tr!("Live search is on — click to turn it off")
     } else {
-        "Новые лоты этого поиска будут приходить карточками поверх игры, пока приложение \
-         запущено"
+        tr!("New listings for this search arrive as cards over the game while the app runs")
     };
     let toggle = div()
         .id("watch")
@@ -656,7 +682,7 @@ fn render_watch(state: &PriceCheckApp, cx: &Context<PriceCheckApp>) -> Option<im
             }),
         )
         .child(switch("switch", watching))
-        .child("Следить");
+        .child(tr!("Live search"));
     Some(
         div()
             .flex()
@@ -670,7 +696,11 @@ fn render_watch(state: &PriceCheckApp, cx: &Context<PriceCheckApp>) -> Option<im
                     div()
                         .text_size(rems_from_px(12.))
                         .text_color(rgb(TEXT_DIM))
-                        .child(format!("поисков: {count} из {MAX_LIVE_SEARCHES}")),
+                        .child(tr!(
+                            "{count} of {max} in use",
+                            count = count,
+                            max = MAX_LIVE_SEARCHES
+                        )),
                 )
             }),
     )
@@ -735,10 +765,10 @@ fn render_results_table(
                 .border_color(rgb(BORDER_GOLD))
                 .text_size(rems_from_px(11.))
                 .text_color(rgb(TEXT_MUTED))
-                .child(price_cell().child("Цена"))
-                .child(level_cell().child("Ур."))
-                .child(seller_cell().when(show_seller, |this| this.child("Продавец")))
-                .child(listed_cell().child("Выставлен")),
+                .child(price_cell().child(tr!("Price")))
+                .child(level_cell().child(tr!("iLvl")))
+                .child(seller_cell().when(show_seller, |this| this.child(tr!("Seller"))))
+                .child(listed_cell().child(tr!("Listed"))),
         )
         .children(rows.iter().enumerate().map(|(index, row)| {
             let listed = relative_time::listed_ago(&row.indexed, now_unix).unwrap_or_default();
@@ -746,7 +776,7 @@ fn render_results_table(
             // clipboard, over the listed-time column too: the note doesn't fit the seller's alone.
             let copied = state.whisper_copied(index);
             let seller: SharedString = if copied {
-                "✓ скопировано — вставьте в чат".into()
+                tr!("✓ copied — paste it into the chat").into()
             } else {
                 match (&row.whisper, show_seller) {
                     (Some(_), true) => format!("✉ {}", row.account_name).into(),
@@ -819,12 +849,12 @@ fn render_results_table(
         }))
 }
 
-/// `от 200`, `до 5`, `200–250`: the bounds a roll fell short of.
+/// «от 200» (`at least 200`), «до 5», `200–250`: the bounds a roll fell short of.
 fn bounds_text(min: Option<f64>, max: Option<f64>) -> String {
     match (min, max) {
         (Some(min), Some(max)) => format!("{}–{}", format_value(min), format_value(max)),
-        (Some(min), None) => format!("от {}", format_value(min)),
-        (None, Some(max)) => format!("до {}", format_value(max)),
+        (Some(min), None) => tr!("at least {value}", value = format_value(min)),
+        (None, Some(max)) => tr!("at most {value}", value = format_value(max)),
         (None, None) => String::new(),
     }
 }
@@ -860,7 +890,9 @@ fn mod_mark(listed: &ListedMod, wanted: &[WantedStat]) -> ModMark {
     match listing_match::assess(listed, wanted) {
         Asked::No => ModMark::None,
         Asked::Met => ModMark::Met,
-        Asked::Short { min, max } => ModMark::Short(format!("нужно {}", bounds_text(min, max))),
+        Asked::Short { min, max } => {
+            ModMark::Short(tr!("needs {bounds}", bounds = bounds_text(min, max)))
+        }
     }
 }
 
@@ -874,7 +906,7 @@ fn listing_notes(
     let missing = listing_match::missing(&item.mods, wanted);
     let mut notes = Vec::with_capacity(missing.len() + 2);
     if !missing.is_empty() {
-        notes.push(("Нет у этого предмета:".to_owned(), TEXT_WARNING));
+        notes.push((tr!("Missing from this item:").to_owned(), TEXT_WARNING));
         notes.extend(
             missing
                 .into_iter()
@@ -890,7 +922,7 @@ fn listing_notes(
 fn card_price(state: &PriceCheckApp, row: &ListingRow) -> CardPrice {
     let currency = row.price_currency.as_str();
     CardPrice {
-        amount: format_ru(row.price_amount).into(),
+        amount: i18n::number(row.price_amount).into(),
         icon: state
             .currency_icon(currency)
             .map(|url| url.to_owned().into()),
@@ -905,15 +937,17 @@ fn card_price(state: &PriceCheckApp, row: &ListingRow) -> CardPrice {
 /// What the marker `render_price` puts beside a row's price means, if it puts one.
 fn marker_note(row: &ListingRow) -> Option<String> {
     if row.listed_times > 2 {
-        Some(format!(
-            "× {0}: продавец выставил {0} таких по этой цене",
-            row.listed_times
+        Some(tr!(
+            "× {count}: the seller listed {count} of these at this price",
+            count = row.listed_times
         ))
     } else if row.item.note.is_none() {
         Some(
-            "?: цена взята из названия вкладки тайника, а не из заметки к вещи — возможно, \
-             не настоящая"
-                .to_owned(),
+            tr!(
+                "?: the price comes from the stash tab's name, not the item's own note — it may \
+                 not be real"
+            )
+            .to_owned(),
         )
     } else {
         None
@@ -942,7 +976,7 @@ fn render_price(state: &PriceCheckApp, row: &ListingRow) -> impl IntoElement {
         .and_then(|market| {
             let divines = row.price_amount * market.value_in_divines(currency)?;
             let (value, unit) = market.in_display_unit(divines);
-            Some((format!("≈ {}", format_ru(value)), unit.trade_id()))
+            Some((format!("≈ {}", i18n::number(value)), unit.trade_id()))
         });
     price_cell()
         .flex()
@@ -952,7 +986,7 @@ fn render_price(state: &PriceCheckApp, row: &ListingRow) -> impl IntoElement {
             div()
                 .flex_none()
                 .font_weight(FontWeight::SEMIBOLD)
-                .child(format_ru(row.price_amount)),
+                .child(i18n::number(row.price_amount)),
         )
         .children(icon)
         .children(name.map(|name| {

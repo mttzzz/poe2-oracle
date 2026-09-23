@@ -870,7 +870,7 @@ pub(crate) fn checkbox(key: impl Into<ElementId>, checked: bool) -> impl IntoEle
 /// `cx.listener` fits).
 pub(crate) fn segmented(
     key: impl Into<ElementId>,
-    options: &[&'static str],
+    options: impl IntoIterator<Item = SharedString>,
     picked: usize,
     on_pick: impl Fn(&usize, &mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
@@ -885,7 +885,7 @@ pub(crate) fn segmented(
         .bg(rgb(BG_FIELD))
         .border_1()
         .border_color(rgb(BORDER_FIELD))
-        .children(options.iter().enumerate().map(|(index, &label)| {
+        .children(options.into_iter().enumerate().map(|(index, label)| {
             let on_pick = on_pick.clone();
             let lit = index == picked;
             let option = div()
@@ -902,6 +902,7 @@ pub(crate) fn segmented(
                     on_pick(&index, window, cx);
                 });
             ease_hover(index, option, move |option, hover| {
+                let label = label.clone();
                 option
                     .child(ease_state(
                         "light",
@@ -927,7 +928,7 @@ pub(crate) fn segmented(
                                 GOLD_LIGHT,
                                 on,
                             )))
-                            .child(label)
+                            .child(label.clone())
                         },
                     ))
             })

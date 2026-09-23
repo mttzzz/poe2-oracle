@@ -1,5 +1,5 @@
 //! «Войти»: signing in to pathofexile.com in the app's sign-in window (`platform::login_window`),
-//! the site's own login page in Edge WebView2 and in the player's language (`login_page`), so the
+//! the site's own login page in Edge WebView2 and in the interface language (`login_page`), so the
 //! player copies nothing by hand. After every page of the site the window reports the browser's
 //! `POESESSID` cookies. The site hands every visitor one, signed in or not, so each is asked about
 //! on the account page first (`session::check_candidate`); the first one the site accepts becomes
@@ -10,19 +10,15 @@
 use std::iter;
 
 use async_channel::Receiver;
-use gpui::{App, AsyncApp, Entity, Global, WeakEntity};
-use item_parser::ItemLanguage;
-use trade_client::TradeSite;
+use gpui::{App, AsyncApp, Global};
 use trade_client::account::AccountCheck;
 
+use crate::i18n;
 use crate::platform::login_window::{self, LoginEvent};
-use crate::price_check::PriceCheckApp;
 use crate::session;
 
 /// The sign-in window as the settings window shows it.
 pub struct Login {
-    /// The price panel, whose language picks the login page's (`login_page`).
-    panel: WeakEntity<PriceCheckApp>,
     /// From «Войти» until the window closes: another «Войти» brings it forward.
     open: bool,
     /// Why the last sign-in didn't finish, until the next one.
@@ -52,10 +48,9 @@ pub enum LoginProblem {
     NotSaved(String),
 }
 
-/// Sets up «Войти»: `panel`'s language picks the login page's.
-pub fn init(panel: &Entity<PriceCheckApp>, cx: &mut App) {
+/// Sets up «Войти».
+pub fn init(cx: &mut App) {
     cx.set_global(Login {
-        panel: panel.downgrade(),
         open: false,
         problem: None,
     });
@@ -68,7 +63,7 @@ pub fn open(cx: &mut App) {
         cx.spawn(async |_| login_window::bring_forward()).detach();
         return;
     }
-    let page = login_page(cx);
+    let page = login_page();
     let login = cx.global_mut::<Login>();
     login.open = true;
     login.problem = None;
@@ -83,21 +78,10 @@ pub fn open(cx: &mut App) {
     .detach();
 }
 
-/// The login page in the player's language, by the price panel's rule for the trade site: the
-/// Russian site for a Russian game client (`PriceCheckApp::item_language`: the last checked item's
-/// language, else the client language the settings name), the international one otherwise. The
-/// interface language (milestone 11) will pick it instead.
-fn login_page(cx: &App) -> String {
-    let language = cx
-        .global::<Login>()
-        .panel
-        .upgrade()
-        .and_then(|panel| panel.read(cx).item_language());
-    let site = match language {
-        Some(ItemLanguage::Russian) => TradeSite::Russian,
-        Some(ItemLanguage::English) | None => TradeSite::International,
-    };
-    format!("{}/login", site.origin())
+/// The login page in the interface language: the Russian site's for a Russian interface, the
+/// international one's otherwise.
+fn login_page() -> String {
+    format!("{}/login", i18n::lang().trade_site().origin())
 }
 
 /// One sign-in on `page`, from opening the window until it closes: what kept it from finishing, if

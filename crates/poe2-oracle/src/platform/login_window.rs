@@ -59,11 +59,11 @@ use windows::core::{HSTRING, Interface, PCWSTR, PWSTR, w};
 
 use crate::paths;
 use crate::platform::game_window::dpi_to_scale;
+use crate::tr;
 
 /// The site's session cookie.
 const SESSION_COOKIE: &str = "POESESSID";
 const CLASS_NAME: PCWSTR = w!("PoE2OracleSignIn");
-const TITLE: PCWSTR = w!("PoE2 Oracle — вход на pathofexile.com");
 /// The window's size before DPI scaling: pathofexile.com lays its pages out about 1000 px wide.
 const WIDTH: f64 = 1040.0;
 const HEIGHT: f64 = 800.0;
@@ -555,12 +555,13 @@ fn create_window() -> Result<HWND> {
     let (area_width, area_height) = (area.right - area.left, area.bottom - area.top);
     let width = ((WIDTH * scale) as i32).min(area_width * 9 / 10);
     let height = ((HEIGHT * scale) as i32).min(area_height * 9 / 10);
-    // SAFETY: the class is registered and the strings are static.
+    let title = HSTRING::from(tr!("PoE2 Oracle — sign in to pathofexile.com"));
+    // SAFETY: the class is registered, and the strings outlive the call.
     unsafe {
         CreateWindowExW(
             WINDOW_EX_STYLE::default(),
             CLASS_NAME,
-            TITLE,
+            &title,
             WS_OVERLAPPEDWINDOW,
             area.left + (area_width - width) / 2,
             area.top + (area_height - height) / 2,
