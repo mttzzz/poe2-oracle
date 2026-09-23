@@ -1,6 +1,8 @@
 //! Reads PoE2's experience bar off the screen for the XP overlay: finds the game window through
 //! `game_window`, copies the bar's few rows with GDI, and leaves the reading to
-//! `crate::xp_tracker::read_fill`.
+//! `crate::xp_tracker::read_fill`. It looks at the HUD's rails the overlay's plates are inlaid in
+//! the same way: a strip of each rail's lip, which `overlay_layout::rail_seen` tells from anything
+//! else.
 //!
 //! Only the bar's own rect is copied -- `XpBarGeometry::capture`, inside the game's client area
 //! by construction: 1536x10 pixels on the 4K test machine. The copy is a plain `SRCCOPY` blit
@@ -24,7 +26,7 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::WindowsAndMessaging::{GA_ROOT, GetAncestor, IsIconic, WindowFromPoint};
 
-use crate::overlay_layout::PhysicalRect;
+use crate::overlay_layout::{PhysicalRect, hud_rails, rail_lip, rail_seen};
 use crate::platform::game_window;
 use crate::xp_tracker::{XpBarGeometry, read_fill};
 
@@ -38,6 +40,16 @@ pub struct BarSample {
     pub dpi_scale: f64,
     /// The fraction of the level the bar shows; `None` when it isn't readable.
     pub fill: Option<f64>,
+    /// Whether each plate's rail is on screen where the plate goes.
+    pub rails: RailsSeen,
+}
+
+/// Whether the flask and the skill panel's rails were seen where `overlay_layout::hud_rails`
+/// puts them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct RailsSeen {
+    pub flask: bool,
+    pub skill: bool,
 }
 
 /// Looks at the bar once; `None` while there is no game window or it is minimized. Blocking GDI
@@ -54,10 +66,20 @@ pub fn sample() -> Option<BarSample> {
         .as_ref()
         .filter(|geometry| shows_the_game(hwnd, geometry.capture))
         .and_then(|geometry| read_screen(geometry.capture, |bgra| read_fill(geometry, bgra)));
+    let plates = hud_rails(client);
+    let seen = |plate: PhysicalRect| {
+        let lip = rail_lip(plate, client.height);
+        let width = usize::try_from(lip.width).unwrap_or(0);
+        read_screen(lip, |bgra| Some(rail_seen(bgra, width))).unwrap_or(false)
+    };
     Some(BarSample {
         client,
         dpi_scale,
         fill,
+        rails: RailsSeen {
+            flask: seen(plates.flask),
+            skill: seen(plates.skill),
+        },
     })
 }
 

@@ -19,10 +19,11 @@
 //! 50m` in English.
 //!
 //! A task samples every two seconds, off the UI thread: the game log's new lines
-//! (`platform::client_log`), then the bar's pixels (`platform::xp_bar`) -- in that order, so a
-//! level-up line is in before the wrap on the bar it explains. The plates show while the bar
-//! itself is on screen -- the HUD is, then -- and through a price check, whose panel spans the
-//! bar's middle; each unless the price-check panel covers the plate itself or the setting is off
+//! (`platform::client_log`), then the bar's pixels and the rails' lips (`platform::xp_bar`) -- in
+//! that order, so a level-up line is in before the wrap on the bar it explains. A plate shows
+//! while its rail is seen where it goes (`overlay_layout::rail_seen`; a single miss is let pass):
+//! not over a loading screen, a full-screen panel, another program, or a HUD laid out otherwise.
+//! The price-check panel hides only a plate it covers, and the setting both
 //! ([`XpOverlay::set_cover`]). Their size is the game's, not the app's interface scale: at any
 //! game height a plate is its rail's size, and its words the HUD's.
 //!
@@ -46,7 +47,7 @@ use crate::i18n::{self, Lang};
 use crate::overlay_layout::{PhysicalRect, hud_rails};
 use crate::platform::client_log::{self, ClientLog};
 use crate::platform::win32::Win32Overlay;
-use crate::platform::xp_bar::{self, BarSample};
+use crate::platform::xp_bar::{self, BarSample, RailsSeen};
 use crate::price_check::PriceCheckApp;
 use crate::settings::Settings;
 use crate::ui::fonts;
@@ -177,6 +178,7 @@ pub struct XpOverlay {
     map: PlateWindow,
     /// The level plate's wording: paused, rated, with the percent, in what language and room.
     level_fit: Fit<(bool, bool, bool, Lang, Pixels)>,
+    rails: RailPresence,
 }
 
 /// The map plate's window's root view: it shows what the [`XpOverlay`] knows.
@@ -252,6 +254,7 @@ pub fn open(
                 level: PlateWindow::default(),
                 map: PlateWindow::default(),
                 level_fit: Fit::default(),
+                rails: RailPresence::new(),
             }
         })
     })?;
@@ -336,6 +339,12 @@ async fn sample_forever(view: WeakEntity<XpOverlay>, cx: &mut AsyncApp) {
                     .map(|sample| (sample.client, sample.dpi_scale))
             };
             let moved = place(&view.sample) != place(&sample);
+            view.rails.note(
+                sample
+                    .as_ref()
+                    .map(|sample| sample.rails)
+                    .unwrap_or_default(),
+            );
             view.sample = sample;
             if status != view.status || moved {
                 view.status = status;
@@ -438,24 +447,58 @@ impl XpOverlay {
     /// sync could never show it again.
     fn sync_windows(&mut self, cx: &mut Context<Self>) {
         let rails = self.sample.as_ref().map(|sample| hud_rails(sample.client));
-        // Shown while the bar is readable, and on while something of ours leaves it unreadable
-        // (`platform::xp_bar` refuses a covered bar) with the HUD in view: the price panel, over
-        // the bar's middle, or the tour's dim while it spotlights the level plate.
-        let readable = self.status.bar_visible
-            || self.cover.panel.is_some()
-            || crate::ui::tour::holds_xp_line(cx);
         let cover = self.cover;
         let clear = |rect: &PhysicalRect| {
-            !cover.off && readable && cover.panel.is_none_or(|panel| !panel.intersects(rect))
+            !cover.off && cover.panel.is_none_or(|panel| !panel.intersects(rect))
         };
-        let level = rails.map(|rails| rails.flask).filter(clear);
+        // The level plate also shows while the tour spotlights it: the tour's dim covers the lip
+        // until its hole is cut around the plate.
+        let flask = self.rails.flask() || crate::ui::tour::holds_xp_line(cx);
+        let level = rails
+            .map(|rails| rails.flask)
+            .filter(|rect| flask && clear(rect));
         let map = rails
             .map(|rails| rails.skill)
-            .filter(|rect| self.map_status().is_some() && clear(rect));
+            .filter(|rect| self.rails.skill() && self.map_status().is_some() && clear(rect));
         if self.level.sync(level, cx) {
             cx.set_global(XpLineOnScreen(level));
         }
         self.map.sync(map, cx);
+    }
+}
+
+/// Whether each rail is taken for on screen: seen in the latest sample, or missed only once since
+/// -- a moment's cover over its lip, a tooltip passing, doesn't blink its plate. Taken for off
+/// screen until first seen.
+struct RailPresence {
+    /// Samples in a row that missed each rail.
+    flask_misses: u8,
+    skill_misses: u8,
+}
+
+impl RailPresence {
+    /// Missed samples in a row that take a rail's plate down.
+    const MISSES_TO_HIDE: u8 = 2;
+
+    fn new() -> Self {
+        RailPresence {
+            flask_misses: Self::MISSES_TO_HIDE,
+            skill_misses: Self::MISSES_TO_HIDE,
+        }
+    }
+
+    fn note(&mut self, seen: RailsSeen) {
+        let next = |misses: u8, seen: bool| if seen { 0 } else { misses.saturating_add(1) };
+        self.flask_misses = next(self.flask_misses, seen.flask);
+        self.skill_misses = next(self.skill_misses, seen.skill);
+    }
+
+    fn flask(&self) -> bool {
+        self.flask_misses < Self::MISSES_TO_HIDE
+    }
+
+    fn skill(&self) -> bool {
+        self.skill_misses < Self::MISSES_TO_HIDE
     }
 }
 

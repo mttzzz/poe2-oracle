@@ -59,7 +59,10 @@ impl PhysicalRect {
 // molding, along each rail's straight run between its end caps. PoE2 scales its HUD with the
 // game's height (as `xp_tracker::XpBarGeometry` assumes), so every length is in pixels of a
 // 2160-row game; each panel hangs from its globe in a bottom corner, so each run is measured from
-// its own side's edge -- which only 16:9 has confirmed.
+// its own side's edge -- which only 16:9 has confirmed. A plate shows only where its rail's lip
+// is seen on screen ([`rail_seen`]): the game's other HUD layouts (its centred HUD options), a
+// loading screen, a full-screen panel or another window leave the plate off rather than floating
+// over whatever is there.
 
 const HUD_REFERENCE_HEIGHT: f64 = 2160.0;
 /// A plate's top and bottom rows, as distances from the game's bottom edge: rows 1863 and 1895.
@@ -68,6 +71,17 @@ const RAIL_PLATE_ROWS: (f64, f64) = (297.0, 265.0);
 const FLASK_RAIL_RUN: (f64, f64) = (467.0, 927.0);
 /// The skill rail's straight run, x 2905-3374: its ends' distances from the game's right edge.
 const SKILL_RAIL_RUN: (f64, f64) = (935.0, 466.0);
+/// Rows of a rail's lip read at a 2160-row game: its highlight, just above a plate.
+const LIP_ROWS: f64 = 4.0;
+/// What reads as the lip in a column: its brightest row at least this light and this grey, and
+/// this much lighter than the row under it -- the rail's dark groove, or the plate's shaded rim.
+const LIP_MIN_LUMA: f64 = 85.0;
+const LIP_MAX_CHROMA: u8 = 40;
+const LIP_MIN_STEP: f64 = 40.0;
+/// The share of columns that must read as the lip. Measured 2026-09-23 on the 4K test machine
+/// and on its capture scaled to 720-1440 rows: the rails 0.91-1.0, strips of the game's world at
+/// most 0.15.
+const LIP_MIN_SHARE: f64 = 0.6;
 
 /// Where the XP overlay's plates go in a game whose client area is `game`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -105,6 +119,50 @@ pub fn hud_rails(game: PhysicalRect) -> HudRails {
             right - SKILL_RAIL_RUN.1 * scale,
         ),
     }
+}
+
+/// The strip read to tell whether `plate`'s rail is on screen ([`rail_seen`]): the lip's rows
+/// just above the plate -- four at 2160 rows, at least two -- and the plate's own first row.
+pub fn rail_lip(plate: PhysicalRect, game_height: i32) -> PhysicalRect {
+    let rows = ((LIP_ROWS * f64::from(game_height) / HUD_REFERENCE_HEIGHT).ceil() as i32).max(2);
+    PhysicalRect {
+        x: plate.x,
+        y: plate.y - rows,
+        width: plate.width,
+        height: rows + 1,
+    }
+}
+
+/// Whether `bgra` -- [`rail_lip`]'s strip, 32-bit BGRA rows top to bottom, `width` pixels each --
+/// shows the rail: in most columns the lip's brightest row is the molding's light grey, well
+/// above the row under the lip. The game's world, or a window over the rail, reads as neither.
+pub fn rail_seen(bgra: &[u8], width: usize) -> bool {
+    let rows = bgra.len() / 4 / width.max(1);
+    if width == 0 || rows < 2 {
+        return false;
+    }
+    let pixel = |x: usize, y: usize| {
+        let at = (y * width + x) * 4;
+        [bgra[at + 2], bgra[at + 1], bgra[at]]
+    };
+    let luma =
+        |[r, g, b]: [u8; 3]| 0.299 * f64::from(r) + 0.587 * f64::from(g) + 0.114 * f64::from(b);
+    let seen = (0..width)
+        .filter(|&x| {
+            let Some(highlight) = (0..rows - 1)
+                .map(|y| pixel(x, y))
+                .max_by(|a, b| luma(*a).total_cmp(&luma(*b)))
+            else {
+                return false;
+            };
+            let chroma =
+                highlight.iter().max().unwrap_or(&0) - highlight.iter().min().unwrap_or(&0);
+            luma(highlight) >= LIP_MIN_LUMA
+                && chroma <= LIP_MAX_CHROMA
+                && luma(highlight) - luma(pixel(x, rows - 1)) >= LIP_MIN_STEP
+        })
+        .count();
+    seen as f64 >= LIP_MIN_SHARE * width as f64
 }
 
 /// Which of the game's side panels a check sits beside: the inventory, on the game's right, for a
@@ -225,6 +283,63 @@ mod tests {
         width: 3840,
         height: 2160,
     };
+
+    /// A live capture's raw RGB rows, as the BGRA a screen read hands over.
+    fn bgra(rgb: &[u8]) -> Vec<u8> {
+        let (pixels, _) = rgb.as_chunks::<3>();
+        pixels
+            .iter()
+            .flat_map(|&[r, g, b]| [b, g, r, 255])
+            .collect()
+    }
+
+    #[test]
+    fn a_rail_is_seen_by_its_lip_and_nothing_else_passes_for_it() {
+        // The flask rail with its plate shown under the lip, the bare skill rail, and the flask
+        // rail of the same capture scaled to 1080 rows.
+        for (capture, width) in [
+            (
+                &include_bytes!("../tests/fixtures/rail_lip_4k_flask_plate.rgb")[..],
+                460,
+            ),
+            (
+                &include_bytes!("../tests/fixtures/rail_lip_4k_skill_bare.rgb")[..],
+                469,
+            ),
+            (
+                &include_bytes!("../tests/fixtures/rail_lip_1080p_flask_bare.rgb")[..],
+                230,
+            ),
+        ] {
+            assert!(rail_seen(&bgra(capture), width));
+        }
+        // The hideout's floor where a rail would be in another HUD layout.
+        let world = bgra(include_bytes!("../tests/fixtures/rail_lip_4k_world.rgb"));
+        assert!(!rail_seen(&world, 460));
+        // Light grey all the way down -- stone, fog -- has no lip over a darker row.
+        assert!(!rail_seen(&[150, 150, 150, 255].repeat(460 * 5), 460));
+    }
+
+    #[test]
+    fn the_lip_strip_sits_just_over_the_plate_and_keeps_two_rows_when_small() {
+        let plate = hud_rails(GAME_4K).flask;
+        assert_eq!(
+            rail_lip(plate, 2160),
+            PhysicalRect {
+                x: 467,
+                y: 1859,
+                width: 460,
+                height: 5,
+            }
+        );
+        let small = PhysicalRect {
+            x: 0,
+            y: 0,
+            width: 1280,
+            height: 720,
+        };
+        assert_eq!(rail_lip(hud_rails(small).flask, 720).height, 3);
+    }
 
     #[test]
     fn plates_sit_in_the_rails_they_were_measured_in() {
