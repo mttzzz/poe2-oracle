@@ -1,67 +1,178 @@
-//! The settings window: a copy of [`Settings`] edited in place and handed to `on_save` by
-//! "Сохранить" -- nothing applies before that, except signing in and out of pathofexile.com
-//! (`crate::login`, `crate::session`), which keeps its secret out of the settings and applies at
-//! once. It reads as part of the price-check panel (`ui::panel`): the same near-black panel, gold
-//! section headers, chips and buttons. Its last section writes the diagnostics report
-//! (`crate::diagnostics`), which applies nothing either.
+//! The settings window, in the game-styled look (`ui::style`): a title bar that drags the window,
+//! a sidebar with the six sections -- Общие, Проверка цены, Быстрые действия, Оверлей опыта,
+//! Аккаунт, Помощь -- and each section's page of cards.
 //!
-//! GPUI has no stock text input or dropdown, so the controls are built here: chips that pick one
-//! of a few choices, switches, -/+ steppers, and hotkey recorders that capture the next
-//! combination pressed while they have focus -- plus `ui::text_field` for the quick actions' text
-//! and a typed league's name.
+//! Every change applies at once, through one handler ([`SettingsView::change`]): the settings
+//! file is written and the app takes them over (`PriceCheckApp::apply_settings`); there is no
+//! Сохранить or Отмена. A text field applies when the player leaves it (`ui::text_field`), a
+//! hotkey recorder as soon as it takes a combination -- refused, with the reason under it and the
+//! old hotkey kept, when another program holds that one. A quick action whose text is a denied
+//! command (`quick_action::denied_command`) says so under its field and isn't saved: the file
+//! keeps its last allowed text (`quick_action::kept_actions`). Resetting the waystone marks, the
+//! one erasing action, asks first in a dialog over the window.
 //!
-//! The view draws its own title bar (open the window with `TitlebarOptions::appears_transparent`)
-//! and closes its window once it has reported: `on_save` after "Сохранить", `on_cancel` after
-//! "Отмена", its × or Esc -- and after any other close (Alt+F4, the taskbar), noticed when the
-//! view is released.
+//! Signing in and out of pathofexile.com (`crate::login`, `crate::session`) keeps its secret out
+//! of the settings; Помощь's buttons write reports and open folders and pages.
+//!
+//! The window stays above the game (topmost), stepping down while the sign-in window -- which
+//! isn't topmost -- is open over it. × and Esc (with no menu or dialog open) close it, and so does
+//! anything that sends it `WM_CLOSE` -- Alt+F4, the taskbar -- routed through the same close
+//! ([`SettingsView::close`]).
 
 use std::path::PathBuf;
+use std::sync::LazyLock;
+use std::time::Instant;
 
 use gpui::{
-    App, Context, Entity, FocusHandle, Focusable, FontWeight, IntoElement, KeyDownEvent, Keystroke,
-    Modifiers, ModifiersChangedEvent, MouseButton, MouseDownEvent, Render, SharedString, Window,
-    WindowControlArea, div, prelude::*, px, relative, rgb,
+    Animation, AnimationExt as _, AnyElement, App, Context, Entity, FocusHandle, Focusable,
+    IntoElement, KeyDownEvent, Keystroke, Modifiers, ModifiersChangedEvent, MouseButton,
+    MouseDownEvent, Render, SharedString, Window, WindowControlArea, div, linear_color_stop,
+    linear_gradient, prelude::*, px, relative, rgb,
 };
+use serde_json::Value;
+use trade_client::TradeSite;
+use trade_client::live::MAX_LIVE_SEARCHES;
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, VK_0, VK_9, VK_SHIFT};
 
 use crate::bug_report;
 use crate::diagnostics;
+use crate::league_chip;
+use crate::live_search::LiveSearches;
 use crate::login::{self, Login, LoginProblem};
-use crate::quick_action::{self, DeniedCommand};
+use crate::platform::autostart;
+use crate::platform::win32::Win32Overlay;
+use crate::price_check::{BootstrapState, PriceCheckApp};
+use crate::quick_action::{self, ActionDraft};
 use crate::session::{self, SessionStatus};
 use crate::settings::{
     self, ClientLanguage, Hotkey, HotkeyProblem, KeyName, LeagueChoice, ListingStatusChoice,
-    QuickAction, QuickActionKind, Settings,
+    QuickActionKind, Settings,
 };
-use crate::ui::text_field::TextField;
+use crate::ui::fonts::{self, NameFont};
+use crate::ui::style::{
+    ButtonKind, CARD_RADIUS, SCRIM_OPACITY, TRANSITION, alpha, appear, button, card, diamond, ease,
+    ease_hover, ease_state, game_frame, heading, icon_button, keycaps, link, menu, modal_shadow,
+    ornament_rule, recorder, section_heading, segmented, select, stepper, switch, switch_in,
+    title_button, title_gradient,
+};
+use crate::ui::text_field::{Committed, TextField};
 use crate::ui::theme::{
-    BG_BUTTON, BG_BUTTON_HOVER, BG_CLOSE_HOVER, BG_CONTROL, BG_PANEL, BG_TITLE, BORDER,
-    BORDER_GOLD, CONTENT_PADDING, GOLD, PRICE_RISE, TEXT, TEXT_DIM, TEXT_MUTED, TEXT_WARNING,
+    BG_CARD, BG_PANEL, BG_SIDEBAR, BORDER_CARD, BORDER_GOLD, GOLD, GOLD_LIGHT, PRICE_RISE, TEXT,
+    TEXT_DIM, TEXT_MUTED, TEXT_WARNING, blend,
 };
 
-/// What one click of a stepper moves the scale by, in percent.
+const TITLE_HEIGHT: f32 = 40.;
+const SIDEBAR_WIDTH: f32 = 216.;
+/// The sidebar's list: where it starts, its rows and the gap between them.
+const NAV_TOP: f32 = 18.;
+const NAV_ITEM_HEIGHT: f32 = 38.;
+const NAV_GAP: f32 = 2.;
+/// Inset of a section's content from the sidebar and the window's right edge.
+const CONTENT_INSET: f32 = 36.;
+/// How much gold the top of a section's background takes.
+const CONTENT_GLOW: f32 = 0.035;
+/// The league menu's width, px: room for «Своя лига · » and a private league's name.
+const LEAGUE_MENU_WIDTH: f32 = 280.;
+
+/// What one click of the scale stepper moves it by, in percent.
 const STEP_PERCENT: u16 = 5;
 
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+/// The app's repository: «GitHub ↗» in О программе.
+const REPOSITORY_URL: &str = "https://github.com/mttzzz/poe2-oracle";
+/// The third-party notices the installer puts next to the exe (`packaging/installer.nsi`).
+const NOTICES_FILE: &str = "THIRD-PARTY-NOTICES.html";
 /// Microsoft's WebView2 page, at its download section: the sign-in window needs the runtime.
 const WEBVIEW2_DOWNLOAD: &str = "https://developer.microsoft.com/microsoft-edge/webview2/#download";
 
-/// Gets the edited settings when the player saves.
-type SaveHandler = Box<dyn Fn(Settings, &mut App)>;
-/// Told that the window closed without saving.
-type CancelHandler = Box<dyn Fn(&mut App)>;
-/// The app's side of the diagnostics report, as of the click.
-type ReportSummary = Box<dyn Fn(&App) -> String>;
+/// The client languages, as the segmented choice lists them.
+const CLIENT_LANGUAGES: [(ClientLanguage, &str); 3] = [
+    (ClientLanguage::Auto, "Авто"),
+    (ClientLanguage::Russian, "Русский"),
+    (ClientLanguage::English, "English"),
+];
+/// The default sellers, as the segmented choice lists them: instant buyout, the default, first.
+const SELLERS: [(ListingStatusChoice, &str); 4] = [
+    (ListingStatusChoice::Securable, "Мгновенный выкуп"),
+    (ListingStatusChoice::Available, "Выкуп и онлайн"),
+    (ListingStatusChoice::Online, "Онлайн"),
+    (ListingStatusChoice::Any, "Все"),
+];
+const ACTION_KINDS: [(QuickActionKind, &str); 2] = [
+    (QuickActionKind::ChatCommand, "Чат"),
+    (QuickActionKind::StashSearch, "Тайник"),
+];
+/// `settings::XP_RATE_WINDOWS` as the segmented choice names them.
+static RATE_WINDOWS: LazyLock<Vec<&'static str>> = LazyLock::new(|| {
+    settings::XP_RATE_WINDOWS
+        .iter()
+        .map(|minutes| &*format!("{minutes} мин").leak())
+        .collect()
+});
 
-/// The diagnostics report's progress, shown under its buttons.
-enum ReportState {
-    Idle,
-    Writing,
-    Written(PathBuf),
-    Failed(String),
+/// What a recorder says while it captures.
+const PRICE_CHECK_RULES: &str =
+    "Ctrl или Alt с буквой или цифрой, либо F1–F12 · Esc — оставить как было";
+const ACTION_RULES: &str = "F1–F12, либо Ctrl или Alt с буквой или цифрой · Backspace — без \
+                            клавиши · Esc — оставить как было";
+/// Where the session is kept, under the account's status.
+const SESSION_KEPT: &str = "Сессия хранится в диспетчере учётных данных Windows и отправляется \
+                            только на pathofexile.com";
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Section {
+    General,
+    PriceCheck,
+    QuickActions,
+    XpOverlay,
+    Account,
+    Help,
 }
 
-/// What the window says above the settings: a welcome on the first launch, and whatever in the
-/// player's setup keeps checks from working (`diagnostics::setup_problems`).
+impl Section {
+    const ALL: [Section; 6] = [
+        Section::General,
+        Section::PriceCheck,
+        Section::QuickActions,
+        Section::XpOverlay,
+        Section::Account,
+        Section::Help,
+    ];
+
+    fn title(self) -> &'static str {
+        match self {
+            Section::General => "Общие",
+            Section::PriceCheck => "Проверка цены",
+            Section::QuickActions => "Быстрые действия",
+            Section::XpOverlay => "Оверлей опыта",
+            Section::Account => "Аккаунт",
+            Section::Help => "Помощь",
+        }
+    }
+
+    fn summary(self) -> &'static str {
+        match self {
+            Section::General => "Лига, язык клиента, масштаб и запуск вместе с Windows",
+            Section::PriceCheck => "Горячая клавиша, продавцы, таблица результатов и путевые камни",
+            Section::QuickActions => "Клавиши, которые печатают в игру команды чата и поиск",
+            Section::XpOverlay => "Скорость набора опыта и таймер карты поверх игры",
+            Section::Account => "Вход на pathofexile.com: приватные лиги и слежение за поиском",
+            Section::Help => "Отчёт об ошибке, логи и сведения о программе",
+        }
+    }
+
+    fn index(self) -> usize {
+        self as usize
+    }
+
+    /// Where the sidebar's marker sits for this section.
+    fn marker_top(self) -> f32 {
+        NAV_TOP + self.index() as f32 * (NAV_ITEM_HEIGHT + NAV_GAP)
+    }
+}
+
+/// What the window says above Общие: a welcome on the first launch, and whatever in the player's
+/// setup keeps checks from working (`diagnostics::setup_problems`).
 pub struct Intro {
     pub welcome: bool,
     pub problems: Vec<String>,
@@ -71,144 +182,399 @@ pub struct Intro {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Recorder {
     PriceCheck,
-    /// The quick action at this index.
+    /// The quick action in this row.
     Action(usize),
 }
 
+/// The diagnostics report's progress, shown under its button.
+enum ReportState {
+    Idle,
+    Writing,
+    Written(PathBuf),
+    Failed(String),
+}
+
+/// A quick action's row: what it will save (`quick_action::kept_actions`), the field its text is
+/// typed in, and its hotkey recorder's focus.
+struct ActionRow {
+    draft: ActionDraft,
+    field: Entity<TextField>,
+    recorder: FocusHandle,
+}
+
 pub struct SettingsView {
-    /// The copy being edited, handed to `on_save` as it stands.
-    settings: Settings,
-    /// The trade site's leagues, current first.
-    leagues: Vec<String>,
+    /// Whose settings these are: read as they stand on every render, changed through
+    /// [`Self::change`].
+    app: Entity<PriceCheckApp>,
     intro: Intro,
-    on_save: SaveHandler,
-    on_cancel: CancelHandler,
-    /// The window's own focus: Esc cancels from here. A click anywhere lands here (GPUI focuses
-    /// the innermost focusable element under the mouse), ending a capture; so does a finished one.
+    /// The window's own focus: Esc closes from here. A click anywhere lands here (GPUI focuses
+    /// the innermost focusable element under the mouse), ending a capture; so does a finished
+    /// one, and nothing left focused (`on_focus_lost`).
     focus_handle: FocusHandle,
+    section: Section,
+    /// The sidebar marker's slide between sections: from where to where, since when, and how
+    /// many so far (each restarts its animation).
+    marker_from: f32,
+    marker_to: f32,
+    marker_moved: Option<Instant>,
+    marker_slides: usize,
+    league_menu: bool,
+    confirming_reset: bool,
     /// Focused while the price-check hotkey recorder captures.
     recorder_focus: FocusHandle,
-    /// The quick actions' text fields and hotkey recorders, in `settings.quick_actions`' order;
-    /// the fields' text goes into the settings on save.
-    action_fields: Vec<Entity<TextField>>,
-    action_recorders: Vec<FocusHandle>,
-    /// The typed league's name (`LeagueChoice::Custom`); its text goes into the settings on save.
-    league_field: Entity<TextField>,
     /// The modifiers held during a capture, shown until the key comes.
     held: Modifiers,
-    /// Why the combination last pressed into the recorder was refused.
-    recorder_error: Option<&'static str>,
-    /// `on_save` or `on_cancel` has run, so the release must not report again.
-    reported: bool,
-    report_summary: ReportSummary,
+    /// Why the combination last pressed into the capturing recorder can't be a hotkey, said while
+    /// it still captures.
+    capture_error: Option<&'static str>,
+    /// A recorded combination another program holds, refused: said under its recorder until the
+    /// next capture.
+    refused: Option<(Recorder, SharedString)>,
+    actions: Vec<ActionRow>,
+    /// The private league's name (`LeagueChoice::Custom`): its text while that is the league.
+    league_field: Entity<TextField>,
     report: ReportState,
+    /// The notices file next to the exe; `None` for a copy that wasn't installed.
+    notices: Option<PathBuf>,
+    /// The window, for keeping it above the game; `None` if its handle couldn't be read.
+    overlay: Option<Win32Overlay>,
+    /// Last topmost state handed to the window; `None` until the first.
+    topmost: Option<bool>,
 }
 
 impl SettingsView {
     pub fn new(
-        settings: Settings,
-        leagues: Vec<String>,
+        app: Entity<PriceCheckApp>,
         intro: Intro,
-        on_save: impl Fn(Settings, &mut App) + 'static,
-        on_cancel: impl Fn(&mut App) + 'static,
-        report_summary: impl Fn(&App) -> String + 'static,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        // A window closed without the buttons (Alt+F4, the taskbar) is still a cancel.
+        let (actions, league) = {
+            let settings = &app.read(cx).settings;
+            (
+                settings
+                    .quick_actions
+                    .iter()
+                    .map(ActionDraft::saved)
+                    .collect::<Vec<_>>(),
+                settings.league.clone(),
+            )
+        };
+        let actions = actions
+            .into_iter()
+            .map(|draft| Self::action_row(draft, window, cx))
+            .collect();
+        let private_league = match league {
+            LeagueChoice::Custom(name) => name,
+            LeagueChoice::Auto | LeagueChoice::Named(_) => String::new(),
+        };
+        let league_field =
+            cx.new(|cx| TextField::new(private_league, "My League (PL12345)", window, cx));
+        cx.subscribe(&league_field, |view, _field, _: &Committed, cx| {
+            view.apply_private_league(cx);
+        })
+        .detach();
+
+        // Anything that closes the window through `WM_CLOSE` -- Alt+F4, the taskbar -- closes it
+        // the way × does. Left to `DefWindowProc`, `WM_CLOSE` destroys the window before GPUI
+        // lets go of it, and GPUI's teardown (`Drop for WindowsWindow`) then hides, un-registers
+        // and destroys a handle that no longer exists -- «Недопустимый дескриптор окна» in the
+        // log.
+        let view = cx.weak_entity();
+        window.on_window_should_close(cx, move |window, cx| {
+            view.update(cx, |view, cx| view.close(window, cx)).is_err()
+        });
+        // Nothing focused -- a field or recorder done, a removed row's field -- is the window's
+        // own focus again, where Esc closes.
+        cx.on_focus_lost(window, |view, window, cx| {
+            view.focus_handle.focus(window, cx)
+        })
+        .detach();
         cx.on_release(|view, cx| {
-            if !view.reported {
-                (view.on_cancel)(cx);
+            log::info!("settings window closed");
+            view.app.update(cx, |state, cx| {
+                state.set_settings_window(None);
+                cx.notify();
+            });
+        })
+        .detach();
+        // Everything shown comes from the app and these globals as they stand.
+        cx.observe(&app, |_, _, cx| cx.notify()).detach();
+        cx.observe_global::<SessionStatus>(|_, cx| cx.notify())
+            .detach();
+        cx.observe_global::<LiveSearches>(|_, cx| cx.notify())
+            .detach();
+        cx.observe_global::<Login>(|view, cx| {
+            view.sync_topmost(cx);
+            cx.notify();
+        })
+        .detach();
+
+        let overlay = match Win32Overlay::from_window(window) {
+            Ok(overlay) => {
+                // Windows 11's rounded corners and outline would cut the frame's corner diamonds.
+                if let Err(err) = overlay.disable_dwm_frame() {
+                    log::warn!("{err:#}");
+                }
+                Some(overlay)
+            }
+            Err(err) => {
+                log::warn!("the settings window's handle is unavailable: {err:#}");
+                None
+            }
+        };
+        let top = Section::General.marker_top();
+        let mut view = SettingsView {
+            app,
+            intro,
+            focus_handle: cx.focus_handle(),
+            section: Section::General,
+            marker_from: top,
+            marker_to: top,
+            marker_moved: None,
+            marker_slides: 0,
+            league_menu: false,
+            confirming_reset: false,
+            recorder_focus: cx.focus_handle(),
+            held: Modifiers::default(),
+            capture_error: None,
+            refused: None,
+            actions,
+            league_field,
+            report: ReportState::Idle,
+            notices: third_party_notices(),
+            overlay,
+            topmost: None,
+        };
+        view.sync_topmost(cx);
+        view
+    }
+
+    /// A row for `draft`, its field telling the view when the player leaves it.
+    fn action_row(draft: ActionDraft, window: &mut Window, cx: &mut Context<Self>) -> ActionRow {
+        let text = draft.text.clone();
+        let placeholder = action_placeholder(draft.kind);
+        let field = cx.new(|cx| TextField::new(text, placeholder, window, cx));
+        cx.subscribe(&field, |view, field, _: &Committed, cx| {
+            view.action_committed(&field, cx);
+        })
+        .detach();
+        ActionRow {
+            draft,
+            field,
+            recorder: cx.focus_handle(),
+        }
+    }
+
+    /// Applies `edit` to the player's settings at once -- the one handler every control goes
+    /// through. Autostart goes into the registry when it changed (that is where it lives), the
+    /// settings file is written, and the app takes them over (`PriceCheckApp::apply_settings`),
+    /// refusing a hotkey another program holds; what changed is logged as the app took it.
+    fn change(&mut self, cx: &mut Context<Self>, edit: impl FnOnce(&mut Settings)) {
+        self.app.update(cx, |state, cx| {
+            let old = state.settings.clone();
+            let mut new = old.clone();
+            edit(&mut new);
+            if new == old {
+                return;
+            }
+            if new.autostart != old.autostart
+                && let Err(err) = autostart::set_autostart(new.autostart)
+            {
+                log::warn!("{err:#}");
+                new.autostart = autostart::autostart_enabled();
+            }
+            if let Err(err) = settings::save(&new) {
+                log::warn!("saving settings failed: {err:#}");
+            }
+            state.apply_settings(new, cx);
+            let changed = changes(&old, &state.settings);
+            if !changed.is_empty() {
+                log::info!("settings changed: {changed}");
+            }
+        });
+    }
+
+    /// Saves the quick actions as the rows stand (`quick_action::kept_actions`) and applies them.
+    /// Returns the rows whose hotkey the app refused -- another program holds it -- each with the
+    /// combination refused; those rows now go without one, as the settings do.
+    fn apply_actions(&mut self, cx: &mut Context<Self>) -> Vec<(usize, Hotkey)> {
+        let actions = quick_action::kept_actions(self.actions.iter_mut().map(|row| &mut row.draft));
+        self.change(cx, |settings| settings.quick_actions = actions);
+        let taken: Vec<Option<Hotkey>> = self
+            .app
+            .read(cx)
+            .settings
+            .quick_actions
+            .iter()
+            .map(|action| action.hotkey)
+            .collect();
+        let saved_rows = self
+            .actions
+            .iter_mut()
+            .enumerate()
+            .filter(|(_, row)| row.draft.kept.is_some());
+        let mut refused = Vec::new();
+        for ((index, row), taken) in saved_rows.zip(taken) {
+            if let Some(asked) = row.draft.hotkey
+                && taken != Some(asked)
+            {
+                refused.push((index, asked));
+                row.draft.hotkey = taken;
+            }
+        }
+        refused
+    }
+
+    /// [`Self::apply_actions`], saying under each refused row why it went without its hotkey.
+    fn apply_actions_noting(&mut self, cx: &mut Context<Self>) {
+        for (index, asked) in self.apply_actions(cx) {
+            self.refused = Some((Recorder::Action(index), taken_note(asked, None)));
+        }
+    }
+
+    /// Closes the window: ×, Esc and `WM_CLOSE` all come here. What a field holds, typed but not
+    /// left, applies first -- the window is gone before the field could report it.
+    pub fn close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.apply_typed(cx);
+        window.remove_window();
+    }
+
+    fn apply_typed(&mut self, cx: &mut Context<Self>) {
+        self.apply_private_league(cx);
+        let mut typed = false;
+        for row in &mut self.actions {
+            let text = row.field.read(cx).text();
+            if text != row.draft.text {
+                row.draft.text = text.to_owned();
+                typed = true;
+            }
+        }
+        if typed {
+            self.apply_actions_noting(cx);
+        }
+    }
+
+    /// A quick action's field was left with a new text.
+    fn action_committed(&mut self, field: &Entity<TextField>, cx: &mut Context<Self>) {
+        let text = field.read(cx).text().to_owned();
+        let Some(row) = self.actions.iter_mut().find(|row| row.field == *field) else {
+            return;
+        };
+        row.draft.text = text;
+        self.apply_actions_noting(cx);
+        cx.notify();
+    }
+
+    /// Takes the private league's field as it reads: a name makes it the league searched;
+    /// emptied, searches go back to «Авто» -- when it was the league searched.
+    fn apply_private_league(&mut self, cx: &mut Context<Self>) {
+        let typed = self.league_field.read(cx).text().trim().to_owned();
+        let league = match (typed.is_empty(), &self.app.read(cx).settings.league) {
+            (false, _) => LeagueChoice::Custom(typed),
+            (true, LeagueChoice::Custom(_)) => LeagueChoice::Auto,
+            (true, LeagueChoice::Auto | LeagueChoice::Named(_)) => return,
+        };
+        self.change(cx, |settings| settings.league = league);
+    }
+
+    /// A league picked in Общие's menu. The private league's field shows the league searched
+    /// only while it is the private one.
+    fn choose_league(&mut self, choice: LeagueChoice, cx: &mut Context<Self>) {
+        self.league_menu = false;
+        let private_league = match &choice {
+            LeagueChoice::Custom(name) => name.clone(),
+            LeagueChoice::Auto | LeagueChoice::Named(_) => String::new(),
+        };
+        self.league_field
+            .update(cx, |field, cx| field.set_text(private_league, cx));
+        self.change(cx, |settings| settings.league = choice);
+        cx.notify();
+    }
+
+    /// Keeps the window above the game -- except while the sign-in window it opened is up: that
+    /// one isn't topmost, and must show in front of this one.
+    fn sync_topmost(&mut self, cx: &mut Context<Self>) {
+        let Some(overlay) = self.overlay else {
+            return;
+        };
+        let topmost = !cx.try_global::<Login>().is_some_and(Login::is_open);
+        if self.topmost == Some(topmost) {
+            return;
+        }
+        self.topmost = Some(topmost);
+        // `SetWindowPos` sends messages into GPUI's window procedure: not from inside an update.
+        cx.spawn(async move |_, _| {
+            if let Err(err) = overlay.set_topmost(topmost) {
+                log::warn!("{err:#}");
             }
         })
         .detach();
-        let action_fields = settings
-            .quick_actions
-            .iter()
-            .map(|action| action_field(action, cx))
-            .collect();
-        let action_recorders = settings
-            .quick_actions
-            .iter()
-            .map(|_| cx.focus_handle())
-            .collect();
-        let typed_league = match &settings.league {
-            LeagueChoice::Custom(name) => name.clone(),
-            _ => String::new(),
-        };
-        let league_field = cx.new(|cx| {
-            TextField::new(
-                typed_league,
-                "Название лиги, например My League (PL12345)",
-                cx,
-            )
-        });
-        // The account section shows what the site says of the session, whenever it says it, and
-        // what the sign-in window is doing.
-        cx.observe_global::<SessionStatus>(|_, cx| cx.notify())
-            .detach();
-        cx.observe_global::<Login>(|_, cx| cx.notify()).detach();
-        SettingsView {
-            settings,
-            leagues,
-            intro,
-            on_save: Box::new(on_save),
-            on_cancel: Box::new(on_cancel),
-            focus_handle: cx.focus_handle(),
-            recorder_focus: cx.focus_handle(),
-            action_fields,
-            action_recorders,
-            league_field,
-            held: Modifiers::default(),
-            recorder_error: None,
-            reported: false,
-            report_summary: Box::new(report_summary),
-            report: ReportState::Idle,
+    }
+
+    /// The marker's position `now`, partway along its slide.
+    fn marker_at(&self, now: Instant) -> f32 {
+        match self.marker_moved {
+            Some(moved) => {
+                let progress = (now.saturating_duration_since(moved).as_secs_f32()
+                    / TRANSITION.as_secs_f32())
+                .min(1.);
+                self.marker_from + (self.marker_to - self.marker_from) * ease(progress)
+            }
+            None => self.marker_to,
         }
     }
 
-    fn save(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        // A quick action that would send a denied command is not saved; its row says why.
-        if self.denied_action(cx).is_some() {
+    fn show(&mut self, section: Section, cx: &mut Context<Self>) {
+        if section == self.section {
             return;
         }
-        self.reported = true;
-        // A typed league is the field's text; nothing typed is no choice.
-        if let LeagueChoice::Custom(_) = self.settings.league {
-            let typed = self.league_field.read(cx).text().trim().to_owned();
-            self.settings.league = if typed.is_empty() {
-                LeagueChoice::Auto
-            } else {
-                LeagueChoice::Custom(typed)
-            };
-        }
-        for (action, field) in self
-            .settings
-            .quick_actions
-            .iter_mut()
-            .zip(&self.action_fields)
-        {
-            action.text = field.read(cx).text().trim().to_owned();
-        }
-        // An action left without text would do nothing: it isn't kept.
-        self.settings
-            .quick_actions
-            .retain(|action| !action.text.is_empty());
-        (self.on_save)(self.settings.clone(), cx);
-        window.remove_window();
+        let now = Instant::now();
+        self.marker_from = self.marker_at(now);
+        self.marker_to = section.marker_top();
+        self.marker_moved = Some(now);
+        self.marker_slides += 1;
+        self.section = section;
+        self.league_menu = false;
+        cx.notify();
     }
 
-    /// The denied command a quick action's text, as its field reads now, would send -- the first
-    /// such action's.
-    fn denied_action(&self, cx: &App) -> Option<&'static DeniedCommand> {
-        self.action_fields
-            .iter()
-            .find_map(|field| quick_action::denied_command(field.read(cx).text()))
+    /// Esc closes what is open, innermost first, then the window. A field or a capturing recorder
+    /// takes its Esc itself.
+    fn escape(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        if event.keystroke.key != "escape" {
+            return;
+        }
+        if self.confirming_reset {
+            self.confirming_reset = false;
+        } else if self.league_menu {
+            self.league_menu = false;
+        } else {
+            self.close(window, cx);
+            return;
+        }
+        cx.notify();
     }
 
-    fn cancel(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.reported = true;
-        (self.on_cancel)(cx);
-        window.remove_window();
+    /// The reset dialog closes, the marks kept.
+    fn keep_marks(&mut self, cx: &mut Context<Self>) {
+        self.confirming_reset = false;
+        cx.notify();
+    }
+
+    fn reset_waystone_marks(&mut self, cx: &mut Context<Self>) {
+        self.confirming_reset = false;
+        self.change(cx, |settings| settings.waystone_marks.clear());
+        cx.notify();
+    }
+
+    /// «Сообщить ↗»: the tray's «Сообщить об ошибке» (`bug_report::report_bug`).
+    fn report_bug(&mut self, cx: &mut Context<Self>) {
+        let (summary, language) = {
+            let state = self.app.read(cx);
+            (state.diagnostics_summary(), state.item_language())
+        };
+        bug_report::report_bug(summary, language, cx);
     }
 
     /// Writes the diagnostics report off the main thread, then shows it in Explorer.
@@ -216,7 +582,7 @@ impl SettingsView {
         if matches!(self.report, ReportState::Writing) {
             return;
         }
-        let summary = (self.report_summary)(cx);
+        let summary = self.app.read(cx).diagnostics_summary();
         self.report = ReportState::Writing;
         cx.notify();
         cx.spawn(async move |view, cx| {
@@ -244,12 +610,29 @@ impl SettingsView {
         .detach();
     }
 
-    /// The recorder was clicked; the same click focuses it (GPUI moves focus to a focusable
-    /// element on mouse-down), which is what makes it capture.
-    fn start_capture(&mut self, window: &Window, cx: &mut Context<Self>) {
-        self.held = window.modifiers();
-        self.recorder_error = None;
-        cx.notify();
+    fn recorder_focus(&self, recorder: Recorder) -> Option<&FocusHandle> {
+        match recorder {
+            Recorder::PriceCheck => Some(&self.recorder_focus),
+            Recorder::Action(index) => self.actions.get(index).map(|row| &row.recorder),
+        }
+    }
+
+    /// A press on a recorder: it starts capturing -- the same press focuses it (`track_focus`),
+    /// which is what makes it capture -- or, while it captures, stops, the hotkey as it was.
+    fn press_recorder(&mut self, recorder: Recorder, window: &mut Window, cx: &mut Context<Self>) {
+        let capturing = self
+            .recorder_focus(recorder)
+            .is_some_and(|focus| focus.is_focused(window));
+        if capturing {
+            // The press must not focus the recorder again.
+            window.prevent_default();
+            self.stop_capture(window, cx);
+        } else {
+            self.held = window.modifiers();
+            self.capture_error = None;
+            self.refused = None;
+            cx.notify();
+        }
     }
 
     fn stop_capture(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -264,7 +647,7 @@ impl SettingsView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        // Every key is the recorder's while it captures: Esc must not also cancel the window, nor
+        // Every key is the recorder's while it captures: Esc must not also close the window, nor
         // Alt+key reach the system menu.
         cx.stop_propagation();
         if event.is_held {
@@ -279,29 +662,23 @@ impl SettingsView {
                 }
                 // A quick action may go without a hotkey; the price check may not.
                 ("backspace" | "delete", Recorder::Action(index)) => {
-                    if let Some(action) = self.settings.quick_actions.get_mut(index) {
-                        action.hotkey = None;
-                    }
                     self.stop_capture(window, cx);
+                    self.set_action_hotkey(index, None, cx);
                     return;
                 }
                 _ => {}
             }
         }
-        match recorded_hotkey(keystroke).and_then(|hotkey| self.unused(hotkey, recorder)) {
+        match recorded_hotkey(keystroke).and_then(|hotkey| self.unused(hotkey, recorder, cx)) {
             Ok(hotkey) => {
-                match recorder {
-                    Recorder::PriceCheck => self.settings.hotkey = hotkey,
-                    Recorder::Action(index) => {
-                        if let Some(action) = self.settings.quick_actions.get_mut(index) {
-                            action.hotkey = Some(hotkey);
-                        }
-                    }
-                }
                 self.stop_capture(window, cx);
+                match recorder {
+                    Recorder::PriceCheck => self.set_price_check_hotkey(hotkey, cx),
+                    Recorder::Action(index) => self.set_action_hotkey(index, Some(hotkey), cx),
+                }
             }
             Err(error) => {
-                self.recorder_error = Some(error);
+                self.capture_error = Some(error);
                 cx.notify();
             }
         }
@@ -309,73 +686,190 @@ impl SettingsView {
 
     /// `hotkey`, unless a recorder other than `recorder` already has it: one combination does
     /// one thing.
-    fn unused(&self, hotkey: Hotkey, recorder: Recorder) -> Result<Hotkey, &'static str> {
-        if recorder != Recorder::PriceCheck && self.settings.hotkey == hotkey {
+    fn unused(&self, hotkey: Hotkey, recorder: Recorder, cx: &App) -> Result<Hotkey, &'static str> {
+        if recorder != Recorder::PriceCheck && self.app.read(cx).settings.hotkey == hotkey {
             return Err("Это сочетание уже у проверки цены");
         }
-        let taken = self
-            .settings
-            .quick_actions
-            .iter()
-            .enumerate()
-            .any(|(index, action)| {
-                recorder != Recorder::Action(index) && action.hotkey == Some(hotkey)
-            });
+        let taken = self.actions.iter().enumerate().any(|(index, row)| {
+            recorder != Recorder::Action(index) && row.draft.hotkey == Some(hotkey)
+        });
         if taken {
             return Err("Это сочетание уже у другого быстрого действия");
         }
         Ok(hotkey)
     }
 
-    fn add_action(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.settings.quick_actions.len() >= settings::MAX_QUICK_ACTIONS {
+    /// Makes `hotkey` the price check's at once; the app refuses it when another program holds
+    /// it, and the old one stays.
+    fn set_price_check_hotkey(&mut self, hotkey: Hotkey, cx: &mut Context<Self>) {
+        let previous = self.app.read(cx).settings.hotkey;
+        self.refused = None;
+        self.change(cx, |settings| settings.hotkey = hotkey);
+        if self.app.read(cx).settings.hotkey != hotkey {
+            self.refused = Some((Recorder::PriceCheck, taken_note(hotkey, Some(previous))));
+        }
+        cx.notify();
+    }
+
+    /// Gives the quick action in row `index` `hotkey`, at once for a saved action. One another
+    /// program holds is refused, and the action keeps the hotkey it had.
+    fn set_action_hotkey(&mut self, index: usize, hotkey: Option<Hotkey>, cx: &mut Context<Self>) {
+        let Some(row) = self.actions.get_mut(index) else {
+            return;
+        };
+        let previous = std::mem::replace(&mut row.draft.hotkey, hotkey);
+        if previous == hotkey {
             return;
         }
-        let action = QuickAction {
-            kind: QuickActionKind::ChatCommand,
-            text: String::new(),
-            hotkey: None,
-        };
-        let field = action_field(&action, cx);
-        // Ready for typing the command at once.
-        window.focus(&field.focus_handle(cx), cx);
-        self.settings.quick_actions.push(action);
-        self.action_fields.push(field);
-        self.action_recorders.push(cx.focus_handle());
+        self.refused = None;
+        let refused = self.apply_actions(cx);
+        if let Some(&(_, asked)) = refused.iter().find(|(refused, _)| *refused == index) {
+            self.actions[index].draft.hotkey = previous;
+            // The refusal left the action without one: its old one is held again.
+            if previous.is_some() {
+                self.apply_actions(cx);
+            }
+            self.refused = Some((Recorder::Action(index), taken_note(asked, previous)));
+        }
+        cx.notify();
+    }
+
+    fn add_action(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.actions.len() >= settings::MAX_QUICK_ACTIONS {
+            return;
+        }
+        let row = Self::action_row(ActionDraft::default(), window, cx);
+        // Ready for typing the command at once; it's saved once it has a text.
+        window.focus(&row.field.focus_handle(cx), cx);
+        self.actions.push(row);
         cx.notify();
     }
 
     fn remove_action(&mut self, index: usize, cx: &mut Context<Self>) {
-        if index < self.settings.quick_actions.len() {
-            self.settings.quick_actions.remove(index);
-            self.action_fields.remove(index);
-            self.action_recorders.remove(index);
+        if index >= self.actions.len() {
+            return;
+        }
+        let removed = self.actions.remove(index);
+        // Notes name rows by place, and the places below this one just moved.
+        self.refused = None;
+        if removed.draft.kept.is_some() {
+            self.apply_actions_noting(cx);
         }
         cx.notify();
     }
 
-    /// Switches the action at `index` between a chat command and a stash search; its field's
-    /// placeholder follows.
+    /// Switches the action in row `index` between a chat command and a stash search; its
+    /// field's placeholder follows.
     fn set_action_kind(&mut self, index: usize, kind: QuickActionKind, cx: &mut Context<Self>) {
-        if let Some(action) = self.settings.quick_actions.get_mut(index) {
-            action.kind = kind;
+        let Some(row) = self.actions.get_mut(index) else {
+            return;
+        };
+        if row.draft.kind == kind {
+            return;
         }
-        if let Some(field) = self.action_fields.get(index) {
-            field.update(cx, |field, cx| {
-                field.set_placeholder(action_placeholder(kind));
-                cx.notify();
+        row.draft.kind = kind;
+        row.field.update(cx, |field, cx| {
+            field.set_placeholder(action_placeholder(kind));
+            cx.notify();
+        });
+        if row.draft.kept.is_some() {
+            self.apply_actions_noting(cx);
+        }
+        cx.notify();
+    }
+
+    /// What a recorder's row says: while it captures, the rules -- or why the combination just
+    /// pressed can't be one; otherwise why its last one was refused, or `idle`.
+    fn recorder_line(
+        &self,
+        recorder: Recorder,
+        capturing: bool,
+        rules: &'static str,
+        idle: Option<&'static str>,
+    ) -> Option<AnyElement> {
+        if capturing {
+            return Some(match self.capture_error {
+                Some(error) => note(error, TEXT_WARNING),
+                None => note(rules, TEXT_DIM),
             });
         }
-        cx.notify();
+        match &self.refused {
+            Some((refused, text)) if *refused == recorder => Some(note(text.clone(), TEXT_WARNING)),
+            _ => idle.map(|idle| note(idle, TEXT_DIM)),
+        }
     }
 
-    fn render_title_bar(&self, cx: &Context<Self>) -> impl IntoElement {
+    /// A hotkey recorder: `current` as keycaps (or `empty` without one) until pressed, then the
+    /// modifiers held so far until a combination comes (`capture_key`).
+    fn render_recorder(
+        &self,
+        which: Recorder,
+        current: Option<Hotkey>,
+        empty: &'static str,
+        window: &Window,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
+        let focus = self
+            .recorder_focus(which)
+            .cloned()
+            .unwrap_or_else(|| self.recorder_focus.clone());
+        let capturing = focus.is_focused(window);
+        let content: AnyElement = if capturing {
+            let held: String =
+                settings::modifier_names(self.held.control, self.held.shift, self.held.alt)
+                    .map(|name| format!("{name}+"))
+                    .collect();
+            let prompt: SharedString = if held.is_empty() {
+                "Нажмите сочетание…".into()
+            } else {
+                format!("{held}…").into()
+            };
+            div()
+                .text_color(rgb(GOLD_LIGHT))
+                .child(prompt)
+                .into_any_element()
+        } else {
+            match current {
+                Some(hotkey) => keycaps(&hotkey_labels(hotkey)).into_any_element(),
+                None => div()
+                    .text_color(rgb(TEXT_MUTED))
+                    .child(empty)
+                    .into_any_element(),
+            }
+        };
+        let key = match which {
+            Recorder::PriceCheck => "price-check-hotkey",
+            Recorder::Action(_) => "keys",
+        };
+        div()
+            .track_focus(&focus)
+            .flex_none()
+            .on_key_down(cx.listener(move |view, event: &KeyDownEvent, window, cx| {
+                view.capture_key(which, event, window, cx);
+            }))
+            .on_modifiers_changed(cx.listener(
+                |view, event: &ModifiersChangedEvent, _window, cx| {
+                    view.held = event.modifiers;
+                    cx.notify();
+                },
+            ))
+            .child(recorder(
+                key,
+                content,
+                capturing,
+                cx.listener(move |view, _: &MouseDownEvent, window, cx| {
+                    view.press_recorder(which, window, cx);
+                }),
+            ))
+    }
+
+    fn render_title_bar(&self, face: &'static NameFont, cx: &Context<Self>) -> impl IntoElement {
         div()
             .flex()
             .flex_none()
             .items_center()
-            .h(px(30.))
-            .bg(rgb(BG_TITLE))
+            .h(px(TITLE_HEIGHT))
+            .bg(title_gradient())
             .border_b_1()
             .border_color(rgb(BORDER_GOLD))
             .child(
@@ -385,41 +879,225 @@ impl SettingsView {
                     .min_w_0()
                     .h_full()
                     .items_center()
-                    .pl(px(CONTENT_PADDING))
+                    .gap(px(10.))
+                    .pl(px(20.))
                     .window_control_area(WindowControlArea::Drag)
-                    .text_xs()
-                    .text_color(rgb(TEXT_DIM))
-                    .child("PoE2 Oracle · Настройки"),
+                    .child(diamond(8., GOLD))
+                    .child(
+                        heading(face)
+                            .text_size(px(15.))
+                            .text_color(rgb(GOLD_LIGHT))
+                            .child("PoE2 Oracle"),
+                    )
+                    .child(div().text_color(rgb(TEXT_MUTED)).child("·"))
+                    .child(
+                        heading(face)
+                            .text_size(px(15.))
+                            .text_color(rgb(TEXT))
+                            .child("Настройки"),
+                    ),
             )
+            .child(title_button(
+                "close",
+                "×",
+                46.,
+                true,
+                cx.listener(|view, _: &MouseDownEvent, window, cx| view.close(window, cx)),
+            ))
+    }
+
+    fn render_sidebar(&self, face: &'static NameFont, cx: &Context<Self>) -> impl IntoElement {
+        let (from, to) = (self.marker_from, self.marker_to);
+        let marker = div()
+            .absolute()
+            .left(px(10.))
+            .right(px(10.))
+            .h(px(NAV_ITEM_HEIGHT))
+            .rounded(px(6.))
+            .bg(linear_gradient(
+                90.,
+                linear_color_stop(alpha(GOLD, 0.16), 0.),
+                linear_color_stop(alpha(GOLD, 0.02), 1.),
+            ))
             .child(
                 div()
-                    .w(px(38.))
-                    .h_full()
+                    .absolute()
+                    .left_0()
+                    .top(px(10.))
+                    .bottom(px(10.))
+                    .w(px(2.))
+                    .rounded_full()
+                    .bg(rgb(GOLD)),
+            )
+            .with_animation(
+                ("marker", self.marker_slides),
+                Animation::new(TRANSITION).with_easing(ease),
+                move |marker, t| marker.top(px(from + (to - from) * t)),
+            );
+        div()
+            .flex()
+            .flex_col()
+            .flex_none()
+            .w(px(SIDEBAR_WIDTH))
+            .h_full()
+            .bg(rgb(BG_SIDEBAR))
+            .border_r_1()
+            .border_color(rgb(BORDER_CARD))
+            .child(
+                div()
+                    .relative()
                     .flex()
-                    .flex_none()
-                    .items_center()
-                    .justify_center()
-                    .text_color(rgb(TEXT_DIM))
-                    .cursor_pointer()
-                    .hover(|style| style.bg(rgb(BG_CLOSE_HOVER)).text_color(rgb(TEXT)))
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(|view, _event: &MouseDownEvent, window, cx| {
-                            view.cancel(window, cx);
-                        }),
+                    .flex_col()
+                    .gap(px(NAV_GAP))
+                    .px(px(10.))
+                    .pt(px(NAV_TOP))
+                    .child(marker)
+                    .children(Section::ALL.map(|section| self.render_nav_item(section, face, cx))),
+            )
+            .child(div().flex_1())
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(2.))
+                    .px(px(26.))
+                    .pb(px(18.))
+                    .child(
+                        heading(face)
+                            .text_size(px(13.))
+                            .text_color(rgb(GOLD))
+                            .child("PoE2 Oracle"),
                     )
-                    .child("×"),
+                    .child(
+                        div()
+                            .text_size(px(11.))
+                            .text_color(rgb(TEXT_MUTED))
+                            .child(format!("версия {VERSION}")),
+                    ),
             )
     }
 
-    /// The welcome (first launch only) and the setup problems, in a gold-edged box above the
-    /// settings; nothing when there is neither.
-    fn render_intro(&self) -> Option<impl IntoElement> {
+    /// A section in the sidebar, named in the heading face.
+    fn render_nav_item(
+        &self,
+        section: Section,
+        face: &'static NameFont,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
+        let current = section == self.section;
+        let item = div()
+            .id(("nav", section.index()))
+            .relative()
+            .flex()
+            .items_center()
+            .h(px(NAV_ITEM_HEIGHT))
+            .px(px(18.))
+            .rounded(px(6.))
+            .font_family(face.family)
+            .font_weight(face.weight)
+            .text_size(px(15.))
+            .cursor_pointer()
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |view, _: &MouseDownEvent, _, cx| view.show(section, cx)),
+            );
+        ease_hover(("nav", section.index()), item, move |item, hover| {
+            item.bg(alpha(GOLD, 0.05 * hover)).child(ease_state(
+                "label",
+                current,
+                div(),
+                move |label, on| {
+                    label
+                        .text_color(rgb(blend(blend(TEXT_DIM, TEXT, hover), GOLD_LIGHT, on)))
+                        .child(section.title())
+                },
+            ))
+        })
+    }
+
+    fn render_content(
+        &self,
+        settings: &Settings,
+        face: &'static NameFont,
+        window: &Window,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
+        let section = self.section;
+        let body: AnyElement = match section {
+            Section::General => self.render_general(settings, face, cx).into_any_element(),
+            Section::PriceCheck => self
+                .render_price_check(settings, face, window, cx)
+                .into_any_element(),
+            Section::QuickActions => self
+                .render_quick_actions(face, window, cx)
+                .into_any_element(),
+            Section::XpOverlay => self
+                .render_xp_overlay(settings, face, cx)
+                .into_any_element(),
+            Section::Account => self.render_account(settings, face, cx).into_any_element(),
+            Section::Help => self.render_help(face, cx).into_any_element(),
+        };
+        div()
+            .flex_1()
+            .min_w_0()
+            .h_full()
+            // A faint warmth under the title bar, as if lit from it, gone a third of the way
+            // down.
+            .bg(linear_gradient(
+                180.,
+                linear_color_stop(rgb(blend(BG_PANEL, GOLD, CONTENT_GLOW)), 0.),
+                linear_color_stop(rgb(BG_PANEL), 0.3),
+            ))
+            .child(switch_in(
+                ("section", section.index()),
+                div()
+                    .size_full()
+                    .flex()
+                    .flex_col()
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .flex_none()
+                            .gap(px(4.))
+                            .px(px(CONTENT_INSET))
+                            .pt(px(26.))
+                            .pb(px(16.))
+                            .child(
+                                heading(face)
+                                    .text_size(px(24.))
+                                    .text_color(rgb(GOLD_LIGHT))
+                                    .child(section.title()),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(13.))
+                                    .text_color(rgb(TEXT_DIM))
+                                    .child(section.summary()),
+                            )
+                            .child(div().pt(px(12.)).child(ornament_rule(BORDER_GOLD))),
+                    )
+                    .child(
+                        div()
+                            .id(("section-body", section.index()))
+                            .flex_1()
+                            .min_h_0()
+                            .overflow_y_scroll()
+                            .px(px(CONTENT_INSET))
+                            .pt(px(4.))
+                            .pb(px(28.))
+                            .child(body),
+                    ),
+            ))
+    }
+
+    /// The welcome (first launch only) and the setup problems, in a gold-edged card; nothing when
+    /// there is neither.
+    fn render_intro(&self, hotkey: Hotkey, face: &'static NameFont) -> Option<AnyElement> {
         let Intro { welcome, problems } = &self.intro;
         if !welcome && problems.is_empty() {
             return None;
         }
-        let hotkey = self.settings.hotkey;
         let welcome_lines = [
             "PoE2 Oracle работает в фоне: его значок — у часов, иногда под стрелкой «Показать \
              скрытые значки». Эти настройки открываются из меню значка и шестерёнкой на панели."
@@ -428,613 +1106,780 @@ impl SettingsView {
                 "В игре наведите курсор на предмет и нажмите {hotkey} — рядом с инвентарём \
                  откроется панель с ценой. Esc закрывает её."
             ),
+            "Всё, что вы меняете в этом окне, применяется сразу.".to_owned(),
         ];
         Some(
             div()
-                .mt(px(12.))
-                .p(px(10.))
                 .flex()
                 .flex_col()
-                .gap(px(6.))
-                .rounded_xs()
+                .gap(px(8.))
+                .px(px(18.))
+                .py(px(16.))
+                .rounded(px(CARD_RADIUS))
+                .bg(rgb(BG_CARD))
                 .border_1()
                 .border_color(rgb(BORDER_GOLD))
-                .bg(rgb(BG_CONTROL))
                 .when(*welcome, |this| {
                     this.child(
-                        div()
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(rgb(GOLD))
+                        heading(face)
+                            .text_size(px(18.))
+                            .text_color(rgb(GOLD_LIGHT))
                             .child("Добро пожаловать!"),
                     )
-                    .children(
-                        welcome_lines
-                            .map(|line| div().text_xs().text_color(rgb(TEXT_DIM)).child(line)),
-                    )
+                    .children(welcome_lines.map(|line| {
+                        div()
+                            .text_size(px(13.))
+                            .text_color(rgb(TEXT_DIM))
+                            .child(line)
+                    }))
                 })
                 .children(problems.iter().map(|problem| {
                     div()
-                        .text_xs()
+                        .flex()
+                        .gap(px(8.))
+                        .text_size(px(13.))
                         .text_color(rgb(TEXT_WARNING))
-                        .child(format!("⚠ {problem}"))
-                })),
+                        .child(div().flex_none().child("⚠"))
+                        .child(problem.clone())
+                }))
+                .into_any_element(),
         )
     }
 
-    /// "Авто" (naming the league it stands for), every league the trade site lists, a picked
-    /// league it no longer lists -- still shown, since it's what the file holds -- and a league the
-    /// player types: a private one, which the site's list never shows.
-    fn render_league(&self, cx: &Context<Self>) -> impl IntoElement {
-        let auto_label: SharedString = match self.leagues.first() {
-            Some(current) => format!("Авто · {current}").into(),
-            None => "Авто".into(),
-        };
-        let unlisted = match &self.settings.league {
-            LeagueChoice::Named(league) if !self.leagues.contains(league) => Some(league),
-            _ => None,
-        };
-        // The chip stands for the typed league whatever its name: the field below has it.
-        let (typed, typed_choice) = match &self.settings.league {
-            choice @ LeagueChoice::Custom(_) => (true, choice.clone()),
-            _ => (false, LeagueChoice::Custom(String::new())),
-        };
-        let options = std::iter::once((LeagueChoice::Auto, auto_label))
-            .chain(
-                self.leagues
-                    .iter()
-                    .chain(unlisted)
-                    .map(|league| (LeagueChoice::Named(league.clone()), league.clone().into())),
-            )
-            .chain(std::iter::once((typed_choice, "Своя лига…".into())))
-            .collect();
-        let signed_in = cx
-            .try_global::<SessionStatus>()
-            .is_some_and(SessionStatus::signed_in);
-        let (note, note_color) = if typed && !signed_in {
-            (
-                "Поиск в приватной лиге работает только со входом на pathofexile.com — раздел \
-                 «Аккаунт pathofexile.com» ниже",
-                TEXT_WARNING,
-            )
-        } else if typed {
-            (
-                "Своя лига — название как на сайте торговли, со скобками: My League (PL12345)",
-                TEXT_MUTED,
-            )
-        } else if self.leagues.is_empty() {
-            ("Список лиг с сайта торговли не загрузился", TEXT_MUTED)
-        } else if unlisted.is_some() {
-            (
-                "Выбранной лиги больше нет на сайте торговли — поиск пойдёт в текущей",
-                TEXT_WARNING,
-            )
-        } else {
-            (
-                "Авто — текущая лига, первая в списке сайта торговли",
-                TEXT_MUTED,
-            )
-        };
-        section("Лига")
-            .child(choice_chips(
-                options,
-                &self.settings.league,
-                |settings, league| settings.league = league,
-                cx,
-            ))
-            .when(typed, |this| {
-                this.child(div().flex().child(self.league_field.clone()))
-            })
-            .child(note_line(note, note_color))
-    }
-
-    fn render_language(&self, cx: &Context<Self>) -> impl IntoElement {
-        let options = vec![
-            (ClientLanguage::Auto, "Авто".into()),
-            (ClientLanguage::Russian, "Русский".into()),
-            (ClientLanguage::English, "English".into()),
-        ];
-        section("Язык клиента")
-            .child(choice_chips(
-                options,
-                &self.settings.client_language,
-                |settings, language| settings.client_language = language,
-                cx,
-            ))
-            .child(note_line(
-                "Авто — по тексту скопированного предмета",
-                TEXT_MUTED,
-            ))
-    }
-
-    /// A hotkey recorder: shows `current` (or `empty` without one) until clicked, then captures
-    /// the next combination pressed, showing the modifiers held meanwhile.
-    fn recorder(
+    fn render_general(
         &self,
-        recorder: Recorder,
-        current: Option<Hotkey>,
-        empty: &'static str,
-        width: f32,
-        window: &Window,
+        settings: &Settings,
+        face: &'static NameFont,
         cx: &Context<Self>,
     ) -> impl IntoElement {
-        let focus = match recorder {
-            Recorder::PriceCheck => &self.recorder_focus,
-            Recorder::Action(index) => &self.action_recorders[index],
-        };
-        let capturing = focus.is_focused(window);
-        let shown: SharedString = if capturing {
-            let held: String =
-                settings::modifier_names(self.held.control, self.held.shift, self.held.alt)
-                    .map(|name| format!("{name}+"))
-                    .collect();
-            if held.is_empty() {
-                "Нажмите сочетание…".into()
-            } else {
-                format!("{held}…").into()
-            }
-        } else {
-            current.map_or(empty.into(), |hotkey| hotkey.to_string().into())
-        };
-        div()
-            .track_focus(focus)
-            .w(px(width))
-            .h(px(26.))
-            .flex()
-            .flex_none()
-            .items_center()
-            .justify_center()
-            .rounded_xs()
-            .bg(rgb(BG_CONTROL))
-            .border_1()
-            .font_weight(FontWeight::SEMIBOLD)
-            .cursor_pointer()
-            .map(|this| {
-                if capturing {
-                    this.border_color(rgb(GOLD)).text_color(rgb(GOLD))
-                } else {
-                    this.border_color(rgb(BORDER))
-                        .text_color(rgb(if current.is_some() { TEXT } else { TEXT_MUTED }))
-                        .hover(|style| style.border_color(rgb(TEXT_DIM)))
-                }
-            })
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(|view, _event: &MouseDownEvent, window, cx| {
-                    view.start_capture(window, cx);
-                }),
-            )
-            .on_key_down(cx.listener(move |view, event: &KeyDownEvent, window, cx| {
-                view.capture_key(recorder, event, window, cx);
-            }))
-            .on_modifiers_changed(cx.listener(
-                |view, event: &ModifiersChangedEvent, _window, cx| {
-                    view.held = event.modifiers;
-                    cx.notify();
-                },
-            ))
-            .child(shown)
-    }
-
-    fn render_hotkey(&self, window: &Window, cx: &Context<Self>) -> impl IntoElement {
-        let capturing = self.recorder_focus.is_focused(window);
-        let (note, note_color) = match self.recorder_error {
-            Some(error) if capturing => (error, TEXT_WARNING),
-            _ if capturing => (
-                "Ctrl или Alt с буквой или цифрой, либо F1–F12 · Esc — оставить как было",
-                TEXT_MUTED,
-            ),
-            _ => ("Щёлкните по полю и нажмите новое сочетание", TEXT_MUTED),
-        };
-        section("Горячая клавиша")
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(12.))
-                    .py(px(4.))
-                    .child(labelled("Проверка цены", None))
-                    .child(self.recorder(
-                        Recorder::PriceCheck,
-                        Some(self.settings.hotkey),
-                        "",
-                        160.,
-                        window,
-                        cx,
-                    )),
-            )
-            .child(note_line(note, note_color))
-    }
-
-    /// Hotkeys that type into the game: a chat command, or a stash search.
-    fn render_quick_actions(&self, window: &Window, cx: &Context<Self>) -> impl IntoElement {
-        let capturing = self
-            .action_recorders
+        let language = CLIENT_LANGUAGES
             .iter()
-            .any(|focus| focus.is_focused(window));
-        let note = match self.recorder_error {
-            Some(error) if capturing => Some((error, TEXT_WARNING)),
-            _ if capturing => Some((
-                "F1–F12, либо Ctrl или Alt с буквой или цифрой · Backspace — без клавиши · Esc — \
-                 оставить как было",
-                TEXT_MUTED,
-            )),
-            _ => None,
-        };
-        let can_add = self.settings.quick_actions.len() < settings::MAX_QUICK_ACTIONS;
-        section("Быстрые действия")
-            .child(note_line(
-                "Клавиши, которые печатают в игру. Чат: /hideout, /exit, @last спасибо — ответ \
-                 тому, кто писал последним. Тайник: строка поиска в открытом тайнике или у \
-                 торговца, например с poe2.re.",
-                TEXT_MUTED,
-            ))
-            .children(
-                self.settings
-                    .quick_actions
-                    .iter()
-                    .enumerate()
-                    .map(|(index, action)| self.render_action(index, action, window, cx)),
-            )
-            .children(note.map(|(text, color)| note_line(text, color)))
-            .when(can_add, |this| {
-                this.child(
-                    div()
-                        .flex()
-                        .child(button("+ Добавить действие", false).on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(|view, _event: &MouseDownEvent, window, cx| {
-                                view.add_action(window, cx);
-                            }),
-                        )),
-                )
-            })
-    }
-
-    /// One quick action: its kind, hotkey and a × on top, the text below -- and under it, why it
-    /// won't be sent if it is a denied command.
-    fn render_action(
-        &self,
-        index: usize,
-        action: &QuickAction,
-        window: &Window,
-        cx: &Context<Self>,
-    ) -> impl IntoElement {
-        let kinds = [
-            (QuickActionKind::ChatCommand, "Чат"),
-            (QuickActionKind::StashSearch, "Тайник"),
-        ];
+            .position(|&(language, _)| language == settings.client_language)
+            .unwrap_or(0);
+        let scale = scale_percent(settings.ui_scale);
         div()
             .flex()
             .flex_col()
+            .gap(px(22.))
+            .children(self.render_intro(settings.hotkey, face))
+            .child(group(
+                face,
+                "Лига и язык",
+                [
+                    self.render_league(settings, cx),
+                    setting_row(
+                        "Язык клиента игры",
+                        [note(
+                            "На каком языке игра копирует предметы. Авто — по тексту предмета",
+                            TEXT_DIM,
+                        )],
+                        segmented(
+                            "client-language",
+                            &CLIENT_LANGUAGES.map(|(_, label)| label),
+                            language,
+                            cx.listener(|view, index: &usize, _, cx| {
+                                if let Some(&(language, _)) = CLIENT_LANGUAGES.get(*index) {
+                                    view.change(cx, |settings| {
+                                        settings.client_language = language;
+                                    });
+                                }
+                            }),
+                        ),
+                    ),
+                ],
+            ))
+            .child(group(
+                face,
+                "Окно",
+                [setting_row(
+                    "Масштаб интерфейса",
+                    [note(
+                        "Размер текста и элементов панели цены и оверлеев",
+                        TEXT_DIM,
+                    )],
+                    stepper(
+                        "scale",
+                        format!("{scale} %"),
+                        (
+                            scale > scale_percent(settings::MIN_UI_SCALE),
+                            scale < scale_percent(settings::MAX_UI_SCALE),
+                        ),
+                        cx.listener(|view, up: &bool, _, cx| {
+                            view.change(cx, |settings| step_scale(settings, *up));
+                        }),
+                    ),
+                )],
+            ))
+            .child(group(
+                face,
+                "Система",
+                [
+                    toggle_row(
+                        "autostart",
+                        "Запускать вместе с Windows",
+                        None,
+                        settings.autostart,
+                        |settings| &mut settings.autostart,
+                        cx,
+                    ),
+                    toggle_row(
+                        "check-updates",
+                        "Проверять обновления",
+                        Some(
+                            "Через полминуты после запуска; новая версия появится в меню значка \
+                             у часов",
+                        ),
+                        settings.check_updates,
+                        |settings| &mut settings.check_updates,
+                        cx,
+                    ),
+                ],
+            ))
+    }
+
+    /// The league searches go to: «Авто» (naming the league it stands for), every league the
+    /// trade site lists -- named as the site names them in the client's language, as the panel's
+    /// league chip does -- and the league chosen when it is neither: one the site no longer lists,
+    /// or the private one (set in Аккаунт).
+    fn render_league(&self, settings: &Settings, cx: &Context<Self>) -> AnyElement {
+        let app = self.app.read(cx);
+        let listed = app.leagues();
+        let options = league_chip::menu(&settings.league, listed, app.league_names());
+        let picked = options
+            .iter()
+            .position(|(choice, _)| *choice == settings.league)
+            .unwrap_or(0);
+        let current: SharedString = options
+            .get(picked)
+            .map(|(_, label)| label.clone().into())
+            .unwrap_or_default();
+        let (about, color) = match &settings.league {
+            _ if listed.is_empty() && matches!(app.bootstrap, BootstrapState::Loading) => {
+                ("Список лиг с сайта торговли загружается", TEXT_DIM)
+            }
+            _ if listed.is_empty() => ("Список лиг с сайта торговли не загрузился", TEXT_WARNING),
+            LeagueChoice::Named(league) if !listed.contains(league) => (
+                "Этой лиги больше нет на сайте торговли — поиск идёт в текущей",
+                TEXT_WARNING,
+            ),
+            LeagueChoice::Custom(_) => (
+                "Приватная лига: её название задаётся в разделе «Аккаунт»",
+                TEXT_DIM,
+            ),
+            LeagueChoice::Auto | LeagueChoice::Named(_) => (
+                "Где искать цены. Авто — текущая лига сайта торговли",
+                TEXT_DIM,
+            ),
+        };
+        let (choices, labels): (Vec<LeagueChoice>, Vec<SharedString>) = options
+            .into_iter()
+            .map(|(choice, label)| (choice, label.into()))
+            .unzip();
+        let control = div()
+            .flex()
+            .flex_col()
+            .child(select(
+                "league",
+                current,
+                false,
+                cx.listener(|view, _: &MouseDownEvent, _, cx| {
+                    view.league_menu = !view.league_menu;
+                    cx.notify();
+                }),
+            ))
+            .when(self.league_menu, |this| {
+                this.child(menu(
+                    "league-menu",
+                    labels,
+                    picked,
+                    LEAGUE_MENU_WIDTH,
+                    cx.listener(move |view, index: &usize, _, cx| {
+                        if let Some(choice) = choices.get(*index) {
+                            view.choose_league(choice.clone(), cx);
+                        }
+                    }),
+                    cx.listener(|view, _: &MouseDownEvent, _, cx| {
+                        view.league_menu = false;
+                        cx.notify();
+                    }),
+                ))
+            });
+        setting_row("Лига", [note(about, color)], control)
+    }
+
+    fn render_price_check(
+        &self,
+        settings: &Settings,
+        face: &'static NameFont,
+        window: &Window,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
+        let capturing = self.recorder_focus.is_focused(window);
+        let sellers = SELLERS
+            .iter()
+            .position(|&(sellers, _)| sellers == settings.listing_status)
+            .unwrap_or(0);
+        let marks = settings.waystone_marks.len();
+        let marks_note: SharedString = if marks == 0 {
+            "Пометок нет. Их ставят на панели цены у модификаторов путевого камня".into()
+        } else {
+            format!("Пометок: {marks}. Опасные, на внимание, нужные — ставятся на панели цены")
+                .into()
+        };
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(22.))
+            .child(group(
+                face,
+                "Горячая клавиша",
+                [setting_row(
+                    "Проверка цены",
+                    self.recorder_line(
+                        Recorder::PriceCheck,
+                        capturing,
+                        PRICE_CHECK_RULES,
+                        Some("Наведите курсор на предмет в игре и нажмите это сочетание"),
+                    ),
+                    self.render_recorder(
+                        Recorder::PriceCheck,
+                        Some(settings.hotkey),
+                        "",
+                        window,
+                        cx,
+                    ),
+                )],
+            ))
+            .child(group(
+                face,
+                "Поиск",
+                [
+                    setting_row(
+                        "Продавцы по умолчанию",
+                        [note(
+                            "С чего начинается каждая проверка; плашка «Продавцы» на панели \
+                             меняет это для одного предмета. Мгновенный выкуп не ждёт продавца в \
+                             сети: покупка проходит в игре",
+                            TEXT_DIM,
+                        )],
+                        segmented(
+                            "sellers",
+                            &SELLERS.map(|(_, label)| label),
+                            sellers,
+                            cx.listener(|view, index: &usize, _, cx| {
+                                if let Some(&(sellers, _)) = SELLERS.get(*index) {
+                                    view.change(cx, |settings| settings.listing_status = sellers);
+                                }
+                            }),
+                        ),
+                    ),
+                    toggle_row(
+                        "seller-column",
+                        "Колонка продавца",
+                        Some("Имя продавца в таблице результатов"),
+                        settings.show_seller_column,
+                        |settings| &mut settings.show_seller_column,
+                        cx,
+                    ),
+                ],
+            ))
+            .child(group(
+                face,
+                "Путевые камни",
+                [setting_row(
+                    "Пометки модификаторов",
+                    [note(marks_note, TEXT_DIM)],
+                    div().when(marks > 0, |this| {
+                        this.child(button(
+                            "reset-marks",
+                            "Сбросить…",
+                            ButtonKind::Danger,
+                            face,
+                            cx.listener(|view, _: &MouseDownEvent, _, cx| {
+                                view.confirming_reset = true;
+                                cx.notify();
+                            }),
+                        ))
+                    }),
+                )],
+            ))
+    }
+
+    fn render_quick_actions(
+        &self,
+        face: &'static NameFont,
+        window: &Window,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
+        let rows: Vec<AnyElement> = if self.actions.is_empty() {
+            vec![
+                div()
+                    .px(px(14.))
+                    .py(px(12.))
+                    .text_color(rgb(TEXT_MUTED))
+                    .child("Действий пока нет")
+                    .into_any_element(),
+            ]
+        } else {
+            self.actions
+                .iter()
+                .enumerate()
+                .map(|(index, row)| self.render_action(index, row, window, cx))
+                .collect()
+        };
+        let can_add = self.actions.len() < settings::MAX_QUICK_ACTIONS;
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(14.))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(4.))
+                    .text_size(px(13.))
+                    .child(div().text_color(rgb(TEXT_DIM)).child(
+                        "Чат: команда уходит в чат игры — /hideout, /exit, @last спасибо \
+                         (ответ тому, кто писал последним). Тайник: строка поиска в открытом \
+                         тайнике или у торговца, например с poe2.re. Клавиши действуют, пока \
+                         игра впереди.",
+                    ))
+                    .child(div().text_size(px(12.)).text_color(rgb(TEXT_MUTED)).child(
+                        "Опасные команды — например /destroy и /clear_ignore_list — не \
+                         отправляются и не сохраняются.",
+                    )),
+            )
+            .child(group(face, "Действия", rows))
+            .when(can_add, |this| {
+                this.child(div().flex().child(button(
+                    "add-action",
+                    "+ Добавить действие",
+                    ButtonKind::Secondary,
+                    face,
+                    cx.listener(|view, _: &MouseDownEvent, window, cx| {
+                        view.add_action(window, cx);
+                    }),
+                )))
+            })
+    }
+
+    /// One quick action: its kind, text, hotkey and ×, and under them why its text won't be
+    /// sent, or what its recorder says.
+    fn render_action(
+        &self,
+        index: usize,
+        row: &ActionRow,
+        window: &Window,
+        cx: &Context<Self>,
+    ) -> AnyElement {
+        let capturing = row.recorder.is_focused(window);
+        let line = match quick_action::denied_command(row.field.read(cx).text()) {
+            Some(denied) => Some(note(denied.warning, TEXT_WARNING)),
+            None => self.recorder_line(Recorder::Action(index), capturing, ACTION_RULES, None),
+        };
+        let kind = ACTION_KINDS
+            .iter()
+            .position(|&(kind, _)| kind == row.draft.kind)
+            .unwrap_or(0);
+        div()
+            .id(("action", index))
+            .flex()
+            .flex_col()
             .gap(px(6.))
-            .p(px(8.))
-            .rounded_xs()
-            .border_1()
-            .border_color(rgb(BORDER))
+            .px(px(12.))
+            .py(px(10.))
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(6.))
-                    .children(kinds.into_iter().map(|(kind, label)| {
-                        let selected = action.kind == kind;
-                        chip(label.into(), selected).when(!selected, |this| {
-                            this.on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(move |view, _event: &MouseDownEvent, _window, cx| {
-                                    view.set_action_kind(index, kind, cx);
-                                }),
-                            )
-                        })
-                    }))
-                    .child(div().flex_1())
-                    .child(self.recorder(
+                    .gap(px(10.))
+                    .child(segmented(
+                        "kind",
+                        &ACTION_KINDS.map(|(_, label)| label),
+                        kind,
+                        cx.listener(move |view, pick: &usize, _, cx| {
+                            if let Some(&(kind, _)) = ACTION_KINDS.get(*pick) {
+                                view.set_action_kind(index, kind, cx);
+                            }
+                        }),
+                    ))
+                    .child(div().flex().flex_1().min_w_0().child(row.field.clone()))
+                    .child(self.render_recorder(
                         Recorder::Action(index),
-                        action.hotkey,
+                        row.draft.hotkey,
                         "без клавиши",
-                        110.,
                         window,
                         cx,
                     ))
-                    .child(
-                        div()
-                            .w(px(22.))
-                            .h(px(22.))
-                            .flex()
-                            .flex_none()
-                            .items_center()
-                            .justify_center()
-                            .rounded_xs()
-                            .text_color(rgb(TEXT_MUTED))
-                            .cursor_pointer()
-                            .hover(|style| style.bg(rgb(BG_CLOSE_HOVER)).text_color(rgb(TEXT)))
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(move |view, _event: &MouseDownEvent, _window, cx| {
-                                    view.remove_action(index, cx);
-                                }),
-                            )
-                            .child("×"),
-                    ),
+                    .child(icon_button(
+                        "remove",
+                        "×",
+                        true,
+                        cx.listener(move |view, _: &MouseDownEvent, _, cx| {
+                            view.remove_action(index, cx);
+                        }),
+                    )),
             )
-            .child(div().flex().child(self.action_fields[index].clone()))
-            .children(
-                quick_action::denied_command(self.action_fields[index].read(cx).text())
-                    .map(|denied| note_line(denied.warning, TEXT_WARNING)),
-            )
+            .children(line)
+            .into_any_element()
     }
 
-    fn render_search(&self, cx: &Context<Self>) -> impl IntoElement {
-        let statuses = vec![
-            (ListingStatusChoice::Available, "выкуп и онлайн".into()),
-            (
-                ListingStatusChoice::Securable,
-                "только мгновенный выкуп".into(),
-            ),
-            (ListingStatusChoice::Online, "только онлайн".into()),
-            (ListingStatusChoice::Any, "все, включая офлайн".into()),
-        ];
-        section("Поиск")
-            .child("Продавцы по умолчанию")
-            .child(choice_chips(
-                statuses,
-                &self.settings.listing_status,
-                |settings, status| settings.listing_status = status,
-                cx,
-            ))
-            .child(toggle_row(
-                labelled(
-                    "Колонка продавца",
-                    Some("Имя продавца в таблице результатов"),
-                ),
-                self.settings.show_seller_column,
-                |settings| &mut settings.show_seller_column,
-                cx,
-            ))
-    }
-
-    fn render_appearance(&self, cx: &Context<Self>) -> impl IntoElement {
-        let percent = scale_percent(self.settings.ui_scale);
-        section("Внешний вид").child(stepper_row(
-            labelled(
-                "Масштаб интерфейса",
-                Some("Размер текста и элементов оверлея"),
-            ),
-            format!("{percent}%"),
-            (
-                percent > scale_percent(settings::MIN_UI_SCALE),
-                percent < scale_percent(settings::MAX_UI_SCALE),
-            ),
-            step_scale,
-            cx,
-        ))
-    }
-
-    fn render_xp_overlay(&self, cx: &Context<Self>) -> impl IntoElement {
-        let windows = settings::XP_RATE_WINDOWS
-            .into_iter()
-            .map(|minutes| (minutes, format!("{minutes} мин").into()))
-            .collect();
-        section("Оверлей опыта")
-            .child(toggle_row(
-                labelled(
+    fn render_xp_overlay(
+        &self,
+        settings: &Settings,
+        face: &'static NameFont,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
+        let window = settings::XP_RATE_WINDOWS
+            .iter()
+            .position(|&minutes| minutes == settings.xp_rate_window_minutes)
+            .unwrap_or(0);
+        group(
+            face,
+            "Строка опыта",
+            [
+                toggle_row(
+                    "xp-overlay",
                     "Показывать оверлей опыта",
-                    Some("Скорость набора опыта и время до следующего уровня"),
+                    Some("Скорость набора опыта и время до следующего уровня над полосой опыта"),
+                    settings.xp_overlay,
+                    |settings| &mut settings.xp_overlay,
+                    cx,
                 ),
-                self.settings.xp_overlay,
-                |settings| &mut settings.xp_overlay,
-                cx,
-            ))
-            .child(toggle_row(
-                labelled("Процент уровня", Some("Сколько уровня уже набрано")),
-                self.settings.xp_show_percent,
-                |settings| &mut settings.xp_show_percent,
-                cx,
-            ))
-            .child(toggle_row(
-                labelled(
+                toggle_row(
+                    "xp-percent",
+                    "Процент уровня",
+                    Some("Сколько уровня уже набрано"),
+                    settings.xp_show_percent,
+                    |settings| &mut settings.xp_show_percent,
+                    cx,
+                ),
+                toggle_row(
+                    "xp-map-timer",
                     "Таймер карты",
                     Some("Время в текущей карте, опыт за неё и среднее время карты за сессию"),
+                    settings.xp_map_timer,
+                    |settings| &mut settings.xp_map_timer,
+                    cx,
                 ),
-                self.settings.xp_map_timer,
-                |settings| &mut settings.xp_map_timer,
-                cx,
-            ))
-            .child(div().pt(px(4.)).child("Сглаживание скорости"))
-            .child(choice_chips(
-                windows,
-                &self.settings.xp_rate_window_minutes,
-                |settings, minutes| settings.xp_rate_window_minutes = minutes,
-                cx,
-            ))
-            .child(note_line(
-                "Скорость считается в основном за последние минуты: короче — быстрее видна смена \
-                 фарма, длиннее — ровнее",
-                TEXT_MUTED,
-            ))
+                setting_row(
+                    "Сглаживание скорости",
+                    [note(
+                        "Скорость считается в основном за последние минуты: короче — быстрее \
+                         видна смена фарма, длиннее — ровнее",
+                        TEXT_DIM,
+                    )],
+                    segmented(
+                        "rate-window",
+                        &RATE_WINDOWS,
+                        window,
+                        cx.listener(|view, index: &usize, _, cx| {
+                            if let Some(&minutes) = settings::XP_RATE_WINDOWS.get(*index) {
+                                view.change(cx, |settings| {
+                                    settings.xp_rate_window_minutes = minutes;
+                                });
+                            }
+                        }),
+                    ),
+                ),
+            ],
+        )
     }
 
-    /// The pathofexile.com session: what it gives, what the site says of it, «Войти» (the sign-in
-    /// window, `crate::login`) or «Выйти», and where it is kept. Signing in and out apply at once.
-    fn render_account(&self, cx: &Context<Self>) -> impl IntoElement {
+    /// The pathofexile.com session: what the site says of it (`session`'s check), «Войти» (the
+    /// sign-in window, `crate::login`) or «Выйти»; the watched searches; the private league.
+    fn render_account(
+        &self,
+        settings: &Settings,
+        face: &'static NameFont,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
         let status = cx
             .try_global::<SessionStatus>()
             .cloned()
             .unwrap_or_default();
         let login = cx.try_global::<Login>();
-        let (line, color): (SharedString, u32) =
-            if login.is_some_and(Login::is_open) && !status.signed_in() {
-                (
-                    "Войдите на сайте в открывшемся окне — после входа оно закроется само".into(),
-                    TEXT_DIM,
-                )
-            } else {
-                match &status {
-                    SessionStatus::SignedOut => ("Вход не выполнен".into(), TEXT_MUTED),
-                    SessionStatus::Checking => ("Проверяю вход…".into(), TEXT_DIM),
-                    SessionStatus::SignedIn {
-                        account: Some(name),
-                    } => (format!("Вы вошли как {name}").into(), PRICE_RISE),
-                    SessionStatus::SignedIn { account: None } => ("Вы вошли".into(), PRICE_RISE),
-                    SessionStatus::Invalid => ("Сессия истекла".into(), TEXT_WARNING),
-                    SessionStatus::Unchecked(err) => (
-                        format!("Не удалось проверить вход — сессия используется как есть: {err}")
-                            .into(),
-                        TEXT_WARNING,
-                    ),
-                }
-            };
-        section("Аккаунт pathofexile.com")
-            .child(note_line(
-                "Вход нужен для поиска в приватных лигах и для слежения за поиском: новые лоты \
-                 приходят карточками поверх игры.",
-                TEXT_DIM,
+        let signed_in = status.signed_in();
+        let signing_in = login.is_some_and(Login::is_open) && !signed_in;
+        let (label, label_color, about) = session_line(&status, signing_in);
+        let problem = login.and_then(Login::problem).map(login_problem);
+        let buttons = div()
+            .flex()
+            .gap(px(8.))
+            .when(!signed_in, |this| {
+                this.child(button(
+                    "sign-in",
+                    "Войти",
+                    ButtonKind::Primary,
+                    face,
+                    |_: &MouseDownEvent, _: &mut Window, cx: &mut App| login::open(cx),
+                ))
+            })
+            // «Выйти» forgets the app's copy only: the site stays signed in elsewhere.
+            .when(status != SessionStatus::SignedOut, |this| {
+                this.child(button(
+                    "sign-out",
+                    "Выйти",
+                    ButtonKind::Secondary,
+                    face,
+                    |_: &MouseDownEvent, _: &mut Window, cx: &mut App| session::sign_out(cx),
+                ))
+            });
+        let watching = cx
+            .try_global::<LiveSearches>()
+            .map_or(0, LiveSearches::count);
+        let watched: AnyElement = if signed_in {
+            div()
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .child(div().size(px(7.)).rounded_full().bg(rgb(if watching > 0 {
+                    PRICE_RISE
+                } else {
+                    TEXT_MUTED
+                })))
+                .text_color(rgb(TEXT_DIM))
+                .child(format!("{watching} из {MAX_LIVE_SEARCHES}"))
+                .into_any_element()
+        } else {
+            div()
+                .text_color(rgb(TEXT_MUTED))
+                .child("нужен вход")
+                .into_any_element()
+        };
+        let private = matches!(settings.league, LeagueChoice::Custom(_));
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(22.))
+            .child(group(
+                face,
+                "pathofexile.com",
+                [setting_row(
+                    div().text_color(rgb(label_color)).child(label),
+                    [Some(note(about, TEXT_DIM)), problem].into_iter().flatten(),
+                    buttons,
+                )],
             ))
-            .child(note_line(
-                "«Войти» открывает страницу входа pathofexile.com в окне программы: войдите как \
-                 обычно, в том числе через Steam. Сессия хранится в диспетчере учётных данных \
-                 Windows и отправляется только на pathofexile.com.",
-                TEXT_MUTED,
+            .child(group(
+                face,
+                "Слежение за поиском",
+                [setting_row(
+                    "Следить",
+                    [note(
+                        format!(
+                            "Кнопка «Следить» на панели цены: новые лоты по поиску приходят \
+                             карточками поверх игры. Не больше {MAX_LIVE_SEARCHES} поисков сразу \
+                             — правило сайта"
+                        ),
+                        TEXT_DIM,
+                    )],
+                    watched,
+                )],
             ))
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(8.))
-                    .child(div().flex_1().min_w_0().text_color(rgb(color)).child(line))
-                    .when(!status.signed_in(), |this| {
-                        this.child(button("Войти", true).on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(|_view, _event: &MouseDownEvent, _window, cx| {
-                                login::open(cx);
-                            }),
-                        ))
-                    })
-                    // «Выйти» forgets the app's copy only: the site stays signed in elsewhere.
-                    .when(status != SessionStatus::SignedOut, |this| {
-                        this.child(button("Выйти", false).on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(|_view, _event: &MouseDownEvent, _window, cx| {
-                                session::sign_out(cx);
-                            }),
-                        ))
-                    }),
-            )
-            .children(login.and_then(Login::problem).cloned().map(login_problem))
+            .child(group(
+                face,
+                "Приватная лига",
+                [setting_row(
+                    "Название лиги",
+                    [
+                        Some(note(
+                            "Как на сайте торговли, со скобками — поиск пойдёт в ней. Пустое \
+                             поле возвращает лигу «Авто»",
+                            TEXT_DIM,
+                        )),
+                        (private && !signed_in).then(|| {
+                            note(
+                                "Без входа сайт не отвечает на поиск в приватной лиге — войдите \
+                                 выше",
+                                TEXT_WARNING,
+                            )
+                        }),
+                    ]
+                    .into_iter()
+                    .flatten(),
+                    div().flex().w(px(250.)).child(self.league_field.clone()),
+                )],
+            ))
     }
 
-    fn render_system(&self, cx: &Context<Self>) -> impl IntoElement {
-        section("Система")
-            .child(toggle_row(
-                labelled("Запускать вместе с Windows", None),
-                self.settings.autostart,
-                |settings| &mut settings.autostart,
-                cx,
-            ))
-            .child(toggle_row(
-                labelled("Проверять обновления", None),
-                self.settings.check_updates,
-                |settings| &mut settings.check_updates,
-                cx,
-            ))
-    }
-
-    /// The report a bug needs, written on request; it applies nothing, so it needs no saving.
-    fn render_diagnostics(&self, cx: &Context<Self>) -> impl IntoElement {
-        let status: Option<(SharedString, u32)> = match &self.report {
+    fn render_help(&self, face: &'static NameFont, cx: &Context<Self>) -> impl IntoElement {
+        let report = match &self.report {
             ReportState::Idle => None,
-            ReportState::Writing => Some(("Собираю отчёт…".into(), TEXT_MUTED)),
-            ReportState::Written(path) => Some((
+            ReportState::Writing => Some(note("Собираю отчёт…", TEXT_DIM)),
+            ReportState::Written(path) => Some(note(
                 format!(
                     "Сохранён: {} — приложите его к сообщению об ошибке",
                     path.display()
-                )
-                .into(),
-                TEXT_DIM,
+                ),
+                TEXT,
             )),
-            ReportState::Failed(error) => Some((
-                format!("Не удалось собрать отчёт: {error}").into(),
+            ReportState::Failed(error) => Some(note(
+                format!("Не удалось собрать отчёт: {error}"),
                 TEXT_WARNING,
             )),
         };
-        section("Диагностика")
-            .child(labelled(
-                "Отчёт для разработчика",
-                Some(
-                    "Логи, настройки и нераспознанные предметы в одном архиве на рабочем столе; \
-                     имя пользователя Windows в нём скрыто",
-                ),
-            ))
-            .child(
-                div()
-                    .flex()
-                    .gap(px(8.))
-                    .child(button("Сообщить об ошибке", false).on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(|view, _event: &MouseDownEvent, _window, cx| {
-                            let summary = (view.report_summary)(cx);
-                            let language = view.settings.client_language.item_language();
-                            bug_report::report_bug(summary, language, cx);
-                        }),
-                    ))
-                    .child(button("Собрать отчёт", false).on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(|view, _event: &MouseDownEvent, _window, cx| {
-                            view.write_report(cx);
-                        }),
-                    ))
-                    .child(button("Папка логов", false).on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(|_view, _event: &MouseDownEvent, _window, _cx| {
-                            diagnostics::open_logs_folder();
-                        }),
-                    )),
-            )
-            .children(
-                status.map(|(text, color)| div().text_xs().text_color(rgb(color)).child(text)),
-            )
-    }
-
-    fn render_footer(&self, cx: &Context<Self>) -> impl IntoElement {
-        // A quick action with a denied command keeps the settings from saving.
-        let blocked = self.denied_action(cx).is_some();
-        div()
-            .flex()
-            .flex_none()
-            .justify_end()
-            .gap(px(8.))
-            .px(px(CONTENT_PADDING))
-            .py(px(10.))
-            .bg(rgb(BG_TITLE))
-            .border_t_1()
-            .border_color(rgb(BORDER))
-            .when(blocked, |this| {
-                this.child(
+        let notices = self.notices.clone();
+        group(
+            face,
+            "Помощь",
+            [
+                setting_row(
+                    "Сообщить об ошибке",
+                    [
+                        Some(note(
+                            "Форма на GitHub. Отчёт — логи, настройки и нераспознанные предметы \
+                             в одном архиве на рабочем столе; имя пользователя Windows в нём \
+                             скрыто",
+                            TEXT_DIM,
+                        )),
+                        report,
+                    ]
+                    .into_iter()
+                    .flatten(),
                     div()
                         .flex()
-                        .flex_1()
-                        .items_center()
-                        .text_xs()
-                        .text_color(rgb(TEXT_WARNING))
-                        .child("Сохранить нельзя: в быстрых действиях запрещённая команда"),
-                )
-            })
-            .child(button("Отмена", false).on_mouse_down(
-                MouseButton::Left,
-                cx.listener(|view, _event: &MouseDownEvent, window, cx| {
-                    view.cancel(window, cx);
-                }),
-            ))
-            .child(
-                button("Сохранить", !blocked)
-                    .when(blocked, |this| this.opacity(0.5).cursor_not_allowed())
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(|view, _event: &MouseDownEvent, window, cx| {
-                            view.save(window, cx);
-                        }),
+                        .gap(px(8.))
+                        .child(button(
+                            "report",
+                            "Сообщить ↗",
+                            ButtonKind::Secondary,
+                            face,
+                            cx.listener(|view, _: &MouseDownEvent, _, cx| view.report_bug(cx)),
+                        ))
+                        .child(button(
+                            "diagnostics",
+                            "Собрать отчёт",
+                            ButtonKind::Secondary,
+                            face,
+                            cx.listener(|view, _: &MouseDownEvent, _, cx| view.write_report(cx)),
+                        )),
+                ),
+                setting_row(
+                    "Папка логов",
+                    [note(
+                        "Журнал работы программы за этот запуск и предыдущий",
+                        TEXT_DIM,
+                    )],
+                    button(
+                        "logs",
+                        "Открыть",
+                        ButtonKind::Secondary,
+                        face,
+                        |_: &MouseDownEvent, _: &mut Window, _: &mut App| {
+                            diagnostics::open_logs_folder();
+                        },
                     ),
+                ),
+                setting_row(
+                    "О программе",
+                    [note(
+                        format!("PoE2 Oracle {VERSION} · лицензия MIT или Apache-2.0"),
+                        TEXT_DIM,
+                    )],
+                    div()
+                        .flex()
+                        .gap(px(8.))
+                        .children(notices.map(|notices| {
+                            button(
+                                "licenses",
+                                "Лицензии",
+                                ButtonKind::Secondary,
+                                face,
+                                move |_: &MouseDownEvent, _: &mut Window, cx: &mut App| {
+                                    cx.open_with_system(&notices);
+                                },
+                            )
+                        }))
+                        .child(button(
+                            "github",
+                            "GitHub ↗",
+                            ButtonKind::Secondary,
+                            face,
+                            |_: &MouseDownEvent, _: &mut Window, cx: &mut App| {
+                                cx.open_url(REPOSITORY_URL);
+                            },
+                        )),
+                ),
+            ],
+        )
+    }
+
+    /// Resetting the waystone marks asks first: a dialog over the dimmed window.
+    fn render_confirm(
+        &self,
+        marks: usize,
+        face: &'static NameFont,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
+        div()
+            .id("scrim")
+            .absolute()
+            .inset_0()
+            .flex()
+            .items_center()
+            .justify_center()
+            .bg(alpha(0x000000, SCRIM_OPACITY))
+            .occlude()
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|view, _: &MouseDownEvent, _, cx| view.keep_marks(cx)),
             )
+            .child(appear(
+                "confirm",
+                div()
+                    .id("confirm")
+                    .relative()
+                    .flex()
+                    .flex_col()
+                    .gap(px(10.))
+                    .w(px(420.))
+                    .px(px(24.))
+                    .pt(px(22.))
+                    .pb(px(20.))
+                    .bg(rgb(BG_CARD))
+                    .shadow(modal_shadow())
+                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                    .child(
+                        heading(face)
+                            .text_size(px(18.))
+                            .text_color(rgb(GOLD_LIGHT))
+                            .child("Сбросить пометки?"),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(13.))
+                            .text_color(rgb(TEXT_DIM))
+                            .child(format!(
+                                "Будут удалены все пометки модификаторов путевых камней \
+                                 ({marks}). Отменить это нельзя."
+                            )),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .justify_end()
+                            .gap(px(8.))
+                            .pt(px(10.))
+                            .child(button(
+                                "keep",
+                                "Отмена",
+                                ButtonKind::Secondary,
+                                face,
+                                cx.listener(|view, _: &MouseDownEvent, _, cx| view.keep_marks(cx)),
+                            ))
+                            .child(button(
+                                "reset",
+                                "Сбросить",
+                                ButtonKind::Danger,
+                                face,
+                                cx.listener(|view, _: &MouseDownEvent, _, cx| {
+                                    view.reset_waystone_marks(cx);
+                                }),
+                            )),
+                    )
+                    .child(game_frame()),
+            ))
     }
 }
 
@@ -1046,44 +1891,246 @@ impl Focusable for SettingsView {
 
 impl Render for SettingsView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let face = fonts::name_font(TradeSite::Russian);
+        let settings = &self.app.read(cx).settings;
         div()
             .track_focus(&self.focus_handle)
             .on_key_down(cx.listener(|view, event: &KeyDownEvent, window, cx| {
-                if event.keystroke.key == "escape" {
-                    view.cancel(window, cx);
-                }
+                view.escape(event, window, cx);
             }))
+            .relative()
             .size_full()
             .flex()
             .flex_col()
             .bg(rgb(BG_PANEL))
             .text_color(rgb(TEXT))
-            .text_sm()
-            .line_height(relative(1.35))
-            .child(self.render_title_bar(cx))
-            .child(
+            .text_size(px(14.))
+            .line_height(relative(1.4))
+            .child(self.render_title_bar(face, cx))
+            .child(appear(
+                "open",
                 div()
-                    .id("settings-scroll")
                     .flex()
-                    .flex_col()
                     .flex_1()
                     .min_h_0()
-                    .overflow_y_scroll()
-                    .px(px(CONTENT_PADDING))
-                    .pb(px(CONTENT_PADDING))
-                    .children(self.render_intro())
-                    .child(self.render_league(cx))
-                    .child(self.render_language(cx))
-                    .child(self.render_hotkey(window, cx))
-                    .child(self.render_quick_actions(window, cx))
-                    .child(self.render_search(cx))
-                    .child(self.render_appearance(cx))
-                    .child(self.render_xp_overlay(cx))
-                    .child(self.render_account(cx))
-                    .child(self.render_system(cx))
-                    .child(self.render_diagnostics(cx)),
-            )
-            .child(self.render_footer(cx))
+                    .child(self.render_sidebar(face, cx))
+                    .child(self.render_content(settings, face, window, cx)),
+            ))
+            .when(self.confirming_reset, |this| {
+                this.child(self.render_confirm(settings.waystone_marks.len(), face, cx))
+            })
+            .child(game_frame())
+    }
+}
+
+/// A group of rows under its heading.
+fn group(
+    face: &'static NameFont,
+    title: &'static str,
+    rows: impl IntoIterator<Item = AnyElement>,
+) -> impl IntoElement {
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(10.))
+        .child(section_heading(face, title))
+        .child(card(rows))
+}
+
+/// A setting: its name and, under it, what it does on the left; its control on the right.
+fn setting_row(
+    label: impl IntoElement,
+    lines: impl IntoIterator<Item = AnyElement>,
+    control: impl IntoElement,
+) -> AnyElement {
+    div()
+        .flex()
+        .items_center()
+        .gap(px(24.))
+        .px(px(14.))
+        .py(px(12.))
+        .child(label_block(label, lines))
+        .child(div().flex_none().child(control))
+        .into_any_element()
+}
+
+fn label_block(label: impl IntoElement, lines: impl IntoIterator<Item = AnyElement>) -> gpui::Div {
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(2.))
+        .flex_1()
+        .min_w_0()
+        .child(div().text_color(rgb(TEXT)).child(label))
+        .children(lines)
+}
+
+/// A line under a setting's name: what it does, or what just happened, in its colour.
+fn note(text: impl Into<SharedString>, color: u32) -> AnyElement {
+    div()
+        .text_size(px(12.))
+        .text_color(rgb(color))
+        .child(text.into())
+        .into_any_element()
+}
+
+/// A setting that is on or off: the whole row flips it -- at once, like every control here --
+/// lighting up under the pointer.
+fn toggle_row(
+    key: &'static str,
+    label: &'static str,
+    description: Option<&'static str>,
+    on: bool,
+    flag: fn(&mut Settings) -> &mut bool,
+    cx: &Context<SettingsView>,
+) -> AnyElement {
+    let row = div()
+        .id(key)
+        .flex()
+        .items_center()
+        .gap(px(24.))
+        .px(px(14.))
+        .py(px(12.))
+        .rounded(px(6.))
+        .cursor_pointer()
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(move |view, _: &MouseDownEvent, _, cx| {
+                view.change(cx, |settings| {
+                    let value = flag(settings);
+                    *value = !*value;
+                });
+            }),
+        )
+        .child(label_block(
+            label,
+            description.map(|description| note(description, TEXT_DIM)),
+        ))
+        .child(switch("switch", on));
+    ease_hover(key, row, |row, hover| row.bg(alpha(GOLD, 0.05 * hover))).into_any_element()
+}
+
+/// What the account's row says of the session -- its label, the label's colour and the line
+/// under it -- as the site's last answer has it, or while the sign-in window is up.
+fn session_line(status: &SessionStatus, signing_in: bool) -> (SharedString, u32, SharedString) {
+    if signing_in {
+        return (
+            "Войдите в открывшемся окне".into(),
+            TEXT,
+            "Страница входа pathofexile.com; после входа окно закроется само".into(),
+        );
+    }
+    match status {
+        SessionStatus::SignedOut => (
+            "Вход не выполнен".into(),
+            TEXT,
+            "«Войти» откроет страницу входа pathofexile.com — можно войти и через Steam".into(),
+        ),
+        SessionStatus::Checking => ("Проверяю вход…".into(), TEXT_DIM, SESSION_KEPT.into()),
+        SessionStatus::SignedIn {
+            account: Some(name),
+        } => (
+            format!("Вы вошли как {name}").into(),
+            TEXT,
+            SESSION_KEPT.into(),
+        ),
+        SessionStatus::SignedIn { account: None } => ("Вы вошли".into(), TEXT, SESSION_KEPT.into()),
+        SessionStatus::Invalid => (
+            "Сессия истекла".into(),
+            TEXT_WARNING,
+            "Сайт больше не принимает этот вход — войдите снова".into(),
+        ),
+        SessionStatus::Unchecked(err) => (
+            "Не удалось проверить вход".into(),
+            TEXT_WARNING,
+            format!("Сессия используется как есть: {err}").into(),
+        ),
+    }
+}
+
+/// Why the last «Войти» didn't finish, under the account's status.
+fn login_problem(problem: &LoginProblem) -> AnyElement {
+    match problem {
+        LoginProblem::NoRuntime => div()
+            .flex()
+            .flex_wrap()
+            .gap_x(px(6.))
+            .text_size(px(12.))
+            .text_color(rgb(TEXT_WARNING))
+            .child("Для входа нужен Microsoft Edge WebView2 Runtime, а на этом компьютере его нет.")
+            .child(link(
+                "webview2",
+                "Скачать с сайта Microsoft",
+                |_: &MouseDownEvent, _: &mut Window, cx: &mut App| cx.open_url(WEBVIEW2_DOWNLOAD),
+            ))
+            .into_any_element(),
+        LoginProblem::Failed(err) => note(
+            format!("Не удалось открыть окно входа: {err}"),
+            TEXT_WARNING,
+        ),
+        LoginProblem::NotSaved(err) => {
+            note(format!("Не удалось сохранить вход: {err}"), TEXT_WARNING)
+        }
+    }
+}
+
+/// Why a recorded combination didn't take: another program holds it. `kept` is the hotkey that
+/// stays -- `None` for an action left without one.
+fn taken_note(hotkey: Hotkey, kept: Option<Hotkey>) -> SharedString {
+    match kept {
+        Some(kept) => format!("{hotkey} занято другой программой — осталось {kept}"),
+        None => format!("{hotkey} занято другой программой — действие без клавиши"),
+    }
+    .into()
+}
+
+/// A hotkey's keys as its keycaps name them: `Ctrl`, `E`.
+fn hotkey_labels(hotkey: Hotkey) -> Vec<SharedString> {
+    settings::modifier_names(hotkey.ctrl, hotkey.shift, hotkey.alt)
+        .map(SharedString::new_static)
+        .chain(std::iter::once(hotkey.key.to_string().into()))
+        .collect()
+}
+
+fn action_placeholder(kind: QuickActionKind) -> &'static str {
+    match kind {
+        QuickActionKind::ChatCommand => "/hideout, /exit, @last спасибо…",
+        QuickActionKind::StashSearch => "Строка поиска, например с poe2.re",
+    }
+}
+
+/// The notices file next to the running exe, where the installer puts it; `None` for a copy
+/// that wasn't installed, such as a development build.
+fn third_party_notices() -> Option<PathBuf> {
+    let path = std::env::current_exe().ok()?.parent()?.join(NOTICES_FILE);
+    path.is_file().then_some(path)
+}
+
+/// What `new` changes from `old`, field by field as the settings file names them, for the log:
+/// `ui_scale 1.0 -> 1.1, show_seller_column true -> false`.
+fn changes(old: &Settings, new: &Settings) -> String {
+    let (Ok(Value::Object(old)), Ok(Value::Object(new))) =
+        (serde_json::to_value(old), serde_json::to_value(new))
+    else {
+        return String::new();
+    };
+    new.iter()
+        .filter(|(field, value)| old.get(*field) != Some(*value))
+        .map(|(field, value)| {
+            let was = old.get(field).map_or_else(|| "-".to_owned(), shortened);
+            format!("{field} {was} -> {}", shortened(value))
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// `value` as JSON, cut short: a long list of marks or actions would flood the log.
+fn shortened(value: &Value) -> String {
+    const LONGEST: usize = 160;
+    let text = value.to_string();
+    match text.char_indices().nth(LONGEST) {
+        Some((cut, _)) => format!("{}…", &text[..cut]),
+        None => text,
     }
 }
 
@@ -1164,282 +2211,4 @@ fn step_percent(value: u16, up: bool, min: u16, max: u16) -> u16 {
         value.saturating_sub(1) / STEP_PERCENT * STEP_PERCENT
     };
     stepped.clamp(min, max)
-}
-
-/// A gold section header, as the panel's, with the section's rows below it.
-fn section(title: &'static str) -> gpui::Div {
-    div().flex().flex_col().gap(px(6.)).child(
-        div()
-            .pt(px(12.))
-            .pb(px(3.))
-            .border_b_1()
-            .border_color(rgb(BORDER_GOLD))
-            .text_xs()
-            .font_weight(FontWeight::SEMIBOLD)
-            .text_color(rgb(GOLD))
-            .child(title.to_uppercase()),
-    )
-}
-
-/// A setting's name, and under it what it does.
-fn labelled(label: &'static str, description: Option<&'static str>) -> gpui::Div {
-    div()
-        .flex()
-        .flex_col()
-        .flex_1()
-        .min_w_0()
-        .child(label)
-        .children(description.map(|description| {
-            div()
-                .text_xs()
-                .text_color(rgb(TEXT_MUTED))
-                .child(description)
-        }))
-}
-
-fn note_line(text: &'static str, color: u32) -> impl IntoElement {
-    div().text_xs().text_color(rgb(color)).child(text)
-}
-
-/// Why the last «Войти» didn't finish, under the account's buttons.
-fn login_problem(problem: LoginProblem) -> gpui::Div {
-    let text = match problem {
-        LoginProblem::NoRuntime => {
-            return div()
-                .flex()
-                .flex_wrap()
-                .gap_x(px(4.))
-                .text_xs()
-                .text_color(rgb(TEXT_WARNING))
-                .child("Для входа нужен Microsoft Edge WebView2 Runtime, а на этом компьютере его нет.")
-                .child(
-                    div()
-                        .text_color(rgb(GOLD))
-                        .cursor_pointer()
-                        .hover(|style| style.text_color(rgb(TEXT)))
-                        .on_mouse_down(
-                            MouseButton::Left,
-                            |_event: &MouseDownEvent, _window, cx: &mut App| {
-                                cx.open_url(WEBVIEW2_DOWNLOAD);
-                            },
-                        )
-                        .child("Скачать с сайта Microsoft"),
-                );
-        }
-        LoginProblem::Failed(err) => format!("Не удалось открыть окно входа: {err}"),
-        LoginProblem::NotSaved(err) => format!("Не удалось сохранить вход: {err}"),
-    };
-    div().text_xs().text_color(rgb(TEXT_WARNING)).child(text)
-}
-
-/// One chip per choice, the current one outlined in gold; clicking another picks it.
-fn choice_chips<T: Clone + PartialEq + 'static>(
-    options: Vec<(T, SharedString)>,
-    current: &T,
-    select: fn(&mut Settings, T),
-    cx: &Context<SettingsView>,
-) -> impl IntoElement {
-    div()
-        .flex()
-        .flex_wrap()
-        .gap(px(6.))
-        .children(options.into_iter().map(|(value, label)| {
-            let selected = value == *current;
-            chip(label, selected).when(!selected, |this| {
-                this.on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(move |view, _event: &MouseDownEvent, _window, cx| {
-                        select(&mut view.settings, value.clone());
-                        cx.notify();
-                    }),
-                )
-            })
-        }))
-}
-
-/// A choice: the selected one outlined in gold, the others plain, lighting up under the mouse.
-fn chip(label: SharedString, selected: bool) -> gpui::Div {
-    div()
-        .flex_none()
-        .px(px(8.))
-        .py(px(2.))
-        .rounded_xs()
-        .border_1()
-        .text_xs()
-        .map(|this| {
-            if selected {
-                this.bg(rgb(BG_BUTTON))
-                    .border_color(rgb(GOLD))
-                    .text_color(rgb(GOLD))
-            } else {
-                this.bg(rgb(BG_CONTROL))
-                    .border_color(rgb(BG_CONTROL))
-                    .text_color(rgb(TEXT_DIM))
-                    .cursor_pointer()
-                    .hover(|style| style.bg(rgb(BG_BUTTON_HOVER)).text_color(rgb(TEXT)))
-            }
-        })
-        .child(label)
-}
-
-/// The text field of a quick action.
-fn action_field(action: &QuickAction, cx: &mut Context<SettingsView>) -> Entity<TextField> {
-    let text = action.text.clone();
-    let placeholder = action_placeholder(action.kind);
-    cx.new(|cx| TextField::new(text, placeholder, cx))
-}
-
-fn action_placeholder(kind: QuickActionKind) -> &'static str {
-    match kind {
-        QuickActionKind::ChatCommand => "/hideout, /exit, @last спасибо…",
-        QuickActionKind::StashSearch => "Строка поиска, например с poe2.re",
-    }
-}
-
-/// A setting that is on or off; the whole row flips it.
-fn toggle_row(
-    label: gpui::Div,
-    on: bool,
-    field: fn(&mut Settings) -> &mut bool,
-    cx: &Context<SettingsView>,
-) -> impl IntoElement {
-    div()
-        .flex()
-        .items_center()
-        .gap(px(12.))
-        .py(px(4.))
-        .cursor_pointer()
-        .on_mouse_down(
-            MouseButton::Left,
-            cx.listener(move |view, _event: &MouseDownEvent, _window, cx| {
-                let value = field(&mut view.settings);
-                *value = !*value;
-                cx.notify();
-            }),
-        )
-        .child(label)
-        .child(switch(on))
-}
-
-fn switch(on: bool) -> impl IntoElement {
-    div()
-        .flex()
-        .flex_none()
-        .items_center()
-        .w(px(30.))
-        .h(px(16.))
-        .px(px(2.))
-        .rounded_full()
-        .border_1()
-        .map(|this| {
-            if on {
-                this.justify_end().bg(rgb(GOLD)).border_color(rgb(GOLD))
-            } else {
-                this.justify_start()
-                    .bg(rgb(BG_CONTROL))
-                    .border_color(rgb(BORDER))
-            }
-        })
-        .child(
-            div()
-                .size(px(10.))
-                .rounded_full()
-                .bg(rgb(if on { BG_PANEL } else { TEXT_DIM })),
-        )
-}
-
-/// A number with − and + either side; `(can_decrease, can_increase)` dims a button at its end of
-/// the range.
-fn stepper_row(
-    label: gpui::Div,
-    value: String,
-    (can_decrease, can_increase): (bool, bool),
-    step: fn(&mut Settings, bool),
-    cx: &Context<SettingsView>,
-) -> impl IntoElement {
-    div()
-        .flex()
-        .items_center()
-        .gap(px(12.))
-        .py(px(4.))
-        .child(label)
-        .child(
-            div()
-                .flex()
-                .flex_none()
-                .items_center()
-                .child(step_button("−", false, can_decrease, step, cx))
-                .child(div().w(px(56.)).text_center().child(value))
-                .child(step_button("+", true, can_increase, step, cx)),
-        )
-}
-
-fn step_button(
-    symbol: &'static str,
-    up: bool,
-    enabled: bool,
-    step: fn(&mut Settings, bool),
-    cx: &Context<SettingsView>,
-) -> impl IntoElement {
-    div()
-        .w(px(22.))
-        .h(px(22.))
-        .flex()
-        .flex_none()
-        .items_center()
-        .justify_center()
-        .rounded_xs()
-        .bg(rgb(BG_CONTROL))
-        .border_1()
-        .border_color(rgb(BORDER))
-        .map(|this| {
-            if enabled {
-                this.text_color(rgb(GOLD))
-                    .cursor_pointer()
-                    .hover(|style| {
-                        style
-                            .bg(rgb(BG_BUTTON_HOVER))
-                            .border_color(rgb(BORDER_GOLD))
-                    })
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(move |view, _event: &MouseDownEvent, _window, cx| {
-                            step(&mut view.settings, up);
-                            cx.notify();
-                        }),
-                    )
-            } else {
-                this.text_color(rgb(TEXT_MUTED))
-            }
-        })
-        .child(symbol)
-}
-
-/// A button: `primary` in gold like the panel's search button ("Сохранить"), the rest plain.
-fn button(label: &'static str, primary: bool) -> gpui::Div {
-    div()
-        .h(px(30.))
-        .px(px(16.))
-        .flex()
-        .flex_none()
-        .items_center()
-        .justify_center()
-        .rounded_xs()
-        .border_1()
-        .cursor_pointer()
-        .map(|this| {
-            if primary {
-                this.bg(rgb(BG_BUTTON))
-                    .border_color(rgb(GOLD))
-                    .text_color(rgb(GOLD))
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .hover(|style| style.bg(rgb(BG_BUTTON_HOVER)))
-            } else {
-                this.bg(rgb(BG_CONTROL))
-                    .border_color(rgb(BORDER))
-                    .text_color(rgb(TEXT_DIM))
-                    .hover(|style| style.text_color(rgb(TEXT)).border_color(rgb(TEXT_DIM)))
-            }
-        })
-        .child(label)
 }

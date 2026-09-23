@@ -33,12 +33,8 @@ pub(crate) const BANNER_EDGE: f32 = 0.45;
 pub(crate) const BG_PANEL: u32 = 0x0e0e10;
 pub(crate) const BG_TITLE: u32 = 0x060607;
 pub(crate) const BG_NAMEPLATE: u32 = 0x17130d;
-pub(crate) const BG_CONTROL: u32 = 0x1e1e22;
-pub(crate) const BG_ROW_STRIPE: u32 = 0x17171a;
-pub(crate) const BG_BUTTON: u32 = 0x1f1811;
 pub(crate) const BG_BUTTON_HOVER: u32 = 0x33261a;
 pub(crate) const BG_CLOSE_HOVER: u32 = 0x8b2a1e;
-pub(crate) const BORDER: u32 = 0x2b2b30;
 pub(crate) const BORDER_GOLD: u32 = 0x6b5022;
 pub(crate) const GOLD: u32 = 0xd0913b;
 pub(crate) const TEXT: u32 = 0xdcdcdc;
@@ -96,9 +92,6 @@ pub(crate) const BADGE_ENCHANT_TEXT: u32 = 0xfaf5ff;
 /// The desecrated source badge (`.tag-desecrated`).
 pub(crate) const BADGE_DESECRATED_BG: u32 = 0x22543d;
 pub(crate) const BADGE_DESECRATED_TEXT: u32 = 0xf0fff4;
-/// The "× N" repeated-listing badge.
-pub(crate) const BADGE_REPEAT_BG: u32 = 0xcbd5e0;
-pub(crate) const BADGE_REPEAT_TEXT: u32 = 0x2d3748;
 /// A seller's status dot: online, away, offline.
 pub(crate) const STATUS_ONLINE: u32 = 0xf687b3;
 pub(crate) const STATUS_AFK: u32 = 0xed8936;
@@ -112,7 +105,7 @@ pub(crate) const MARK_WANTED: u32 = 0x48bb78;
 /// bar.
 pub(crate) const CONTENT_PADDING: f32 = 12.;
 
-// The game-styled look `ui::style` draws, first shown by the style mockup (`ui::mockup`).
+// The game-styled look `ui::style` draws, as the owner approved it on the style mockup.
 /// Gold lifted for text on black: headings, the current section, a hovered control's label.
 pub(crate) const GOLD_LIGHT: u32 = 0xebc27a;
 /// A title bar's gradient, top to bottom: the game's bronze fading into black.

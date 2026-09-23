@@ -5,46 +5,60 @@
 //! The layout takes the best of the two overlays the player compares it with:
 //! - Exiled Exchange 2 (`renderer/src/web/price-check/`): the full-height panel glued to the
 //!   inventory, one compact row per stat filter (checkbox, stat text, min/max inputs, source tag
-//!   and tier underneath), the info chips, and the striped price/level/listed results table.
+//!   and tier underneath), the info chips, and the price/level/listed results table.
 //! - PoE Overlay II: a fully Russian UI (wording follows EE2's own Russian locale,
 //!   `renderer/public/data/ru/app_i18n.json`), the item name as a header in its rarity colour,
 //!   rolled values highlighted inside the stat text, and a prominent "Поиск" button.
 //!
-//! Colours are the game's own: near-black panels, gold accents, the rarity colours, and its blue
-//! for rolled values. Text wraps instead of truncating -- Russian stat lines run long, and a row
-//! that doesn't fit grows taller rather than squeezing its neighbours: every fixed-size control is
-//! `flex_none`, every text column `min_w_0`. Every length is in rems (`theme::rems_from_px`), so
-//! the whole panel -- text, controls, icons and gaps -- follows the player's UI scale. The item's
-//! name is set in the stand-in for its tooltip face (`ui::fonts`); everything else in GPUI's
+//! It draws in the app's own game-styled look (`ui::style`, approved on the style mockup):
+//! near-black surfaces in the game's double gold frame, gold accents and ornaments, the rarity
+//! colours, the game's blue for rolled values, and restrained motion -- the panel rises in over
+//! a moment for each check, controls ease into their hover. Text wraps instead of truncating --
+//! Russian stat lines run long, and a row that doesn't fit grows taller rather than squeezing its
+//! neighbours: every fixed-size control is `flex_none`, every text column `min_w_0`. Every length
+//! is in rems (`theme::rems_from_px`), so the whole panel -- text, controls, icons and gaps --
+//! follows the player's UI scale. The item's name is set in the stand-in for its tooltip face
+//! (`ui::fonts`), the panel's own headings in the Russian client's; everything else in GPUI's
 //! default system UI font (Segoe UI on Windows), which covers Cyrillic.
 
 mod filters;
 pub(crate) mod format;
 mod market;
+mod menu;
 mod nameplate;
 mod results;
 mod title_bar;
 mod waystone;
 
 use gpui::{
-    AnyElement, Context, IntoElement, MouseButton, MouseDownEvent, Render, Window, div, prelude::*,
-    relative, rgb,
+    AnyElement, Context, IntoElement, MouseDownEvent, Render, Window, div, prelude::*, relative,
+    rgb,
 };
 
 use poe2_domain::ParsedItem;
+use trade_client::TradeSite;
 
-use crate::price_check::{BootstrapState, PriceCheckApp};
+use crate::price_check::{BootstrapState, PriceCheckApp, SearchState};
+use crate::ui::fonts::{self, NameFont};
 use crate::ui::hint as hints;
+use crate::ui::style::{ButtonKind, appear, button, game_frame, ornament_rule};
 use crate::ui::theme::{
-    BG_BUTTON_HOVER, BG_CONTROL, BG_PANEL, BORDER_GOLD, CONTENT_PADDING, GOLD, TEXT, TEXT_DIM,
-    TEXT_WARNING, rems_from_px,
+    BG_PANEL, BORDER_GOLD, CONTENT_PADDING, TEXT, TEXT_DIM, TEXT_WARNING, rems_from_px,
 };
 
 use filters::render_sections;
 use nameplate::{render_chips, render_nameplate};
-use results::{render_empty_watch, render_results, render_search_button, render_search_choices};
+use results::{
+    render_empty_watch, render_results, render_search_button, render_search_choices, render_toolbar,
+};
 use title_bar::render_title_bar;
 use waystone::render_waystone_marks;
+
+/// The face of the panel's own headings -- the stat groups, «Поиск»: they are Russian whatever
+/// the item's language, so the Russian client's name face, which has Cyrillic.
+fn ui_face() -> &'static NameFont {
+    fonts::name_font(TradeSite::Russian)
+}
 
 impl Render for PriceCheckApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
@@ -67,15 +81,21 @@ impl Render for PriceCheckApp {
             BootstrapState::Ready => render_ready(self, window, cx).into_any_element(),
         };
 
-        div()
-            .size_full()
-            .flex()
-            .flex_col()
-            .bg(rgb(BG_PANEL))
-            .text_color(rgb(TEXT))
-            .text_sm()
-            .line_height(relative(1.35))
-            .child(body)
+        // Each check plays the panel's rise in again (`PriceCheckApp::appearances`).
+        div().size_full().child(appear(
+            ("appear", self.appearances),
+            div()
+                .relative()
+                .size_full()
+                .flex()
+                .flex_col()
+                .bg(rgb(BG_PANEL))
+                .text_color(rgb(TEXT))
+                .text_size(rems_from_px(14.))
+                .line_height(relative(1.35))
+                .child(body)
+                .child(game_frame()),
+        ))
     }
 }
 
@@ -104,15 +124,16 @@ fn render_ready(state: &PriceCheckApp, window: &Window, cx: &Context<PriceCheckA
         .into_any_element()
 }
 
-/// Nameplate, info chips, then either the market card (Currency Exchange items) or the filter
-/// rows, the search button and the listings -- one scroll area, since a many-modded rare plus a
-/// full results page can outgrow even a full-height panel.
+/// Nameplate, info chips, then either the market card (Currency Exchange items) or the profile
+/// row, the filter rows, the search plate and the listings -- one scroll area, since a
+/// many-modded rare plus a full results page can outgrow even a full-height panel.
 fn render_item(
     state: &PriceCheckApp,
     item: &ParsedItem,
     window: &Window,
     cx: &Context<PriceCheckApp>,
 ) -> impl IntoElement {
+    let searched = !matches!(state.search, SearchState::NotSearched);
     div()
         .id("price-check-scroll")
         .flex()
@@ -126,16 +147,24 @@ fn render_item(
                 .flex()
                 .flex_col()
                 .px(rems_from_px(CONTENT_PADDING))
-                .pb(rems_from_px(CONTENT_PADDING))
+                .pb(rems_from_px(14.))
                 .child(render_chips(state, item, cx))
                 .map(|this| {
                     if state.priced_by_market {
                         this.child(render_results(state, item, cx))
                     } else {
-                        this.child(render_sections(state, item, window, cx))
+                        this.children(render_toolbar(state, window, cx))
+                            .child(render_sections(state, item, window, cx))
                             .children(render_waystone_marks(state, item))
                             .child(render_search_button(state, cx))
-                            .child(render_search_choices(state, window, cx))
+                            .child(render_search_choices(state, cx))
+                            .when(searched, |this| {
+                                this.child(
+                                    div()
+                                        .pt(rems_from_px(14.))
+                                        .child(ornament_rule(BORDER_GOLD)),
+                                )
+                            })
                             .child(render_results(state, item, cx))
                             .children(render_empty_watch(state, cx))
                     }
@@ -169,26 +198,20 @@ fn render_problem(
             this.child(
                 div()
                     .id("report-rejected-item")
-                    .px(rems_from_px(10.))
-                    .py(rems_from_px(3.))
-                    .rounded_xs()
-                    .border_1()
-                    .border_color(rgb(BORDER_GOLD))
-                    .bg(rgb(BG_CONTROL))
-                    .text_color(rgb(GOLD))
-                    .cursor_pointer()
-                    .hover(|style| style.bg(rgb(BG_BUTTON_HOVER)))
+                    .flex_none()
                     .tooltip(hints::hint(
                         "Откроет на GitHub форму с текстом этого предмета: останется описать, \
                          что не так, и отправить.",
                     ))
-                    .on_mouse_down(
-                        MouseButton::Left,
+                    .child(button(
+                        "button",
+                        "Сообщить разработчику",
+                        ButtonKind::Secondary,
+                        ui_face(),
                         cx.listener(|view, _event: &MouseDownEvent, _window, cx| {
                             view.report_item(cx);
                         }),
-                    )
-                    .child("Сообщить разработчику"),
+                    )),
             )
         })
 }

@@ -1,15 +1,16 @@
 //! The game-styled look the windows share, drawn by the app itself -- no game art: the double
-//! gold frame with corner ornaments of the game's tooltips and inventory ([`game_frame`]), rules
-//! with a diamond at their centre ([`ornament_rule`], [`section_heading`]), headings in the game's
+//! gold frame with corner ornaments of the game's tooltips and inventory ([`game_frame`]; a bar
+//! too low for them has a diamond at each end, [`bar_frame`]), rules with a diamond at their
+//! centre ([`ornament_rule`], [`section_heading`]), headings in the game's
 //! face ([`heading`], the faces in `ui::fonts`), a warm gradient on title bars
 //! ([`title_gradient`]), VibeTools' three neutral black shadows by height, and restrained motion:
 //! every hover and state change eases over [`TRANSITION`] ([`ease_hover`], [`ease_state`]), a
 //! panel appears over [`APPEAR`] ([`appear`]). The controls built from these -- buttons,
-//! switches, checkboxes, segmented choices, selects and their menus, keycaps, fields, tooltips --
-//! live here too. `ui::mockup` shows them all.
+//! switches, checkboxes, segmented choices, selects and their menus, keycaps, the hotkey recorder,
+//! tooltips -- live here too.
 //!
-//! Sizes are rems (`theme::rems_from_px`): in the price panel they follow the player's UI scale,
-//! elsewhere a rem is 16 px. Hairlines, shadows and glows stay in pixels.
+//! Sizes are rems (`theme::rems_from_px`): in the price panel and the overlays they follow the
+//! player's UI scale, elsewhere a rem is 16 px. Hairlines, shadows and glows stay in pixels.
 
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -17,8 +18,8 @@ use std::time::{Duration, Instant};
 use gpui::{
     Anchor, Animation, AnimationElement, AnimationExt as _, AnyView, App, Background, BorderStyle,
     Bounds, BoxShadow, Div, ElementId, FontWeight, MouseButton, MouseDownEvent, PathBuilder,
-    Pixels, Point, Rgba, SharedString, Window, anchored, canvas, deferred, div, fill, hsla,
-    linear_color_stop, linear_gradient, outline, point, prelude::*, px, rgb, size,
+    Pixels, Point, Rgba, SharedString, Stateful, Window, anchored, canvas, deferred, div, fill,
+    hsla, linear_color_stop, linear_gradient, outline, point, prelude::*, px, rgb, size,
 };
 
 use crate::ui::fonts::NameFont;
@@ -315,6 +316,96 @@ where
     }
 }
 
+/// An element drawn at a number that eases to each new value over [`TRANSITION`] -- a slider's
+/// thumb that a profile or «Минимум тира» moves -- or jumps straight to it while `snap` (the
+/// player drags it): `style(element, value)` draws it at the value reached. `key` names its
+/// channel, unique among its siblings.
+#[derive(IntoElement)]
+pub(crate) struct ValueEase<E: IntoElement + 'static, F: Fn(E, f32) -> E + 'static> {
+    key: ElementId,
+    value: f32,
+    snap: bool,
+    element: E,
+    style: F,
+}
+
+pub(crate) fn ease_value<E, F>(
+    key: impl Into<ElementId>,
+    value: f32,
+    snap: bool,
+    element: E,
+    style: F,
+) -> ValueEase<E, F>
+where
+    E: IntoElement + 'static,
+    F: Fn(E, f32) -> E + 'static,
+{
+    ValueEase {
+        key: key.into(),
+        value,
+        snap,
+        element,
+        style,
+    }
+}
+
+/// One eased number: where it set off from, where it heads, and when it set off (`None` once
+/// there).
+struct Glide {
+    from: f32,
+    to: f32,
+    set_off: Option<Instant>,
+}
+
+impl Glide {
+    fn at(&self, now: Instant) -> f32 {
+        let Some(set_off) = self.set_off else {
+            return self.to;
+        };
+        let progress =
+            now.saturating_duration_since(set_off).as_secs_f32() / TRANSITION.as_secs_f32();
+        if progress >= 1. {
+            self.to
+        } else {
+            self.from + (self.to - self.from) * ease(progress)
+        }
+    }
+}
+
+impl<E, F> RenderOnce for ValueEase<E, F>
+where
+    E: IntoElement + 'static,
+    F: Fn(E, f32) -> E + 'static,
+{
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let (value, snap) = (self.value, self.snap);
+        let glide = window.use_keyed_state(self.key, cx, move |_, _| Glide {
+            from: value,
+            to: value,
+            set_off: None,
+        });
+        let drawn = glide.update(cx, |glide, cx| {
+            let now = Instant::now();
+            if glide.to != value {
+                glide.from = glide.at(now);
+                glide.to = value;
+                glide.set_off = (!snap).then_some(now);
+            }
+            let Some(set_off) = glide.set_off else {
+                return value;
+            };
+            // As `Channel::frame`: frames only while it moves, none with reduced motion.
+            if snap || cx.reduce_motion() || now.saturating_duration_since(set_off) >= TRANSITION {
+                glide.set_off = None;
+                return value;
+            }
+            window.request_animation_frame();
+            glide.at(now)
+        });
+        (self.style)(self.element, drawn)
+    }
+}
+
 /// `element` fading in as it rises into place over [`APPEAR`]: a panel, dialog or menu showing
 /// up. A new `key` plays it again.
 pub(crate) fn appear<E: Styled + IntoElement + 'static>(
@@ -421,6 +512,59 @@ fn paint_corner(
     let center = point(corner.x + half * sx, corner.y + half * sy);
     paint_diamond(center, half, rgb(GOLD), window);
     paint_diamond(center, half * 0.4, rgb(BG_TITLE), window);
+}
+
+/// [`game_frame`] for a bar too low for its corner ornaments -- the XP line: both lines, and at
+/// the middle of each end a diamond, its arms fading along the end towards the corners. `lit`
+/// (0 to 1) warms the ornaments from the edge's dull gold to full gold. Laid like [`game_frame`].
+pub(crate) fn bar_frame(lit: f32) -> impl IntoElement {
+    canvas(
+        |_, _, _| {},
+        move |bounds, (), window, _| paint_bar_frame(bounds, lit, window),
+    )
+    .absolute()
+    .top_0()
+    .left_0()
+    .size_full()
+}
+
+fn paint_bar_frame(bounds: Bounds<Pixels>, lit: f32, window: &mut Window) {
+    let unit = window.rem_size() / px(BASE_REM_SIZE);
+    window.paint_quad(outline(bounds, rgb(BORDER_GOLD), BorderStyle::Solid));
+    window.paint_quad(outline(
+        bounds.inset(px(FRAME_GAP * unit)),
+        alpha(GOLD, FRAME_INNER_OPACITY),
+        BorderStyle::Solid,
+    ));
+    let gold = blend(BORDER_GOLD, GOLD, lit);
+    let hairline = px(1.);
+    let half = px(FRAME_DIAMOND * unit);
+    let middle = bounds.center().y;
+    let reach = (bounds.size.height / 2. - half).max(px(0.));
+    // Each arm fades from a diamond tip to a corner: CSS angles, 0 is bottom up, 180 top down.
+    let fading = |angle: f32| {
+        linear_gradient(
+            angle,
+            linear_color_stop(rgb(gold), 0.),
+            linear_color_stop(alpha(gold, 0.), 1.),
+        )
+    };
+    for (line_x, center_x) in [
+        (bounds.left(), bounds.left() + half),
+        (bounds.right() - hairline, bounds.right() - half),
+    ] {
+        window.paint_quad(fill(
+            Bounds::new(point(line_x, bounds.top()), size(hairline, reach)),
+            fading(0.),
+        ));
+        window.paint_quad(fill(
+            Bounds::new(point(line_x, middle + half), size(hairline, reach)),
+            fading(180.),
+        ));
+        let center = point(center_x, middle);
+        paint_diamond(center, half, rgb(gold), window);
+        paint_diamond(center, half * 0.4, rgb(BG_TITLE), window);
+    }
 }
 
 fn paint_diamond(
@@ -571,6 +715,28 @@ pub(crate) enum ButtonKind {
     Danger,
 }
 
+/// A button's size, px: its height, the space either side of its label, and the label's size --
+/// a primary button's, in the heading face, a pixel larger.
+#[derive(Clone, Copy)]
+struct ButtonSize {
+    height: f32,
+    padding: f32,
+    text: f32,
+}
+
+/// A window's buttons.
+const BUTTON: ButtonSize = ButtonSize {
+    height: CONTROL_HEIGHT,
+    padding: 16.,
+    text: 13.,
+};
+/// Buttons in a tight row: a card's actions.
+const SMALL_BUTTON: ButtonSize = ButtonSize {
+    height: 24.,
+    padding: 10.,
+    text: 12.,
+};
+
 /// A button, glowing under the pointer; `on_press` runs on the press. `face` sets a primary
 /// button's label.
 pub(crate) fn button(
@@ -580,6 +746,28 @@ pub(crate) fn button(
     face: &NameFont,
     on_press: impl Fn(&MouseDownEvent, &mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
+    sized_button(key, label, kind, face, BUTTON, on_press)
+}
+
+/// A [`button`] for a tight row -- a card's actions: shorter, its label smaller.
+pub(crate) fn small_button(
+    key: impl Into<ElementId>,
+    label: impl Into<SharedString>,
+    kind: ButtonKind,
+    face: &NameFont,
+    on_press: impl Fn(&MouseDownEvent, &mut Window, &mut App) + 'static,
+) -> impl IntoElement {
+    sized_button(key, label, kind, face, SMALL_BUTTON, on_press)
+}
+
+fn sized_button(
+    key: impl Into<ElementId>,
+    label: impl Into<SharedString>,
+    kind: ButtonKind,
+    face: &NameFont,
+    size: ButtonSize,
+    on_press: impl Fn(&MouseDownEvent, &mut Window, &mut App) + 'static,
+) -> impl IntoElement {
     let key = key.into();
     let element = div()
         .id(key.clone())
@@ -587,8 +775,8 @@ pub(crate) fn button(
         .flex_none()
         .items_center()
         .justify_center()
-        .h(rems_from_px(CONTROL_HEIGHT))
-        .px(rems_from_px(16.))
+        .h(rems_from_px(size.height))
+        .px(rems_from_px(size.padding))
         .rounded(rems_from_px(CONTROL_RADIUS))
         .border_1()
         .cursor_pointer()
@@ -596,8 +784,8 @@ pub(crate) fn button(
             ButtonKind::Primary => this
                 .font_family(face.family)
                 .font_weight(face.weight)
-                .text_size(rems_from_px(14.)),
-            ButtonKind::Secondary | ButtonKind::Danger => this.text_size(rems_from_px(13.)),
+                .text_size(rems_from_px(size.text + 1.)),
+            ButtonKind::Secondary | ButtonKind::Danger => this.text_size(rems_from_px(size.text)),
         })
         .on_mouse_down(MouseButton::Left, on_press)
         .child(label.into());
@@ -759,7 +947,6 @@ pub(crate) fn select(
     let element = div()
         .id(key.clone())
         .flex()
-        .flex_none()
         .items_center()
         .gap(rems_from_px(8.))
         .rounded(rems_from_px(CONTROL_RADIUS))
@@ -767,11 +954,14 @@ pub(crate) fn select(
         .cursor_pointer()
         .map(|this| {
             if compact {
-                this.h(rems_from_px(22.))
+                // Gives way on a row too narrow for it, its choice truncating.
+                this.min_w_0()
+                    .h(rems_from_px(22.))
                     .px(rems_from_px(8.))
                     .text_size(rems_from_px(12.))
             } else {
-                this.h(rems_from_px(CONTROL_HEIGHT))
+                this.flex_none()
+                    .h(rems_from_px(CONTROL_HEIGHT))
                     .min_w(rems_from_px(240.))
                     .px(rems_from_px(12.))
                     .text_size(rems_from_px(13.))
@@ -806,51 +996,15 @@ pub(crate) fn menu(
     on_dismiss: impl Fn(&MouseDownEvent, &mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
     let on_pick = Rc::new(on_pick);
-    let list = div()
-        .id(key)
-        .relative()
-        .flex()
-        .flex_col()
+    let rows = options.into_iter().enumerate().map(|(index, label)| {
+        let on_pick = on_pick.clone();
+        menu_row(index, index == picked, label, move |_, window, cx| {
+            on_pick(&index, window, cx);
+        })
+    });
+    let list = menu_list(key, rows)
         .w(rems_from_px(width))
-        .p(rems_from_px(5.))
-        .bg(rgb(BG_MENU))
-        .shadow(popup_shadow())
-        .occlude()
-        .on_mouse_down_out(on_dismiss)
-        .children(options.into_iter().enumerate().map(|(index, label)| {
-            let on_pick = on_pick.clone();
-            let current = index == picked;
-            let item = div()
-                .id(index)
-                .flex()
-                .items_center()
-                .gap(rems_from_px(8.))
-                .h(rems_from_px(28.))
-                .px(rems_from_px(10.))
-                .rounded(rems_from_px(CONTROL_RADIUS - 1.))
-                .text_size(rems_from_px(13.))
-                .cursor_pointer()
-                .on_mouse_down(MouseButton::Left, move |_, window, cx| {
-                    on_pick(&index, window, cx);
-                })
-                .child(
-                    div()
-                        .flex()
-                        .flex_none()
-                        .w(rems_from_px(7.))
-                        .when(current, |this| this.child(diamond(7., GOLD))),
-                )
-                .child(label);
-            ease_hover(index, item, move |item, hover| {
-                item.bg(alpha(GOLD, 0.1 * hover))
-                    .text_color(rgb(if current {
-                        GOLD_LIGHT
-                    } else {
-                        blend(TEXT, GOLD_LIGHT, hover)
-                    }))
-            })
-        }))
-        .child(game_frame());
+        .on_mouse_down_out(on_dismiss);
     div().h_0().child(
         deferred(
             anchored()
@@ -862,8 +1016,67 @@ pub(crate) fn menu(
     )
 }
 
+/// A menu's list: `rows` ([`menu_row`]) framed, over the popup shadow. [`menu`] makes one from
+/// labels; a menu whose rows say more, or that closes some other way (the price panel's, through
+/// a backdrop), builds its own from this and sizes it.
+pub(crate) fn menu_list(
+    key: impl Into<ElementId>,
+    rows: impl IntoIterator<Item = impl IntoElement>,
+) -> Stateful<Div> {
+    div()
+        .id(key)
+        .relative()
+        .flex()
+        .flex_col()
+        .p(rems_from_px(5.))
+        .bg(rgb(BG_MENU))
+        .shadow(popup_shadow())
+        .occlude()
+        .children(rows)
+        .child(game_frame())
+}
+
+/// One choice in a [`menu_list`]: `content` behind the diamond that marks the `current` choice,
+/// lit gold under the pointer; `on_pick` runs on the press. A row taller than one line -- a note
+/// under the choice -- grows to fit.
+pub(crate) fn menu_row(
+    index: usize,
+    current: bool,
+    content: impl IntoElement,
+    on_pick: impl Fn(&MouseDownEvent, &mut Window, &mut App) + 'static,
+) -> impl IntoElement {
+    let item = div()
+        .id(index)
+        .flex()
+        .items_center()
+        .gap(rems_from_px(8.))
+        .min_h(rems_from_px(28.))
+        .py(rems_from_px(3.))
+        .px(rems_from_px(10.))
+        .rounded(rems_from_px(CONTROL_RADIUS - 1.))
+        .text_size(rems_from_px(13.))
+        .cursor_pointer()
+        .on_mouse_down(MouseButton::Left, on_pick)
+        .child(
+            div()
+                .flex()
+                .flex_none()
+                .w(rems_from_px(7.))
+                .when(current, |this| this.child(diamond(7., GOLD))),
+        )
+        .child(content);
+    ease_hover(index, item, move |item, hover| {
+        item.bg(alpha(GOLD, 0.1 * hover))
+            .text_color(rgb(if current {
+                GOLD_LIGHT
+            } else {
+                blend(TEXT, GOLD_LIGHT, hover)
+            }))
+    })
+}
+
 /// A key as a keycap: `Ctrl`, `E`.
-pub(crate) fn keycap(label: &'static str) -> Div {
+pub(crate) fn keycap(label: impl Into<SharedString>) -> Div {
     div()
         .flex()
         .flex_none()
@@ -884,49 +1097,19 @@ pub(crate) fn keycap(label: &'static str) -> Div {
         .text_size(rems_from_px(12.))
         .font_weight(FontWeight::SEMIBOLD)
         .text_color(rgb(TEXT))
-        .child(label)
+        .child(label.into())
 }
 
 /// A hotkey as keycaps joined by `+`.
-pub(crate) fn keycaps(keys: &[&'static str]) -> Div {
+pub(crate) fn keycaps<S: Into<SharedString> + Clone>(keys: &[S]) -> Div {
     let mut row = div().flex().items_center().gap(rems_from_px(4.));
-    for (index, &key) in keys.iter().enumerate() {
+    for (index, key) in keys.iter().enumerate() {
         if index > 0 {
             row = row.child(div().text_color(rgb(TEXT_MUTED)).child("+"));
         }
-        row = row.child(keycap(key));
+        row = row.child(keycap(key.clone()));
     }
     row
-}
-
-/// A one-line text field's look: `value`, or `placeholder` dimmed while empty; its edge warms to
-/// gold under the pointer.
-pub(crate) fn field(
-    key: impl Into<ElementId>,
-    value: Option<&'static str>,
-    placeholder: &'static str,
-) -> impl IntoElement {
-    let key = key.into();
-    let element = div()
-        .id(key.clone())
-        .flex()
-        .items_center()
-        .h(rems_from_px(CONTROL_HEIGHT))
-        .px(rems_from_px(10.))
-        .rounded(rems_from_px(CONTROL_RADIUS))
-        .bg(rgb(BG_FIELD))
-        .border_1()
-        .text_size(rems_from_px(13.))
-        .cursor_text()
-        .child(match value {
-            Some(value) => div().text_color(rgb(TEXT)).child(value),
-            None => div().text_color(rgb(TEXT_MUTED)).child(placeholder),
-        });
-    ease_hover(key, element, |element, hover| {
-        element
-            .border_color(rgb(blend(BORDER_FIELD, GOLD, 0.7 * hover)))
-            .shadow(glow(GOLD, 0.4 * hover))
-    })
 }
 
 /// A hotkey recorder showing `content` -- the hotkey as [`keycaps`], or what it waits for; its

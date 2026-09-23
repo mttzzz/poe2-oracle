@@ -12,16 +12,18 @@ Out of the box there is one action, `/hideout`, without a hotkey: record a key f
 2. Pick its kind: «Чат» (chat) or «Тайник» (stash).
 3. Type the text: a command or message for chat (the box suggests `/hideout, /exit, @last
    спасибо…`), or a search string for the stash (the box suggests «Строка поиска, например с
-   poe2.re»: a search string, for example from poe2.re).
+   poe2.re»: a search string, for example from poe2.re). The action is saved as soon as you press
+   <kbd>Enter</kbd> or leave the box.
 4. Click the key field, which reads «без клавиши» (no key), and press a combination: one of
    <kbd>F1</kbd>–<kbd>F12</kbd>, or <kbd>Ctrl</kbd> or <kbd>Alt</kbd> with a letter or a digit.
-   <kbd>Backspace</kbd> leaves the action without a key; <kbd>Esc</kbd> keeps the old one.
-5. Click «Сохранить» (Save).
+   The key works at once. <kbd>Backspace</kbd> leaves the action without a key; <kbd>Esc</kbd>
+   keeps the old one.
 
-The **×** at the right of a row removes the action. An action left without text is dropped when you
-save. A key cannot be the price-check hotkey («Это сочетание уже у проверки цены») or another
-action's («Это сочетание уже у другого быстрого действия»); otherwise the same rules apply as for
-the [price-check hotkey](settings.md#hotkey).
+Like everything in the settings, changes apply at once: there is no Save button. The **×** at the
+right of a row removes the action. An action without text is not saved. A key cannot be the
+price-check hotkey («Это сочетание уже у проверки цены») or another action's («Это сочетание уже у
+другого быстрого действия»); otherwise the same rules apply as for the
+[price-check hotkey](settings.md#hotkey).
 
 ## Chat actions
 
@@ -62,9 +64,9 @@ so quick actions never send these, in any letter case and also after a chat chan
 
 If an action's text is one of them, a warning appears under it, for example «Команда /destroy
 уничтожает предмет — быстрые действия её не отправляют» (/destroy destroys an item; quick actions
-don't send it), and the settings are not saved («Сохранить нельзя: в быстрых действиях запрещённая
-команда») until you change the text or remove the action. Stash search actions are checked the
-same way. Any other text, such as `@last thanks`, is sent as you wrote it.
+don't send it), and that text is not saved: the action keeps its last allowed text (a new action,
+none) until you write another. Stash search actions are checked the same way. Any other text, such
+as `@last thanks`, is sent as you wrote it.
 
 ## Good to know
 
@@ -74,4 +76,6 @@ same way. Any other text, such as `@last thanks`, is sent as you wrote it.
   keyboard layout. Your clipboard is put back right after.
 - Each press sends one message: holding the key down sends it once, and a press while an action
   is still typing is ignored.
-- If another program already holds an action's key, that action loses its key when you save.
+- If another program already holds the key you press, the row says so, for example «F7 занято
+  другой программой — осталось F5» (F7 is taken by another program; F5 stays), and the action
+  keeps its previous key (a new one, none).

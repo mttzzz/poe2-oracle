@@ -1,14 +1,15 @@
-//! The stat filter rows, in the game tooltip's own sections: each row's text (the stat with its
-//! rolled value, tier and source badge), controls (checkbox, min/max inputs) and, for a mod the
-//! tier table knows, its roll slider; and the toggle that unfolds the rows kept out of sight.
+//! The stat filter rows, in the game tooltip's own sections under their diamond headings: each
+//! row's text (the stat with its rolled value, tier and source badge), controls (checkbox, min/max
+//! inputs) and, for a mod the tier table knows, its roll slider; and the toggle that unfolds the
+//! rows kept out of sight.
 
 use std::ops::Range;
 
 use gpui::{
-    AnyElement, Bounds, Context, CursorStyle, DispatchPhase, FocusHandle, FontWeight,
+    AnyElement, BorderStyle, Bounds, Context, CursorStyle, DispatchPhase, FocusHandle, FontWeight,
     HighlightStyle, HitboxBehavior, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent,
     MouseMoveEvent, MouseUpEvent, Pixels, StyledText, Window, canvas, div, fill, point, prelude::*,
-    px, rgb, size,
+    px, quad, rgb, size,
 };
 
 use poe2_domain::{ModGeneration, ParsedItem};
@@ -18,30 +19,34 @@ use trade_client::TradeSite;
 use crate::platform::win32::Win32Overlay;
 use crate::price_check::{FilterRowUi, PriceCheckApp};
 use crate::roll_slider::{Handle, Slider};
-use crate::settings::WaystoneMark;
 use crate::ui::hint as hints;
+use crate::ui::style::{
+    alpha, checkbox, ease_hover, ease_state, ease_value, game_hint, glow, link, section_heading,
+};
 use crate::ui::theme::{
     BADGE_DESECRATED_BG, BADGE_DESECRATED_TEXT, BADGE_ENCHANT_BG, BADGE_ENCHANT_TEXT,
-    BADGE_FRACTURED_BG, BADGE_INK, BADGE_RUNE_BG, BADGE_RUNE_TEXT, BG_BUTTON_HOVER, BG_CONTROL,
-    BG_PANEL, BORDER, BORDER_GOLD, GOLD, TEXT, TEXT_DIM, TEXT_MUTED, TEXT_VALUE, TIER_TOP,
-    rems_from_px,
+    BADGE_FRACTURED_BG, BADGE_INK, BADGE_RUNE_BG, BADGE_RUNE_TEXT, BG_FIELD, BG_PANEL,
+    BORDER_FIELD, BORDER_GOLD, GOLD, GOLD_LIGHT, TEXT, TEXT_DIM, TEXT_MUTED, TEXT_VALUE, TIER_TOP,
+    blend, rems_from_px,
 };
 
 use super::format::format_value;
+use super::ui_face;
 use super::waystone::{is_waystone, mark_color, render_mark_button, waystone_mark_of};
 
 /// Indent of a filter row's second line: the checkbox plus the gap after it.
-const CHECK_COLUMN: f32 = CHECKBOX + 6.;
-const CHECKBOX: f32 = 14.;
+const CHECK_COLUMN: f32 = CHECKBOX + ROW_GAP;
+/// The checkbox's edge (`style::checkbox`).
+const CHECKBOX: f32 = 15.;
+const ROW_GAP: f32 = 8.;
 const BOUND_INPUT_WIDTH: f32 = 52.;
-const BOUND_INPUT_HEIGHT: f32 = 22.;
-/// A roll slider's track: its height, its handle's width and height, its rail's thickness and
-/// the width of the tick at the item's own roll.
-const SLIDER_HEIGHT: f32 = 14.;
-const SLIDER_HANDLE_WIDTH: f32 = 8.;
-const SLIDER_HANDLE_HEIGHT: f32 = 10.;
-const SLIDER_RAIL: f32 = 2.;
-const SLIDER_MARK: f32 = 2.;
+const BOUND_INPUT_HEIGHT: f32 = 24.;
+/// A roll slider: its height, its track's thickness, the thumb's edge and the height of the notch
+/// at the item's own roll.
+const SLIDER_HEIGHT: f32 = 12.;
+const SLIDER_TRACK: f32 = 3.;
+const SLIDER_THUMB: f32 = 10.;
+const SLIDER_NOTCH: f32 = 9.;
 
 /// The panel's sections, in the game tooltip's own order: base properties, implicits, the prefix
 /// and suffix slots (tiers inline, free slots included), anything else (enchants, runes, a
@@ -83,7 +88,6 @@ pub(super) fn render_sections(
     window: &Window,
     cx: &Context<PriceCheckApp>,
 ) -> impl IntoElement {
-    let site = state.trade_site();
     let waystone = is_waystone(item);
     let generation_count = |generation| {
         item.mods
@@ -126,43 +130,34 @@ pub(super) fn render_sections(
     div()
         .flex()
         .flex_col()
+        .gap(rems_from_px(4.))
         .children(sections.into_iter().filter_map(|(section, title)| {
             let rows: Vec<AnyElement> = state
                 .filters
                 .iter()
-                .zip(&state.filter_ui)
                 .enumerate()
-                .filter(|(_, (filter, _))| {
+                .filter(|(_, filter)| {
                     section_of(filter) == section && (state.show_hidden || !is_folded(filter))
                 })
-                .map(|(row, (filter, ui))| {
-                    let mark = waystone.then(|| waystone_mark_of(state, filter)).flatten();
-                    render_filter_row(row, filter, ui, site, mark, window, cx).into_any_element()
-                })
+                .map(|(row, _)| render_filter_row(state, row, waystone, window, cx))
                 .collect();
             (!rows.is_empty()).then(|| {
                 div()
                     .flex()
                     .flex_col()
-                    .child(section_header(title))
+                    .gap(rems_from_px(4.))
+                    .child(
+                        div()
+                            .pt(rems_from_px(10.))
+                            .pb(rems_from_px(2.))
+                            .child(section_heading(ui_face(), &title)),
+                    )
                     .children(rows)
             })
         }))
         .when(folded > 0, |this| {
             this.child(render_hidden_toggle(folded, state.show_hidden, cx))
         })
-}
-
-fn section_header(title: String) -> impl IntoElement {
-    div()
-        .pt(rems_from_px(10.))
-        .pb(rems_from_px(3.))
-        .border_b_1()
-        .border_color(rgb(BORDER_GOLD))
-        .text_xs()
-        .font_weight(FontWeight::SEMIBOLD)
-        .text_color(rgb(GOLD))
-        .child(title.to_uppercase())
 }
 
 /// Unfolds/folds the rows `is_folded` keeps out of sight -- PoE Overlay II's "show N hidden
@@ -181,64 +176,100 @@ fn render_hidden_toggle(
         .flex()
         .justify_center()
         .py(rems_from_px(5.))
-        .text_xs()
-        .text_color(rgb(TEXT_DIM))
-        .cursor_pointer()
-        .hover(|style| style.text_color(rgb(GOLD)))
-        .on_mouse_down(
-            MouseButton::Left,
+        .child(link(
+            "hidden-rows",
+            label,
             cx.listener(|view, _event: &MouseDownEvent, _window, cx| {
                 view.toggle_show_hidden(cx);
             }),
-        )
-        .child(label)
+        ))
 }
 
-/// One stat: checkbox, tier and text (all toggle the filter, as in EE2), min/max inputs on the
-/// right, and -- only for the kinds worth flagging (fractured, desecrated, crafted, rune,
-/// enchant, a weighted sum) -- a badge underneath; the section already says
-/// prefix/suffix/implicit. The tier badge says on hover where the tier sits among its family's
-/// (`tier_hint`), and a mod the tier table knows gets its roll slider under the text
-/// (`render_roll_slider`). A waystone's own modifiers also carry the player's mark (`mark`: its
-/// key and current mark), in the mark's colour.
+/// Row `row` of the panel's filters: checkbox, tier and text, min/max inputs on the right -- a
+/// press anywhere else on the row toggles it, as in EE2, and the row lights up under the pointer
+/// -- and -- only for the kinds worth flagging (fractured, desecrated, crafted, rune, enchant, a
+/// weighted sum) -- a badge underneath; the section already says prefix/suffix/implicit. The text
+/// dims while the row is out of the search. The tier badge says on hover where the tier sits
+/// among its family's (`tier_hint`), and a mod the tier table knows gets its roll slider under the
+/// text (`render_roll_slider`). A `waystone`'s own modifiers also carry the player's mark, in the
+/// mark's colour.
 fn render_filter_row(
+    state: &PriceCheckApp,
     row: usize,
-    filter: &SearchFilter,
-    ui: &FilterRowUi,
-    site: TradeSite,
-    mark: Option<(String, Option<WaystoneMark>)>,
+    waystone: bool,
     window: &Window,
     cx: &Context<PriceCheckApp>,
-) -> impl IntoElement {
+) -> AnyElement {
+    let (filter, ui) = (&state.filters[row], &state.filter_ui[row]);
+    let site = state.trade_site();
+    let mark = waystone.then(|| waystone_mark_of(state, filter)).flatten();
     // A row the search can't use is shown for information only, without the controls that
     // would suggest otherwise.
     let searchable = filter.searchable();
     let marked_color = mark.as_ref().and_then(|(_, mark)| *mark).map(mark_color);
     let text: AnyElement = if filter.tag == FilterTag::EmptyAffix {
         div()
+            .flex_1()
+            .min_w_0()
             .italic()
             .text_color(rgb(TEXT_DIM))
             .child(free_slot_text(filter))
             .into_any_element()
     } else {
-        div()
-            .text_color(rgb(marked_color.unwrap_or(if searchable {
-                TEXT
-            } else {
-                TEXT_DIM
-            })))
-            .child(stat_line(filter, site))
-            .into_any_element()
+        ease_state(
+            "text",
+            filter.enabled,
+            div().flex_1().min_w_0().child(stat_line(filter, site)),
+            move |line, on| {
+                line.text_color(rgb(match marked_color {
+                    Some(color) => color,
+                    None if searchable => blend(TEXT_DIM, TEXT, on),
+                    None => TEXT_DIM,
+                }))
+            },
+        )
+        .into_any_element()
     };
     let badge = source_badge(filter.tag);
     let slider = searchable.then(|| Slider::of(filter)).flatten();
 
-    let toggle_area = div()
+    let line = div()
         .flex()
-        .flex_1()
-        .min_w_0()
         .items_start()
+        .gap(rems_from_px(ROW_GAP))
+        .child(
+            div()
+                .flex_none()
+                .w(rems_from_px(CHECKBOX))
+                .pt(rems_from_px(2.))
+                .when(searchable, |this| {
+                    this.child(checkbox("check", filter.enabled))
+                }),
+        )
+        .children(filter.tier.map(|tier| {
+            div()
+                .id("tier")
+                .flex_none()
+                .pt(rems_from_px(2.))
+                .when_some(filter.tier_info.as_ref(), |this, info| {
+                    this.tooltip(game_hint(ui_face(), None, tier_hint(info)))
+                })
+                .child(render_tier(tier))
+        }))
+        .child(text)
+        .children(mark.map(|(key, mark)| render_mark_button(key, mark, cx)))
+        .when(searchable && filter.roll.is_some(), |this| {
+            this.child(render_bounds(row, ui, window, cx))
+        });
+
+    let element = div()
+        .id(("filter", row))
+        .flex()
+        .flex_col()
         .gap(rems_from_px(6.))
+        .px(rems_from_px(6.))
+        .py(rems_from_px(7.))
+        .rounded(rems_from_px(4.))
         .when(searchable, |this| {
             this.cursor_pointer().on_mouse_down(
                 MouseButton::Left,
@@ -247,46 +278,11 @@ fn render_filter_row(
                 }),
             )
         })
-        .child(
-            div()
-                .flex_none()
-                .w(rems_from_px(CHECKBOX))
-                .pt(rems_from_px(3.))
-                .when(searchable, |this| {
-                    this.child(render_checkbox(filter.enabled))
-                }),
-        )
-        .children(filter.tier.map(|tier| {
-            div()
-                .id(("tier", row))
-                .flex_none()
-                .pt(rems_from_px(2.))
-                .when_some(filter.tier_info.as_ref(), |this, info| {
-                    this.tooltip(hints::hint(tier_hint(info)))
-                })
-                .child(render_tier(tier))
+        .child(line)
+        .children(slider.map(|slider| {
+            let dragging = state.roll_drag == Some(row);
+            render_roll_slider(row, filter, ui, slider, dragging, cx)
         }))
-        .child(div().flex_1().min_w_0().child(text))
-        .children(mark.map(|(key, mark)| render_mark_button(key, mark, cx)));
-
-    div()
-        .flex()
-        .flex_col()
-        .gap(rems_from_px(2.))
-        .py(rems_from_px(5.))
-        .border_b_1()
-        .border_color(rgb(BORDER))
-        .child(
-            div()
-                .flex()
-                .items_start()
-                .gap(rems_from_px(8.))
-                .child(toggle_area)
-                .when(searchable && filter.roll.is_some(), |this| {
-                    this.child(render_bounds(row, ui, window, cx))
-                }),
-        )
-        .children(slider.map(|slider| render_roll_slider(row, filter, ui, slider, cx)))
         .when(
             badge.is_some() || filter.weighted_sum || !searchable,
             |this| {
@@ -297,44 +293,69 @@ fn render_filter_row(
                         .gap(rems_from_px(6.))
                         .pl(rems_from_px(CHECK_COLUMN))
                         .children(badge)
-                        .when(filter.weighted_sum, |this| {
-                            this.child(weighted_sum_badge(row))
-                        })
+                        .when(filter.weighted_sum, |this| this.child(weighted_sum_badge()))
                         .when(!searchable, |this| {
                             this.child(
                                 div()
-                                    .text_xs()
+                                    .text_size(rems_from_px(12.))
                                     .text_color(rgb(TEXT_MUTED))
                                     .child("не участвует в поиске"),
                             )
                         }),
                 )
             },
-        )
+        );
+    if searchable {
+        ease_hover(("filter", row), element, |element, hover| {
+            element.bg(alpha(GOLD, 0.04 * hover))
+        })
+        .into_any_element()
+    } else {
+        element.into_any_element()
+    }
 }
 
-/// The tier badge's hint, from the tier table: «T3 из 9 · с 68 ур. предмета · лучший доступный
-/// T2» -- the tier among its family's on this kind of item, the item level it needs, and the best
-/// one the item's level lets roll.
-fn tier_hint(info: &TierInfo) -> String {
-    format!(
-        "T{} из {} · с {} ур. предмета · лучший доступный T{}",
-        info.current, info.count, info.min_level, info.best_available
-    )
+/// The tier badge's hint, from the tier table: «Тир 3 из 9», the bottom of the tier's rolls,
+/// every tier's rolls, the item level the tier needs, and the best tier the item's level lets
+/// roll.
+fn tier_hint(info: &TierInfo) -> Vec<(gpui::SharedString, u32)> {
+    let mut lines = Vec::with_capacity(5);
+    lines.push((
+        format!("Тир {} из {}", info.current, info.count).into(),
+        GOLD_LIGHT,
+    ));
+    if let Some(floor) = info.tier_floor {
+        lines.push((format!("Этот тир: от {}", format_value(floor)).into(), TEXT));
+    }
+    if let Some((low, high)) = info.range {
+        lines.push((
+            format!("Все тиры: {}–{}", format_value(low), format_value(high)).into(),
+            TEXT_DIM,
+        ));
+    }
+    lines.push((
+        format!("Нужен уровень предмета {}", info.min_level).into(),
+        TEXT_DIM,
+    ));
+    lines.push((
+        format!("Лучший тир на уровне этой вещи: T{}", info.best_available).into(),
+        TEXT_DIM,
+    ));
+    lines
 }
 
 /// A weighted sum's badge: its value adds up the same stat from several of the item's mods, as
 /// the trade site sums them for the search -- a total, like the site's own pseudo rows.
-fn weighted_sum_badge(row: usize) -> impl IntoElement {
+fn weighted_sum_badge() -> impl IntoElement {
     div()
-        .id(("weighted-sum", row))
+        .id("weighted-sum")
         .flex_none()
         .px(rems_from_px(4.))
-        .rounded_xs()
+        .rounded(rems_from_px(3.))
         .border_1()
         .border_color(rgb(BORDER_GOLD))
-        .text_xs()
-        .line_height(rems_from_px(13.))
+        .text_size(rems_from_px(11.))
+        .line_height(rems_from_px(14.))
         .text_color(rgb(GOLD))
         .tooltip(hints::hint(
             "Сумма: значение сложено из всех модификаторов вещи с этим свойством, и сайт \
@@ -343,84 +364,142 @@ fn weighted_sum_badge(row: usize) -> impl IntoElement {
         .child("сумма")
 }
 
-/// A mod row's roll slider (`roll_slider::Slider`): the lowest roll of the row's family on this
-/// kind of item at the left end, the highest at the right, a blue tick at the item's own roll,
-/// and a handle at the row's search bound -- its minimum box, or its maximum where a lower roll is
-/// better -- with the part of the track the search admits lit in gold. Pressing the track puts
-/// the handle there and dragging moves it (`PriceCheckApp::begin_roll_drag`); the bound box
-/// follows, and typing in the box moves the handle. Like a typed bound, it takes effect with the
-/// next search.
+/// A mod row's roll slider (`roll_slider::Slider`): a track from the
+/// lowest roll of the row's family on this kind of item to the highest, a bright notch at the
+/// item's own roll, and a round thumb at the row's search bound -- its minimum box, or its
+/// maximum where a lower roll is better -- with the part of the track the search admits lit in
+/// gold. The tier table gives only the family's range and the item's own tier's floor, not every
+/// tier's, so the track isn't cut into tiers. An unchecked row's slider dims, its lit part and the
+/// thumb's glow fade out, and the thumb stays faint: the bound can still be set there.
+/// Pressing the track puts the thumb there and dragging moves it
+/// (`PriceCheckApp::begin_roll_drag`); the bound box follows, and typing in the box -- or a
+/// profile, «Минимум тира» -- slides it there. Like a typed bound, it takes effect with the next
+/// search.
 fn render_roll_slider(
     row: usize,
     filter: &SearchFilter,
     ui: &FilterRowUi,
     slider: Slider,
+    dragging: bool,
     cx: &Context<PriceCheckApp>,
 ) -> impl IntoElement {
     let bound = match slider.handle {
         Handle::Min => &ui.min_text,
         Handle::Max => &ui.max_text,
     };
-    let handle = slider.handle_fraction(bound.parse::<f64>().ok());
-    let mark = filter.roll.as_ref().map(|roll| slider.fraction(roll.value));
-    let enabled = filter.enabled;
+    let thumb = slider.handle_fraction(bound.parse::<f64>().ok()) as f32;
+    let notch = filter
+        .roll
+        .as_ref()
+        .map(|roll| slider.fraction(roll.value) as f32);
     let view = cx.entity();
-    let track = canvas(
+    let (low, high) = (format_value(slider.low), format_value(slider.high));
+    let hint = match slider.handle {
+        Handle::Min => format!(
+            "Края — самое низкое ({low}) и самое высокое ({high}) значение этого свойства во \
+             всех тирах, светлая метка — значение этой вещи, кружок — минимум поиска."
+        ),
+        Handle::Max => format!(
+            "Края — самое низкое ({low}) и самое высокое ({high}) значение этого свойства во \
+             всех тирах, светлая метка — значение этой вещи, кружок — максимум поиска: здесь чем \
+             меньше, тем лучше."
+        ),
+    };
+    div()
+        .id(("roll-slider", row))
+        .pl(rems_from_px(CHECK_COLUMN))
+        .tooltip(hints::hint(hint))
+        .child(ease_state(
+            "checked",
+            filter.enabled,
+            div(),
+            move |holder, on| {
+                let view = view.clone();
+                holder.opacity(0.45 + 0.55 * on).child(ease_value(
+                    "thumb",
+                    thumb,
+                    dragging,
+                    div(),
+                    move |holder, thumb| {
+                        holder.child(slider_track(
+                            row,
+                            slider.handle,
+                            thumb,
+                            notch,
+                            on,
+                            view.clone(),
+                        ))
+                    },
+                ))
+            },
+        ))
+}
+
+/// The slider's painted track and its mouse handling: `thumb` and `notch` are fractions of the
+/// track, `on` how checked the row is, 0 to 1: the lit part and the thumb's glow fade with it.
+fn slider_track(
+    row: usize,
+    handle: Handle,
+    thumb: f32,
+    notch: Option<f32>,
+    on: f32,
+    view: gpui::Entity<PriceCheckApp>,
+) -> impl IntoElement {
+    canvas(
         |bounds, window, _cx| window.insert_hitbox(bounds, HitboxBehavior::Normal),
         move |bounds, hitbox, window, _cx| {
             let rem_size = window.rem_size();
-            let handle_width = rems_from_px(SLIDER_HANDLE_WIDTH).to_pixels(rem_size);
-            // The handle's centre travels between the track's ends, so it never overhangs them.
-            let left = bounds.left() + handle_width / 2.;
-            let width = (bounds.size.width - handle_width).max(px(1.));
-            let x_at = move |fraction: f64| left + width * fraction as f32;
+            let thumb_size = rems_from_px(SLIDER_THUMB).to_pixels(rem_size);
+            // The thumb's centre travels between the track's ends, so it never overhangs them.
+            let left = bounds.left() + thumb_size / 2.;
+            let width = (bounds.size.width - thumb_size).max(px(1.));
+            let x_at = move |fraction: f32| left + width * fraction;
             let fraction_at = move |x: Pixels| f64::from((x - left) / width);
             let middle = bounds.center().y;
-            let bar = |from: f64, to: f64, color: u32| {
-                let thickness = rems_from_px(SLIDER_RAIL).to_pixels(rem_size);
-                fill(
-                    Bounds::new(
-                        point(x_at(from), middle - thickness / 2.),
-                        size(x_at(to) - x_at(from), thickness),
-                    ),
-                    rgb(color),
+            let track = rems_from_px(SLIDER_TRACK).to_pixels(rem_size);
+            let bar = |from: f32, to: f32| {
+                Bounds::new(
+                    point(x_at(from), middle - track / 2.),
+                    size(x_at(to) - x_at(from), track),
                 )
             };
-            window.paint_quad(bar(0., 1., BORDER));
-            let admitted = match slider.handle {
-                Handle::Min => (handle, 1.),
-                Handle::Max => (0., handle),
+            window.paint_quad(fill(bar(0., 1.), rgb(BORDER_FIELD)).corner_radii(track / 2.));
+            let admitted = match handle {
+                Handle::Min => (thumb, 1.),
+                Handle::Max => (0., thumb),
             };
-            window.paint_quad(bar(
-                admitted.0,
-                admitted.1,
-                if enabled { BORDER_GOLD } else { TEXT_MUTED },
-            ));
-            let handle_height = rems_from_px(SLIDER_HANDLE_HEIGHT).to_pixels(rem_size);
-            window.paint_quad(
-                fill(
-                    Bounds::new(
-                        point(
-                            x_at(handle) - handle_width / 2.,
-                            middle - handle_height / 2.,
-                        ),
-                        size(handle_width, handle_height),
-                    ),
-                    rgb(if enabled { GOLD } else { TEXT_DIM }),
-                )
-                .corner_radii(rems_from_px(2.).to_pixels(rem_size)),
-            );
-            // Over the handle, so the item's own roll shows even where the handle sits on it.
-            if let Some(mark) = mark {
-                let mark_width = rems_from_px(SLIDER_MARK).to_pixels(rem_size);
-                window.paint_quad(fill(
-                    Bounds::new(
-                        point(x_at(mark) - mark_width / 2., bounds.top()),
-                        size(mark_width, bounds.size.height),
-                    ),
-                    rgb(TEXT_VALUE),
-                ));
+            if on > 0. {
+                window.paint_quad(
+                    fill(bar(admitted.0, admitted.1), alpha(GOLD, 0.55 * on))
+                        .corner_radii(track / 2.),
+                );
             }
+            if let Some(notch) = notch {
+                let height = rems_from_px(SLIDER_NOTCH).to_pixels(rem_size);
+                window.paint_quad(
+                    fill(
+                        Bounds::new(
+                            point(x_at(notch) - px(1.), middle - height / 2.),
+                            size(px(2.), height),
+                        ),
+                        rgb(GOLD_LIGHT),
+                    )
+                    .corner_radii(px(1.)),
+                );
+            }
+            let at = Bounds::new(
+                point(x_at(thumb) - thumb_size / 2., middle - thumb_size / 2.),
+                size(thumb_size, thumb_size),
+            );
+            window.paint_drop_shadows(at, (thumb_size / 2.).into(), &glow(GOLD, 0.7 * on));
+            window.paint_quad(quad(
+                at,
+                thumb_size / 2.,
+                rgb(BG_PANEL),
+                px(1.),
+                alpha(GOLD_LIGHT, 0.4 + 0.6 * on),
+                BorderStyle::Solid,
+            ));
 
             window.set_cursor_style(CursorStyle::PointingHand, &hitbox);
             window.on_mouse_event({
@@ -463,30 +542,8 @@ fn render_roll_slider(
             });
         },
     )
-    .flex_1()
-    .h(rems_from_px(SLIDER_HEIGHT));
-    div()
-        .id(("roll-slider", row))
-        .flex()
-        .items_center()
-        .gap(rems_from_px(6.))
-        .pl(rems_from_px(CHECK_COLUMN))
-        .text_xs()
-        .text_color(rgb(TEXT_MUTED))
-        .tooltip(hints::hint(match slider.handle {
-            Handle::Min => {
-                "Края — самое низкое и самое высокое значение этого свойства во всех тирах, \
-                 голубая метка — значение этой вещи, бегунок — минимум поиска."
-            }
-            Handle::Max => {
-                "Края — самое низкое и самое высокое значение этого свойства во всех тирах, \
-                 голубая метка — значение этой вещи, бегунок — максимум поиска: здесь чем \
-                 меньше, тем лучше."
-            }
-        }))
-        .child(div().flex_none().child(format_value(slider.low)))
-        .child(track)
-        .child(div().flex_none().child(format_value(slider.high)))
+    .w_full()
+    .h(rems_from_px(SLIDER_HEIGHT))
 }
 
 /// A free affix slot row -- searchable as "at least this many empty prefixes/suffixes".
@@ -588,31 +645,6 @@ fn display_template(filter: &SearchFilter, site: TradeSite) -> &str {
     }
 }
 
-fn render_checkbox(checked: bool) -> impl IntoElement {
-    div()
-        .w(rems_from_px(CHECKBOX))
-        .h(rems_from_px(CHECKBOX))
-        .flex()
-        .flex_none()
-        .items_center()
-        .justify_center()
-        .rounded_xs()
-        .border_1()
-        .text_size(rems_from_px(11.))
-        .line_height(rems_from_px(CHECKBOX))
-        .font_weight(FontWeight::BOLD)
-        .map(|this| {
-            if checked {
-                this.bg(rgb(GOLD))
-                    .border_color(rgb(GOLD))
-                    .text_color(rgb(BG_PANEL))
-                    .child("✓")
-            } else {
-                this.border_color(rgb(TEXT_MUTED))
-            }
-        })
-}
-
 /// EE2's coloured source badges (`FilterModifier.vue`'s `.tag-*` classes, Russian locale
 /// wording) for the kinds that change what an item is worth; `None` for the plain ones the
 /// section header already names.
@@ -633,9 +665,9 @@ fn source_badge(tag: FilterTag) -> Option<impl IntoElement> {
         div()
             .flex_none()
             .px(rems_from_px(4.))
-            .rounded_xs()
+            .rounded(rems_from_px(3.))
             .bg(rgb(bg))
-            .text_xs()
+            .text_size(rems_from_px(11.))
             .line_height(rems_from_px(15.))
             .text_color(rgb(fg))
             .child(label),
@@ -648,17 +680,20 @@ fn render_tier(tier: u32) -> impl IntoElement {
     div()
         .flex_none()
         .px(rems_from_px(4.))
-        .rounded_xs()
+        .rounded(rems_from_px(3.))
         .border_1()
-        .text_xs()
-        .line_height(rems_from_px(13.))
+        .text_size(rems_from_px(11.))
+        .line_height(rems_from_px(14.))
+        .font_weight(FontWeight::SEMIBOLD)
         .map(|this| match tier {
             1 => this
                 .bg(rgb(TIER_TOP))
                 .border_color(rgb(TIER_TOP))
                 .text_color(rgb(BADGE_INK)),
             2 => this.border_color(rgb(TIER_TOP)).text_color(rgb(TIER_TOP)),
-            _ => this.border_color(rgb(BORDER)).text_color(rgb(TEXT_DIM)),
+            _ => this
+                .border_color(rgb(BORDER_FIELD))
+                .text_color(rgb(TEXT_DIM)),
         })
         .child(format!("T{tier}"))
 }
@@ -693,12 +728,13 @@ fn render_bounds(
         ))
 }
 
-/// One min/max box: shows `text` (or the "мин"/"макс" placeholder while empty), outlines itself
-/// on hover so it reads as editable, takes focus on click so `PriceCheckApp::handle_filter_key`
-/// receives the keystrokes, and while focused shows a caret after the value -- highlighted as
-/// selected right after the click (`fresh`), when typing replaces it. A click never activates
-/// the panel (see `app`'s overlay setup), so the box activates it: the keys must come here, not
-/// to the game.
+/// One min/max box: shows `text` (or the "мин"/"макс" placeholder while empty), its edge warming
+/// to gold under the pointer so it reads as editable, takes focus on click so
+/// `PriceCheckApp::handle_filter_key` receives the keystrokes, and while focused keeps the gold
+/// edge and shows a caret after the value -- highlighted as selected right after the click
+/// (`fresh`), when typing replaces it. A press on it never toggles its row. A click never
+/// activates the panel (see `app`'s overlay setup), so the box activates it: the keys must come
+/// here, not to the game.
 fn render_bound_input(
     row: usize,
     is_min: bool,
@@ -710,28 +746,30 @@ fn render_bound_input(
 ) -> impl IntoElement {
     let focused = focus_handle.is_focused(window);
     let focus_for_click = focus_handle.clone();
-    let placeholder = if is_min { "мин" } else { "макс" };
+    let (key, placeholder) = if is_min {
+        ("min", "мин")
+    } else {
+        ("max", "макс")
+    };
 
-    div()
-        .w(rems_from_px(BOUND_INPUT_WIDTH))
-        .h(rems_from_px(BOUND_INPUT_HEIGHT))
+    let element = div()
+        .id(key)
         .flex()
         .flex_none()
         .items_center()
         .justify_center()
-        .bg(rgb(BG_CONTROL))
+        .w(rems_from_px(BOUND_INPUT_WIDTH))
+        .h(rems_from_px(BOUND_INPUT_HEIGHT))
+        .bg(rgb(BG_FIELD))
         .border_1()
-        .border_color(rgb(if focused { GOLD } else { BORDER }))
-        .when(!focused, |this| {
-            this.hover(|style| style.border_color(rgb(TEXT_DIM)))
-        })
         .map(|this| {
             if is_min {
-                this.rounded_l_xs()
+                this.rounded_l(rems_from_px(4.))
             } else {
-                this.rounded_r_xs()
+                this.rounded_r(rems_from_px(4.))
             }
         })
+        .text_size(rems_from_px(13.))
         .cursor_text()
         .track_focus(focus_handle)
         .on_key_down(cx.listener(move |view, event: &KeyDownEvent, _window, cx| {
@@ -740,6 +778,8 @@ fn render_bound_input(
         .on_mouse_down(
             MouseButton::Left,
             cx.listener(move |view, _event: &MouseDownEvent, window, cx| {
+                // Only the box: the row's own press toggles the filter.
+                cx.stop_propagation();
                 if let Ok(overlay) = Win32Overlay::from_window(window) {
                     cx.spawn(async move |_, _| overlay.activate()).detach();
                 }
@@ -749,7 +789,7 @@ fn render_bound_input(
         )
         .map(|this| {
             if text.is_empty() && !focused {
-                this.text_xs()
+                this.text_size(rems_from_px(12.))
                     .text_color(rgb(TEXT_MUTED))
                     .child(placeholder)
             } else {
@@ -757,14 +797,18 @@ fn render_bound_input(
                     .child(
                         div()
                             .px(rems_from_px(1.))
-                            .when(fresh && !text.is_empty(), |this| {
-                                this.bg(rgb(BG_BUTTON_HOVER))
-                            })
+                            .when(fresh && !text.is_empty(), |this| this.bg(alpha(GOLD, 0.3)))
                             .child(text.to_owned()),
                     )
                     .when(focused, |this| {
                         this.child(div().w(px(1.)).h(rems_from_px(14.)).bg(rgb(GOLD)))
                     })
             }
-        })
+        });
+    ease_hover(key, element, move |element, hover| {
+        let lit = if focused { 1. } else { 0.7 * hover };
+        element
+            .border_color(rgb(blend(BORDER_FIELD, GOLD, lit)))
+            .shadow(glow(GOLD, if focused { 0.5 } else { 0.4 * hover }))
+    })
 }

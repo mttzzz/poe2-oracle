@@ -16,9 +16,13 @@ The first public release.
 - **Price check.** Hover an item in the game and press `Ctrl+E` (rebindable): the app copies the
   item with the game's advanced copy (`Ctrl+Alt+C`), puts your clipboard back and opens a panel
   next to the inventory or the stash. Works with English and Russian game clients; searches go to
-  www.pathofexile.com or ru.pathofexile.com, matching the item's language.
+  www.pathofexile.com or ru.pathofexile.com, matching the item's language. Drag the panel sideways
+  by its title bar: the next check on that side opens it there again, even after a restart, and a
+  double-click on the title bar puts it back next to the inventory or the stash.
 - **The price panel:** the item's name in its rarity colour, its art and links to poe2db and the
-  wiki; one filter row per stat with min/max values, mod tier and source, pseudo totals, weapon DPS
+  wiki, and for an item you can craft, to Craft of Exile, which opens it with its base, item
+  level, rarity and mods (in the site's Russian interface for the Russian client); one filter row
+  per stat with min/max values, mod tier and source, pseudo totals, weapon DPS
   and defences; the cheapest listings, one page of 10 per search, with price, item level, seller
   and listing age; a price estimate with its range and confidence, and a warning when the listings
   look price-fixed. Prices are shown with currency icons. Hovering a listing shows it the way the

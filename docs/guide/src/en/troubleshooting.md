@@ -78,11 +78,11 @@ hand: copy the item in the game with <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>C</kbd>
 
 ## Collecting a diagnostics report
 
-1. Open the [settings](settings.md#diagnostics), section «Диагностика» (diagnostics).
-2. Click «Собрать отчёт» (collect report).
+1. Open the [settings](settings.md#help), section «Помощь» (help).
+2. In the row «Сообщить об ошибке» (report a bug), click «Собрать отчёт» (collect report).
 3. A file `PoE2-Oracle-report-<date>_<time>.zip` appears on your desktop and Explorer opens with it
-   selected. The settings window says «Сохранён: … — приложите его к сообщению об ошибке» (saved,
-   attach it to your bug report).
+   selected. Under the row, the settings window says «Сохранён: … — приложите его к сообщению об
+   ошибке» (saved, attach it to your bug report).
 
 The zip holds plain text files:
 
@@ -97,13 +97,14 @@ Everywhere in it, the path of your Windows user folder is replaced with `%USERPR
 hides your Windows user name. Nothing is sent anywhere: you attach the file yourself, and you can
 open it and read it first.
 
-«Папка логов» (logs folder) opens `%LOCALAPPDATA%\poe2-oracle\data\logs`, with `poe2-oracle.log`
-for the current run and `poe2-oracle.previous.log` for the one before.
+«Папка логов» (logs folder) → «Открыть» (open) in the same section opens
+`%LOCALAPPDATA%\poe2-oracle\data\logs`, with `poe2-oracle.log` for the current run and
+`poe2-oracle.previous.log` for the one before.
 
 ## Reporting a bug
 
-Click «Сообщить об ошибке» (report a bug) in the tray icon's menu or in the settings, section
-«Диагностика». PoE2 Oracle then:
+Click «Сообщить об ошибке» (report a bug) in the tray icon's menu, or «Сообщить ↗» (report) in the
+settings, section «Помощь» (help). PoE2 Oracle then:
 
 1. writes the diagnostics report to your desktop and shows it in Explorer;
 2. opens GitHub's [bug report form](https://github.com/mttzzz/poe2-oracle/issues/new?template=bug_report.yml)

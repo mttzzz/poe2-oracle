@@ -49,8 +49,8 @@ without a number at the one its EE2 form stands for (`Loads an additional bolt`:
 a flag; ranges are comma-joined in key order. The order names the key stat printing each of the
 mod's stats, in the game's order, the one RePoE's text prints their numbers in: key indexes
 comma-joined, a line of two numbers giving its stat twice (`Adds (1-4) to (53-76) Lightning
-Damage`: 0,0), or `_` when the item's text can't give each stat its roll -- a line without a
-number, a hidden stat, a number in the wording.
+Damage`: 0,0), `=<number>` for a waystone line the item doesn't print, or `_` when the item's text
+can't give each stat its roll -- a line without a number, a hidden stat, a number in the wording.
 
 Usage (from the repo root, inside the lane):
     python3 packaging/data/generate_mod_tiers.py <RePoE data dir> <EE2 renderer/public/data dir>
@@ -376,10 +376,25 @@ def waystone_rows(base_items, affixes, forms, implied, owner):
                             "_" if ranges[h] is None else f"{number(ranges[h][0])}:{number(ranges[h][1])}"
                             for h in key.split("+")
                         ),
-                        "_" if len(shown_lines) < len(text) else stat_order(mod, text, pick, key.split("+")),
+                        waystone_order(mod, printed, pick, key.split("+")),
                     )
                 )
     return rows
+
+
+def waystone_order(mod, printed, pick, key):
+    """`stat_order` for a waystone mod: a line EE2 doesn't print gives its fixed numbers as
+    `=<number>`, which the site takes as rolls too."""
+    order, picks = [], iter(pick)
+    for line, hashes in printed:
+        runs = list(ROLL.finditer(shown(line)))
+        if not runs:
+            return "_"
+        if hashes:
+            order += [str(key.index(next(picks)))] * len(runs)
+        else:
+            order += [f"={number(float(run.group(4)))}" for run in runs]
+    return ",".join(order) if len(order) == len(mod["stats"]) else "_"
 
 
 if __name__ == "__main__":

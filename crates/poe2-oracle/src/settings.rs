@@ -1,5 +1,6 @@
-//! The player's settings. The settings window (`ui::settings_view`) edits a copy; the rest of the
-//! app reads them at startup and again after every save.
+//! The player's settings. The settings window (`ui::settings_view`) changes them a control at a
+//! time, each change saved and applied at once; the rest of the app reads them at startup and after
+//! every change.
 //!
 //! Stored as JSON in `paths::settings_file` -- `%APPDATA%\poe2-oracle\config\settings.json` on
 //! Windows (directories 5.0.1's `win.rs` joins the roaming app-data folder, the project path and
@@ -25,6 +26,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer, Serialize};
 use trade_client::ListingStatus;
 
+use crate::overlay_layout::PanelPositions;
 use crate::paths;
 
 /// The file layout [`Settings`] reads and writes. A change to what an existing field means bumps
@@ -50,6 +52,9 @@ pub struct Settings {
     /// The game client's language: the language copied items arrive in.
     #[serde(deserialize_with = "or_default")]
     pub client_language: ClientLanguage,
+    /// The language of the app's own words (`crate::i18n`).
+    #[serde(deserialize_with = "or_default")]
+    pub interface_language: InterfaceLanguage,
     /// Start with Windows. The registry is the truth here -- the installer and Task Manager change
     /// it too -- so read `platform::autostart::autostart_enabled` into this before showing it.
     pub autostart: bool,
@@ -83,6 +88,10 @@ pub struct Settings {
     /// [`MAX_QUICK_ACTIONS`].
     #[serde(deserialize_with = "or_default")]
     pub quick_actions: Vec<QuickAction>,
+    /// Where the player dragged the price panel, beside the inventory and beside the stash; a
+    /// side without one keeps EE2's placement.
+    #[serde(deserialize_with = "or_default")]
+    pub panel_positions: PanelPositions,
 }
 
 impl Default for Settings {
@@ -91,6 +100,7 @@ impl Default for Settings {
             version: SETTINGS_VERSION,
             league: LeagueChoice::default(),
             client_language: ClientLanguage::default(),
+            interface_language: InterfaceLanguage::default(),
             autostart: false,
             hotkey: Hotkey::default(),
             listing_status: ListingStatusChoice::default(),
@@ -108,6 +118,7 @@ impl Default for Settings {
                 text: "/hideout".to_owned(),
                 hotkey: None,
             }],
+            panel_positions: PanelPositions::default(),
         }
     }
 }
@@ -260,6 +271,18 @@ impl ClientLanguage {
             ClientLanguage::English => Some(ItemLanguage::English),
         }
     }
+}
+
+/// The language of the app's own words: labels, messages, number formats (`crate::i18n`).
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum InterfaceLanguage {
+    /// The game client's language, or before the game's first run the Windows display language
+    /// (`i18n::resolve`).
+    #[default]
+    Auto,
+    Russian,
+    English,
 }
 
 /// The sellers a price check searches: the choices the panel's "Продавцы" chip steps through
@@ -636,6 +659,10 @@ mod tests {
                 ("explicit.stat_1".to_owned(), WaystoneMark::Danger),
                 ("explicit.stat_2".to_owned(), WaystoneMark::Wanted),
             ]),
+            panel_positions: PanelPositions {
+                inventory: Some(0.3125),
+                stash: None,
+            },
             ..Settings::default()
         };
         save_to(&path, &settings).unwrap();

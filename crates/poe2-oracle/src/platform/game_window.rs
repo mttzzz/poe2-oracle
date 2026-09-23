@@ -1,6 +1,6 @@
 //! The running PoE2 client's window geometry, the cursor, and focus hand-back -- everything the
-//! price-check panel's EE2-style placement (`crate::overlay_layout`) and focus handling need from
-//! outside this process.
+//! price-check panel's EE2-style placement (`crate::overlay_layout`), its dragging and its focus
+//! handling need from outside this process.
 //!
 //! The game window is found by its title, `"Path of Exile 2"`, the same way EE2 attaches its
 //! overlay (`OverlayController.attachByTitle`, `main/src/windowing/GameWindow.ts`); the title is
@@ -16,17 +16,20 @@ use std::sync::LazyLock;
 use anyhow::{Result, bail};
 use windows::Win32::Foundation::{HWND, POINT, RECT};
 use windows::Win32::Graphics::Gdi::{
-    ClientToScreen, GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromPoint,
+    ClientToScreen, GetMonitorInfoW, HMONITOR, MONITOR_DEFAULTTONEAREST, MONITORINFO,
+    MonitorFromPoint, MonitorFromWindow,
 };
 use windows::Win32::UI::Accessibility::{HWINEVENTHOOK, SetWinEventHook};
 use windows::Win32::UI::HiDpi::{GetDpiForMonitor, GetDpiForWindow, MDT_EFFECTIVE_DPI};
+use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON};
 use windows::Win32::UI::WindowsAndMessaging::{
     EVENT_SYSTEM_FOREGROUND, FindWindowW, GetClientRect, GetCursorPos, GetForegroundWindow,
-    GetWindowThreadProcessId, SetForegroundWindow, WINEVENT_OUTOFCONTEXT,
+    GetSystemMetrics, GetWindowThreadProcessId, SM_SWAPBUTTON, SetForegroundWindow,
+    WINEVENT_OUTOFCONTEXT,
 };
 use windows::core::{PCWSTR, w};
 
-use crate::overlay_layout::{self, PhysicalRect};
+use crate::overlay_layout::{self, PanelPositions, PanelSide, PhysicalRect};
 
 /// The kind of each new foreground window; the receiving end is [`watch_foreground`]'s.
 static FOREGROUND_CHANGES: LazyLock<(
@@ -39,6 +42,23 @@ fn cursor_pos() -> Option<(i32, i32)> {
     let mut point = POINT::default();
     unsafe { GetCursorPos(&mut point) }.ok()?;
     Some((point.x, point.y))
+}
+
+/// The cursor's x on the screen, physical pixels.
+pub fn cursor_x() -> Option<i32> {
+    cursor_pos().map(|(x, _)| x)
+}
+
+/// Whether the primary mouse button is held: the left one, or the right one for a player who
+/// swapped them in Windows' settings -- `GetAsyncKeyState` reads the physical buttons.
+pub fn primary_button_down() -> bool {
+    let button = if unsafe { GetSystemMetrics(SM_SWAPBUTTON) } != 0 {
+        VK_RBUTTON
+    } else {
+        VK_LBUTTON
+    };
+    // The high bit is the button's state now: a negative `SHORT`.
+    (unsafe { GetAsyncKeyState(button.0.into()) } as i16) < 0
 }
 
 pub(crate) fn game_window() -> Option<HWND> {
@@ -69,21 +89,78 @@ pub fn game_client() -> Option<(PhysicalRect, f64)> {
     Some((rect, dpi_to_scale(unsafe { GetDpiForWindow(hwnd) })))
 }
 
-/// The game's client area and its DPI scale -- or, without a game window, the monitor under
-/// `point` and that monitor's scale.
-fn game_area(point: (i32, i32)) -> Option<(PhysicalRect, f64)> {
-    if let Some(game) = game_client() {
-        return Some(game);
+/// What the price panel is placed on: the game's client area, the monitor it's on, and the
+/// game's DPI scale -- or, without a game window, the monitor under a point standing in for the
+/// game, at that monitor's scale.
+#[derive(Debug, Clone, Copy)]
+pub struct GameScreen {
+    pub game: PhysicalRect,
+    pub monitor: PhysicalRect,
+    pub dpi_scale: f64,
+}
+
+impl GameScreen {
+    /// The screen around `point`.
+    fn at(point: (i32, i32)) -> Option<GameScreen> {
+        let game = game_window().and_then(|hwnd| {
+            let rect =
+                client_rect_on_screen(hwnd).filter(|rect| rect.width > 0 && rect.height > 0)?;
+            Some((hwnd, rect))
+        });
+        let monitor = monitor_of(game.map(|(hwnd, _)| hwnd), point);
+        if let Some((hwnd, rect)) = game {
+            return Some(GameScreen {
+                game: rect,
+                monitor: monitor_rect(monitor).unwrap_or(rect),
+                dpi_scale: dpi_to_scale(unsafe { GetDpiForWindow(hwnd) }),
+            });
+        }
+        let rect = monitor_rect(monitor)?;
+        let (mut dpi_x, mut dpi_y) = (0u32, 0u32);
+        let dpi_scale =
+            match unsafe { GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y) } {
+                Ok(()) => dpi_to_scale(dpi_x),
+                Err(_) => 1.0,
+            };
+        Some(GameScreen {
+            game: rect,
+            monitor: rect,
+            dpi_scale,
+        })
     }
-    let monitor = unsafe {
-        MonitorFromPoint(
-            POINT {
-                x: point.0,
-                y: point.1,
-            },
-            MONITOR_DEFAULTTONEAREST,
-        )
-    };
+
+    /// The screen around the cursor.
+    pub fn at_cursor() -> Option<GameScreen> {
+        GameScreen::at(cursor_pos().unwrap_or((0, 0)))
+    }
+}
+
+/// The monitor the game window `game` is on -- the one it overlaps most -- or, without one, the
+/// monitor under `point`.
+fn monitor_of(game: Option<HWND>, point: (i32, i32)) -> HMONITOR {
+    match game {
+        Some(hwnd) => unsafe { MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) },
+        None => unsafe {
+            MonitorFromPoint(
+                POINT {
+                    x: point.0,
+                    y: point.1,
+                },
+                MONITOR_DEFAULTTONEAREST,
+            )
+        },
+    }
+}
+
+/// The monitor the game is on -- or, without a game window, the one under the cursor -- as its
+/// `HMONITOR` value, which is what `gpui_windows` names a display by (`DisplayId`): the settings
+/// window opens on it.
+pub fn game_monitor() -> Option<u64> {
+    let monitor = monitor_of(game_window(), cursor_pos().unwrap_or((0, 0)));
+    (!monitor.is_invalid()).then_some(monitor.0 as u64)
+}
+
+fn monitor_rect(monitor: HMONITOR) -> Option<PhysicalRect> {
     let mut info = MONITORINFO {
         cbSize: std::mem::size_of::<MONITORINFO>() as u32,
         ..Default::default()
@@ -91,51 +168,51 @@ fn game_area(point: (i32, i32)) -> Option<(PhysicalRect, f64)> {
     if !unsafe { GetMonitorInfoW(monitor, &mut info) }.as_bool() {
         return None;
     }
-    let (mut dpi_x, mut dpi_y) = (0u32, 0u32);
-    let scale =
-        match unsafe { GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y) } {
-            Ok(()) => dpi_to_scale(dpi_x),
-            Err(_) => 1.0,
-        };
     let r = info.rcMonitor;
-    Some((
-        PhysicalRect {
-            x: r.left,
-            y: r.top,
-            width: r.right - r.left,
-            height: r.bottom - r.top,
-        },
-        scale,
-    ))
+    Some(PhysicalRect {
+        x: r.left,
+        y: r.top,
+        width: r.right - r.left,
+        height: r.bottom - r.top,
+    })
 }
 
 pub(crate) fn dpi_to_scale(dpi: u32) -> f64 {
     if dpi == 0 { 1.0 } else { f64::from(dpi) / 96.0 }
 }
 
-/// EE2's panel rect for a check triggered at the current cursor position (inventory side when
-/// the cursor is over the right half of the game, stash side otherwise), as wide as the player's
-/// `ui_scale` makes the panel. `None` only if even the cursor/monitor lookup fails.
-pub fn panel_rect_at_cursor(ui_scale: f32) -> Option<PhysicalRect> {
+/// The panel's rect and side for a check triggered at the current cursor position: beside the
+/// inventory when the cursor is over the right half of the game, beside the stash otherwise --
+/// where the player left it on that side (`positions`), else EE2's placement -- as wide as the
+/// player's `ui_scale` makes the panel. `None` only if even the cursor/monitor lookup fails.
+pub fn panel_at_cursor(
+    ui_scale: f32,
+    positions: &PanelPositions,
+) -> Option<(PhysicalRect, PanelSide)> {
     let (x, y) = cursor_pos()?;
-    let (game, dpi_scale) = game_area((x, y))?;
-    Some(overlay_layout::panel_rect(
-        game,
-        x,
-        dpi_scale * f64::from(ui_scale),
+    let screen = GameScreen::at((x, y))?;
+    let side = PanelSide::at(screen.game, x);
+    let scale = screen.dpi_scale * f64::from(ui_scale);
+    Some((
+        positions.rect(side, screen.game, screen.monitor, scale),
+        side,
     ))
 }
 
-/// Where the panel waits before the first check: the inventory side, since that's where most
-/// checks happen and where the Loading/Failed placeholders should show.
-pub fn default_panel_rect(ui_scale: f32) -> Option<PhysicalRect> {
-    let probe = cursor_pos().unwrap_or((0, 0));
-    let (game, dpi_scale) = game_area(probe)?;
+/// EE2's placement on `side`: where a double-click on the panel's title bar sends it back.
+pub fn automatic_panel_rect(side: PanelSide, ui_scale: f32) -> Option<PhysicalRect> {
+    let screen = GameScreen::at_cursor()?;
     Some(overlay_layout::panel_rect(
-        game,
-        game.x + game.width,
-        dpi_scale * f64::from(ui_scale),
+        screen.game,
+        side,
+        screen.dpi_scale * f64::from(ui_scale),
     ))
+}
+
+/// Where the panel waits before the first check: EE2's placement on the inventory side, since
+/// that's where most checks happen and where the Loading/Failed placeholders should show.
+pub fn default_panel_rect(ui_scale: f32) -> Option<PhysicalRect> {
+    automatic_panel_rect(PanelSide::Inventory, ui_scale)
 }
 
 /// Pause after handing keyboard focus back to the game, before synthesizing keys into it.

@@ -60,8 +60,6 @@ use windows::core::{HSTRING, Interface, PCWSTR, PWSTR, w};
 use crate::paths;
 use crate::platform::game_window::dpi_to_scale;
 
-/// Where the window starts.
-const LOGIN_PAGE: PCWSTR = w!("https://www.pathofexile.com/login");
 /// The site's session cookie.
 const SESSION_COOKIE: &str = "POESESSID";
 const CLASS_NAME: PCWSTR = w!("PoE2OracleSignIn");
@@ -94,6 +92,8 @@ struct Login {
     /// Tells this window's browser handlers from those of a window closed earlier.
     id: u64,
     events: Sender<LoginEvent>,
+    /// Where the window starts: the site's login page (`crate::login` picks its language).
+    page: HSTRING,
     /// The browser's profile folder.
     profile: PathBuf,
     environment: Option<ICoreWebView2Environment>,
@@ -122,9 +122,9 @@ pub fn runtime_version() -> Option<String> {
     Some(take_pwstr(version)).filter(|version| !version.is_empty())
 }
 
-/// Opens the sign-in window on pathofexile.com's login page, reporting to `events` until it
+/// Opens the sign-in window on `page`, the site's login page, reporting to `events` until it
 /// closes. Fails, with no window, when the browser can't be asked to start.
-pub fn open(events: Sender<LoginEvent>) -> Result<()> {
+pub fn open(page: &str, events: Sender<LoginEvent>) -> Result<()> {
     ensure!(
         LOGIN.with_borrow(Option::is_none),
         "the sign-in window is already open"
@@ -139,6 +139,7 @@ pub fn open(events: Sender<LoginEvent>) -> Result<()> {
         hwnd,
         id,
         events,
+        page: HSTRING::from(page),
         profile: profile.clone(),
         environment: None,
         controller: None,
@@ -270,16 +271,16 @@ fn on_controller(id: u64, controller: windows::core::Result<ICoreWebView2Control
         Ok(controller) => controller,
         Err(err) => return fail(id, &err),
     };
-    let Some(hwnd) = LOGIN.with_borrow_mut(|login| {
+    let Some((hwnd, page)) = LOGIN.with_borrow_mut(|login| {
         let login = login.as_mut().filter(|login| login.id == id)?;
         login.controller = Some(controller.clone());
-        Some(login.hwnd)
+        Some((login.hwnd, login.page.clone()))
     }) else {
         // SAFETY: a view nothing else uses.
         let _ = unsafe { controller.Close() };
         return;
     };
-    if let Err(err) = show_login_page(id, hwnd, &controller) {
+    if let Err(err) = show_login_page(id, hwnd, &page, &controller) {
         fail(id, &err);
     }
 }
@@ -287,6 +288,7 @@ fn on_controller(id: u64, controller: windows::core::Result<ICoreWebView2Control
 fn show_login_page(
     id: u64,
     hwnd: HWND,
+    page: &HSTRING,
     controller: &ICoreWebView2Controller,
 ) -> windows::core::Result<()> {
     let page_loaded = NavigationCompletedEventHandler::create(Box::new(move |webview, _| {
@@ -330,7 +332,7 @@ fn show_login_page(
         let mut token = 0;
         webview.add_NavigationCompleted(&page_loaded, &mut token)?;
         webview.add_NewWindowRequested(&new_window, &mut token)?;
-        webview.Navigate(LOGIN_PAGE)?;
+        webview.Navigate(page)?;
         // Keys go to the page. Fails while the window is minimized: then its next focus does it.
         let _ = controller.MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
     }

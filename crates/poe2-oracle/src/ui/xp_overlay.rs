@@ -16,13 +16,19 @@
 //! The window is opaque and sized to what it shows: a transparent `PopUp` background still tints
 //! the game behind it (see `Win32Overlay::set_shown`), which an overlay that stays up for whole
 //! mapping sessions can't afford. It follows the interface scale like the price panel.
+//!
+//! It wears the game-styled look the other windows share (`ui::style`): a near-black bar lit warm
+//! from the top, in the thin double gold frame -- too low for corner ornaments, so a diamond sits
+//! at the middle of each end instead -- with a small diamond between the parts. The rate is gold,
+//! the values bright and the words saying what they are dim; a pause dims each a step, ornaments
+//! included, easing there and back over `style::TRANSITION`.
 
 use std::time::{Duration, Instant};
 
 use gpui::{
-    AnyElement, App, AsyncApp, Bounds, Context, Entity, FontWeight, IntoElement, Render,
-    WeakEntity, Window, WindowBounds, WindowKind, WindowOptions, div, point, prelude::*, px, rgb,
-    size,
+    AnyElement, App, AsyncApp, Bounds, Context, Div, Entity, FontWeight, IntoElement, Render,
+    SharedString, WeakEntity, Window, WindowBounds, WindowKind, WindowOptions, div, point,
+    prelude::*, px, rgb, size,
 };
 
 use crate::overlay_layout::PhysicalRect;
@@ -30,8 +36,9 @@ use crate::platform::client_log::{self, ClientLog};
 use crate::platform::win32::Win32Overlay;
 use crate::platform::xp_bar::{self, BarSample};
 use crate::settings::Settings;
+use crate::ui::style::{bar_frame, diamond, ease_state, title_gradient};
 use crate::ui::theme::{
-    BASE_REM_SIZE, BG_PANEL, BORDER_GOLD, GOLD, TEXT, TEXT_DIM, TEXT_MUTED, rems_from_px,
+    BASE_REM_SIZE, BORDER_GOLD, GOLD, GOLD_LIGHT, TEXT, TEXT_DIM, TEXT_MUTED, blend, rems_from_px,
 };
 use crate::xp_tracker::{
     Activity, MapStatus, RunState, XpStatus, XpTracker, format_clock, format_duration,
@@ -41,10 +48,11 @@ use crate::xp_tracker::{
 const SAMPLE_INTERVAL: Duration = Duration::from_secs(2);
 /// The window's logical height at 100 % scale.
 const HEIGHT: f32 = 26.;
-/// Logical widths at 100 % scale: each part's longest wording plus the frame's padding and the
-/// `·` between parts -- `+123 %/ч · до 100 ур. 23 ч 59 мин игры` for the rate and
-/// `пауза · 23 ч 59 мин` in its place in a pause; `карта 1:23:45 +12,5 %` for the map, with
-/// `последняя ` before it for the last one and ` · ср. 12:34` after it outside a pause.
+/// Logical widths at 100 % scale: each part's longest wording plus the frame's padding -- where
+/// its end diamonds sit -- and the diamond between parts: `+123 %/ч · до 100 ур. 23 ч 59 мин
+/// игры` for the rate and `пауза · 23 ч 59 мин` in its place in a pause; `карта 1:23:45 +12,5 %`
+/// for the map, with `последняя ` before it for the last one and ` · ср. 12:34` after it outside
+/// a pause.
 const PADDING_WIDTH: f32 = 24.;
 const SEPARATOR_WIDTH: f32 = 16.;
 const PERCENT_WIDTH: f32 = 64.;
@@ -53,6 +61,11 @@ const PAUSE_WIDTH: f32 = 138.;
 const MAP_WIDTH: f32 = 152.;
 const LAST_MAP_WIDTH: f32 = 79.;
 const AVERAGE_WIDTH: f32 = 78.;
+/// The space between a part's words, between the parts and their diamond, and the diamond's size,
+/// at 100 % scale.
+const WORD_GAP: f32 = 4.;
+const PART_GAP: f32 = 6.;
+const SEPARATOR_DIAMOND: f32 = 4.;
 
 /// What the overlay shows and how big, from the player's settings.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -302,130 +315,145 @@ impl XpOverlay {
         })
         .detach();
     }
+}
 
-    /// `+12,4 %/ч · до 75 ур. 1 ч 32 мин игры`, or the wait for a first rate.
-    fn rate_part(&self) -> AnyElement {
-        let status = self.status;
-        let Some(rate) = status.rate_per_hour else {
-            // The first two minutes of play, before there is a rate to show.
-            return div()
-                .text_color(rgb(TEXT_DIM))
-                .child("замер скорости…")
-                .into_any_element();
-        };
-        let target = match status.level {
-            Some(level) => format!("до {} ур.", level + 1),
-            None => "до ур.".to_owned(),
-        };
-        let eta = status.time_to_level().map_or_else(
-            || "—".to_owned(),
-            |eta| format!("{} игры", format_duration(eta)),
-        );
-        div()
-            .flex()
-            .items_center()
-            .gap(rems_from_px(6.))
-            .child(
-                div()
-                    .text_color(rgb(GOLD))
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .child(format_rate(rate)),
-            )
-            .child(separator())
-            .child(format!("{target} {eta}"))
-            .into_any_element()
-    }
+/// The line's colours, `lit` (0 to 1) of the way from its dimmed pause look to its play look: the
+/// values, the words saying what they are, the rate, and the diamonds between the parts.
+#[derive(Clone, Copy)]
+struct Tones {
+    value: u32,
+    label: u32,
+    rate: u32,
+    separator: u32,
+}
 
-    /// `пауза · 12 мин`: how long the player has been out of play, in place of the rate.
-    fn pause_part(elapsed: Duration) -> AnyElement {
-        div()
-            .flex()
-            .items_center()
-            .gap(rems_from_px(6.))
-            .child("пауза")
-            .child(separator())
-            .child(format_duration(elapsed))
-            .into_any_element()
-    }
-
-    /// `карта 4:07 +1,2 % · ср. 6:30`, dimmed once the character has left the run, and
-    /// `последняя карта 9:00 +3,66 %` once it is the last one; without the average in a pause.
-    fn map_part(map: MapStatus, paused: bool) -> AnyElement {
-        let label = if map.state == RunState::Last {
-            "последняя карта"
-        } else {
-            "карта"
-        };
-        let mut text = format!("{label} {}", format_clock(map.time));
-        if map.gained > 0.0 {
-            text += &format!(" +{} %", format_percent(map.gained));
+impl Tones {
+    fn at(lit: f32) -> Tones {
+        Tones {
+            value: blend(TEXT_DIM, TEXT, lit),
+            label: blend(TEXT_MUTED, TEXT_DIM, lit),
+            rate: blend(TEXT_DIM, GOLD_LIGHT, lit),
+            separator: blend(BORDER_GOLD, GOLD, 0.6 * lit),
         }
-        let lit = map.state == RunState::Running && !paused;
-        div()
-            .flex()
-            .items_center()
-            .gap(rems_from_px(6.))
-            .child(
-                div()
-                    .text_color(rgb(if lit { TEXT } else { TEXT_DIM }))
-                    .child(text),
-            )
-            .children(map.average.filter(|_| !paused).map(|average| {
-                div()
-                    .text_color(rgb(TEXT_DIM))
-                    .child(format!("· ср. {}", format_clock(average)))
-            }))
-            .into_any_element()
     }
 }
 
-fn separator() -> impl IntoElement {
-    div().text_color(rgb(TEXT_MUTED)).child("·")
+/// A part's words in a row, a space apart.
+fn words() -> Div {
+    div().flex().items_center().gap(rems_from_px(WORD_GAP))
+}
+
+/// A word -- or a value read as one, `1 ч 32 мин` -- in `color`.
+fn word(text: impl Into<SharedString>, color: u32) -> Div {
+    div().text_color(rgb(color)).child(text.into())
+}
+
+/// `+12,4 %/ч · до 75 ур. 1 ч 32 мин игры`, or the wait for a first rate.
+fn rate_part(status: XpStatus, tones: Tones) -> AnyElement {
+    let Some(rate) = status.rate_per_hour else {
+        // The first two minutes of play, before there is a rate to show.
+        return word("замер скорости…", tones.label).into_any_element();
+    };
+    let target = match status.level {
+        Some(level) => format!("до {} ур.", level + 1),
+        None => "до ур.".to_owned(),
+    };
+    words()
+        .child(word(format_rate(rate), tones.rate).font_weight(FontWeight::SEMIBOLD))
+        .child(word("·", TEXT_MUTED))
+        .child(word(target, tones.label))
+        .map(|this| match status.time_to_level() {
+            Some(eta) => this
+                .child(word(format_duration(eta), tones.value))
+                .child(word("игры", tones.label)),
+            None => this.child(word("—", tones.label)),
+        })
+        .into_any_element()
+}
+
+/// `пауза · 12 мин`: how long the player has been out of play, in place of the rate.
+fn pause_part(elapsed: Duration, tones: Tones) -> AnyElement {
+    words()
+        .child(word("пауза", tones.value))
+        .child(word("·", TEXT_MUTED))
+        .child(word(format_duration(elapsed), tones.value))
+        .into_any_element()
+}
+
+/// `карта 4:07 +1,2 % · ср. 6:30`, dimmed once the character has left the run, and
+/// `последняя карта 9:00 +3,66 %` once it is the last one; without the average in a pause.
+fn map_part(map: MapStatus, paused: bool, tones: Tones) -> AnyElement {
+    let tones = if map.state == RunState::Running {
+        tones
+    } else {
+        Tones::at(0.)
+    };
+    let label = if map.state == RunState::Last {
+        "последняя карта"
+    } else {
+        "карта"
+    };
+    words()
+        .child(word(label, tones.label))
+        .child(word(format_clock(map.time), tones.value))
+        .when(map.gained > 0.0, |this| {
+            this.child(word(
+                format!("+{} %", format_percent(map.gained)),
+                tones.value,
+            ))
+        })
+        .when_some(map.average.filter(|_| !paused), |this, average| {
+            this.child(word("·", TEXT_MUTED))
+                .child(word("ср.", tones.label))
+                .child(word(format_clock(average), tones.label))
+        })
+        .into_any_element()
 }
 
 impl Render for XpOverlay {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.ensure_overlay(window, cx);
         window.set_rem_size(px(BASE_REM_SIZE * self.options.ui_scale));
+        let status = self.status;
+        let percent = self
+            .options
+            .show_percent
+            .then_some(status.fraction)
+            .flatten();
+        let map = self.map_status();
         let paused = self.paused();
-        let mut parts: Vec<AnyElement> = Vec::new();
-        if self.options.show_percent
-            && let Some(fraction) = self.status.fraction
-        {
-            parts.push(
-                div()
-                    .child(format!("{} %", format_percent(fraction)))
-                    .into_any_element(),
-            );
-        }
-        parts.push(match self.status.activity {
-            Activity::Playing => self.rate_part(),
-            Activity::Paused { elapsed, .. } => Self::pause_part(elapsed),
-        });
-        if let Some(map) = self.map_status() {
-            parts.push(Self::map_part(map, paused));
-        }
-        let mut line = div()
-            .flex()
-            .items_center()
-            .gap(rems_from_px(6.))
-            .whitespace_nowrap();
-        for (index, part) in parts.into_iter().enumerate() {
-            if index > 0 {
-                line = line.child(separator());
-            }
-            line = line.child(part);
-        }
-        div()
+        let surface = div()
+            .relative()
             .size_full()
             .flex()
             .items_center()
             .justify_center()
-            .bg(rgb(BG_PANEL))
-            .border_1()
-            .border_color(rgb(BORDER_GOLD))
-            .text_sm()
-            .text_color(rgb(if paused { TEXT_DIM } else { TEXT }))
-            .child(line)
+            .bg(title_gradient())
+            .text_size(rems_from_px(14.))
+            .whitespace_nowrap();
+        ease_state("playing", !paused, surface, move |surface, lit| {
+            let tones = Tones::at(lit);
+            let mut parts: Vec<AnyElement> = Vec::new();
+            if let Some(fraction) = percent {
+                parts.push(
+                    word(format!("{} %", format_percent(fraction)), tones.value).into_any_element(),
+                );
+            }
+            parts.push(match status.activity {
+                Activity::Playing => rate_part(status, tones),
+                Activity::Paused { elapsed, .. } => pause_part(elapsed, tones),
+            });
+            if let Some(map) = map {
+                parts.push(map_part(map, paused, tones));
+            }
+            let mut line = div().flex().items_center().gap(rems_from_px(PART_GAP));
+            for (index, part) in parts.into_iter().enumerate() {
+                if index > 0 {
+                    line = line.child(diamond(SEPARATOR_DIAMOND, tones.separator));
+                }
+                line = line.child(part);
+            }
+            surface.child(line).child(bar_frame(lit))
+        })
     }
 }

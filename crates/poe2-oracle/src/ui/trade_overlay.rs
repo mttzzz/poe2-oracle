@@ -5,15 +5,21 @@
 //! The window is interactive and shown only while it has cards, the game (or this app) is in
 //! front -- a task looks every second -- and the price panel is closed. A click never activates it
 //! (`Win32Overlay::set_no_activate`): the game keeps the keyboard.
+//!
+//! It is drawn as the game's windows are (`ui::style`): a near-black panel in the double gold
+//! frame with corner ornaments, its cards a step above it casting the tooltip shadow, each lit
+//! from the left by its colour -- gold for a listing, red for an ended watch -- and titled in the
+//! heading face. A card rises in once, as it comes; nothing moves after that but hovers.
 
 use std::time::Duration;
 
 use async_channel::Receiver;
 use gpui::{
-    App, AsyncApp, Bounds, ClipboardItem, Context, Entity, FontWeight, IntoElement, MouseButton,
+    App, AsyncApp, Bounds, ClipboardItem, Context, Div, Entity, FontWeight, IntoElement,
     MouseDownEvent, Render, WeakEntity, Window, WindowBounds, WindowKind, WindowOptions, div,
-    point, prelude::*, px, rgb, size,
+    linear_color_stop, linear_gradient, point, prelude::*, px, relative, rgb, size,
 };
+use trade_client::TradeSite;
 use windows::Win32::System::SystemInformation::GetLocalTime;
 
 use crate::live_search::{LiveCard, LiveListing, SHOWN_LISTINGS};
@@ -22,20 +28,30 @@ use crate::platform::game_window::{self, Foreground};
 use crate::platform::win32::Win32Overlay;
 use crate::price_check::PriceCheckApp;
 use crate::settings::Settings;
-use crate::ui::hint::hint;
+use crate::ui::fonts;
 use crate::ui::panel::format::{currency_img, format_ru};
+use crate::ui::style::{
+    ButtonKind, CARD_RADIUS, appear, game_frame, game_hint, heading, icon_button, small_button,
+    tooltip_shadow,
+};
 use crate::ui::theme::{
-    BASE_REM_SIZE, BG_BUTTON_HOVER, BG_CLOSE_HOVER, BG_CONTROL, BG_NAMEPLATE, BG_PANEL, BORDER,
-    BORDER_GOLD, GOLD, PRICE_RISE, TEXT, TEXT_DIM, TEXT_MUTED, TEXT_WARNING, rems_from_px,
+    BASE_REM_SIZE, BG_CARD, BG_PANEL, BORDER_CARD, GOLD, GOLD_LIGHT, PRICE_RISE, TEXT, TEXT_DIM,
+    TEXT_MUTED, TEXT_WARNING, blend, rems_from_px,
 };
 
 const POLL_INTERVAL: Duration = Duration::from_secs(1);
-/// The window's logical width, a card's height, the gap between cards and the frame's padding, all
-/// at 100 % scale.
+/// The window's logical width, a card's height, the gap between cards and the frame's padding --
+/// wide enough to keep the cards clear of its corner ornaments -- all at 100 % scale.
 const WIDTH: f32 = 450.;
 const LIVE_CARD_HEIGHT: f32 = 92.;
-const GAP: f32 = 6.;
-const PADDING: f32 = 6.;
+const GAP: f32 = 8.;
+const PADDING: f32 = 12.;
+/// How much of its colour a card's left end takes, fading out by its middle.
+const ACCENT_GLOW: f32 = 0.08;
+/// Room the card's title leaves at its right for the ×, at 100 % scale.
+const DISMISS_ROOM: f32 = 24.;
+const WHISPER_HINT: &str =
+    "Сообщение продавцу — в буфер обмена: вставьте его в чат игры и отправьте сами";
 /// Where the window's top sits below the game's, as a share of the game's height: under the top
 /// edge's boss bar and area banner.
 const TOP: f64 = 0.1;
@@ -312,7 +328,8 @@ impl TradeOverlay {
     }
 
     /// A live search card: a new listing -- what, for how much, from whom, with its whisper to
-    /// copy and the search to open on the trade site -- or a watch the site ended, and why.
+    /// copy and the search to open on the trade site -- or a watch the site ended, and why. It
+    /// rises in once, as it comes.
     fn render_live_card(
         &self,
         shown: &LiveShown,
@@ -320,67 +337,76 @@ impl TradeOverlay {
         cx: &Context<Self>,
     ) -> impl IntoElement {
         let id = shown.id;
+        let face = fonts::name_font(TradeSite::Russian);
         let header = |title: String, color: u32| {
             div()
                 .flex()
                 .items_center()
-                .gap(rems_from_px(6.))
+                .gap(rems_from_px(8.))
+                .pr(rems_from_px(DISMISS_ROOM))
                 .child(
-                    div()
+                    heading(face)
                         .flex_1()
                         .min_w_0()
                         .truncate()
+                        .text_size(rems_from_px(14.))
                         .text_color(rgb(color))
-                        .font_weight(FontWeight::SEMIBOLD)
                         .child(title),
                 )
                 .child(
                     div()
                         .flex_none()
-                        .text_xs()
-                        .text_color(rgb(TEXT_DIM))
+                        .text_size(rems_from_px(11.))
+                        .text_color(rgb(TEXT_MUTED))
                         .child(shown.time.clone()),
                 )
-                .child(close_button(id, cx))
         };
-        match &shown.card {
+        let dismiss = div()
+            .absolute()
+            .top(rems_from_px(3.))
+            .right(rems_from_px(3.))
+            .child(icon_button(
+                ("dismiss", id),
+                "×",
+                true,
+                cx.listener(move |view, _: &MouseDownEvent, _, cx| view.dismiss(id, cx)),
+            ));
+        let card = match &shown.card {
             LiveCard::Listing(listing) => {
                 let price = listing
                     .price
                     .as_ref()
                     .map(|(amount, currency)| price_tag(*amount, currency, icon));
                 let whisper = if listing.whisper.is_none() {
-                    div()
-                        .flex_none()
-                        .text_xs()
-                        .text_color(rgb(TEXT_DIM))
-                        .child("мгновенный выкуп")
-                        .into_any_element()
+                    status_note("мгновенный выкуп", TEXT_DIM).into_any_element()
                 } else if shown.copied {
-                    card_button("Скопировано ✓", PRICE_RISE).into_any_element()
+                    status_note("Скопировано ✓", PRICE_RISE).into_any_element()
                 } else {
-                    card_button("Скопировать шёпот", TEXT)
-                        .id(("copy-whisper", id))
-                        .tooltip(hint(
-                            "Сообщение продавцу — в буфер обмена: вставьте его в чат игры и \
-                             отправьте сами",
-                        ))
-                        .on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(move |view, _event: &MouseDownEvent, _window, cx| {
+                    div()
+                        .id(("whisper", id))
+                        .flex_none()
+                        .tooltip(game_hint(face, None, vec![(WHISPER_HINT.into(), TEXT)]))
+                        .child(small_button(
+                            ("copy-whisper", id),
+                            "Скопировать шёпот",
+                            ButtonKind::Secondary,
+                            face,
+                            cx.listener(move |view, _: &MouseDownEvent, _, cx| {
                                 view.copy_whisper(id, cx);
                             }),
-                        )
+                        ))
                         .into_any_element()
                 };
                 let trade_url = listing.trade_url.clone();
-                card_frame(LIVE_CARD_HEIGHT, BORDER_GOLD)
-                    .child(header(format!("◉ Слежение · {}", listing.search), GOLD))
+                // Its three rows spread over the card, what they leave shared between them.
+                card(GOLD)
+                    .justify_between()
+                    .child(header(format!("Слежение · {}", listing.search), GOLD_LIGHT))
                     .child(
                         div()
                             .flex()
                             .items_center()
-                            .gap(rems_from_px(8.))
+                            .gap(rems_from_px(10.))
                             .child(
                                 div()
                                     .flex_1()
@@ -394,57 +420,89 @@ impl TradeOverlay {
                         div()
                             .flex()
                             .items_center()
-                            .gap(rems_from_px(4.))
+                            .gap(rems_from_px(6.))
                             .child(
                                 div()
+                                    .flex()
                                     .flex_1()
                                     .min_w_0()
-                                    .truncate()
-                                    .text_xs()
-                                    .text_color(rgb(TEXT_DIM))
-                                    .child(format!("продаёт {}", listing.seller)),
+                                    .gap(rems_from_px(4.))
+                                    .text_size(rems_from_px(12.))
+                                    .child(
+                                        div()
+                                            .flex_none()
+                                            .text_color(rgb(TEXT_MUTED))
+                                            .child("продаёт"),
+                                    )
+                                    .child(
+                                        div()
+                                            .min_w_0()
+                                            .truncate()
+                                            .text_color(rgb(TEXT_DIM))
+                                            .child(listing.seller.clone()),
+                                    ),
                             )
                             .child(whisper)
-                            .child(card_button("Открыть на сайте", TEXT).on_mouse_down(
-                                MouseButton::Left,
-                                move |_event: &MouseDownEvent, _window, cx: &mut App| {
+                            .child(small_button(
+                                ("open-site", id),
+                                "Открыть на сайте",
+                                ButtonKind::Secondary,
+                                face,
+                                move |_: &MouseDownEvent, _: &mut Window, cx: &mut App| {
                                     cx.open_url(&trade_url);
                                 },
                             )),
                     )
-                    .into_any_element()
             }
-            LiveCard::Ended { label, reason } => card_frame(LIVE_CARD_HEIGHT, TEXT_WARNING)
+            LiveCard::Ended { label, reason } => card(TEXT_WARNING)
                 .child(header(
                     format!("Слежение остановлено · {label}"),
                     TEXT_WARNING,
                 ))
                 .child(
                     div()
-                        .text_xs()
+                        .text_size(rems_from_px(12.))
                         .text_color(rgb(TEXT_DIM))
                         .child(format!("Причина: {reason}.")),
-                )
-                .into_any_element(),
-        }
+                ),
+        };
+        appear(("card", id), card.child(dismiss))
     }
 }
 
-/// A card's box, `height` tall at 100 % scale, edged in `border`.
-fn card_frame(height: f32, border: u32) -> gpui::Div {
+/// A card's surface, `LIVE_CARD_HEIGHT` tall at 100 % scale: a step above the window, lit from
+/// the left by `accent` with a bar of it along its left edge, casting the tooltip shadow.
+fn card(accent: u32) -> Div {
     div()
+        .relative()
         .flex()
         .flex_col()
         .flex_none()
-        .h(rems_from_px(height))
+        .h(rems_from_px(LIVE_CARD_HEIGHT))
         .overflow_hidden()
-        .gap(rems_from_px(4.))
-        .px(rems_from_px(10.))
+        .gap(rems_from_px(5.))
+        .pl(rems_from_px(14.))
+        .pr(rems_from_px(10.))
         .py(rems_from_px(7.))
-        .rounded_xs()
-        .bg(rgb(BG_NAMEPLATE))
+        .rounded(rems_from_px(CARD_RADIUS))
+        .bg(linear_gradient(
+            90.,
+            linear_color_stop(rgb(blend(BG_CARD, accent, ACCENT_GLOW)), 0.),
+            linear_color_stop(rgb(BG_CARD), 0.5),
+        ))
         .border_1()
-        .border_color(rgb(border))
+        .border_color(rgb(BORDER_CARD))
+        .shadow(tooltip_shadow())
+        .child(
+            div()
+                .absolute()
+                .left_0()
+                .top(rems_from_px(12.))
+                .bottom(rems_from_px(12.))
+                .w(px(2.))
+                .rounded_full()
+                .bg(rgb(accent)),
+        )
 }
 
 /// A price: its amount, and its currency's icon -- or name, without one.
@@ -455,56 +513,21 @@ fn price_tag(amount: f64, currency: &str, icon: Option<String>) -> impl IntoElem
         .flex_none()
         .items_center()
         .gap(rems_from_px(4.))
+        .text_size(rems_from_px(15.))
         .text_color(rgb(TEXT))
         .font_weight(FontWeight::SEMIBOLD)
         .child(format_ru(amount))
-        .children(currency_img(icon.as_deref(), 18.))
+        .children(currency_img(icon.as_deref(), 20.))
         .children(name)
 }
 
-/// A card's ×, which takes card `id` away.
-fn close_button(id: u64, cx: &Context<TradeOverlay>) -> impl IntoElement {
+/// What stands in the whisper button's place when there is nothing to copy -- or it is copied.
+fn status_note(text: &'static str, color: u32) -> Div {
     div()
-        .w(rems_from_px(20.))
-        .h(rems_from_px(20.))
-        .flex()
         .flex_none()
-        .items_center()
-        .justify_center()
-        .rounded_xs()
-        .text_color(rgb(TEXT_MUTED))
-        .cursor_pointer()
-        .hover(|style| style.bg(rgb(BG_CLOSE_HOVER)).text_color(rgb(TEXT)))
-        .on_mouse_down(
-            MouseButton::Left,
-            cx.listener(move |view, _event: &MouseDownEvent, _window, cx| {
-                view.dismiss(id, cx);
-            }),
-        )
-        .child("×")
-}
-
-/// A card's button, its label in `color`.
-fn card_button(label: &'static str, color: u32) -> gpui::Div {
-    div()
-        .h(rems_from_px(24.))
-        .px(rems_from_px(7.))
-        .flex()
-        .flex_none()
-        .items_center()
-        .rounded_xs()
-        .border_1()
-        .border_color(rgb(BORDER))
-        .bg(rgb(BG_CONTROL))
-        .text_xs()
+        .text_size(rems_from_px(12.))
         .text_color(rgb(color))
-        .cursor_pointer()
-        .hover(|style| {
-            style
-                .bg(rgb(BG_BUTTON_HOVER))
-                .border_color(rgb(BORDER_GOLD))
-        })
-        .child(label)
+        .child(text)
 }
 
 impl Render for TradeOverlay {
@@ -528,15 +551,15 @@ impl Render for TradeOverlay {
             })
             .collect();
         div()
+            .relative()
             .size_full()
             .flex()
             .flex_col()
             .gap(rems_from_px(GAP))
             .p(rems_from_px(PADDING))
             .bg(rgb(BG_PANEL))
-            .border_1()
-            .border_color(rgb(BORDER_GOLD))
-            .text_sm()
+            .text_size(rems_from_px(14.))
+            .line_height(relative(1.35))
             .text_color(rgb(TEXT))
             .children(
                 self.live
@@ -544,5 +567,6 @@ impl Render for TradeOverlay {
                     .zip(icons)
                     .map(|(shown, icon)| self.render_live_card(shown, icon, cx)),
             )
+            .child(game_frame())
     }
 }

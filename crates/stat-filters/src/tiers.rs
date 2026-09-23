@@ -5,7 +5,8 @@
 //! modifier's lines to -- and lists every tier, T1 first: the item level it needs, its RePoE mod
 //! id, its tags, each stat's roll range and the order the game lists its stats in. Desecrated
 //! (Abyssal) mods have families of their own: the client numbers their tiers apart from the
-//! ordinary ones of the same stats.
+//! ordinary ones of the same stats. So have waystones, one set per waystone tier
+//! (`map.waystone:<tier>`), which only `game_mod` looks up: their mods roll by the tier.
 
 use std::collections::HashMap;
 use std::sync::LazyLock;
@@ -83,10 +84,18 @@ pub(crate) struct Tier {
     /// Each key stat's roll range as the item prints it, in `Family::stats` order; `None` for a
     /// flag.
     ranges: Vec<Option<(f64, f64)>>,
-    /// The key stat printing each of the mod's stats, in the game's own order (indexes into
-    /// `Family::stats`, a line printing two numbers twice); `None` when the item's text can't
-    /// give each stat its roll -- a line without a number, a hidden stat.
-    order: Option<Vec<usize>>,
+    /// Where each of the mod's stats is printed, in the game's own order: a key stat (an index
+    /// into `Family::stats`, a line printing two numbers twice) or a fixed number the item doesn't
+    /// print; `None` when the item's text can't give each stat its roll -- a line without a
+    /// number, a hidden stat.
+    order: Option<Vec<Source>>,
+}
+
+/// Where one of a tier's stats is printed.
+#[derive(Debug, Clone, Copy)]
+enum Source {
+    Key(usize),
+    Fixed(f64),
 }
 
 /// Which mods a family's tiers are.
@@ -207,15 +216,23 @@ const ROLL_SLACK: f64 = 1e-6;
 
 /// A mod as the game knows it, for a tool that takes an item by the game's own ids (Craft of
 /// Exile's item import).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct GameMod {
     /// RePoE's id of the mod (`IncreasedLife7`), the game's own.
     pub id: &'static str,
-    /// Where the item prints the roll of each of the mod's stats, in the game's order of them:
-    /// the index of the line in the modifier's `stats` and which of that line's numbers it is
-    /// (`Adds 1 to 50 Lightning Damage` prints two). `None` when the item's text can't give each
-    /// stat its roll: a line without a number, a hidden stat.
-    pub rolls: Option<Vec<(usize, usize)>>,
+    /// The roll of each of the mod's stats, in the game's order of them; `None` when the item's
+    /// text can't give each its roll: a line without a number, a hidden stat.
+    pub rolls: Option<Vec<Roll>>,
+}
+
+/// Where the item has the roll of one of a mod's stats.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Roll {
+    /// The `number`th number (from 0) the modifier's `stats[line]` prints: `Adds 1 to 50
+    /// Lightning Damage` prints two.
+    Printed { line: usize, number: usize },
+    /// A number the item doesn't print: a waystone mod's share of its properties.
+    Fixed(f64),
 }
 
 /// `modifier`'s mod on `item` as the game knows it: the tier the item prints, once each of its
@@ -259,10 +276,16 @@ pub fn game_mod(item: &ParsedItem, modifier: &ParsedModifier) -> Option<GameMod>
         let mut taken = vec![0; family.stats.len()];
         order
             .iter()
-            .map(|&key| {
-                let line = keys.iter().position(|&line_key| line_key == key)?;
-                taken[key] += 1;
-                Some((line, taken[key] - 1))
+            .map(|&source| match source {
+                Source::Fixed(value) => Some(Roll::Fixed(value)),
+                Source::Key(key) => {
+                    let line = keys.iter().position(|&line_key| line_key == key)?;
+                    taken[key] += 1;
+                    Some(Roll::Printed {
+                        line,
+                        number: taken[key] - 1,
+                    })
+                }
             })
             .collect()
     });
@@ -312,7 +335,14 @@ fn parse(table: &'static str) -> Result<HashMap<&'static str, Vec<Family>>, Stri
                 order => Some(
                     order
                         .split(',')
-                        .map(|key| key.parse().ok().filter(|&key| key < stats.len()))
+                        .map(|source| match source.strip_prefix('=') {
+                            Some(value) => value.parse().ok().map(Source::Fixed),
+                            None => source
+                                .parse()
+                                .ok()
+                                .filter(|&key| key < stats.len())
+                                .map(Source::Key),
+                        })
                         .collect::<Option<_>>()
                         .ok_or_else(|| bad("order"))?,
                 ),
@@ -521,7 +551,7 @@ mod tests {
             game_mod(&chest, &life(180.0)),
             Some(GameMod {
                 id: "IncreasedLife11",
-                rolls: Some(vec![(0, 0)]),
+                rolls: Some(vec![Roll::Printed { line: 0, number: 0 }]),
             })
         );
         // A roll T3 can't have: the table describes another game than the item, no id.
@@ -545,7 +575,10 @@ mod tests {
             game_mod(&item_of("accessory.ring"), &hybrid),
             Some(GameMod {
                 id: "LightRadiusAndManaRegeneration1",
-                rolls: Some(vec![(1, 0), (0, 0)]),
+                rolls: Some(vec![
+                    Roll::Printed { line: 1, number: 0 },
+                    Roll::Printed { line: 0, number: 0 },
+                ]),
             })
         );
 
@@ -561,7 +594,10 @@ mod tests {
             game_mod(&item_of("weapon.twomace"), &lightning),
             Some(GameMod {
                 id: "LocalAddedLightningDamageTwoHand4",
-                rolls: Some(vec![(0, 0), (0, 1)]),
+                rolls: Some(vec![
+                    Roll::Printed { line: 0, number: 0 },
+                    Roll::Printed { line: 0, number: 1 },
+                ]),
             })
         );
     }

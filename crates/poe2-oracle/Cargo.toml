@@ -108,8 +108,11 @@ zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2
 # Credential Manager -- src/platform/credentials.rs).
 # `Win32_System_Time` (the hours an exchange price comes from, on the player's clock --
 # src/ui/panel/market.rs).
+# `Win32_Globalization` (the Windows display language, which «Авто» interface language follows
+# before the game's first run -- src/i18n.rs).
 windows = { version = "0.62", features = [
     "Win32_Foundation",
+    "Win32_Globalization",
     "Win32_Graphics_Dwm",
     "Win32_Graphics_Gdi",
     "Win32_Security_Credentials",

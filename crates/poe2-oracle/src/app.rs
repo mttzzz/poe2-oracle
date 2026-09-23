@@ -8,7 +8,8 @@
 //! re-syncs the platform window every time `PriceCheckApp` notifies:
 //! - click-through while nothing is shown, interactive while an item is on screen;
 //! - moved to EE2's placement for each check (full game height, glued to the inventory or stash
-//!   panel -- `crate::overlay_layout`);
+//!   panel), or to where the player dragged it on that side -- `crate::overlay_layout`; a drag
+//!   moves it the same way;
 //! - no Windows 11 DWM frame (otherwise a permanent outline over the game);
 //! - focus handed back to the game when a panel the player clicked into closes.
 //!
@@ -18,9 +19,9 @@
 use std::sync::Arc;
 
 use gpui::{
-    App, Bounds, Context, Entity, Focusable, IntoElement, Render, TitlebarOptions, Window,
-    WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions, div, point, prelude::*,
-    px, size,
+    App, Bounds, Context, DisplayId, Entity, Focusable, IntoElement, Render, TitlebarOptions,
+    Window, WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions, div, point,
+    prelude::*, px, size,
 };
 use gpui_platform::application;
 use http_client::HttpClient;
@@ -36,6 +37,7 @@ use crate::bug_report;
 use crate::diagnostics;
 use crate::live_search::{self, LiveCard, LiveSearches};
 use crate::logging;
+use crate::login;
 use crate::overlay_layout::PhysicalRect;
 use crate::paths;
 use crate::platform::instance::{self, Request};
@@ -43,9 +45,8 @@ use crate::platform::win32::Win32Overlay;
 use crate::platform::{autostart, game_config, game_window};
 use crate::price_check::{self, BootstrapState, PriceCheckApp};
 use crate::session::{self, SessionHttpClient};
-use crate::settings::{self, Hotkey, Settings};
+use crate::settings::{self, Hotkey};
 use crate::ui::fonts;
-use crate::ui::mockup;
 use crate::ui::settings_view::{Intro, SettingsView};
 use crate::ui::theme::BASE_REM_SIZE;
 use crate::ui::trade_overlay::{self, TradeOverlay, TradeOverlayOptions};
@@ -319,7 +320,11 @@ fn build_window_options() -> WindowOptions {
         titlebar: None,
         window_background: WindowBackgroundAppearance::Transparent,
         kind: WindowKind::PopUp,
+        // Neither the system's move nor its resize: the title bar drags the panel sideways itself
+        // (`PriceCheckApp::begin_panel_drag`), without activating it, and a resizable window's
+        // top edge would answer as a resize border over the title bar.
         is_movable: false,
+        is_resizable: false,
         // The overlay must never take keyboard focus from the game on launch.
         focus: false,
         show: false,
@@ -409,94 +414,76 @@ fn build_tray(cx: &mut App, app: &Entity<PriceCheckApp>) -> anyhow::Result<TrayI
     Ok(tray)
 }
 
-/// Opens the settings window -- or brings the open one forward. The price panel steps aside
-/// while it's open: the panel is topmost and would cover it. `welcome` heads it with the
-/// first-launch welcome; the setup problems (`diagnostics::setup_problems`) head it always.
+/// The settings window's size, logical px, as the owner approved it on the style mockup; and
+/// the least it can be resized to.
+const SETTINGS_SIZE: (f32, f32) = (1100., 720.);
+const SETTINGS_MIN_SIZE: (f32, f32) = (900., 600.);
+
+/// Opens the settings window (`ui::settings_view`) -- or brings the open one forward -- centred
+/// on the monitor the game is on. The price panel steps aside while it's open: the price-check
+/// hotkey belongs to the window's recorder then, so no check could bring the panel back, and one
+/// left up would cover part of the window. `welcome` heads it with the first-launch welcome; the
+/// setup problems (`diagnostics::setup_problems`) head it always.
 ///
-/// Saving writes the file, then applies autostart (the registry is its only store: the
-/// installer and Task Manager change it too, so the window starts from what the registry says)
-/// and everything else through `PriceCheckApp::apply_settings`.
+/// Autostart is read from the registry first: that is where it lives -- the installer and Task
+/// Manager change it too -- so the window shows what Windows will do.
 pub fn open_settings(app: &Entity<PriceCheckApp>, welcome: bool, cx: &mut App) {
     if let Some(handle) = app.read(cx).settings_window()
         && handle
             .update(cx, |_, window, _| window.activate_window())
             .is_ok()
     {
+        log::info!("settings window brought forward");
         return;
     }
-    let (mut current, leagues) = {
-        let state = app.read(cx);
-        (state.settings.clone(), state.leagues().to_vec())
-    };
-    current.autostart = autostart::autostart_enabled();
+    app.update(cx, |state, _| {
+        state.settings.autostart = autostart::autostart_enabled();
+    });
     let intro = Intro {
         welcome,
         problems: diagnostics::setup_problems(&game_config::read()),
     };
-
-    let on_save = {
-        let app = app.clone();
-        move |new: Settings, cx: &mut App| {
-            if let Err(err) = settings::save(&new) {
-                log::warn!("saving settings failed: {err:#}");
-            }
-            if let Err(err) = autostart::set_autostart(new.autostart) {
-                log::warn!("{err:#}");
-            }
-            app.update(cx, |state, cx| {
-                state.apply_settings(new, cx);
-                state.set_settings_window(None);
-            });
-        }
-    };
-    let on_cancel = {
-        let app = app.clone();
-        move |cx: &mut App| {
-            app.update(cx, |state, cx| {
-                state.set_settings_window(None);
-                cx.notify();
-            });
-        }
-    };
-    let report_summary = {
-        let app = app.clone();
-        move |cx: &App| app.read(cx).diagnostics_summary()
-    };
+    // `gpui_windows` names a display by its monitor handle; one it doesn't list falls back to
+    // the primary display.
+    let display = game_window::game_monitor()
+        .map(DisplayId::new)
+        .filter(|&display| cx.find_display(display).is_some());
+    let (width, height) = SETTINGS_SIZE;
+    let (min_width, min_height) = SETTINGS_MIN_SIZE;
     let options = WindowOptions {
-        window_bounds: Some(WindowBounds::centered(size(px(480.), px(760.)), cx)),
-        // Transparent: the view draws its own title bar, like the panel.
+        window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
+            display,
+            size(px(width), px(height)),
+            cx,
+        ))),
+        // Transparent: the view draws its own title bar and frame.
         titlebar: Some(TitlebarOptions {
             title: Some("PoE2 Oracle — настройки".into()),
             appears_transparent: true,
             ..Default::default()
         }),
         kind: WindowKind::Normal,
-        window_min_size: Some(size(px(420.), px(400.))),
+        display_id: display,
+        window_min_size: Some(size(px(min_width), px(min_height))),
         focus: true,
         show: true,
         ..Default::default()
     };
     let opened = cx.open_window(options, |window, cx| {
-        let view = cx.new(|cx| {
-            SettingsView::new(
-                current,
-                leagues,
-                intro,
-                on_save,
-                on_cancel,
-                report_summary,
-                cx,
-            )
-        });
+        let app = app.clone();
+        let view = cx.new(|cx| SettingsView::new(app, intro, window, cx));
         window.focus(&view.focus_handle(cx), cx);
         view
     });
     match opened {
-        Ok(handle) => app.update(cx, |state, cx| {
-            state.set_settings_window(Some(handle.into()));
-            state.visible = false;
-            cx.notify();
-        }),
+        Ok(handle) => {
+            log::info!("settings window opened");
+            app.update(cx, |state, cx| {
+                state.set_settings_window(Some(handle.into()));
+                state.visible = false;
+                cx.notify();
+            });
+        }
         Err(err) => log::warn!("opening the settings window failed: {err:#}"),
     }
 }
@@ -549,16 +536,6 @@ pub fn run() {
     // the monitor's real scale instead of being bitmap-stretched. Fails harmlessly if a manifest
     // already set the process's awareness.
     let _ = unsafe { SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) };
-    // Dev-only: the style mockup (`ui::mockup`) instead of the app. It runs beside a running
-    // copy, so it skips the single-copy check, the log, the tray and the hotkeys.
-    if mockup::requested() {
-        application()
-            .with_http_client(Arc::new(
-                ReqwestClient::user_agent(USER_AGENT).expect("failed to build HTTP client"),
-            ))
-            .run(mockup::open);
-        return;
-    }
     // Before the log: `logging::init` starts a new file, and a second copy must leave the running
     // one's log alone. A second copy started by autostart leaves quietly; one the player started
     // has the running copy open its settings.
@@ -593,10 +570,12 @@ pub fn run() {
             // welcome shows this once only.
             let first_launch = paths::settings_file().is_some_and(|path| !path.exists());
             let settings = settings::load();
+            crate::i18n::apply(settings.interface_language);
             if first_launch && let Err(err) = settings::save(&settings) {
                 log::warn!("saving the first settings failed: {err:#}");
             }
             let inner = price_check::create_app(cx, http_client, settings);
+            login::init(&inner, cx);
             let live_cards = live_search::init(&inner, USER_AGENT, cx);
             if first_launch {
                 welcome_when_ready(&inner, cx);

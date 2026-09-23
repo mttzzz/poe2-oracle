@@ -1,27 +1,31 @@
-//! The strip above the nameplate: the league chip and its menu, the divine rate, the settings gear
-//! and the ×.
+//! The strip above the nameplate: the league select and its menu, the divine rate, the settings
+//! gear and the ×. Its empty part drags the panel sideways; a double-click there sends it back to
+//! its own place.
 
 use gpui::{
-    Context, IntoElement, MouseButton, MouseDownEvent, Window, anchored, deferred, div, point,
-    prelude::*, px, rgb,
+    Context, CursorStyle, IntoElement, MouseButton, MouseDownEvent, SharedString, Window, div,
+    prelude::*, rgb,
 };
 
 use crate::league_chip;
 use crate::price_check::PriceCheckApp;
 use crate::ui::hint as hints;
-use crate::ui::theme::{
-    BG_BUTTON_HOVER, BG_CLOSE_HOVER, BG_CONTROL, BG_PANEL, BG_TITLE, BORDER_GOLD, CONTENT_PADDING,
-    GOLD, TEXT, TEXT_DIM, rems_from_px,
-};
+use crate::ui::style::{menu_row, select, title_button, title_gradient};
+use crate::ui::theme::{BORDER_GOLD, TEXT_DIM, rems_from_px};
 
 use super::format::{currency_img, format_compact};
+use super::menu::render_menu;
 
-/// The least room the league menu keeps from the panel's edges.
-const MENU_MARGIN: f32 = 4.;
+const TITLE_HEIGHT: f32 = 32.;
+/// Width of the title bar's ⚙ and ×.
+const BUTTON_WIDTH: f32 = 34.;
+/// The league menu is at least this wide, so «Авто · <league>» fits on one line.
+const LEAGUE_MENU_WIDTH: f32 = 250.;
+/// The least of the drag area that stays when the panel is narrow.
+const DRAG_MIN_WIDTH: f32 = 24.;
 
-/// The app's name, the league chip, the divine rate once the market is loaded (EE2's ⇄ rate in its
-/// title bar), the settings gear, and the × that hides the panel (the other way to close it
-/// besides Esc).
+/// The league select, the divine rate once the market is loaded (EE2's ⇄ rate in its title bar),
+/// the settings gear, and the × that hides the panel (the other way to close it besides Esc).
 pub(super) fn render_title_bar(
     state: &PriceCheckApp,
     window: &Window,
@@ -31,37 +35,18 @@ pub(super) fn render_title_bar(
         .flex()
         .flex_none()
         .items_center()
-        .h(rems_from_px(26.))
-        .pl(rems_from_px(CONTENT_PADDING))
-        .bg(rgb(BG_TITLE))
+        .h(rems_from_px(TITLE_HEIGHT))
+        .pl(rems_from_px(8.))
+        .bg(title_gradient())
         .border_b_1()
         .border_color(rgb(BORDER_GOLD))
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .truncate()
-                .text_xs()
-                .text_color(rgb(TEXT_DIM))
-                .child("PoE2 Oracle"),
-        )
-        .child(render_league_chip(state, window, cx))
-        .children(state.market().map(|market| {
-            div()
-                .flex()
-                .flex_none()
-                .items_center()
-                .gap(rems_from_px(3.))
-                .pr(rems_from_px(8.))
-                .text_xs()
-                .text_color(rgb(TEXT_DIM))
-                .child("1")
-                .children(currency_img(state.currency_icon("divine"), 14.))
-                .child(format!("= {}", format_compact(market.exalted_per_divine)))
-                .children(currency_img(state.currency_icon("exalted"), 14.))
-        }))
-        .child(title_button("⚙").on_mouse_down(
-            MouseButton::Left,
+        .child(render_league_select(state, window, cx))
+        .child(render_drag_area(state, cx))
+        .child(title_button(
+            "settings",
+            "⚙",
+            BUTTON_WIDTH,
+            false,
             cx.listener(|_view, _event: &MouseDownEvent, _window, cx| {
                 // Deferred: opening the window updates this very entity, which is mid-update
                 // while its own listener runs.
@@ -69,23 +54,23 @@ pub(super) fn render_title_bar(
                 cx.defer(move |cx| crate::app::open_settings(&app, false, cx));
             }),
         ))
-        .child(
-            title_button("×")
-                .hover(|style| style.bg(rgb(BG_CLOSE_HOVER)).text_color(rgb(TEXT)))
-                .on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(|view, _event: &MouseDownEvent, _window, cx| {
-                        view.visible = false;
-                        cx.notify();
-                    }),
-                ),
-        )
+        .child(title_button(
+            "close",
+            "×",
+            BUTTON_WIDTH,
+            true,
+            cx.listener(|view, _event: &MouseDownEvent, _window, cx| {
+                view.visible = false;
+                cx.notify();
+            }),
+        ))
 }
 
 /// The league searches go to, named as the trade site names it in the game client's language --
-/// «Авто · Запретные ритуалы ▾» -- which opens the menu of leagues to switch to. It gives way
-/// before the rate and the buttons when the panel is narrow.
-fn render_league_chip(
+/// «Авто · Запретные ритуалы ▾» -- which opens the menu of leagues to switch to: the choices the
+/// settings window offers, the current one marked. It gives way before the rate and the buttons
+/// when the panel is narrow.
+fn render_league_select(
     state: &PriceCheckApp,
     window: &Window,
     cx: &Context<PriceCheckApp>,
@@ -93,125 +78,96 @@ fn render_league_chip(
     let label =
         league_chip::chip_label(&state.settings.league, state.league(), state.league_names());
     div()
-        .id("league-chip")
+        .id("league")
         .flex()
+        .flex_col()
         .min_w_0()
-        .items_center()
-        .gap(rems_from_px(3.))
-        .mr(rems_from_px(8.))
-        .px(rems_from_px(8.))
-        .py(rems_from_px(2.))
-        .rounded_xs()
-        .bg(rgb(if state.league_menu {
-            BG_BUTTON_HOVER
-        } else {
-            BG_CONTROL
-        }))
-        .text_xs()
-        .text_color(rgb(GOLD))
-        .cursor_pointer()
-        .hover(|style| style.bg(rgb(BG_BUTTON_HOVER)))
         .tooltip(hints::hint(
             "Лига, в которой идёт поиск. Нажмите, чтобы сменить: выбор сохранится в настройках, \
              а поиск повторится в новой лиге.",
         ))
-        .on_mouse_down(
-            MouseButton::Left,
+        .child(select(
+            "select",
+            label,
+            true,
             cx.listener(|view, _event: &MouseDownEvent, _window, cx| {
-                view.set_league_menu(true, cx)
+                view.set_league_menu(true, cx);
             }),
-        )
-        .child(div().min_w_0().truncate().child(label))
-        .child(div().flex_none().child("▾"))
+        ))
         .when(state.league_menu, |this| {
-            this.child(render_league_menu(state, window, cx))
+            let choices = league_chip::menu(
+                &state.settings.league,
+                state.leagues(),
+                state.league_names(),
+            );
+            let rows = choices
+                .into_iter()
+                .enumerate()
+                .map(|(index, (choice, label))| {
+                    let current = choice == state.settings.league;
+                    menu_row(
+                        index,
+                        current,
+                        div().min_w_0().truncate().child(SharedString::from(label)),
+                        cx.listener(move |view, _event: &MouseDownEvent, _window, cx| {
+                            view.choose_league(choice.clone(), cx);
+                        }),
+                    )
+                });
+            this.child(render_menu(
+                "league-menu",
+                rows,
+                LEAGUE_MENU_WIDTH,
+                |view, cx| view.set_league_menu(false, cx),
+                window,
+                cx,
+            ))
         })
 }
 
-/// The chip's menu: the choices the settings window's league chips offer, the current one in
-/// gold. It hangs from the chip's left edge, kept inside the panel (`anchored`), over a backdrop
-/// that takes a click anywhere else to close it -- that click does nothing more. Esc closes it too
-/// (`price_check::register_hotkeys`).
-fn render_league_menu(
-    state: &PriceCheckApp,
-    window: &Window,
-    cx: &Context<PriceCheckApp>,
-) -> impl IntoElement {
-    let viewport = window.viewport_size();
-    // A pixel past the window: `anchored` moves it by whole pixels, which can leave half of one
-    // uncovered along the far edges when the chip's bottom falls between pixels.
-    let backdrop = div()
-        .w(viewport.width + px(1.))
-        .h(viewport.height + px(1.))
-        .occlude()
-        .on_any_mouse_down(cx.listener(|view, _event: &MouseDownEvent, _window, cx| {
-            view.set_league_menu(false, cx)
-        }));
-    let choices = league_chip::menu(
-        &state.settings.league,
-        state.leagues(),
-        state.league_names(),
-    );
-    let list = div()
-        .id("league-menu")
+/// The title bar's empty part and the divine rate in it, once the market is loaded (EE2's ⇄ rate):
+/// pressing it and moving drags the panel sideways (`PriceCheckApp::begin_panel_drag`), a
+/// double-click puts it back in its own place (`PriceCheckApp::reset_panel_position`). The rate
+/// and a little of the empty part stay however narrow the panel.
+fn render_drag_area(state: &PriceCheckApp, cx: &Context<PriceCheckApp>) -> impl IntoElement {
+    let rate = state.market().map(|market| {
+        div()
+            .flex()
+            .flex_none()
+            .items_center()
+            .gap(rems_from_px(3.))
+            .pr(rems_from_px(6.))
+            .text_size(rems_from_px(12.))
+            .text_color(rgb(TEXT_DIM))
+            .child("1")
+            .children(currency_img(state.currency_icon("divine"), 16.))
+            .child(format!("= {}", format_compact(market.exalted_per_divine)))
+            .children(currency_img(state.currency_icon("exalted"), 16.))
+    });
+    div()
+        .id("drag")
         .flex()
-        .flex_col()
-        .max_w(viewport.width - px(2. * MENU_MARGIN))
-        .max_h(viewport.height - px(2. * MENU_MARGIN))
-        .overflow_y_scroll()
-        .occlude()
-        .py(rems_from_px(4.))
-        .rounded_xs()
-        .bg(rgb(BG_PANEL))
-        .border_1()
-        .border_color(rgb(BORDER_GOLD))
-        .text_xs()
-        .children(choices.into_iter().map(|(choice, label)| {
-            let current = choice == state.settings.league;
-            div()
-                .px(rems_from_px(10.))
-                .py(rems_from_px(3.))
-                .truncate()
-                .text_color(rgb(if current { GOLD } else { TEXT }))
-                .cursor_pointer()
-                .hover(|style| style.bg(rgb(BG_BUTTON_HOVER)))
-                .on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(move |view, _event: &MouseDownEvent, _window, cx| {
-                        view.choose_league(choice.clone(), cx)
-                    }),
-                )
-                .child(label)
-        }));
-    // Both float over the whole panel: the backdrop from the window's corner, the list from the
-    // chip's bottom-left, where this zero-size holder sits.
-    div()
-        .absolute()
-        .top_full()
-        .left_0()
-        .child(deferred(
-            anchored().position(point(px(0.), px(0.))).child(backdrop),
-        ))
-        .child(
-            deferred(
-                anchored()
-                    .snap_to_window_with_margin(px(MENU_MARGIN))
-                    .child(list),
-            )
-            .with_priority(1),
-        )
-}
-
-fn title_button(label: &'static str) -> gpui::Div {
-    div()
-        .w(rems_from_px(34.))
+        .flex_1()
         .h_full()
-        .flex()
-        .flex_none()
         .items_center()
-        .justify_center()
-        .text_color(rgb(TEXT_DIM))
-        .cursor_pointer()
-        .hover(|style| style.bg(rgb(BG_BUTTON_HOVER)).text_color(rgb(TEXT)))
-        .child(label)
+        .cursor(CursorStyle::ResizeLeftRight)
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(|view, event: &MouseDownEvent, _window, cx| {
+                if event.click_count >= 2 {
+                    view.reset_panel_position(cx);
+                } else {
+                    view.begin_panel_drag(cx);
+                }
+            }),
+        )
+        // Not over a drag under way, where the pointer stays still over the moving panel.
+        .when(!state.dragging_panel(), |this| {
+            this.tooltip(hints::hint(
+                "Потяните, чтобы сдвинуть панель вбок: следующие проверки с этой стороны откроют \
+                 её там же. Двойной щелчок вернёт панель на обычное место.",
+            ))
+        })
+        .child(div().flex_1().min_w(rems_from_px(DRAG_MIN_WIDTH)))
+        .children(rate)
 }

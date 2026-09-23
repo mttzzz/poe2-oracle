@@ -28,7 +28,7 @@ pub use profile::{SearchProfile, apply_profile};
 use property::property_filters;
 pub use property::uses_exact_preset;
 use rank::{Candidate, Pick};
-pub use tiers::{GameMod, game_mod, printed, stat_hash};
+pub use tiers::{GameMod, Roll, game_mod, printed, stat_hash};
 
 /// Where a `SearchFilter` came from -- drives the panel's tag pill.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

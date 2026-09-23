@@ -8,7 +8,11 @@ use stat_filters::{FilterTag, SearchFilter};
 
 use crate::price_check::PriceCheckApp;
 use crate::settings::WaystoneMark;
-use crate::ui::theme::{GOLD, MARK_DANGER, MARK_WANTED, MARK_WARNING, TEXT_MUTED, rems_from_px};
+use crate::ui::style::{CARD_RADIUS, ease_hover};
+use crate::ui::theme::{
+    BG_CARD, BORDER_CARD, GOLD_LIGHT, MARK_DANGER, MARK_WANTED, MARK_WARNING, TEXT_MUTED, blend,
+    rems_from_px,
+};
 
 use super::filters::stat_text;
 
@@ -51,19 +55,20 @@ fn mark_label(mark: WaystoneMark) -> &'static str {
     }
 }
 
-/// The marker at a waystone row's end: a click steps the mark (none, danger, warning, wanted).
+/// The marker at a waystone row's end, warming to gold under the pointer: a click steps the mark
+/// (none, danger, warning, wanted).
 pub(super) fn render_mark_button(
     key: String,
     mark: Option<WaystoneMark>,
     cx: &Context<PriceCheckApp>,
 ) -> impl IntoElement {
-    div()
+    let color = mark.map_or(TEXT_MUTED, mark_color);
+    let button = div()
+        .id("mark")
         .flex_none()
         .px(rems_from_px(2.))
         .text_size(rems_from_px(13.))
-        .text_color(rgb(mark.map_or(TEXT_MUTED, mark_color)))
         .cursor_pointer()
-        .hover(|style| style.text_color(rgb(GOLD)))
         .on_mouse_down(
             MouseButton::Left,
             cx.listener(move |view, _event: &MouseDownEvent, _window, cx| {
@@ -72,12 +77,15 @@ pub(super) fn render_mark_button(
                 view.cycle_waystone_mark(&key, cx);
             }),
         )
-        .child(if mark.is_some() { "◆" } else { "◇" })
+        .child(if mark.is_some() { "◆" } else { "◇" });
+    ease_hover("mark", button, move |button, hover| {
+        button.text_color(rgb(blend(color, GOLD_LIGHT, hover)))
+    })
 }
 
 /// The marked modifiers a waystone has, danger first -- what the player checks it for -- or, while
-/// nothing is marked yet, how to mark. Listed under the modifiers, one per line: marking one never
-/// moves the rows being marked.
+/// nothing is marked yet, how to mark: a card under the modifiers, one per line, so marking one
+/// never moves the rows being marked.
 pub(super) fn render_waystone_marks(
     state: &PriceCheckApp,
     item: &ParsedItem,
@@ -105,9 +113,15 @@ pub(super) fn render_waystone_marks(
         div()
             .flex()
             .flex_col()
-            .gap(rems_from_px(3.))
-            .mt(rems_from_px(8.))
-            .text_xs()
+            .gap(rems_from_px(4.))
+            .mt(rems_from_px(10.))
+            .px(rems_from_px(12.))
+            .py(rems_from_px(8.))
+            .rounded(rems_from_px(CARD_RADIUS))
+            .bg(rgb(BG_CARD))
+            .border_1()
+            .border_color(rgb(BORDER_CARD))
+            .text_size(rems_from_px(12.))
             .children(marked.iter().map(|(mark, text)| {
                 div()
                     .flex()

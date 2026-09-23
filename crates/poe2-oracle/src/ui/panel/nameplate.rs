@@ -1,23 +1,26 @@
-//! The item's header: its art, its name in the game's own colour and face with links to its
-//! poe2db and wiki pages, and EE2's chip row under it. The header is tinted with the name's colour
-//! the way the game's tooltip banners are: rarity reads before the name does.
+//! The item's header: its art, its name in the game's own colour and face, links to its poe2db
+//! and wiki pages and to Craft of Exile, an ornament rule under it all -- and EE2's chip row under
+//! the header. The header is tinted with the name's colour the way the game's tooltip banners
+//! are: rarity reads before the name does.
 
 use gpui::{
-    AnyElement, Context, IntoElement, MouseButton, MouseDownEvent, ObjectFit, div, img,
+    AnyElement, Context, IntoElement, MouseDownEvent, ObjectFit, SharedString, div, img,
     linear_color_stop, linear_gradient, prelude::*, rgb,
 };
 
+use item_parser::ItemLanguage;
 use poe2_domain::{ItemRarity, ParsedItem};
 use trade_client::{RarityFilter, TradeSite};
 
+use crate::craft_link;
 use crate::item_refs;
 use crate::price_check::PriceCheckApp;
 use crate::ui::fonts;
 use crate::ui::hint as hints;
+use crate::ui::style::{self, chip, heading, link, ornament_rule};
 use crate::ui::theme::{
-    BANNER_EDGE, BANNER_TINT, BG_BUTTON_HOVER, BG_CONTROL, BG_NAMEPLATE, BORDER_GOLD,
-    CONTENT_PADDING, CURRENCY_NAME, GEM_NAME, GOLD, RARITY_MAGIC, RARITY_NORMAL, RARITY_RARE,
-    RARITY_UNIQUE, TEXT, TEXT_DIM, TEXT_VALUE, TEXT_WARNING, blend, rems_from_px,
+    BANNER_EDGE, BANNER_TINT, BG_NAMEPLATE, CONTENT_PADDING, CURRENCY_NAME, GEM_NAME, RARITY_MAGIC,
+    RARITY_NORMAL, RARITY_RARE, RARITY_UNIQUE, TEXT, TEXT_VALUE, TEXT_WARNING, blend, rems_from_px,
 };
 
 use super::results::render_link;
@@ -28,8 +31,9 @@ const ART_SIZE: f32 = 48.;
 /// The item's name -- and, for rares and uniques, its base type -- in the game's own name colour
 /// and in the stand-in for its tooltip face on the item's client language (see `fonts`), like its
 /// tooltip header; beside it the item's art, and under it links to the item's poe2db and wiki
-/// pages (`item_refs`), when the item database knows it, and to the form that reports the item
-/// read or priced wrong (`PriceCheckApp::report_item`).
+/// pages (`item_refs`), when the item database knows it, to the item in Craft of Exile
+/// (`craft_link`), when the site crafts it, and to the form that reports the item read or priced
+/// wrong (`PriceCheckApp::report_item`).
 pub(super) fn render_nameplate(
     item: &ParsedItem,
     site: TradeSite,
@@ -39,88 +43,99 @@ pub(super) fn render_nameplate(
     let refs = item_refs::refs_for(item);
     let art = refs.and_then(|found| found.icon_url());
     let color = name_color(item);
+    let language = match site {
+        TradeSite::Russian => ItemLanguage::Russian,
+        TradeSite::International => ItemLanguage::English,
+    };
     let names = div()
         .flex()
         .flex_col()
+        .flex_1()
+        .min_w_0()
         .items_center()
+        .text_center()
         .text_color(rgb(color))
-        .font_family(name_font.family)
-        .font_weight(name_font.weight)
-        .child(div().text_size(rems_from_px(20.)).child(item.name.clone()))
+        .child(
+            heading(name_font)
+                .text_size(rems_from_px(21.))
+                .child(item.name.clone()),
+        )
         .children(
             item.base_type
                 .clone()
-                .map(|base| div().text_size(rems_from_px(17.)).child(base)),
+                .map(|base| heading(name_font).text_size(rems_from_px(16.)).child(base)),
         );
+    // Under the whole header, not the name's column: four links outgrow it.
     let links = div()
         .flex()
-        .gap(rems_from_px(12.))
-        .mt(rems_from_px(3.))
+        .flex_wrap()
+        .justify_center()
+        .items_center()
+        .gap_x(rems_from_px(14.))
+        .gap_y(rems_from_px(2.))
+        .px(rems_from_px(CONTENT_PADDING))
+        .pb(rems_from_px(8.))
         .children(
             refs.map(|found| render_link("poe2db ↗", found.poe2db_url(site == TradeSite::Russian))),
         )
         .children(refs.map(|found| render_link("вики ↗", found.wiki_url())))
+        .children(
+            craft_link::url(item, craft_link::site_language(language))
+                .map(|url| render_link("Craft of Exile ↗", url)),
+        )
         .child(
             div()
                 .id("report-item")
                 .flex_none()
-                .text_xs()
-                .text_color(rgb(TEXT_DIM))
-                .cursor_pointer()
-                .hover(|style| style.text_color(rgb(GOLD)))
                 .tooltip(hints::hint(
                     "Предмет разобран или оценён неверно? Откроет на GitHub форму с текстом \
                      предмета: останется описать, что не так.",
                 ))
-                .on_mouse_down(
-                    MouseButton::Left,
+                .child(link(
+                    "link",
+                    "сообщить об ошибке ↗",
                     cx.listener(|view, _event: &MouseDownEvent, _window, cx| {
                         view.report_item(cx);
                     }),
-                )
-                .child("сообщить об ошибке ↗"),
+                )),
         );
     div()
         .flex()
-        .items_center()
-        .gap(rems_from_px(10.))
-        .px(rems_from_px(CONTENT_PADDING))
-        .py(rems_from_px(8.))
+        .flex_col()
+        .flex_none()
         .bg(linear_gradient(
             180.,
             linear_color_stop(rgb(blend(BG_NAMEPLATE, color, BANNER_TINT)), 0.),
             linear_color_stop(rgb(BG_NAMEPLATE), 1.),
         ))
-        .border_b_1()
-        .border_color(rgb(blend(BG_NAMEPLATE, color, BANNER_EDGE)))
-        .text_center()
-        // The art sits on the left, as on the trade site; an empty column of its width on the
-        // right keeps the name centred.
-        .children(art.clone().map(|url| {
-            img(url)
-                .w(rems_from_px(ART_SIZE))
-                .h(rems_from_px(ART_SIZE))
-                .flex_none()
-                .object_fit(ObjectFit::Contain)
-        }))
         .child(
             div()
                 .flex()
-                .flex_col()
                 .items_center()
-                .flex_1()
-                .min_w_0()
+                .gap(rems_from_px(10.))
+                .px(rems_from_px(CONTENT_PADDING))
+                .pt(rems_from_px(12.))
+                .pb(rems_from_px(4.))
+                // The art sits on the left, as on the trade site; an empty column of its width on
+                // the right keeps the name centred.
+                .children(art.clone().map(|url| {
+                    img(url)
+                        .flex_none()
+                        .size(rems_from_px(ART_SIZE))
+                        .object_fit(ObjectFit::Contain)
+                }))
                 .child(names)
-                .child(links),
+                .when(art.is_some(), |this| {
+                    this.child(div().flex_none().size(rems_from_px(ART_SIZE)))
+                }),
         )
-        .when(art.is_some(), |this| {
-            this.child(
-                div()
-                    .w(rems_from_px(ART_SIZE))
-                    .h(rems_from_px(ART_SIZE))
-                    .flex_none(),
-            )
-        })
+        .child(links)
+        .child(
+            div()
+                .px(rems_from_px(16.))
+                .pb(rems_from_px(2.))
+                .child(ornament_rule(blend(BG_NAMEPLATE, color, BANNER_EDGE))),
+        )
 }
 
 fn name_color(item: &ParsedItem) -> u32 {
@@ -178,8 +193,15 @@ pub(super) fn render_chips(
                 ),
             };
             Some(
-                toggle_chip(Some(label), value, hint, PriceCheckApp::toggle_scope, cx)
-                    .into_any_element(),
+                toggle_chip(
+                    "scope",
+                    Some(label),
+                    value,
+                    hint,
+                    PriceCheckApp::toggle_scope,
+                    cx,
+                )
+                .into_any_element(),
             )
         }
         None => class.map(|class| chip(None, class, TEXT).into_any_element()),
@@ -205,8 +227,9 @@ pub(super) fn render_chips(
             ),
         };
         toggle_chip(
+            "corruption",
             None,
-            value.to_owned(),
+            value,
             hint,
             PriceCheckApp::toggle_corruption,
             cx,
@@ -226,8 +249,9 @@ pub(super) fn render_chips(
             )
         };
         toggle_chip(
+            "identification",
             None,
-            value.to_owned(),
+            value,
             hint,
             PriceCheckApp::toggle_identification,
             cx,
@@ -257,8 +281,9 @@ pub(super) fn render_chips(
             ),
         };
         toggle_chip(
+            "rarity",
             Some("Редкость:"),
-            value.to_owned(),
+            value,
             hint,
             PriceCheckApp::toggle_rarity,
             cx,
@@ -270,7 +295,8 @@ pub(super) fn render_chips(
         .flex_wrap()
         .items_center()
         .gap(rems_from_px(6.))
-        .py(rems_from_px(8.))
+        .pt(rems_from_px(10.))
+        .pb(rems_from_px(6.))
         .children(item_type)
         .children(
             item.item_level
@@ -284,7 +310,7 @@ pub(super) fn render_chips(
         )
         .children(
             item.is_corrupted
-                .then(|| chip(None, "Осквернено".to_owned(), TEXT_WARNING)),
+                .then(|| chip(None, "Осквернено", TEXT_WARNING)),
         )
         .children(
             item.stack_size
@@ -295,6 +321,7 @@ pub(super) fn render_chips(
         .children(corruption)
         .children((searchable > 0).then(|| {
             toggle_chip(
+                "stats",
                 Some("Св-ва:"),
                 format!("{selected} из {searchable}"),
                 "Сколько свойств выбрано для поиска. Нажмите, чтобы отметить все или снять все.",
@@ -304,54 +331,27 @@ pub(super) fn render_chips(
         }))
 }
 
-fn chip(label: Option<&'static str>, value: String, value_color: u32) -> impl IntoElement {
-    div()
-        .flex()
-        .flex_none()
-        .items_center()
-        .gap(rems_from_px(4.))
-        .px(rems_from_px(8.))
-        .py(rems_from_px(2.))
-        .rounded_xs()
-        .bg(rgb(BG_CONTROL))
-        .text_xs()
-        .children(label.map(|label| div().text_color(rgb(TEXT_DIM)).child(label)))
-        .child(div().text_color(rgb(value_color)).child(value))
-}
-
 /// A chip a click turns to its other state for the next search -- the item-type chip, when the
 /// search can go by the item's class or its base type (`PriceCheckApp::toggle_scope`), the
 /// rarity one (`PriceCheckApp::toggle_rarity`), the corruption and identification ones
 /// (`PriceCheckApp::toggle_corruption`, `toggle_identification`), the stats count
 /// (`PriceCheckApp::toggle_all_filters`) -- saying on hover what it does (`hint`).
 fn toggle_chip(
+    key: &'static str,
     label: Option<&'static str>,
-    value: String,
+    value: impl Into<SharedString>,
     hint: &'static str,
     toggle: fn(&mut PriceCheckApp, &mut Context<PriceCheckApp>),
     cx: &Context<PriceCheckApp>,
 ) -> impl IntoElement {
     div()
-        .id(hint)
-        .flex()
+        .id(key)
         .flex_none()
-        .items_center()
-        .gap(rems_from_px(4.))
-        .px(rems_from_px(8.))
-        .py(rems_from_px(2.))
-        .rounded_xs()
-        .bg(rgb(BG_CONTROL))
-        .border_1()
-        .border_color(rgb(BORDER_GOLD))
-        .cursor_pointer()
-        .hover(|style| style.bg(rgb(BG_BUTTON_HOVER)))
-        .text_xs()
         .tooltip(hints::hint(hint))
-        .on_mouse_down(
-            MouseButton::Left,
+        .child(style::toggle_chip(
+            "chip",
+            label,
+            value,
             cx.listener(move |view, _event: &MouseDownEvent, _window, cx| toggle(view, cx)),
-        )
-        .children(label.map(|label| div().text_color(rgb(TEXT_DIM)).child(label)))
-        .child(div().text_color(rgb(TEXT)).child(value))
-        .child(div().text_color(rgb(GOLD)).child("↔"))
+        ))
 }

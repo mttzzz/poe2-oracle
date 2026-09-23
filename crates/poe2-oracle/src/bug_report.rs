@@ -20,7 +20,7 @@ const NEW_ISSUE_URL: &str = "https://github.com/mttzzz/poe2-oracle/issues/new";
 const MAX_URL_LEN: usize = 7500;
 
 /// Encoded in a query value: everything but RFC 3986's unreserved characters.
-const QUERY_VALUE: &AsciiSet = &NON_ALPHANUMERIC
+pub(crate) const QUERY_VALUE: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'-')
     .remove(b'.')
     .remove(b'_')
@@ -59,8 +59,8 @@ pub fn item_problem_url(language: Option<ItemLanguage>, name: &str, item_text: &
 }
 
 /// Writes the diagnostics report off the main thread, shows it in Explorer and opens the bug
-/// form naming it: the tray's and the settings window's "Сообщить об ошибке". `summary` is the
-/// app's side of the report (`PriceCheckApp::diagnostics_summary`).
+/// form naming it: the tray's "Сообщить об ошибке" and the settings window's "Сообщить ↗".
+/// `summary` is the app's side of the report (`PriceCheckApp::diagnostics_summary`).
 #[cfg(target_os = "windows")]
 pub fn report_bug(summary: String, language: Option<ItemLanguage>, cx: &mut gpui::App) {
     use crate::diagnostics;

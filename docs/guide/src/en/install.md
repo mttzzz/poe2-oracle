@@ -58,9 +58,8 @@ panel, and in the game you point at an item and press <kbd>Ctrl</kbd>+<kbd>E</kb
 closes the panel.
 
 Look through the [settings](settings.md): the league, the client language and the hotkey are the
-main ones. Click «Сохранить» (Save) to keep changes. Warnings marked **⚠** at the top mean
-something in your setup keeps price checks from working; see
-[Troubleshooting](troubleshooting.md).
+main ones. Changes apply and are saved at once. Warnings marked **⚠** at the top mean something in
+your setup keeps price checks from working; see [Troubleshooting](troubleshooting.md).
 
 Then, in the game, point at an item and press <kbd>Ctrl</kbd>+<kbd>E</kbd>. See
 [Price check](price-check.md).
@@ -84,6 +83,6 @@ one runs quietly exits.
 
 ## Start with Windows
 
-Turn on «Запускать вместе с Windows» (start with Windows) in the settings, section «Система»
-(system), or tick the box on the installer's last page. Started with Windows, PoE2 Oracle waits
+Turn on «Запускать вместе с Windows» (start with Windows) in the settings, section «Общие»
+(general), or tick the box on the installer's last page. Started with Windows, PoE2 Oracle waits
 in the tray until you play.

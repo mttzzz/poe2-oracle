@@ -8,7 +8,8 @@
 //!
 //! Every line's text and colour runs are worked out once, in [`ItemCard::new`], so drawing the card
 //! each frame it shows only builds elements. The card is as wide as the game's tooltip and wraps
-//! its lines, never truncating them.
+//! its lines, never truncating them. Like every tooltip of the app (`style::game_hint`) it sits in
+//! the game's double gold frame over the tooltip shadow, and fades in.
 
 use std::ops::Range;
 
@@ -20,6 +21,7 @@ use trade_client::{ItemFrame, ListedItem, ListedMod, ModKind, TradeSite, ValueCo
 
 use crate::ui::fonts::{self, NameFont};
 use crate::ui::panel::format::currency_img;
+use crate::ui::style::{game_frame, switch_in, tooltip_shadow};
 use crate::ui::theme::{
     BANNER_EDGE, BANNER_TINT, BG_ITEM_CARD, CURRENCY_NAME, DAMAGE_CHAOS, DAMAGE_COLD, DAMAGE_FIRE,
     DAMAGE_LIGHTNING, GAME_RED, GEM_NAME, MOD_DESECRATED, MOD_ENCHANTED, MOD_FRACTURED, PRICE_RISE,
@@ -238,32 +240,36 @@ pub(crate) fn render_item_card(card: &ItemCard, window: &Window) -> impl IntoEle
     let width = rems_from_px(CARD_WIDTH)
         .to_pixels(window.rem_size())
         .min(window.viewport_size().width);
-    div()
-        .w(width)
-        .flex()
-        .flex_col()
-        .bg(rgb(BG_ITEM_CARD))
-        .border_1()
-        .border_color(rgb(blend(BG_ITEM_CARD, card.color, BANNER_EDGE)))
-        .text_size(rems_from_px(BODY_TEXT))
-        .line_height(relative(1.3))
-        .text_color(rgb(TEXT))
-        .child(render_header(card))
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .px(rems_from_px(8.))
-                .py(rems_from_px(6.))
-                .children(card.sections.iter().enumerate().map(|(index, lines)| {
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap(rems_from_px(1.))
-                        .when(index > 0, |this| this.child(render_rule(card.color)))
-                        .children(lines.iter().map(render_line))
-                })),
-        )
+    switch_in(
+        "card",
+        div()
+            .relative()
+            .w(width)
+            .flex()
+            .flex_col()
+            .bg(rgb(BG_ITEM_CARD))
+            .shadow(tooltip_shadow())
+            .text_size(rems_from_px(BODY_TEXT))
+            .line_height(relative(1.3))
+            .text_color(rgb(TEXT))
+            .child(render_header(card))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .px(rems_from_px(8.))
+                    .py(rems_from_px(6.))
+                    .children(card.sections.iter().enumerate().map(|(index, lines)| {
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(rems_from_px(1.))
+                            .when(index > 0, |this| this.child(render_rule(card.color)))
+                            .children(lines.iter().map(render_line))
+                    })),
+            )
+            .child(game_frame()),
+    )
 }
 
 /// The name -- a rare's or unique's over its base -- centred in the tooltip's face and the name's

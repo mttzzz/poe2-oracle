@@ -1,22 +1,28 @@
 //! «Войти»: signing in to pathofexile.com in the app's sign-in window (`platform::login_window`),
-//! the site's own login page in Edge WebView2, so the player copies nothing by hand. After every
-//! page of the site the window reports the browser's `POESESSID` cookies. The site hands every
-//! visitor one, signed in or not, so each is asked about on the account page first
-//! (`session::check_candidate`); the first one the site accepts becomes the app's session
-//! (`session::sign_in`, into the Credential Manager), and the window closes.
+//! the site's own login page in Edge WebView2 and in the player's language (`login_page`), so the
+//! player copies nothing by hand. After every page of the site the window reports the browser's
+//! `POESESSID` cookies. The site hands every visitor one, signed in or not, so each is asked about
+//! on the account page first (`session::check_candidate`); the first one the site accepts becomes
+//! the app's session (`session::sign_in`, into the Credential Manager), and the window closes.
+//! Both sites set the cookie for all of `.pathofexile.com` and share their sessions (checked
+//! 2026-09-23): one signed in on `ru.pathofexile.com` is the one `www`'s account page accepts.
 
 use std::iter;
 
 use async_channel::Receiver;
-use gpui::{App, AsyncApp, Global};
+use gpui::{App, AsyncApp, Entity, Global, WeakEntity};
+use item_parser::ItemLanguage;
+use trade_client::TradeSite;
 use trade_client::account::AccountCheck;
 
 use crate::platform::login_window::{self, LoginEvent};
+use crate::price_check::PriceCheckApp;
 use crate::session;
 
 /// The sign-in window as the settings window shows it.
-#[derive(Default)]
 pub struct Login {
+    /// The price panel, whose language picks the login page's (`login_page`).
+    panel: WeakEntity<PriceCheckApp>,
     /// From «Войти» until the window closes: another «Войти» brings it forward.
     open: bool,
     /// Why the last sign-in didn't finish, until the next one.
@@ -46,18 +52,28 @@ pub enum LoginProblem {
     NotSaved(String),
 }
 
+/// Sets up «Войти»: `panel`'s language picks the login page's.
+pub fn init(panel: &Entity<PriceCheckApp>, cx: &mut App) {
+    cx.set_global(Login {
+        panel: panel.downgrade(),
+        open: false,
+        problem: None,
+    });
+}
+
 /// «Войти»: opens the sign-in window, or brings the open one forward.
 pub fn open(cx: &mut App) {
-    let login = cx.default_global::<Login>();
     // Showing a window sends GPUI's windows messages at once: done from tasks, not this update.
-    if login.open {
+    if cx.global::<Login>().open {
         cx.spawn(async |_| login_window::bring_forward()).detach();
         return;
     }
+    let page = login_page(cx);
+    let login = cx.global_mut::<Login>();
     login.open = true;
     login.problem = None;
     cx.spawn(async move |cx| {
-        let problem = sign_in(cx).await;
+        let problem = sign_in(&page, cx).await;
         cx.update(|cx| {
             let login = cx.global_mut::<Login>();
             login.open = false;
@@ -67,18 +83,36 @@ pub fn open(cx: &mut App) {
     .detach();
 }
 
-/// One sign-in, from opening the window until it closes: what kept it from finishing, if anything.
-async fn sign_in(cx: &mut AsyncApp) -> Option<LoginProblem> {
+/// The login page in the player's language, by the price panel's rule for the trade site: the
+/// Russian site for a Russian game client (`PriceCheckApp::item_language`: the last checked item's
+/// language, else the client language the settings name), the international one otherwise. The
+/// interface language (milestone 11) will pick it instead.
+fn login_page(cx: &App) -> String {
+    let language = cx
+        .global::<Login>()
+        .panel
+        .upgrade()
+        .and_then(|panel| panel.read(cx).item_language());
+    let site = match language {
+        Some(ItemLanguage::Russian) => TradeSite::Russian,
+        Some(ItemLanguage::English) | None => TradeSite::International,
+    };
+    format!("{}/login", site.origin())
+}
+
+/// One sign-in on `page`, from opening the window until it closes: what kept it from finishing, if
+/// anything.
+async fn sign_in(page: &str, cx: &mut AsyncApp) -> Option<LoginProblem> {
     let Some(version) = login_window::runtime_version() else {
         log::warn!("no WebView2 runtime: the sign-in window can't open");
         return Some(LoginProblem::NoRuntime);
     };
     let (events_tx, events) = async_channel::unbounded();
-    if let Err(err) = login_window::open(events_tx) {
+    if let Err(err) = login_window::open(page, events_tx) {
         log::warn!("opening the sign-in window failed: {err:#}");
         return Some(LoginProblem::Failed(format!("{err:#}")));
     }
-    log::info!("sign-in window opened (WebView2 {version})");
+    log::info!("sign-in window opened on {page} (WebView2 {version})");
     let problem = watch(&events, cx).await;
     log::info!("sign-in window closed");
     problem

@@ -112,8 +112,8 @@ The full guide, with every setting explained, is at
 The quickest way is from the app itself. It fills in the form for you, and you submit it from your
 own GitHub account; the app sends nothing by itself.
 
-- **Сообщить об ошибке** (Report a bug) in the tray menu, or the button of the same name in the
-  **Диагностика** section of the settings, saves a diagnostics report to your desktop (a zip with
+- **Сообщить об ошибке** (Report a bug) in the tray menu, or **Сообщить ↗** in the **Помощь**
+  (Help) section of the settings, saves a diagnostics report to your desktop (a zip with
   the logs and settings, your Windows user name masked), shows it in Explorer and opens the bug
   form with the version, the client language and the report's file name filled in. Drag the zip
   into the form.

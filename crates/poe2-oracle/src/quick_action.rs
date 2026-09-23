@@ -2,13 +2,14 @@
 //! around its paste -- EE2's `typeInChat` and `stashSearch` (`main/src/shortcuts/text-box.ts`),
 //! the way PoE2 takes typed text reliably: a paste, not keystrokes per character, so any
 //! language's text arrives whatever the keyboard layout. And what it never types -- the chat
-//! commands that destroy something or change it for good ([`denied_command`]) -- and how often:
-//! once per press of its key ([`KEY_PRESSES`]). Plain data, built and tested on every target;
+//! commands that destroy something or change it for good ([`denied_command`]), which the settings
+//! window never saves either ([`kept_actions`]) -- and how often: once per press of its key
+//! ([`KEY_PRESSES`]). Plain data, built and tested on every target;
 //! `platform::synth_input::press_keys` plays the keys on Windows.
 
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use crate::settings::{QuickAction, QuickActionKind};
+use crate::settings::{Hotkey, QuickAction, QuickActionKind};
 
 /// EE2's stand-in for the last player who whispered: `@last спасибо` answers them,
 /// `/invite @last` names them in a command, and `@last` alone opens a whisper to them. The
@@ -159,6 +160,52 @@ fn command_word(line: &str) -> Option<&str> {
         }
         .trim_start();
     }
+}
+
+/// A quick action as the settings window edits it: `text` as the player last left its field, and
+/// `kept`, the text the settings hold for it -- `None` while they hold none. The default is a new
+/// chat command, nothing typed yet.
+#[derive(Clone, PartialEq, Debug, Default)]
+pub struct ActionDraft {
+    pub kind: QuickActionKind,
+    pub text: String,
+    pub hotkey: Option<Hotkey>,
+    pub kept: Option<String>,
+}
+
+impl ActionDraft {
+    /// A saved action, as the window starts editing it.
+    pub fn saved(action: &QuickAction) -> ActionDraft {
+        ActionDraft {
+            kind: action.kind,
+            text: action.text.clone(),
+            hotkey: action.hotkey,
+            kept: Some(action.text.clone()),
+        }
+    }
+}
+
+/// The quick actions the settings keep for the window's `drafts`, in their order, each draft
+/// noting the text kept for it: its own, trimmed -- unless that is a denied command, which is
+/// never saved, so the draft keeps what it had (a new one, nothing). A draft left without text is
+/// dropped for good, as `Settings` drops one on load: it would type nothing.
+pub fn kept_actions<'a>(drafts: impl IntoIterator<Item = &'a mut ActionDraft>) -> Vec<QuickAction> {
+    drafts
+        .into_iter()
+        .filter_map(|draft| {
+            let text = draft.text.trim();
+            if text.is_empty() {
+                draft.kept = None;
+            } else if denied_command(text).is_none() {
+                draft.kept = Some(text.to_owned());
+            }
+            Some(QuickAction {
+                kind: draft.kind,
+                text: draft.kept.clone()?,
+                hotkey: draft.hotkey,
+            })
+        })
+        .collect()
 }
 
 /// The keyboard's presses of each key, so that one press of a quick action's key types once. A
@@ -361,5 +408,78 @@ mod tests {
         keys.record(F5, false, false);
         assert!(keys.claim(F5));
         assert!(keys.claim(F5));
+    }
+
+    fn saved(kind: QuickActionKind, text: &str, hotkey: Option<Hotkey>) -> ActionDraft {
+        ActionDraft::saved(&QuickAction {
+            kind,
+            text: text.to_owned(),
+            hotkey,
+        })
+    }
+
+    fn texts(actions: &[QuickAction]) -> Vec<&str> {
+        actions.iter().map(|action| action.text.as_str()).collect()
+    }
+
+    #[test]
+    fn a_denied_edit_leaves_the_last_allowed_text_saved() {
+        let f5 = Hotkey {
+            ctrl: false,
+            shift: false,
+            alt: false,
+            key: crate::settings::KeyName::from_label("F5").unwrap(),
+        };
+        let mut drafts = vec![
+            saved(QuickActionKind::ChatCommand, "/hideout", Some(f5)),
+            saved(QuickActionKind::StashSearch, "\"rare\"", None),
+        ];
+        drafts[0].text = "/destroy".to_owned();
+        let kept = kept_actions(&mut drafts);
+        assert_eq!(
+            kept[0],
+            QuickAction {
+                kind: QuickActionKind::ChatCommand,
+                text: "/hideout".to_owned(),
+                hotkey: Some(f5),
+            }
+        );
+        assert_eq!(texts(&kept), ["/hideout", "\"rare\""]);
+        // Another denied text still leaves it; an allowed one takes its place, trimmed.
+        drafts[0].text = "@last /DESTROY".to_owned();
+        assert_eq!(texts(&kept_actions(&mut drafts)), ["/hideout", "\"rare\""]);
+        drafts[0].text = " /exit ".to_owned();
+        assert_eq!(texts(&kept_actions(&mut drafts)), ["/exit", "\"rare\""]);
+    }
+
+    #[test]
+    fn a_new_action_is_saved_once_it_has_an_allowed_text() {
+        let mut drafts = vec![ActionDraft::default()];
+        assert!(kept_actions(&mut drafts).is_empty());
+        drafts[0].text = "/clear_ignore_list".to_owned();
+        assert!(kept_actions(&mut drafts).is_empty());
+        drafts[0].kind = QuickActionKind::StashSearch;
+        drafts[0].text = "  \"ilvl: 8\" ".to_owned();
+        assert_eq!(
+            kept_actions(&mut drafts),
+            [QuickAction {
+                kind: QuickActionKind::StashSearch,
+                text: "\"ilvl: 8\"".to_owned(),
+                hotkey: None,
+            }]
+        );
+    }
+
+    #[test]
+    fn an_action_left_empty_is_dropped_for_good() {
+        let mut drafts = vec![
+            saved(QuickActionKind::ChatCommand, "/hideout", None),
+            saved(QuickActionKind::ChatCommand, "/exit", None),
+        ];
+        drafts[0].text = "   ".to_owned();
+        assert_eq!(texts(&kept_actions(&mut drafts)), ["/exit"]);
+        // Its old text doesn't come back behind a denied one typed later.
+        drafts[0].text = "/destroy".to_owned();
+        assert_eq!(texts(&kept_actions(&mut drafts)), ["/exit"]);
     }
 }

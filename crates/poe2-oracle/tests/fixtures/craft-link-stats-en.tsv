@@ -1,0 +1,62 @@
+explicit.stat_4220027924	explicit	#% to Cold Resistance
+explicit.stat_1671376347	explicit	#% to Lightning Resistance
+explicit.stat_4080418644	explicit	# to Strength
+explicit.stat_789117908	explicit	#% increased Mana Regeneration Rate
+explicit.stat_4015621042	explicit	#% increased Energy Shield
+explicit.stat_2901986750	explicit	#% to all Elemental Resistances
+explicit.stat_1263695895	explicit	#% increased Light Radius
+explicit.stat_2144192055	explicit	# to Evasion Rating
+explicit.stat_3336890334	explicit	Adds # to # Lightning Damage
+explicit.stat_1366840608	explicit	#% increased Charges
+explicit.stat_1011760251	explicit	#% to Maximum Lightning Resistance
+explicit.stat_2365392475	explicit	Recover # Life when Used
+explicit.stat_3308030688	explicit	#% increased Mana Regeneration Rate while stationary
+implicit.stat_2901986750	implicit	#% to all Elemental Resistances
+implicit.stat_4220027924	implicit	#% to Cold Resistance
+implicit.stat_789117908	implicit	#% increased Mana Regeneration Rate
+implicit.stat_1671376347	implicit	#% to Lightning Resistance
+implicit.stat_4080418644	implicit	# to Strength
+implicit.stat_2778646494	implicit	Used when you are affected by a Slow
+fractured.stat_4220027924	fractured	#% to Cold Resistance
+fractured.stat_1671376347	fractured	#% to Lightning Resistance
+fractured.stat_4015621042	fractured	#% increased Energy Shield
+fractured.stat_789117908	fractured	#% increased Mana Regeneration Rate
+fractured.stat_3336890334	fractured	Adds # to # Lightning Damage
+fractured.stat_4080418644	fractured	# to Strength
+fractured.stat_2901986750	fractured	#% to all Elemental Resistances
+fractured.stat_2144192055	fractured	# to Evasion Rating
+fractured.stat_1263695895	fractured	#% increased Light Radius
+fractured.stat_1011760251	fractured	#% to Maximum Lightning Resistance
+crafted.stat_1671376347	crafted	#% to Lightning Resistance
+crafted.stat_4220027924	crafted	#% to Cold Resistance
+crafted.stat_4015621042	crafted	#% increased Energy Shield
+crafted.stat_3336890334	crafted	Adds # to # Lightning Damage
+crafted.stat_4080418644	crafted	# to Strength
+crafted.stat_789117908	crafted	#% increased Mana Regeneration Rate
+crafted.stat_1011760251	crafted	#% to Maximum Lightning Resistance
+enchant.stat_4080418644	enchant	# to Strength
+enchant.stat_4220027924	enchant	#% to Cold Resistance
+enchant.stat_1671376347	enchant	#% to Lightning Resistance
+enchant.stat_789117908	enchant	#% increased Mana Regeneration Rate
+enchant.stat_4015621042	enchant	#% increased Energy Shield
+enchant.stat_3336890334	enchant	Adds # to # Lightning Damage
+enchant.stat_2901986750	enchant	#% to all Elemental Resistances
+enchant.stat_1011760251	enchant	#% to Maximum Lightning Resistance
+rune.stat_1671376347	augment	#% to Lightning Resistance
+rune.stat_4220027924	augment	#% to Cold Resistance
+rune.stat_3336890334	augment	Adds # to # Lightning Damage
+rune.stat_2901986750	augment	#% to all Elemental Resistances
+rune.stat_789117908	augment	#% increased Mana Regeneration Rate
+rune.stat_4080418644	augment	# to Strength
+rune.stat_1011760251	augment	#% to Maximum Lightning Resistance
+desecrated.stat_4015621042	desecrated	#% increased Energy Shield
+desecrated.stat_1671376347	desecrated	#% to Lightning Resistance
+desecrated.stat_4220027924	desecrated	#% to Cold Resistance
+desecrated.stat_789117908	desecrated	#% increased Mana Regeneration Rate
+desecrated.stat_3336890334	desecrated	Adds # to # Lightning Damage
+desecrated.stat_4080418644	desecrated	# to Strength
+desecrated.stat_2901986750	desecrated	#% to all Elemental Resistances
+desecrated.stat_2144192055	desecrated	# to Evasion Rating
+desecrated.stat_1011760251	desecrated	#% to Maximum Lightning Resistance
+desecrated.stat_1263695895	desecrated	#% increased Light Radius
+desecrated.stat_3308030688	desecrated	#% increased Mana Regeneration Rate while stationary

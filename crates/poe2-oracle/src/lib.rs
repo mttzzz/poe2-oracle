@@ -3,6 +3,8 @@
 pub mod bound_input;
 pub mod brand;
 pub mod bug_report;
+pub mod craft_link;
+pub mod i18n;
 pub mod item_refs;
 pub mod league_chip;
 pub mod listing_match;

@@ -37,11 +37,11 @@ use windows::Win32::Graphics::Dwm::{
 use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
 use windows::Win32::UI::WindowsAndMessaging::{
     CallWindowProcW, GWL_EXSTYLE, GWL_STYLE, GWLP_WNDPROC, GetForegroundWindow, GetWindowLongPtrW,
-    HWND_TOPMOST, MA_NOACTIVATE, SW_HIDE, SW_SHOWNOACTIVATE, SWP_FRAMECHANGED, SWP_NOACTIVATE,
-    SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos,
-    ShowWindow, WM_MOUSEACTIVATE, WNDPROC, WS_CAPTION, WS_EX_CLIENTEDGE, WS_EX_DLGMODALFRAME,
-    WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_STATICEDGE, WS_EX_TRANSPARENT, WS_EX_WINDOWEDGE,
-    WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
+    HWND_NOTOPMOST, HWND_TOPMOST, MA_NOACTIVATE, SW_HIDE, SW_SHOWNOACTIVATE, SWP_FRAMECHANGED,
+    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetForegroundWindow, SetWindowLongPtrW,
+    SetWindowPos, ShowWindow, WM_MOUSEACTIVATE, WNDPROC, WS_CAPTION, WS_EX_CLIENTEDGE,
+    WS_EX_DLGMODALFRAME, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_STATICEDGE, WS_EX_TRANSPARENT,
+    WS_EX_WINDOWEDGE, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
 };
 
 use crate::overlay_layout::PhysicalRect;
@@ -200,6 +200,31 @@ impl Win32Overlay {
             )
         }
         .context("SetWindowPos(bounds) failed")
+    }
+
+    /// Keeps the window above every window that isn't topmost -- the game's included -- or, with
+    /// `topmost` false, only on top of those: a `WindowKind::Normal` window (the settings window)
+    /// is created without `WS_EX_TOPMOST`, and steps down while a window it opened that isn't
+    /// topmost (the sign-in window) must show in front of it. Deferred like [`Self::set_bounds`]:
+    /// `SetWindowPos` sends `WM_WINDOWPOSCHANGED` synchronously.
+    pub fn set_topmost(&self, topmost: bool) -> Result<()> {
+        let band = if topmost {
+            HWND_TOPMOST
+        } else {
+            HWND_NOTOPMOST
+        };
+        unsafe {
+            SetWindowPos(
+                self.hwnd,
+                Some(band),
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+            )
+        }
+        .with_context(|| format!("SetWindowPos(topmost: {topmost}) failed"))
     }
 
     /// Whether this window currently has keyboard focus (the player clicked into the panel).

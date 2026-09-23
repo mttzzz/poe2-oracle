@@ -47,9 +47,9 @@ use crate::bug_report;
 use crate::game_chat;
 use crate::item_refs::{self, RefKind};
 use crate::live_search::{self, WatchedSearch};
-use crate::overlay_layout::PhysicalRect;
+use crate::overlay_layout::{self, PanelSide, PhysicalRect};
 use crate::paths;
-use crate::platform::game_window::Foreground;
+use crate::platform::game_window::{Foreground, GameScreen};
 use crate::platform::{clipboard_poll, esc_hook, game_config, game_window, synth_input};
 use crate::roll_slider::{self, Handle, Slider};
 use crate::settings::{self, Hotkey, LeagueChoice, QuickAction, Settings, WaystoneMark};
@@ -65,6 +65,9 @@ const FOREGROUND_SETTLE: Duration = Duration::from_millis(250);
 
 /// How long a listing row says its whisper was copied.
 const WHISPER_COPIED_SHOWN: Duration = Duration::from_secs(4);
+
+/// How often a drag of the panel by its title bar looks at the pointer: each frame at 120 Hz.
+const PANEL_DRAG_POLL: Duration = Duration::from_millis(8);
 
 /// Up to 10 listings per `fetch` request -- the trade API's own per-request limit -- and one
 /// request per search. EE2 fetches a second page (listings 10-20, `trade-api.ts`), but two
@@ -222,6 +225,16 @@ impl FilterRowUi {
     }
 }
 
+/// A drag of the panel by its title bar (`PriceCheckApp::begin_panel_drag`): the pointer's x and
+/// the panel's rect when it started, the side it's on, and the screen it's kept on.
+#[derive(Debug, Clone, Copy)]
+struct PanelDrag {
+    cursor_x: i32,
+    start: PhysicalRect,
+    side: PanelSide,
+    screen: GameScreen,
+}
+
 /// One trade site's localized catalogs: the stat templates `item-parser` matches mod lines
 /// against, the exchange-tradable static items `route_search` matches currency-like items
 /// against, the base types it recognizes a magic item's base in, and the leagues by their names
@@ -337,15 +350,21 @@ pub struct PriceCheckApp {
     pub visible: bool,
     /// The title bar's league menu is open (`ui::panel::title_bar`).
     pub league_menu: bool,
-    /// The profile chip's menu is open (`ui::panel::results`).
+    /// The profile select's menu is open (`ui::panel::results`).
     pub profile_menu: bool,
     /// The item trades on the Currency Exchange: priced from the market alone -- no filters, no
     /// trade search (`SearchRoute::Market`).
     pub priced_by_market: bool,
-    /// Where the panel belongs for the current check (EE2 placement, physical pixels) -- the
-    /// app's window wrapper (`app.rs`'s `PriceCheckRoot`) moves the OS window here. `None` until
-    /// the first check.
+    /// Where the panel belongs for the current check (EE2 placement, or where the player dragged
+    /// it on that side; physical pixels) -- the app's window wrapper (`app.rs`'s
+    /// `PriceCheckRoot`) moves the OS window here. `None` until the first check.
     pub placement: Option<PhysicalRect>,
+    /// The side of the game `placement` is on: the side whose place a drag of the panel sets.
+    panel_side: Option<PanelSide>,
+    /// The drag of the panel by its title bar under way (`begin_panel_drag`).
+    panel_drag: Option<PanelDrag>,
+    /// Checks shown so far: each one plays the panel's appearance again (`ui::panel`).
+    pub appearances: u64,
     /// Which sellers the search asks for -- the trade site's "Instant Buyout" / "In Person"
     /// choice, PoE Overlay II's status dropdown. Starts at the settings' default sellers for every
     /// new item.
@@ -434,6 +453,9 @@ impl PriceCheckApp {
             profile_menu: false,
             priced_by_market: false,
             placement: None,
+            panel_side: None,
+            panel_drag: None,
+            appearances: 0,
             show_hidden: false,
             scope: None,
             corruption: None,
@@ -579,6 +601,11 @@ impl PriceCheckApp {
         }
         self.sync_hotkey_registration(game_window::foreground());
         self.follow_league(cx);
+        if self.settings.interface_language != old.interface_language
+            && crate::i18n::apply(self.settings.interface_language)
+        {
+            cx.refresh_windows();
+        }
         cx.notify();
     }
 
@@ -1066,7 +1093,8 @@ impl PriceCheckApp {
     }
 
     /// Writes every row's min/max input into its roll, so a search always runs with what the
-    /// inputs show -- whether it was started by Enter, the Search button or the status chip.
+    /// inputs show -- whether it was started by Enter, the Search plate or the sellers and price
+    /// selects.
     fn commit_bound_inputs(&mut self) {
         for (filter, ui) in self.filters.iter_mut().zip(&mut self.filter_ui) {
             let Some(roll) = filter.roll.as_mut() else {
@@ -1100,14 +1128,14 @@ impl PriceCheckApp {
         self.spawn_search(cx);
     }
 
-    /// Opens or closes the profile chip's menu.
+    /// Opens or closes the profile select's menu.
     pub fn set_profile_menu(&mut self, open: bool, cx: &mut Context<Self>) {
         self.profile_menu = open;
         cx.notify();
     }
 
     /// Sets the item's search up the way `profile` does and searches it, once: the player's pick
-    /// from the profile chip's menu, or the «Широкий −10 %» button after nothing matched. Broad
+    /// from the profile select's menu, or the «Широкий −10 %» button after nothing matched. Broad
     /// keeps the rows the player checked and lowers their minimums from the rolls
     /// (`stat_filters::apply_profile`, PoE Overlay II's `copySelectedFromPrevious`); every other
     /// profile checks its own rows, built afresh as the item opens with it
@@ -1203,6 +1231,126 @@ impl PriceCheckApp {
         if self.roll_drag.take().is_some() {
             cx.notify();
         }
+    }
+
+    /// Shows the panel for a check at `placement` -- the rect and side
+    /// `game_window::panel_at_cursor` gave; `None` keeps the last ones -- and plays its appearance
+    /// again (`ui::panel`).
+    fn show_panel(&mut self, placement: Option<(PhysicalRect, PanelSide)>) {
+        self.visible = true;
+        self.appearances += 1;
+        self.panel_drag = None;
+        if let Some((rect, side)) = placement {
+            self.placement = Some(rect);
+            self.panel_side = Some(side);
+        }
+    }
+
+    /// Whether the player is dragging the panel by its title bar.
+    pub fn dragging_panel(&self) -> bool {
+        self.panel_drag.is_some()
+    }
+
+    /// The player pressed the title bar's empty part: the panel follows the pointer sideways, kept
+    /// on the game's monitor (`overlay_layout::dragged`), until the button is released -- and its
+    /// side keeps the place (`drag_panel`). The pointer is polled rather than followed through
+    /// mouse moves: the game keeps the foreground, so the panel can't capture the mouse, and the
+    /// moves stop reaching it the moment the pointer outruns it. Nothing here activates the
+    /// panel: the game keeps the keyboard throughout.
+    pub fn begin_panel_drag(&mut self, cx: &mut Context<Self>) {
+        let (Some(start), Some(side)) = (self.placement, self.panel_side) else {
+            return;
+        };
+        let (Some(cursor_x), Some(screen)) = (game_window::cursor_x(), GameScreen::at_cursor())
+        else {
+            return;
+        };
+        // A press while a drag's loop still runs -- a quick second press before it saw the
+        // release -- starts over from here in the same loop.
+        let running = self.panel_drag.is_some();
+        self.panel_drag = Some(PanelDrag {
+            cursor_x,
+            start,
+            side,
+            screen,
+        });
+        cx.notify();
+        if running {
+            return;
+        }
+        cx.spawn(async move |view, cx| {
+            let mut dragging = true;
+            while dragging {
+                cx.background_executor().timer(PANEL_DRAG_POLL).await;
+                let held = game_window::primary_button_down();
+                let cursor_x = game_window::cursor_x();
+                dragging = view
+                    .update(cx, |state, cx| state.drag_panel(cursor_x, held, cx))
+                    .unwrap_or(false);
+            }
+        })
+        .detach();
+    }
+
+    /// One look at the pointer during a drag: the panel at its x -- then, the button released, the
+    /// drag's end, where the side keeps the place the panel was left at. `false` once the drag is
+    /// over or called off (the panel closed; a double-click sent it back).
+    fn drag_panel(&mut self, cursor_x: Option<i32>, held: bool, cx: &mut Context<Self>) -> bool {
+        let Some(drag) = self.panel_drag else {
+            return false;
+        };
+        if !self.visible {
+            self.panel_drag = None;
+            return false;
+        }
+        if let Some(cursor_x) = cursor_x {
+            let rect =
+                overlay_layout::dragged(drag.start, cursor_x - drag.cursor_x, drag.screen.monitor);
+            if self.placement != Some(rect) {
+                self.placement = Some(rect);
+                cx.notify();
+            }
+        }
+        if held {
+            return true;
+        }
+        self.panel_drag = None;
+        cx.notify();
+        if let Some(rect) = self.placement.filter(|rect| rect.x != drag.start.x) {
+            self.settings
+                .panel_positions
+                .remember(drag.side, drag.screen.game, rect.x);
+            log::info!(
+                "the price panel was dragged to x {} on the {:?} side",
+                rect.x,
+                drag.side
+            );
+            if let Err(err) = settings::save(&self.settings) {
+                log::warn!("saving the panel's place failed: {err:#}");
+            }
+        }
+        false
+    }
+
+    /// A double-click on the title bar: the panel goes back to EE2's placement on its side, where
+    /// the next checks on that side open too.
+    pub fn reset_panel_position(&mut self, cx: &mut Context<Self>) {
+        self.panel_drag = None;
+        let Some(side) = self.panel_side else {
+            return;
+        };
+        let kept = self.settings.panel_positions;
+        self.settings.panel_positions.forget(side);
+        if let Some(rect) = game_window::automatic_panel_rect(side, self.settings.ui_scale) {
+            self.placement = Some(rect);
+        }
+        log::info!("the price panel went back to its own place on the {side:?} side");
+        if self.settings.panel_positions != kept
+            && let Err(err) = settings::save(&self.settings)
+        {
+            log::warn!("saving the panel's place failed: {err:#}");
+        }
+        cx.notify();
     }
 
     fn spawn_search(&mut self, cx: &mut Context<Self>) {
@@ -1599,17 +1747,18 @@ async fn run_price_check(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
             state.advanced_mod_desc_key,
             state.settings.hotkey,
             state.settings.ui_scale,
+            state.settings.panel_positions,
         )),
         _ => None,
     });
-    let Some((mod_key, hotkey, ui_scale)) = ready else {
+    let Some((mod_key, hotkey, ui_scale, positions)) = ready else {
         // Nothing to parse against yet: the panel says why (still loading, or the first load
         // failed), and a failed load is tried again at once.
         view.update(cx, |state, cx| {
-            state.visible = true;
-            if let Some(placement) = game_window::panel_rect_at_cursor(state.settings.ui_scale) {
-                state.placement = Some(placement);
-            }
+            state.show_panel(game_window::panel_at_cursor(
+                state.settings.ui_scale,
+                &state.settings.panel_positions,
+            ));
             if matches!(state.bootstrap, BootstrapState::Failed(_)) {
                 state.retry_bootstrap(cx);
             }
@@ -1620,7 +1769,7 @@ async fn run_price_check(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
 
     // Where the check happened, recorded before anything is synthesized -- EE2 reads the cursor
     // (`screen.getCursorScreenPoint()`) ahead of `pressKeysToCopyItemText` for the same reason.
-    let placement = game_window::panel_rect_at_cursor(ui_scale);
+    let placement = game_window::panel_at_cursor(ui_scale, &positions);
 
     // After the player clicked into the open panel, the panel -- not the game -- has keyboard
     // focus, and the copy combo would land in the panel. Hand focus back first.
@@ -1656,11 +1805,8 @@ async fn run_price_check(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
             let combo = synth_input::copy_combo_label(mod_key);
             log::warn!("no item text: another program holds {combo}");
             view.update(cx, |state, cx| {
-                state.visible = true;
+                state.show_panel(placement);
                 state.league_menu = false;
-                if placement.is_some() {
-                    state.placement = placement;
-                }
                 state.show_problem(format!(
                     "Игра не копирует предмет: сочетание {combo} перехватывает другая \
                      программа — чаще всего оверлей видеокарты, запись экрана или Discord. \
@@ -1673,12 +1819,9 @@ async fn run_price_check(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
     };
 
     let (has_item, diagnosis) = view.update(cx, |state, cx| {
-        state.visible = true;
+        state.show_panel(placement);
         state.league_menu = false;
         state.profile_menu = false;
-        if placement.is_some() {
-            state.placement = placement;
-        }
         state.item_text = Some(text.clone());
         let parsed = match item_site(&text, state.settings.client_language.item_language()) {
             Some((language, site)) => {

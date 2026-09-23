@@ -1,5 +1,5 @@
 //! A Currency Exchange item's market card, priced by GGG's record of the exchange rather than
-//! from listings.
+//! from listings: a card a step above the panel, hairlines between its parts.
 
 use gpui::{
     FontWeight, IntoElement, PathBuilder, canvas, div, linear_color_stop, linear_gradient, point,
@@ -14,8 +14,9 @@ use windows::Win32::System::SystemInformation::GetLocalTime;
 use windows::Win32::System::Time::{FileTimeToSystemTime, SystemTimeToTzSpecificLocalTime};
 
 use crate::price_check::PriceCheckApp;
+use crate::ui::style::CARD_RADIUS;
 use crate::ui::theme::{
-    BG_NAMEPLATE, BORDER, BORDER_GOLD, CONTENT_PADDING, PRICE_FALL, PRICE_RISE, TEXT_DIM,
+    BG_CARD, BORDER_CARD, BORDER_ROW, CONTENT_PADDING, PRICE_FALL, PRICE_RISE, TEXT_DIM,
     TEXT_MUTED, rems_from_px,
 };
 
@@ -72,11 +73,11 @@ pub(super) fn render_market_card(
     div()
         .flex()
         .flex_col()
-        .mt(rems_from_px(10.))
-        .rounded_xs()
+        .mt(rems_from_px(12.))
+        .rounded(rems_from_px(CARD_RADIUS))
         .border_1()
-        .border_color(rgb(BORDER_GOLD))
-        .bg(rgb(BG_NAMEPLATE))
+        .border_color(rgb(BORDER_CARD))
+        .bg(rgb(BG_CARD))
         .child(
             div()
                 .flex()
@@ -129,7 +130,7 @@ pub(super) fn render_market_card(
                 .px(rems_from_px(CONTENT_PADDING))
                 .py(rems_from_px(8.))
                 .border_t_1()
-                .border_color(rgb(BORDER))
+                .border_color(rgb(BORDER_ROW))
                 .child(
                     div()
                         .flex()
@@ -156,7 +157,7 @@ pub(super) fn render_market_card(
                 .px(rems_from_px(CONTENT_PADDING))
                 .py(rems_from_px(8.))
                 .border_t_1()
-                .border_color(rgb(BORDER))
+                .border_color(rgb(BORDER_ROW))
                 .text_xs()
                 .child(market_line(
                     "Оборот в час",
@@ -198,7 +199,7 @@ pub(super) fn render_market_card(
                 .px(rems_from_px(CONTENT_PADDING))
                 .py(rems_from_px(6.))
                 .border_t_1()
-                .border_color(rgb(BORDER))
+                .border_color(rgb(BORDER_ROW))
                 .text_xs()
                 .text_color(rgb(TEXT_MUTED))
                 .child(format!(
