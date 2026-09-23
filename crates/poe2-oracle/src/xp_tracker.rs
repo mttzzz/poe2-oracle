@@ -426,9 +426,6 @@ const WRAP_DROP: f64 = 0.5;
 const BIG_GAIN: f64 = 0.05;
 /// How far apart a logged level-up and the bar's wrap may be and still be the same level-up.
 const LEVEL_UP_MATCH: Duration = Duration::from_secs(30);
-/// The bar counts as on screen until it has been unreadable this long, so a tooltip passing over
-/// it doesn't blink the overlay.
-const HIDE_AFTER: Duration = Duration::from_secs(5);
 
 /// What the overlay shows.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -440,8 +437,6 @@ pub struct XpStatus {
     pub rate_per_hour: Option<f64>,
     /// The character's current level, once the log has named it since the last login.
     pub level: Option<u32>,
-    /// Whether the bar is on screen right now.
-    pub bar_visible: bool,
     /// Whether the player is playing, or since when they haven't been.
     pub activity: Activity,
     /// The current map run, once the character has entered a map since the tracker started or
@@ -551,7 +546,6 @@ pub struct XpTracker {
     /// The two readings before the latest, oldest first, for the median filter.
     recent: [Option<f64>; 2],
     last_readable_at: Option<Duration>,
-    last_sample_at: Option<Duration>,
     /// The last filtered reading and when it was taken.
     last: Option<(Duration, f64)>,
     /// The best filtered reading since the last rebase.
@@ -711,7 +705,6 @@ impl XpTracker {
     /// is monotonic time since any fixed origin.
     pub fn on_sample(&mut self, fraction: Option<f64>, at: Duration) {
         self.advance(at);
-        self.last_sample_at = Some(at);
         let Some(reading) = fraction else {
             return;
         };
@@ -810,10 +803,6 @@ impl XpTracker {
             rate_per_hour: (self.counted >= MIN_RATE_TIME)
                 .then(|| self.weighted_gain / self.weighted_secs * 3600.0),
             level: self.level,
-            bar_visible: match (self.last_readable_at, self.last_sample_at) {
-                (Some(readable), Some(sampled)) => sampled.saturating_sub(readable) <= HIDE_AFTER,
-                _ => false,
-            },
             activity: self.activity(),
             map: self.clock.and_then(|now| self.maps.status(now)),
         }
@@ -1381,7 +1370,6 @@ mod tests {
             left,
             0.06,
         );
-        assert!(status.bar_visible);
     }
 
     #[test]
@@ -1959,7 +1947,6 @@ mod tests {
             fraction: Some(0.648),
             rate_per_hour: Some(0.124),
             level: Some(74),
-            bar_visible: true,
             activity: Activity::Playing,
             map: Some(map),
         };

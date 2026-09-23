@@ -131,25 +131,26 @@ impl PriceCheckRoot {
     /// (`gpui_windows` draws on `WM_PAINT`, which hidden windows don't get), so a sync that only
     /// ran in `render` could never show the window again once it had hidden it.
     fn sync_window(&mut self, cx: &mut Context<Self>) {
+        // Before `sync_xp`, which hands the XP overlay the rect the panel is going to.
+        let ui_scale = self.inner.read(cx).settings.ui_scale;
+        if self.default_bounds_scale != Some(ui_scale) {
+            self.default_bounds = game_window::default_panel_rect(ui_scale);
+            self.default_bounds_scale = Some(ui_scale);
+        }
         self.sync_tray(cx);
         self.sync_xp(cx);
         self.sync_trade(cx);
         let Some(overlay) = self.overlay else {
             return;
         };
-        let (visible, placement, settings_open, ui_scale) = {
+        let (visible, placement, settings_open) = {
             let state = self.inner.read(cx);
             (
                 state.visible,
                 state.placement,
                 state.settings_window().is_some(),
-                state.settings.ui_scale,
             )
         };
-        if self.default_bounds_scale != Some(ui_scale) {
-            self.default_bounds = game_window::default_panel_rect(ui_scale);
-            self.default_bounds_scale = Some(ui_scale);
-        }
 
         let want_click_through = !visible;
         let click_through =

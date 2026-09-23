@@ -67,10 +67,13 @@ pub fn sample() -> Option<BarSample> {
         .filter(|geometry| shows_the_game(hwnd, geometry.capture))
         .and_then(|geometry| read_screen(geometry.capture, |bgra| read_fill(geometry, bgra)));
     let plates = hud_rails(client);
+    // Like the bar: only pixels the game itself shows there count -- another program's light
+    // line over a darker one would pass for a lip.
     let seen = |plate: PhysicalRect| {
         let lip = rail_lip(plate, client.height);
         let width = usize::try_from(lip.width).unwrap_or(0);
-        read_screen(lip, |bgra| Some(rail_seen(bgra, width))).unwrap_or(false)
+        shows_the_game(hwnd, lip)
+            && read_screen(lip, |bgra| Some(rail_seen(bgra, width))).unwrap_or(false)
     };
     Some(BarSample {
         client,
@@ -83,8 +86,9 @@ pub fn sample() -> Option<BarSample> {
     })
 }
 
-/// Whether the screen shows the game itself at points along `rect`, the bar's capture. Anything
-/// over the bar -- the price panel, which can span the bar's middle, the tour's dim, another
+/// Whether the screen shows the game itself at points along the middle row of `rect`: the bar's
+/// capture, or a rail's lip (whose middle row is always the lip's, never the plate's under it).
+/// Anything over it -- the price panel, which can span the bar's middle, the tour's dim, another
 /// program, the desktop after an Alt+Tab -- is what a blit copies, and a cover that happens to
 /// pass `read_fill`'s checks reads as a wrong fill: a drop the tracker takes for a loss, then a
 /// "gain" when the cover goes. Windows that let clicks through are passed over by
