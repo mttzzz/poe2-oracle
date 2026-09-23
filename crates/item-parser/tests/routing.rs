@@ -162,7 +162,12 @@ fn every_fixture_gets_filters_and_a_route() {
         let catalog = exchange_catalog_for(&name);
         let item = parse_fixture(&name);
         // Must not panic, whatever the item.
-        let filters = stat_filters::build_filters(&item, SearchProfile::default_for(&item), &stats);
+        let filters = stat_filters::build_filters(
+            &item,
+            SearchProfile::default_for(&item),
+            &stats,
+            stat_filters::Session::SignedIn,
+        );
         let route = route_search(&item, &catalog, &[]);
         let kind = match &route {
             SearchRoute::Market { trade_id } => {
@@ -421,7 +426,12 @@ fn currency_missing_from_the_exchange_is_searched_by_its_type() {
 /// A fixture's rows, as the panel first shows them: with the item's default search profile.
 fn built(name: &str, stats: &StatCatalog) -> Vec<stat_filters::SearchFilter> {
     let item = parse_fixture(name);
-    stat_filters::build_filters(&item, SearchProfile::default_for(&item), stats)
+    stat_filters::build_filters(
+        &item,
+        SearchProfile::default_for(&item),
+        stats,
+        stat_filters::Session::SignedIn,
+    )
 }
 
 fn row<'a>(filters: &'a [stat_filters::SearchFilter], id: &str) -> &'a stat_filters::SearchFilter {
@@ -483,7 +493,12 @@ fn gems_waystones_and_tablets_carry_ee2s_property_rows() {
     ))
     .expect("fixture text");
     let item = parse_clipboard(&text, ItemLanguage::English, &catalog).expect("parses");
-    let tablet = stat_filters::build_filters(&item, SearchProfile::default_for(&item), &catalog);
+    let tablet = stat_filters::build_filters(
+        &item,
+        SearchProfile::default_for(&item),
+        &catalog,
+        stat_filters::Session::SignedIn,
+    );
     let uses = row(&tablet, "pseudo.pseudo_number_of_uses_remaining");
     assert_eq!(uses.roll.as_ref().and_then(|r| r.min), Some(10.0));
     assert!(uses.enabled);

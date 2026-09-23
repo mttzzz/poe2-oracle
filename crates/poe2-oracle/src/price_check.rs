@@ -244,6 +244,11 @@ pub enum SearchFailure {
     RateLimited(Option<u64>),
     /// The trade API refused the request, with its HTTP status and message.
     Refused { status: u16, message: String },
+    /// The site found the query too complex (`TradeApiError::is_too_complex`). With
+    /// `weighted_sums` it searched a checked «сумма» row, which the site takes only from a
+    /// signed-in account (`stat_filters::Session`): the sign-in the app sent, if any, isn't
+    /// accepted any more.
+    TooComplex { weighted_sums: bool },
     /// The request never got through -- no network, no DNS, a refused or dropped connection: the
     /// player's connection, not the search. With the error's own words.
     Unreachable(String),
@@ -252,14 +257,18 @@ pub enum SearchFailure {
 }
 
 impl SearchFailure {
-    /// What a failed search's `err` means for the player.
-    fn of(err: &anyhow::Error) -> Self {
+    /// What a failed search's `err` means for the player; `weighted_sums`: whether the search had
+    /// a checked weighted sum.
+    fn of(err: &anyhow::Error, weighted_sums: bool) -> Self {
         if let Some(RateLimitedFor(wait)) = err.downcast_ref::<RateLimitedFor>() {
             return SearchFailure::RateLimited(Some(wait.as_secs()));
         }
         if let Some(api) = err.downcast_ref::<TradeApiError>() {
             if api.is_rate_limited() {
                 return SearchFailure::RateLimited(api.retry_after_secs);
+            }
+            if api.is_too_complex() {
+                return SearchFailure::TooComplex { weighted_sums };
             }
             return SearchFailure::Refused {
                 status: api.status,
@@ -284,6 +293,21 @@ impl SearchFailure {
                 status = status,
                 message = message
             ),
+            SearchFailure::TooComplex {
+                weighted_sums: true,
+            } => tr!(
+                "The trade site searches the “sum” rows only for a signed-in account, and it isn't \
+                 accepting this app's sign-in now. Search without them, or sign in again under \
+                 Settings → Account."
+            )
+            .to_owned(),
+            SearchFailure::TooComplex {
+                weighted_sums: false,
+            } => tr!(
+                "The trade site finds this search too complex: uncheck some rows and search again. \
+                 Signed in, the site allows more."
+            )
+            .to_owned(),
             SearchFailure::Unreachable(error) => tr!(
                 "Can't reach the trade site — check your internet connection and try again.\n\n\
                  {error}",
@@ -1243,8 +1267,12 @@ impl PriceCheckApp {
         if profile == stat_filters::SearchProfile::Broad {
             stat_filters::apply_profile(&mut self.filters, profile);
         } else {
-            self.filters =
-                stat_filters::build_filters(item, profile, &self.catalog(self.site).stats);
+            self.filters = stat_filters::build_filters(
+                item,
+                profile,
+                &self.catalog(self.site).stats,
+                search_session(cx),
+            );
         }
         self.filter_ui = self
             .filters
@@ -1266,6 +1294,30 @@ impl PriceCheckApp {
     pub fn search_one_fewer(&mut self, cx: &mut Context<Self>) {
         self.one_fewer_next = true;
         self.spawn_search(cx);
+    }
+
+    /// Builds the item's rows again as a signed-out search does (`stat_filters::Session`), in the
+    /// same profile, and searches once: the «Искать без сумм» button after the site refused a
+    /// weighted sum. The mods the sums added up are rows of their own then, picked on their
+    /// scores.
+    pub fn search_without_sums(&mut self, cx: &mut Context<Self>) {
+        let (Some(item), Some(profile)) = (self.item.as_ref(), self.profile) else {
+            return;
+        };
+        self.filters = stat_filters::build_filters(
+            item,
+            profile,
+            &self.catalog(self.site).stats,
+            stat_filters::Session::Anonymous,
+        );
+        self.filter_ui = self
+            .filters
+            .iter()
+            .map(|filter| FilterRowUi::new(cx, filter))
+            .collect();
+        self.roll_drag = None;
+        self.spawn_search(cx);
+        cx.notify();
     }
 
     /// Sets the minimum of every checked row whose tier the tier table knows to the bottom of
@@ -1929,8 +1981,12 @@ async fn run_price_check(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
         match parsed {
             Ok(item) => {
                 let profile = stat_filters::SearchProfile::default_for(&item);
-                state.filters =
-                    stat_filters::build_filters(&item, profile, &state.catalog(state.site).stats);
+                state.filters = stat_filters::build_filters(
+                    &item,
+                    profile,
+                    &state.catalog(state.site).stats,
+                    search_session(cx),
+                );
                 state.filter_ui = state
                     .filters
                     .iter()
@@ -2208,6 +2264,9 @@ pub async fn run_search(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
     };
 
     let from_cache = cached.is_some();
+    let summed = filters
+        .iter()
+        .any(|filter| filter.enabled && filter.weighted_sum);
     let outcome = match cached {
         Some(results) => Ok(RouteOutcome::Listings(results)),
         None => execute_route(view, cx, &target, route, &filters).await,
@@ -2273,8 +2332,19 @@ pub async fn run_search(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
                 trade_url: results.trade_url,
                 relaxed: results.relaxed,
             },
-            Err(err) => SearchState::Failed(SearchFailure::of(&err)),
+            Err(err) => SearchState::Failed(SearchFailure::of(&err, summed)),
         };
+        // A weighted sum refused: the site doesn't take the session the app holds for a signed-in
+        // one. Asking its account page again makes the next check build without sums.
+        if matches!(
+            state.search,
+            SearchState::Failed(SearchFailure::TooComplex {
+                weighted_sums: true
+            })
+        ) {
+            log::warn!("the trade site refused a weighted sum; checking the session again");
+            crate::session::check(cx);
+        }
         cx.notify();
     });
     // The rows' exchange-rate equivalents and the title bar's rate: a market that has aged is
@@ -2282,6 +2352,19 @@ pub async fn run_search(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
     // arrives, and go without it when it doesn't.
     if listed {
         let _ = current_market(view, cx, &client, &league).await;
+    }
+}
+
+/// Whether a search may add stats up on the site: a weighted sum needs a signed-in account
+/// (`stat_filters::Session`). A session the site accepted counts, and so does one the check
+/// couldn't reach the site about, sent as it is; one being checked, refused or missing doesn't.
+fn search_session(cx: &App) -> stat_filters::Session {
+    match cx.try_global::<crate::session::SessionStatus>() {
+        Some(
+            crate::session::SessionStatus::SignedIn { .. }
+            | crate::session::SessionStatus::Unchecked(_),
+        ) => stat_filters::Session::SignedIn,
+        _ => stat_filters::Session::Anonymous,
     }
 }
 

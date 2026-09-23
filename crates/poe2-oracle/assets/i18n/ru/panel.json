@@ -195,5 +195,11 @@
   "{n} hr ago": "{n} ч. назад",
   "{n} day ago|{n} days ago": "{n} дн. назад|{n} дн. назад|{n} дн. назад",
   "{n} mo ago": "{n} мес. назад",
-  "{n} yr ago": "{n} г. назад"
+  "{n} yr ago": "{n} г. назад",
+
+  "The trade site searches the “sum” rows only for a signed-in account, and it isn't accepting this app's sign-in now. Search without them, or sign in again under Settings → Account.": "Строки «сумма» сайт торговли ищет только для вошедших в аккаунт, а вход программы он сейчас не принимает. Найдите без них или войдите снова: Настройки → Аккаунт.",
+  "The trade site finds this search too complex: uncheck some rows and search again. Signed in, the site allows more.": "Сайт торговли счёл запрос слишком сложным: снимите часть отметок и повторите поиск. Вошедшим в аккаунт сайт разрешает больше.",
+  "Search without sums": "Искать без сумм",
+  "Check the item again without the “sum” rows: their mods are searched one by one. One search on the trade site.": "Проверить предмет заново без строк «сумма»: их моды ищутся по отдельности. Один поиск на сайте торговли.",
+  "Opens the pathofexile.com sign-in page. The sums work once you're in.": "Откроет страницу входа pathofexile.com. После входа суммы заработают."
 }

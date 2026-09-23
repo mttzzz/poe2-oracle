@@ -152,25 +152,40 @@ impl SearchFilter {
     }
 }
 
+/// Whether the searcher is signed in to pathofexile.com, which decides if weighted sums are built.
+/// The trade site takes a weighted sum (a `"weight2"` stat group) only from a signed-in account:
+/// anonymously an enabled one comes back as HTTP 400, error code 2, «Query is too complex ...
+/// Logging in will increase this limit» -- a disabled one passes (both verified live
+/// 2026-09-23). PoE Overlay II needs a login for them too.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Session {
+    SignedIn,
+    /// No weighted sums: the mods a sum would add up are rows of their own, ranked and picked
+    /// like any other.
+    Anonymous,
+}
+
 /// Builds every `SearchFilter` row for `item`, in EE2's order (`initUiModFilters`,
 /// `create-stat-filters.ts:222-297`): one per non-`None` base-item property (`property_filters`),
-/// then the pseudo totals (`pseudo::pseudo_filters`) and weighted sums (`weighted`), then one per
-/// distinct trade-searchable stat (grouped across mods sharing a stat id and a compatible
-/// `ModifierType`, see `per_mod_filters`), then the free affix slots (`empty_affix_filters`, last
-/// like EE2's `finalFilterTweaks` row). Every row gets its score (`rank`); `profile` picks the rows
-/// searched -- Broad keeps checkboxes, so built fresh it keeps those of the item's own default
-/// profile -- and sets every row's bounds (`apply_profile`). `catalog` is the searched site's stat
-/// catalog: pseudo, weighted-sum and free-slot rows read in its language.
+/// then the pseudo totals (`pseudo::pseudo_filters`) and, for a signed-in `session`, weighted sums
+/// (`weighted`), then one per distinct trade-searchable stat (grouped across mods sharing a stat
+/// id and a compatible `ModifierType`, see `per_mod_filters`), then the free affix slots
+/// (`empty_affix_filters`, last like EE2's `finalFilterTweaks` row). Every row gets its score
+/// (`rank`); `profile` picks the rows searched -- Broad keeps checkboxes, so built fresh it keeps
+/// those of the item's own default profile -- and sets every row's bounds (`apply_profile`).
+/// `catalog` is the searched site's stat catalog: pseudo, weighted-sum and free-slot rows read in
+/// its language.
 pub fn build_filters(
     item: &ParsedItem,
     profile: SearchProfile,
     catalog: &StatCatalog,
+    session: Session,
 ) -> Vec<SearchFilter> {
     let picking = match profile {
         SearchProfile::Broad => SearchProfile::default_for(item),
         other => other,
     };
-    let mut rows = Rows::build(item, catalog);
+    let mut rows = Rows::build(item, catalog, session);
     rows.rank(item);
     rows.pick(item, picking);
     let mut filters = rows.filters;
@@ -194,16 +209,20 @@ struct Rows {
 }
 
 impl Rows {
-    fn build(item: &ParsedItem, catalog: &StatCatalog) -> Self {
+    fn build(item: &ParsedItem, catalog: &StatCatalog, session: Session) -> Self {
         let mut filters = property_filters(item);
         let mut sources: Vec<Vec<usize>> = filters
             .iter()
             .map(|row| property::merged_mods(item, &row.trade_ids[0]))
             .collect();
         let (mut mod_rows, mod_sources) = per_mod_filters(item, catalog);
+        let weighted_sums = match session {
+            Session::SignedIn => weighted::weighted_sums(item, catalog),
+            Session::Anonymous => Vec::new(),
+        };
         let totals = pseudo::pseudo_filters(item, catalog, &mut mod_rows)
             .into_iter()
-            .chain(weighted::weighted_sums(item, catalog));
+            .chain(weighted_sums);
         for (row, row_sources) in totals {
             filters.push(row);
             sources.push(row_sources);
@@ -985,7 +1004,12 @@ mod tests {
     }
 
     fn quick(item: &ParsedItem) -> Vec<SearchFilter> {
-        build_filters(item, SearchProfile::QuickPrice, &StatCatalog::default())
+        build_filters(
+            item,
+            SearchProfile::QuickPrice,
+            &StatCatalog::default(),
+            Session::SignedIn,
+        )
     }
 
     /// The row whose first trade id is `trade_id`.
@@ -1108,6 +1132,34 @@ mod tests {
     }
 
     #[test]
+    fn signed_out_the_mods_a_weighted_sum_would_add_up_compete_as_rows_of_their_own() {
+        let filters = build_filters(
+            &ring(),
+            SearchProfile::QuickPrice,
+            &StatCatalog::default(),
+            Session::Anonymous,
+        );
+        assert!(filters.iter().all(|filter| !filter.weighted_sum));
+        // The same scores as signed in, but rarity 4, physical 3.75 and fire 3.7 are mods now,
+        // not weighted sums, and no cap of two holds them back: life 5.25 and those three are the
+        // four best, resistance 3.68 the fifth.
+        let searched: Vec<&str> = filters
+            .iter()
+            .filter(|filter| filter.enabled)
+            .map(|filter| filter.trade_ids[0].as_str())
+            .collect();
+        assert_eq!(
+            searched,
+            [
+                "pseudo.pseudo_total_life",
+                "explicit.stat_3032590688",
+                "explicit.stat_1573130764",
+                "explicit.stat_3917489142",
+            ]
+        );
+    }
+
+    #[test]
     fn exact_match_searches_every_shown_row_crafting_base_the_base_and_broad_a_tenth_lower() {
         let mut ring = ring();
         ring.mods.insert(
@@ -1124,7 +1176,12 @@ mod tests {
         );
         ring.mods.pop();
 
-        let exact = build_filters(&ring, SearchProfile::ExactMatch, &StatCatalog::default());
+        let exact = build_filters(
+            &ring,
+            SearchProfile::ExactMatch,
+            &StatCatalog::default(),
+            Session::SignedIn,
+        );
         // Every shown row but the item level, which keeps EE2's own checkbox (unchecked on a
         // rare).
         let shown: Vec<&SearchFilter> = exact
@@ -1145,7 +1202,12 @@ mod tests {
 
         // Crafting Base: the item level and the implicit, which every profile searches besides
         // (PoE Overlay II's base-defining implicits).
-        let base = build_filters(&ring, SearchProfile::CraftingBase, &StatCatalog::default());
+        let base = build_filters(
+            &ring,
+            SearchProfile::CraftingBase,
+            &StatCatalog::default(),
+            Session::SignedIn,
+        );
         let searched: Vec<&str> = base
             .iter()
             .filter(|filter| filter.enabled)
@@ -1156,7 +1218,12 @@ mod tests {
         // Broad, built fresh, keeps Quick Price's checkboxes and searches from 10% below each
         // roll: life 119 - 11.9 = 107.1, rounded to 107.
         let quick = quick(&ring);
-        let broad = build_filters(&ring, SearchProfile::Broad, &StatCatalog::default());
+        let broad = build_filters(
+            &ring,
+            SearchProfile::Broad,
+            &StatCatalog::default(),
+            Session::SignedIn,
+        );
         let checked = |filters: &[SearchFilter]| -> Vec<bool> {
             filters.iter().map(|filter| filter.enabled).collect()
         };
@@ -1244,6 +1311,7 @@ mod tests {
             &unique,
             SearchProfile::default_for(&unique),
             &StatCatalog::default(),
+            Session::SignedIn,
         );
         assert!(filters.iter().all(|filter| filter.score.is_none()));
         assert!(filters.iter().all(|filter| filter.enabled != filter.hidden));
@@ -1336,7 +1404,12 @@ mod tests {
             }],
         };
 
-        let filters = build_filters(&ring, SearchProfile::QuickPrice, &russian);
+        let filters = build_filters(
+            &ring,
+            SearchProfile::QuickPrice,
+            &russian,
+            Session::SignedIn,
+        );
 
         let free: Vec<&SearchFilter> = filters
             .iter()
@@ -1477,7 +1550,12 @@ mod tests {
             ..Default::default()
         };
 
-        let filters = build_filters(&item, SearchProfile::QuickPrice, &catalog);
+        let filters = build_filters(
+            &item,
+            SearchProfile::QuickPrice,
+            &catalog,
+            Session::SignedIn,
+        );
 
         let row = filters
             .iter()
@@ -1529,7 +1607,7 @@ mod tests {
         };
 
         let bounds = |profile| {
-            let filters = build_filters(&item, profile, &StatCatalog::default());
+            let filters = build_filters(&item, profile, &StatCatalog::default(), Session::SignedIn);
             [
                 "explicit.stat_2267564181",
                 "explicit.stat_3642528642",

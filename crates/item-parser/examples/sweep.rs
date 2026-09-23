@@ -120,6 +120,7 @@ fn main() -> ExitCode {
             &item,
             stat_filters::SearchProfile::default_for(&item),
             &catalogs.stats,
+            stat_filters::Session::SignedIn,
         );
         let route = route_search(&item, &catalogs.currencies, &catalogs.item_types);
         let kind = route_label(&route);

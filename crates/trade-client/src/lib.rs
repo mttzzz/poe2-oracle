@@ -109,6 +109,16 @@ impl TradeApiError {
     pub fn is_rate_limited(&self) -> bool {
         self.status == 429 || self.code == Some(3)
     }
+
+    /// Whether the site found the query too complex: envelope code `2`, which it gives any
+    /// invalid query, with its «Query is too complex» message -- in English on www, in Russian on
+    /// ru. An anonymous search with a weighted sum gets it (verified live 2026-09-23 on both), and
+    /// so would one with too many filters for the account.
+    pub fn is_too_complex(&self) -> bool {
+        let message = self.message.to_lowercase();
+        self.code == Some(2)
+            && (message.contains("too complex") || message.contains("слишком сложный"))
+    }
 }
 
 impl fmt::Display for TradeApiError {
@@ -3019,6 +3029,18 @@ mod trade_api_error_tests {
         assert!(api_error(400, &headers, code_3).is_rate_limited());
         let code_2 = r#"{"error":{"code":2,"message":"Invalid query"}}"#;
         assert!(!api_error(400, &headers, code_2).is_rate_limited());
+    }
+
+    #[test]
+    fn a_too_complex_query_is_told_apart_from_other_invalid_queries_on_both_sites() {
+        let headers = HeaderMap::new();
+        // The bodies the sites answered an anonymous weighted sum with, 2026-09-23.
+        let english = r#"{"error":{"code":2,"message":"Query is too complex. Please reduce the amount of filters used.\nLogging in will increase this limit."}}"#;
+        let russian = r#"{"error":{"code":2,"message":"Запрос слишком сложный. Пожалуйста, сократите количество используемых фильтров.\nАвторизация увеличит данный лимит."}}"#;
+        assert!(api_error(400, &headers, english).is_too_complex());
+        assert!(api_error(400, &headers, russian).is_too_complex());
+        let invalid = r#"{"error":{"code":2,"message":"Invalid query"}}"#;
+        assert!(!api_error(400, &headers, invalid).is_too_complex());
     }
 
     #[test]

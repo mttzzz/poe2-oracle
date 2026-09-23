@@ -441,9 +441,25 @@ impl SettingsView {
 
     /// Closes the window: ×, Esc and `WM_CLOSE` all come here. What a field holds, typed but not
     /// left, applies first -- the window is gone before the field could report it.
+    ///
+    /// Hidden first, removed after: GPUI hides a removed window only as it drops it
+    /// (`ShowWindowAsync`), so Windows reports the window deactivated and left by the mouse after
+    /// GPUI has let go of it, and GPUI logs each report as «window not found». Hidden while it's
+    /// still GPUI's, it has nothing left to report. Both outside this update: `ShowWindow` sends
+    /// its messages into GPUI's window synchronously.
     pub fn close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.apply_typed(cx);
-        window.remove_window();
+        let handle = window.window_handle();
+        let overlay = self.overlay;
+        cx.spawn(async move |_, cx| {
+            if let Some(overlay) = overlay {
+                overlay.set_shown(false);
+            }
+            handle
+                .update(cx, |_, window, _| window.remove_window())
+                .ok();
+        })
+        .detach();
     }
 
     fn apply_typed(&mut self, cx: &mut Context<Self>) {

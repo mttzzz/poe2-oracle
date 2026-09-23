@@ -250,8 +250,9 @@ pub fn refused(cx: &mut App) {
     }
 }
 
-/// Asks the account page about the stored session and shows the answer.
-fn check(cx: &mut App) {
+/// Asks the account page about the stored session and shows the answer: at start, and whenever
+/// the trade site refuses what only a signed-in account may search (a weighted sum).
+pub fn check(cx: &mut App) {
     let check = CHECKS.fetch_add(1, Ordering::Relaxed) + 1;
     if !cx.global::<TradeSession>().is_signed_in() {
         cx.set_global(SessionStatus::SignedOut);

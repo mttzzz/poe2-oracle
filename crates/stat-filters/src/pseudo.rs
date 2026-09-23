@@ -671,7 +671,12 @@ mod tests {
     }
 
     fn filters_without_catalog(item: &ParsedItem) -> Vec<SearchFilter> {
-        build_filters(item, SearchProfile::QuickPrice, &StatCatalog::default())
+        build_filters(
+            item,
+            SearchProfile::QuickPrice,
+            &StatCatalog::default(),
+            crate::Session::SignedIn,
+        )
     }
 
     fn row<'a>(filters: &'a [SearchFilter], trade_id: &str) -> Option<&'a SearchFilter> {
@@ -711,7 +716,12 @@ mod tests {
             }],
         };
 
-        let filters = build_filters(&item, SearchProfile::QuickPrice, &russian);
+        let filters = build_filters(
+            &item,
+            SearchProfile::QuickPrice,
+            &russian,
+            crate::Session::SignedIn,
+        );
 
         let total = row(&filters, "pseudo.pseudo_total_elemental_resistance")
             .expect("total elemental resistance row");

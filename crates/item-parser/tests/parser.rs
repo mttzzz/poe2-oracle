@@ -1918,6 +1918,7 @@ fn a_magic_wands_affixes_both_score_quick_prices_three() {
         &wand,
         stat_filters::SearchProfile::QuickPrice,
         &ru_live_catalog(),
+        stat_filters::Session::SignedIn,
     );
     let affixes: Vec<_> = filters
         .iter()
@@ -1950,6 +1951,7 @@ fn quick_price_scores_the_live_crossbow_as_poe_overlay_ii_does() {
         &crossbow,
         stat_filters::SearchProfile::default_for(&crossbow),
         &ru_live_catalog(),
+        stat_filters::Session::SignedIn,
     );
     let row = |id: &str| {
         filters

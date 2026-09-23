@@ -19,7 +19,7 @@ use trade_client::{AccountStatus, ListedItem, ListedMod, ListingStatus, PriceCur
 use crate::i18n;
 use crate::listing_match::{self, Asked, WantedStat};
 use crate::live_search::LiveSearches;
-use crate::price_check::{ListingRow, PriceCheckApp, SearchState};
+use crate::price_check::{ListingRow, PriceCheckApp, SearchFailure, SearchState};
 use crate::relative_time;
 use crate::session::SessionStatus;
 use crate::tr;
@@ -445,6 +445,11 @@ fn render_outcome(
             .into(),
             TEXT_DIM,
         ),
+        SearchState::Failed(
+            failure @ SearchFailure::TooComplex {
+                weighted_sums: true,
+            },
+        ) => render_sums_refused(failure, cx).into_any_element(),
         SearchState::Failed(failure) => status(failure.message().into(), TEXT_WARNING),
         SearchState::Empty { .. } if state.priced_by_market => div()
             .flex()
@@ -571,6 +576,47 @@ fn render_nothing_found(
                     })),
             )
         })
+}
+
+/// The site refused a weighted sum, which it takes only from a signed-in account: why, and the two
+/// ways on -- the same item searched without the sums (one search), or signing in again.
+fn render_sums_refused(failure: &SearchFailure, cx: &Context<PriceCheckApp>) -> impl IntoElement {
+    div()
+        .mt(rems_from_px(12.))
+        .flex()
+        .flex_col()
+        .items_center()
+        .gap(rems_from_px(8.))
+        .child(
+            div()
+                .text_center()
+                .text_color(rgb(TEXT_WARNING))
+                .child(failure.message()),
+        )
+        .child(
+            div()
+                .flex()
+                .flex_wrap()
+                .justify_center()
+                .gap(rems_from_px(8.))
+                .child(action_button(
+                    "sums-refused-without",
+                    tr!("Search without sums"),
+                    tr!(
+                        "Check the item again without the “sum” rows: their mods are searched one \
+                         by one. One search on the trade site."
+                    ),
+                    PriceCheckApp::search_without_sums,
+                    cx,
+                ))
+                .child(action_button(
+                    "sums-refused-sign-in",
+                    tr!("Sign in"),
+                    tr!("Opens the pathofexile.com sign-in page. The sums work once you're in."),
+                    |_, cx| crate::login::open(cx),
+                    cx,
+                )),
+        )
 }
 
 /// The results' header: how many the search found, the watch switch and the trade site link.
