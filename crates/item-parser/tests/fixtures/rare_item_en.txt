@@ -1,0 +1,23 @@
+Item Class: Bows
+Rarity: Rare
+Oblivion Strike
+Rider Bow
+--------
+Physical Damage: 36-61
+Elemental Damage: 27-36 (fire), 9-13 (cold), 5-82 (lightning)
+Critical Hit Chance: 5.00%
+Attacks per Second: 1.20
+--------
+Requires: Level 51, 103 (augmented) Dex
+--------
+Item Level: 80
+--------
+{ Prefix Modifier "Shocking" (Tier: 4) — Damage, Elemental, Lightning, Attack }
+Adds 5(1-5) to 82(62-89) Lightning Damage
+{ Prefix Modifier "Scorching" (Tier: 5) — Damage, Elemental, Fire, Attack }
+Adds 27(20-30) to 36(31-46) Fire Damage
+{ Prefix Modifier "Icy" (Tier: 8) — Damage, Elemental, Cold, Attack }
+Adds 9(6-9) to 13(10-15) Cold Damage
+{ Suffix Modifier "of Radiance" (Tier: 1) — Attack }
++57(41-60) to Accuracy Rating
+15% increased Light Radius

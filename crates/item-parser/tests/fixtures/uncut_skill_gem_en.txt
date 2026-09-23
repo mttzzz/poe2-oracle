@@ -1,0 +1,7 @@
+Item Class: Uncut Skill Gems
+Rarity: Currency
+Uncut Skill Gem (Level 19)
+--------
+Creates a Skill Gem or Level an existing gem to level 19
+--------
+Right Click to engrave a Skill Gem.

@@ -1,0 +1,2030 @@
+//! End-to-end Price Check wire-up: the `Ctrl+E` global hotkey drives
+//! `platform::clipboard_poll` + `platform::synth_input` to read a hovered item's clipboard text,
+//! `item_parser::parse_clipboard` to parse it, `stat_filters::build_filters` to build a search
+//! panel, and `trade_client::route_search` + the matching search/fetch/exchange call to populate
+//! results. Windows-only (see `lib.rs`'s `#[cfg(target_os = "windows")]` gate on this module) --
+//! every native dependency below (`platform::*`) only exists on that target.
+//!
+//! State lives on `PriceCheckApp`, the root view `ui::panel` renders. Orchestration (this
+//! module) and presentation (`ui::panel`) are deliberately split, matching the
+//! plan's own step 9/step 10 module boundary.
+//!
+//! Every async helper here takes `&Entity<PriceCheckApp>` (a STRONG reference), not
+//! `WeakEntity` -- holding a strong `Entity<T>` for the duration of one pipeline run keeps it
+//! alive by construction, so `Entity::update`/`read_with` are infallible plain-value calls here,
+//! never `Result`-wrapped (unlike the `WeakEntity::upgrade()` the long-lived event tasks in
+//! `register_hotkeys` still need, since THEY genuinely must tolerate the window closing).
+
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+use anyhow::{Context as _, Result, ensure};
+use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
+use gpui::{
+    AnyWindowHandle, App, AppContext as _, AsyncApp, ClipboardItem, Context, Entity, FocusHandle,
+    KeyDownEvent,
+};
+use http_client::HttpClient;
+use item_parser::{ItemLanguage, ParseError};
+use poe2_domain::{ItemRarity, ParsedItem, StatCatalog};
+use trade_client::catalog::{ItemTypeEntry, StaticCurrency};
+use trade_client::ninja::{Market, MarketPrice};
+use trade_client::rate_limit::RateLimiter;
+use trade_client::rates::{Confidence, PriceEstimate, PriceUnit};
+use trade_client::scout::ScoutPrices;
+use trade_client::{
+    AccountStatus, GroupedListing, ListedMod, ListingStatus, PriceCurrency, SearchOutcome,
+    SearchRoute, SearchScope, StatMatch, TradeApiError, TradeSite,
+};
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    GetAsyncKeyState, VIRTUAL_KEY, VK_CONTROL, VK_MENU, VK_SHIFT,
+};
+
+use crate::bound_input;
+use crate::game_chat;
+use crate::item_refs::{self, RefKind};
+use crate::overlay_layout::PhysicalRect;
+use crate::paths;
+use crate::platform::game_window::Foreground;
+use crate::platform::{clipboard_poll, esc_hook, game_config, game_window, synth_input};
+use crate::settings::{self, Hotkey, QuickAction, Settings, WaystoneMark};
+
+/// Defaults matching `HostClipboard.ts`'s real, working constants (see `clipboard_poll`'s own
+/// doc comment): 48ms initial delay and poll interval, 500ms total budget.
+const CLIPBOARD_INITIAL_DELAY: Duration = Duration::from_millis(48);
+const CLIPBOARD_POLL_INTERVAL: Duration = Duration::from_millis(48);
+const CLIPBOARD_TIMEOUT: Duration = Duration::from_millis(500);
+
+/// How long after a burst of foreground changes the hotkey re-checks where the foreground settled.
+const FOREGROUND_SETTLE: Duration = Duration::from_millis(250);
+
+/// How long a listing row says its whisper was copied.
+const WHISPER_COPIED_SHOWN: Duration = Duration::from_secs(4);
+
+/// Up to 10 listings per `fetch` request -- the trade API's own per-request limit -- and two
+/// requests per search, EE2's first page (`trade-api.ts` fetches listings 0-10 and 10-20).
+const FETCH_PAGE_SIZE: usize = 10;
+const FETCH_PAGES: usize = 2;
+
+/// Longest trade API rate-limit wait a search sits out before sending. A longer one means the API
+/// has restricted this IP (a live 429 carried `Retry-After: 259`), and the search reports that
+/// instead of silently hanging for minutes.
+const MAX_RATE_LIMIT_WAIT: Duration = Duration::from_secs(15);
+
+/// How long a loaded poe.ninja market is trusted: poe.ninja republishes hourly, and
+/// `fetch_market`'s own disk cache holds for half an hour.
+const MARKET_MAX_AGE: Duration = Duration::from_secs(30 * 60);
+
+/// How often the leagues and catalogs are looked at again while the app runs: a league starts and
+/// a patch changes the trade site's data while the app keeps running.
+const CATALOG_REFRESH: Duration = Duration::from_secs(3600);
+/// How long a cached league list is used before the trade site is asked again.
+const LEAGUES_MAX_AGE: Duration = Duration::from_secs(3600);
+/// How long cached stat and item catalogs are used before the trade site is asked again.
+const CATALOG_MAX_AGE: Duration = Duration::from_secs(6 * 3600);
+/// Waits before retrying a first load that failed -- at sign-in the network may not be up yet
+/// when autostart runs the app -- the last one repeating.
+const BOOTSTRAP_RETRY: [Duration; 4] = [
+    Duration::from_secs(15),
+    Duration::from_secs(30),
+    Duration::from_secs(60),
+    Duration::from_secs(120),
+];
+
+/// One results-table row: a seller's listing (repeats at the same price folded in, EE2-style).
+/// Presentation formatting (currency icons, relative "N days ago" time) is left to
+/// `ui::panel` -- this is parsed data.
+#[derive(Debug, Clone)]
+pub struct ListingRow {
+    pub price_amount: f64,
+    pub price_currency: String,
+    pub item_level: Option<u32>,
+    pub account_name: String,
+    pub indexed: String,
+    pub account_status: AccountStatus,
+    pub instant_buyout: bool,
+    /// Priced by the item's own note rather than its stash tab's name -- EE2 marks the latter
+    /// with "?" as likely not a real price.
+    pub has_note: bool,
+    /// How many times this seller listed it at this price (EE2's "× N").
+    pub listed_times: u32,
+    /// The message to the seller, ready for the game's chat; `None` for instant buyout.
+    pub whisper: Option<String>,
+    /// The listed item's mods, shown when the row is hovered.
+    pub mods: Vec<ListedMod>,
+}
+
+impl From<GroupedListing> for ListingRow {
+    fn from(group: GroupedListing) -> Self {
+        let item = group.listing;
+        let (price_amount, price_currency) = item.price.unwrap_or((0.0, String::new()));
+        ListingRow {
+            price_amount,
+            price_currency,
+            item_level: item.item_level,
+            account_name: item.account_name,
+            indexed: item.indexed,
+            account_status: item.account_status,
+            instant_buyout: item.instant_buyout,
+            has_note: item.has_note,
+            listed_times: group.listed_times,
+            whisper: item.whisper,
+            mods: item.mods,
+        }
+    }
+}
+
+/// Catalog/league bootstrap outcome -- gates whether the hotkey pipeline can do anything useful
+/// at all.
+pub enum BootstrapState {
+    Loading,
+    Ready,
+    /// No usable catalog at all (first-ever run, offline) -- a blocking error state; the hotkey
+    /// pipeline no-ops while in this state rather than attempting a parse against an empty
+    /// catalog.
+    Failed(String),
+}
+
+/// The current pricing outcome for whatever item is currently parsed.
+pub enum SearchState {
+    NotSearched,
+    /// Sitting out the trade API's rate limit before the next request.
+    RateLimiting {
+        wait_secs: u64,
+    },
+    Searching,
+    Failed(String),
+    Empty,
+    Matched {
+        /// The search's own match count, listings beyond the fetched page included.
+        total: u64,
+        rows: Vec<ListingRow>,
+        /// The trade site's own results page for this exact search, for the "trade ↗" link.
+        trade_url: String,
+        /// PoE Overlay II's "estimated value" line, from `rows` and the league's poe.ninja
+        /// market; `None` without a market (e.g. a league poe.ninja doesn't cover).
+        estimate: Option<PriceEstimate>,
+        /// Found only by relaxing the search: listings match at least `.0` of the `.1` stat rows
+        /// asked for, since all of them together matched none.
+        relaxed: Option<(u32, u32)>,
+    },
+    /// A Currency Exchange item, priced from poe.ninja: the exchange is an auction the trade
+    /// site's listings don't reflect (`trade_client::SearchRoute::Market`).
+    Market(MarketPrice),
+}
+
+/// Per-filter-row UI state paired 1:1 with `PriceCheckApp.filters` (same index) -- the editable
+/// min/max boxes, edited a keystroke at a time by `bound_input::type_key`. A bound the filter
+/// doesn't set starts empty (by default the max, as in EE2), and the panel shows a placeholder
+/// in its place.
+pub struct FilterRowUi {
+    pub min_focus: FocusHandle,
+    pub max_focus: FocusHandle,
+    pub min_text: String,
+    pub max_text: String,
+    /// Set when the input was just clicked into: the next keystroke replaces the whole value
+    /// instead of appending to it -- EE2 selects the value on focus for the same reason.
+    pub min_fresh: bool,
+    pub max_fresh: bool,
+}
+
+impl FilterRowUi {
+    fn new(cx: &mut Context<PriceCheckApp>, filter: &stat_filters::SearchFilter) -> Self {
+        let bound_text = |bound: Option<f64>, dp: bool| {
+            bound
+                .map(|value| bound_input::format(value, dp))
+                .unwrap_or_default()
+        };
+        let (min_text, max_text) = match &filter.roll {
+            Some(roll) => (bound_text(roll.min, roll.dp), bound_text(roll.max, roll.dp)),
+            None => (String::new(), String::new()),
+        };
+        Self {
+            min_focus: cx.focus_handle(),
+            max_focus: cx.focus_handle(),
+            min_text,
+            max_text,
+            min_fresh: false,
+            max_fresh: false,
+        }
+    }
+}
+
+/// One trade site's localized catalogs: the stat templates `item-parser` matches mod lines
+/// against, the exchange-tradable static items `route_search` matches currency-like items
+/// against, and the base types it recognizes a magic item's base in. All are in the site's
+/// language, so a Russian item needs the Russian site's set.
+#[derive(Default)]
+struct SiteCatalog {
+    stats: StatCatalog,
+    currencies: Vec<StaticCurrency>,
+    item_types: Vec<ItemTypeEntry>,
+}
+
+/// An item's two ways to scope its filtered search -- by its category and by its base type --
+/// when it has both (`trade_client::switched_scope`), and which one the player chose: EE2's
+/// item-type chip. A rare goes by its category by default, which misses what its base is worth.
+#[derive(Debug, Clone)]
+pub struct ScopeChoice {
+    default: SearchScope,
+    switched: SearchScope,
+    /// The player chose the other scope. Reset for every new item.
+    pub switched_on: bool,
+}
+
+impl ScopeChoice {
+    /// The scope the search goes by now.
+    pub fn current(&self) -> &SearchScope {
+        if self.switched_on {
+            &self.switched
+        } else {
+            &self.default
+        }
+    }
+}
+
+pub struct PriceCheckApp {
+    http_client: Arc<dyn HttpClient>,
+    league: String,
+    /// Every league the trade site lists, current first -- what the settings window offers and
+    /// `Settings::league` resolves against.
+    leagues: Vec<String>,
+    /// The player's settings, as saved.
+    pub settings: Settings,
+    /// Registers the hotkeys (`register_hotkeys`) for the app's lifetime.
+    hotkeys: Option<GlobalHotKeyManager>,
+    /// The combinations registered right now (`sync_hotkey_registration`): the price check's
+    /// while the game or this app's panel is in front, the quick actions' while the game is.
+    registered: Vec<Hotkey>,
+    /// Combinations the system refused (another program holds them), each logged once.
+    refused: Vec<Hotkey>,
+    /// The open settings window, if any: opening it again brings this one forward, and the
+    /// hotkeys are released meanwhile -- its recorders take key combinations themselves.
+    settings_window: Option<AnyWindowHandle>,
+    international: SiteCatalog,
+    russian: SiteCatalog,
+    /// One per `Endpoint`, indexed by it.
+    limiters: [RateLimiter; 2],
+    advanced_mod_desc_key: VIRTUAL_KEY,
+
+    pub bootstrap: BootstrapState,
+    pub item: Option<ParsedItem>,
+    /// What went wrong with the last check -- an item the parser rejected, a copy combo another
+    /// program holds -- shown in place of an item.
+    pub problem: Option<String>,
+    pub filters: Vec<stat_filters::SearchFilter>,
+    pub filter_ui: Vec<FilterRowUi>,
+    pub search: SearchState,
+    pub visible: bool,
+    /// The item trades on the Currency Exchange: priced from the market alone -- no filters, no
+    /// trade search (`SearchRoute::Market`).
+    pub priced_by_market: bool,
+    /// Where the panel belongs for the current check (EE2 placement, physical pixels) -- the
+    /// example's window wrapper moves the OS window here. `None` until the first check.
+    pub placement: Option<PhysicalRect>,
+    /// Which sellers the search asks for -- the trade site's "Instant Buyout" / "In Person"
+    /// choice, PoE Overlay II's status dropdown. Starts at both kinds of listing a player can buy
+    /// from right now.
+    pub listing_status: ListingStatus,
+    /// The currency listings' prices must be in; kept from check to check, like EE2's.
+    pub price_currency: PriceCurrency,
+    /// Whether the rows EE2 hides (`SearchFilter::hidden`) are listed -- its "Hidden" toggle,
+    /// PoE Overlay II's "show hidden mods". Reset for every new item.
+    pub show_hidden: bool,
+    /// The item's search by its category or by its base type, when it can go by either.
+    pub scope: Option<ScopeChoice>,
+    /// Whether an uncorrupted item's search leaves corrupted listings out (`Some(true)`, EE2's
+    /// default, `trade_client::MiscChoices`) or the player let them in (`Some(false)`); `None`
+    /// where the search takes either anyway. Reset for every new item.
+    pub uncorrupted_only: Option<bool>,
+    /// The listing whose whisper was just copied -- the search generation that listed it and its
+    /// row -- which the row says for a few seconds.
+    copied_whisper: Option<(u64, usize)>,
+    /// Bumped by every search: only the newest one may write `search` -- a slower, older search
+    /// (an earlier item, or filters since edited) must not overwrite what the panel now shows.
+    search_generation: u64,
+    /// Recent searches' listings by `search_key`, newest last, each with when it arrived: a
+    /// repeated search within `SEARCH_CACHE_TTL` is answered without the trade API.
+    search_cache: Vec<(String, Instant, SearchResults)>,
+
+    /// Site the displayed item was parsed for; its searches go to the same site, because the
+    /// `Exact` search and the exchange catalog `Market` routing match localized names.
+    site: TradeSite,
+    /// The league's poe.ninja market -- exchange item prices, and the rates listing prices and
+    /// the estimate are normalized with -- and when it was loaded (reloaded after
+    /// `MARKET_MAX_AGE`).
+    market: Option<(Market, Instant)>,
+    /// The league's poe2scout prices -- uniques', which poe.ninja has none of -- and when they were
+    /// loaded (reloaded after `MARKET_MAX_AGE`, like the market).
+    scout: Option<(ScoutPrices, Instant)>,
+}
+
+impl PriceCheckApp {
+    /// Placeholder state shown immediately when the window opens, before `bootstrap` resolves.
+    fn loading(http_client: Arc<dyn HttpClient>, settings: Settings) -> Self {
+        Self {
+            http_client,
+            league: String::new(),
+            leagues: Vec::new(),
+            listing_status: settings.listing_status.into(),
+            price_currency: PriceCurrency::Any,
+            settings,
+            hotkeys: None,
+            registered: Vec::new(),
+            refused: Vec::new(),
+            settings_window: None,
+            international: SiteCatalog::default(),
+            russian: SiteCatalog::default(),
+            limiters: Default::default(),
+            advanced_mod_desc_key: VIRTUAL_KEY(game_config::read().advanced_mod_desc_key),
+            bootstrap: BootstrapState::Loading,
+            item: None,
+            problem: None,
+            filters: Vec::new(),
+            filter_ui: Vec::new(),
+            search: SearchState::NotSearched,
+            visible: false,
+            priced_by_market: false,
+            placement: None,
+            show_hidden: false,
+            scope: None,
+            uncorrupted_only: None,
+            copied_whisper: None,
+            search_generation: 0,
+            search_cache: Vec::new(),
+            site: TradeSite::International,
+            market: None,
+            scout: None,
+        }
+    }
+
+    /// The current league name, for the panel header. Empty until `bootstrap` resolves.
+    pub fn league(&self) -> &str {
+        &self.league
+    }
+
+    /// Every league the trade site lists, current first. Empty until `bootstrap` resolves.
+    pub fn leagues(&self) -> &[String] {
+        &self.leagues
+    }
+
+    /// The open settings window, if any.
+    pub fn settings_window(&self) -> Option<AnyWindowHandle> {
+        self.settings_window
+    }
+
+    /// Records the settings window opening (`Some`) or closing (`None`). The hotkey follows at
+    /// once: released while the window is open, so its recorder can take the combination, and
+    /// held again after.
+    pub fn set_settings_window(&mut self, window: Option<AnyWindowHandle>) {
+        self.settings_window = window;
+        self.sync_hotkey_registration(game_window::foreground());
+    }
+
+    /// The app's side of the diagnostics report (`diagnostics::write_report`): what it priced
+    /// against and what state the hotkey and the last check are in. The settings file goes into
+    /// the report whole, so they aren't repeated here.
+    pub fn diagnostics_summary(&self) -> String {
+        let catalog = match &self.bootstrap {
+            BootstrapState::Loading => "loading".to_owned(),
+            BootstrapState::Ready => {
+                let counts = |catalog: &SiteCatalog| {
+                    format!(
+                        "{} stats, {} exchange items, {} base types",
+                        catalog.stats.stats.len(),
+                        catalog.currencies.len(),
+                        catalog.item_types.len()
+                    )
+                };
+                format!(
+                    "ready -- international: {}; russian: {}",
+                    counts(&self.international),
+                    counts(&self.russian)
+                )
+            }
+            BootstrapState::Failed(err) => format!("failed: {err}"),
+        };
+        let market = match &self.market {
+            Some((market, loaded)) => format!(
+                "loaded {} min ago, 1 divine = {:.1} exalted = {:.2} chaos",
+                loaded.elapsed().as_secs() / 60,
+                market.exalted_per_divine,
+                market.chaos_per_divine
+            ),
+            None => "not loaded".to_owned(),
+        };
+        let hotkey = format!(
+            "{}; held: {}{}; refused (another program holds them): {}",
+            self.settings.hotkey,
+            hotkey_list(&self.registered),
+            if self.settings_window.is_some() {
+                " (the settings window is open)"
+            } else {
+                ""
+            },
+            hotkey_list(&self.refused)
+        );
+        let last_check = match (&self.item, &self.problem) {
+            (Some(item), _) => format!(
+                "{} / {} [{}] on the {:?} site",
+                item.name,
+                item.base_type.as_deref().unwrap_or("-"),
+                item.category
+                    .as_ref()
+                    .map_or("-", |category| category.id.as_str()),
+                self.site
+            ),
+            (None, Some(error)) => format!("not parsed: {error}"),
+            (None, None) => "none yet".to_owned(),
+        };
+        format!(
+            "[app]\nleague: {}\nleagues listed: {}\ncatalog: {catalog}\nmarket: {market}\n\
+             hotkey: {hotkey}\nlast check: {last_check}\nsearches cached: {}\n",
+            self.league,
+            self.leagues.join(", "),
+            self.search_cache.len()
+        )
+    }
+
+    /// Shows `message` in the panel in place of an item: what went wrong with the check.
+    fn show_problem(&mut self, message: String) {
+        self.item = None;
+        self.priced_by_market = false;
+        self.filters.clear();
+        self.filter_ui.clear();
+        self.problem = Some(message);
+        self.search = SearchState::NotSearched;
+    }
+
+    /// Takes over the settings the player just saved (already written to disk). The hotkeys and
+    /// the league change at once; tolerance, listing status and client language apply from the
+    /// next check, as in EE2. A hotkey another program already holds is refused -- the price
+    /// check keeps its old one, a quick action goes without -- and the settings are saved back,
+    /// so the file never names a dead combination.
+    pub fn apply_settings(&mut self, new: Settings, cx: &mut Context<Self>) {
+        let old = std::mem::replace(&mut self.settings, new);
+        if self.refuse_taken_hotkeys(&old)
+            && let Err(err) = settings::save(&self.settings)
+        {
+            log::warn!("{err:#}");
+        }
+        self.sync_hotkey_registration(game_window::foreground());
+        if old.league != self.settings.league
+            && let Some(league) = self.settings.league.resolve(&self.leagues)
+            && league != self.league
+        {
+            self.league = league.to_owned();
+            self.market = None;
+            self.scout = None;
+            self.spawn_market_load(cx);
+            if self.item.is_some() && !self.priced_by_market {
+                self.spawn_search(cx);
+            }
+        }
+        cx.notify();
+    }
+
+    /// Tries each combination the settings brought in (one `old` didn't have) against the rest of
+    /// the system, and takes back those another program holds: the price check's goes back to
+    /// `old`'s, a quick action's to none. Everything this app holds is released first, so only
+    /// other programs answer; `sync_hotkey_registration` holds what's wanted again after. Whether
+    /// anything was taken back.
+    fn refuse_taken_hotkeys(&mut self, old: &Settings) -> bool {
+        let Some(manager) = &self.hotkeys else {
+            return false;
+        };
+        for hotkey in self.registered.drain(..) {
+            let _ = manager.unregister(hotkey.to_global());
+        }
+        let known: Vec<Hotkey> = std::iter::once(old.hotkey)
+            .chain(old.quick_actions.iter().filter_map(|action| action.hotkey))
+            .collect();
+        let free = |hotkey: Hotkey| {
+            known.contains(&hotkey)
+                || match manager.register(hotkey.to_global()) {
+                    Ok(()) => {
+                        let _ = manager.unregister(hotkey.to_global());
+                        true
+                    }
+                    Err(err) => {
+                        log::warn!("the {hotkey} hotkey is taken by another program: {err}");
+                        false
+                    }
+                }
+        };
+        let mut refused = false;
+        if !free(self.settings.hotkey) {
+            self.settings.hotkey = old.hotkey;
+            refused = true;
+        }
+        for action in &mut self.settings.quick_actions {
+            // The price check's hotkey may just have gone back to one an action now has.
+            if let Some(hotkey) = action.hotkey
+                && (hotkey == self.settings.hotkey || !free(hotkey))
+            {
+                action.hotkey = None;
+                refused = true;
+            }
+        }
+        refused
+    }
+
+    /// Holds each hotkey only while its keys are for this app, and releases it otherwise -- a
+    /// registered hotkey is global and swallows its keys wherever they're pressed. The price
+    /// check's: the game in front, or this app's panel (the player clicked into it) with no
+    /// settings window open. The quick actions': the game in front only, since they type into
+    /// it. Anywhere else -- a browser, a chat -- the combinations are the other program's, as
+    /// with EE2's in-game-only shortcuts, and the settings window's recorders can take them too.
+    fn sync_hotkey_registration(&mut self, foreground: Foreground) {
+        let price_check = match foreground {
+            Foreground::Game => true,
+            Foreground::ThisApp => self.settings_window.is_none(),
+            Foreground::Other => false,
+        };
+        let mut wanted = Vec::new();
+        if price_check {
+            wanted.push(self.settings.hotkey);
+        }
+        if foreground == Foreground::Game {
+            wanted.extend(
+                self.settings
+                    .quick_actions
+                    .iter()
+                    .filter_map(|action| action.hotkey),
+            );
+        }
+        let Some(manager) = &self.hotkeys else {
+            return;
+        };
+        let mut released = Vec::new();
+        self.registered.retain(|&hotkey| {
+            if wanted.contains(&hotkey) {
+                return true;
+            }
+            if let Err(err) = manager.unregister(hotkey.to_global()) {
+                log::warn!("releasing the {hotkey} hotkey failed: {err}");
+            }
+            released.push(hotkey);
+            false
+        });
+        let mut held = Vec::new();
+        for hotkey in wanted {
+            if self.registered.contains(&hotkey) {
+                continue;
+            }
+            match manager.register(hotkey.to_global()) {
+                Ok(()) => {
+                    self.registered.push(hotkey);
+                    self.refused.retain(|&refused| refused != hotkey);
+                    held.push(hotkey);
+                }
+                // Retried on the next change of foreground; said once.
+                Err(err) if !self.refused.contains(&hotkey) => {
+                    log::warn!("the {hotkey} hotkey is taken by another program: {err}");
+                    self.refused.push(hotkey);
+                }
+                Err(_) => {}
+            }
+        }
+        for (change, hotkeys) in [("held", held), ("released", released)] {
+            if !hotkeys.is_empty() {
+                log::info!(
+                    "{} {change} ({foreground:?} in front)",
+                    hotkey_list(&hotkeys)
+                );
+            }
+        }
+    }
+
+    /// What a press of the hotkey with `id` is for. Nothing while the settings window is open:
+    /// its recorders own key combinations then -- the current ones included.
+    fn pressed(&self, id: u32) -> Option<Pressed> {
+        if self.settings_window.is_some() {
+            return None;
+        }
+        if id == self.settings.hotkey.to_global().id() {
+            return Some(Pressed::PriceCheck);
+        }
+        self.settings
+            .quick_actions
+            .iter()
+            .find(|action| {
+                action
+                    .hotkey
+                    .is_some_and(|hotkey| hotkey.to_global().id() == id)
+            })
+            .cloned()
+            .map(Pressed::QuickAction)
+    }
+
+    /// The listings a search with `key` got within `SEARCH_CACHE_TTL`, if any.
+    fn cached_results(&self, key: &str) -> Option<SearchResults> {
+        self.search_cache
+            .iter()
+            .rev()
+            .find(|(cached, at, _)| cached == key && at.elapsed() < SEARCH_CACHE_TTL)
+            .map(|(_, _, results)| results.clone())
+    }
+
+    /// Keeps a search's listings for `cached_results`, dropping the oldest beyond
+    /// `SEARCH_CACHE_ENTRIES`.
+    fn remember_results(&mut self, key: String, results: SearchResults) {
+        self.search_cache.retain(|(cached, _, _)| *cached != key);
+        self.search_cache.push((key, Instant::now(), results));
+        if self.search_cache.len() > SEARCH_CACHE_ENTRIES {
+            self.search_cache.remove(0);
+        }
+    }
+
+    /// Loads (or refreshes) the current league's poe.ninja market, then its poe2scout prices, in
+    /// the background.
+    fn spawn_market_load(&self, cx: &mut Context<Self>) {
+        let client = self.http_client.clone();
+        let league = self.league.clone();
+        cx.spawn(async move |this, cx| {
+            let Some(view) = this.upgrade() else {
+                return;
+            };
+            if let Err(err) = current_market(&view, cx, &client, &league).await {
+                log::warn!("{err:#}");
+            }
+            if let Err(err) = current_scout(&view, cx, &client, &league).await {
+                log::warn!("{err:#}");
+            }
+        })
+        .detach();
+    }
+
+    /// Takes in a load of the catalogs and leagues (`bootstrap_catalogs`). The first readies the
+    /// app; a later one refreshes it and follows the league the settings resolve to, as when a
+    /// new league starts and "current" moves to it. A failed refresh keeps what the app has; a
+    /// failed first load stays `BootstrapState::Failed` until a retry succeeds.
+    fn apply_bootstrap(
+        &mut self,
+        result: Result<(SiteCatalog, SiteCatalog, Vec<String>)>,
+        cx: &mut Context<Self>,
+    ) {
+        match result {
+            Ok((international, russian, leagues)) => {
+                self.international = international;
+                self.russian = russian;
+                let league = self
+                    .settings
+                    .league
+                    .resolve(&leagues)
+                    .unwrap_or_default()
+                    .to_owned();
+                self.leagues = leagues;
+                self.bootstrap = BootstrapState::Ready;
+                // Loaded up front: exchange items then price instantly, and the title bar shows
+                // the divine rate from the start.
+                if league != self.league {
+                    if !self.league.is_empty() {
+                        log::info!("league {} -> {league}", self.league);
+                    }
+                    self.league = league;
+                    self.market = None;
+                    self.scout = None;
+                    self.spawn_market_load(cx);
+                }
+            }
+            Err(err) => {
+                log::warn!("loading the catalogs failed: {err:#}");
+                if !matches!(self.bootstrap, BootstrapState::Ready) {
+                    self.bootstrap = BootstrapState::Failed(format!("{err:#}"));
+                }
+            }
+        }
+        cx.notify();
+    }
+
+    /// Loads the catalogs and leagues again now, for a check the player made while the first
+    /// load had failed; the refresh loop (`create_app`) keeps retrying meanwhile anyway.
+    fn retry_bootstrap(&mut self, cx: &mut Context<Self>) {
+        self.bootstrap = BootstrapState::Loading;
+        let client = self.http_client.clone();
+        cx.spawn(async move |this, cx| {
+            let result = bootstrap_catalogs(&client).await;
+            this.update(cx, |state, cx| state.apply_bootstrap(result, cx))
+                .ok();
+        })
+        .detach();
+    }
+
+    /// poe2scout's price of `item` when it's an identified unique poe2scout prices, in the unit it
+    /// reads best in (`ScoutPrices::unique_price`).
+    pub fn scout_unique_price(&self, item: &ParsedItem) -> Option<(f64, PriceUnit)> {
+        if item.rarity != Some(ItemRarity::Unique) {
+            return None;
+        }
+        let (scout, _) = self.scout.as_ref()?;
+        // poe2scout knows uniques by their English names; an unidentified one's name is its base.
+        let name = item_refs::lookup(RefKind::Unique, &item.name)?.ref_name;
+        scout.unique_price(name)
+    }
+
+    /// The trade site the displayed item was parsed for -- its language, too.
+    pub fn trade_site(&self) -> TradeSite {
+        self.site
+    }
+
+    /// Toggles one filter's checkbox. Does NOT trigger a re-search on its own (matches the
+    /// reference's own lack of any debounce/auto-search-on-edit -- see `run_search`'s doc
+    /// comment).
+    pub fn toggle_filter(&mut self, row: usize, cx: &mut Context<Self>) {
+        if let Some(filter) = self.filters.get_mut(row) {
+            filter.enabled = !filter.enabled;
+            cx.notify();
+        }
+    }
+
+    /// Checks every listed row a search can use, or -- when all already are -- unchecks them
+    /// all: Sidekick's "check all / uncheck all". Rows EE2 hides stay as they are; like a
+    /// checkbox, it takes effect with the next search.
+    pub fn toggle_all_filters(&mut self, cx: &mut Context<Self>) {
+        let listed = |filter: &stat_filters::SearchFilter| filter.searchable() && !filter.hidden;
+        let check = !self
+            .filters
+            .iter()
+            .filter(|filter| listed(filter))
+            .all(|filter| filter.enabled);
+        for filter in self.filters.iter_mut().filter(|filter| listed(filter)) {
+            filter.enabled = check;
+        }
+        cx.notify();
+    }
+
+    /// Lists or folds away the rows EE2 hides.
+    pub fn toggle_show_hidden(&mut self, cx: &mut Context<Self>) {
+        self.show_hidden = !self.show_hidden;
+        cx.notify();
+    }
+
+    /// Switches the search between the item's category and its base type (`ScopeChoice`); like a
+    /// filter's checkbox, it takes effect with the next search.
+    pub fn toggle_scope(&mut self, cx: &mut Context<Self>) {
+        if let Some(choice) = &mut self.scope {
+            choice.switched_on = !choice.switched_on;
+            cx.notify();
+        }
+    }
+
+    /// Lets corrupted listings into an uncorrupted item's search, or leaves them out again
+    /// (`uncorrupted_only`); takes effect with the next search.
+    pub fn toggle_uncorrupted_only(&mut self, cx: &mut Context<Self>) {
+        if let Some(only) = &mut self.uncorrupted_only {
+            *only = !*only;
+            cx.notify();
+        }
+    }
+
+    /// Steps the player's mark on a waystone modifier (by its trade stat id) through none,
+    /// danger, warning and wanted, and saves it at once: marks outlive the check.
+    pub fn cycle_waystone_mark(&mut self, stat_id: &str, cx: &mut Context<Self>) {
+        let marks = &mut self.settings.waystone_marks;
+        match WaystoneMark::next(marks.get(stat_id).copied()) {
+            Some(mark) => {
+                marks.insert(stat_id.to_owned(), mark);
+            }
+            None => {
+                marks.remove(stat_id);
+            }
+        }
+        if let Err(err) = settings::save(&self.settings) {
+            log::warn!("saving the waystone mark failed: {err:#}");
+        }
+        cx.notify();
+    }
+
+    /// Steps the listing status through the choices the panel offers and re-searches with it.
+    pub fn cycle_listing_status(&mut self, cx: &mut Context<Self>) {
+        self.listing_status = match self.listing_status {
+            ListingStatus::Available => ListingStatus::Securable,
+            ListingStatus::Securable => ListingStatus::Online,
+            ListingStatus::Online => ListingStatus::Any,
+            ListingStatus::Any | ListingStatus::OnlineLeague => ListingStatus::Available,
+        };
+        self.spawn_search(cx);
+        cx.notify();
+    }
+
+    /// Steps the price currency through EE2's choices and re-searches with it: any, exalted or
+    /// divine (EE2's answer to prices fixed in rare currency) first, then each alone.
+    pub fn cycle_price_currency(&mut self, cx: &mut Context<Self>) {
+        self.set_price_currency(
+            match self.price_currency {
+                PriceCurrency::Any => PriceCurrency::ExaltedOrDivine,
+                PriceCurrency::ExaltedOrDivine => PriceCurrency::Exalted,
+                PriceCurrency::Exalted => PriceCurrency::Divine,
+                PriceCurrency::Divine => PriceCurrency::Chaos,
+                PriceCurrency::Chaos => PriceCurrency::Any,
+            },
+            cx,
+        );
+    }
+
+    /// Searches again with prices only in `currency`.
+    pub fn set_price_currency(&mut self, currency: PriceCurrency, cx: &mut Context<Self>) {
+        self.price_currency = currency;
+        self.spawn_search(cx);
+        cx.notify();
+    }
+
+    /// A bound input was clicked into: its next keystroke replaces the value.
+    pub fn begin_bound_edit(&mut self, row: usize, is_min: bool, cx: &mut Context<Self>) {
+        if let Some(ui) = self.filter_ui.get_mut(row) {
+            if is_min {
+                ui.min_fresh = true;
+            } else {
+                ui.max_fresh = true;
+            }
+            cx.notify();
+        }
+    }
+
+    /// Edits filter `row`'s min (`is_min`) or max box with a keystroke (`bound_input::type_key`);
+    /// `enter` re-searches.
+    pub fn handle_filter_key(
+        &mut self,
+        row: usize,
+        is_min: bool,
+        event: &KeyDownEvent,
+        cx: &mut Context<Self>,
+    ) {
+        let key = event.keystroke.key.as_str();
+        if key == "enter" {
+            self.spawn_search(cx);
+            cx.notify();
+            return;
+        }
+        let Some(ui) = self.filter_ui.get_mut(row) else {
+            return;
+        };
+        let (text, fresh) = if is_min {
+            (&mut ui.min_text, &mut ui.min_fresh)
+        } else {
+            (&mut ui.max_text, &mut ui.max_fresh)
+        };
+        if bound_input::type_key(text, fresh, key) {
+            cx.notify();
+        }
+    }
+
+    /// Writes every row's min/max input into its roll, so a search always runs with what the
+    /// inputs show -- whether it was started by Enter, the Search button or the status chip.
+    fn commit_bound_inputs(&mut self) {
+        for (filter, ui) in self.filters.iter_mut().zip(&mut self.filter_ui) {
+            let Some(roll) = filter.roll.as_mut() else {
+                continue;
+            };
+            // An empty or unparsable bound leaves that side of the search open.
+            roll.min = ui.min_text.parse::<f64>().ok();
+            roll.max = ui.max_text.parse::<f64>().ok();
+            // Re-format from what was committed, so the inputs never show stale/invalid text.
+            let format = |bound: Option<f64>| {
+                bound
+                    .map(|value| bound_input::format(value, roll.dp))
+                    .unwrap_or_default()
+            };
+            ui.min_text = format(roll.min);
+            ui.max_text = format(roll.max);
+            ui.min_fresh = false;
+            ui.max_fresh = false;
+        }
+    }
+
+    /// The Search button's click handler.
+    pub fn trigger_search(&mut self, cx: &mut Context<Self>) {
+        self.spawn_search(cx);
+    }
+
+    fn spawn_search(&mut self, cx: &mut Context<Self>) {
+        self.commit_bound_inputs();
+        cx.spawn(async move |weak, cx| {
+            if let Some(view) = weak.upgrade() {
+                run_search(&view, cx).await;
+            }
+        })
+        .detach();
+    }
+}
+
+impl PriceCheckApp {
+    fn catalog(&self, site: TradeSite) -> &SiteCatalog {
+        match site {
+            TradeSite::International => &self.international,
+            TradeSite::Russian => &self.russian,
+        }
+    }
+
+    /// Puts `row`'s whisper on the clipboard for the game's chat and marks the row for a moment:
+    /// copying, not sending -- the player sends it themselves, one action per keypress as the
+    /// game's rules ask of tools.
+    pub fn copy_whisper(&mut self, row: usize, whisper: String, cx: &mut Context<Self>) {
+        cx.write_to_clipboard(ClipboardItem::new_string(whisper));
+        let copied = (self.search_generation, row);
+        self.copied_whisper = Some(copied);
+        cx.notify();
+        cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(WHISPER_COPIED_SHOWN).await;
+            this.update(cx, |state, cx| {
+                if state.copied_whisper == Some(copied) {
+                    state.copied_whisper = None;
+                    cx.notify();
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// Whether `row` of the listings shown now just had its whisper copied.
+    pub fn whisper_copied(&self, row: usize) -> bool {
+        self.copied_whisper == Some((self.search_generation, row))
+    }
+
+    /// Icon URL of a currency (or any exchange-tradable static item) by its trade id, from the
+    /// displayed item's site catalog.
+    pub fn currency_icon(&self, id: &str) -> Option<&str> {
+        self.catalog(self.site)
+            .currencies
+            .iter()
+            .find(|currency| currency.id == id)?
+            .icon_url
+            .as_deref()
+    }
+
+    /// The league's poe.ninja market, once loaded.
+    pub fn market(&self) -> Option<&Market> {
+        self.market.as_ref().map(|(market, _)| market)
+    }
+
+    /// A currency's (or other exchange item's) name on the displayed item's site, by trade id.
+    pub fn currency_name(&self, id: &str) -> Option<&str> {
+        self.catalog(self.site)
+            .currencies
+            .iter()
+            .find(|currency| currency.id == id)
+            .map(|currency| currency.display_name.as_str())
+    }
+}
+
+/// Loads (or fetches) one site's catalogs (see `SiteCatalog`), cached per site for
+/// `CATALOG_MAX_AGE`; a failed fetch falls back on the cache, however old.
+async fn load_site_catalog(
+    client: &Arc<dyn HttpClient>,
+    cache_dir: &std::path::Path,
+    site: TradeSite,
+) -> Result<SiteCatalog> {
+    let (suffix, site_name) = match site {
+        TradeSite::International => ("", "www"),
+        TradeSite::Russian => ("-ru", "ru"),
+    };
+    let max_age = CATALOG_MAX_AGE;
+    let stats = trade_client::cache::load_or_fetch(
+        &cache_dir.join(format!("stat-catalog{suffix}.json")),
+        max_age,
+        trade_client::catalog::fetch_stat_catalog(client, site),
+    )
+    .await
+    .with_context(|| format!("loading {site_name} stat catalog"))?;
+    let currencies = trade_client::cache::load_or_fetch(
+        &cache_dir.join(format!("static-items{suffix}.json")),
+        max_age,
+        trade_client::catalog::fetch_static_currencies(client, site),
+    )
+    .await
+    .with_context(|| format!("loading {site_name} static item list"))?;
+    let item_types = trade_client::cache::load_or_fetch(
+        &cache_dir.join(format!("item-types{suffix}.json")),
+        max_age,
+        trade_client::catalog::fetch_item_types(client, site),
+    )
+    .await
+    .with_context(|| format!("loading {site_name} base type list"))?;
+    Ok(SiteCatalog {
+        stats,
+        currencies,
+        item_types,
+    })
+}
+
+/// Both supported sites' catalogs plus every listed league, current first -- the item's language
+/// isn't known until the first check, and the player can switch client language at any time. The
+/// league list is cached like the catalogs, so an app started without a network has them all.
+async fn bootstrap_catalogs(
+    client: &Arc<dyn HttpClient>,
+) -> Result<(SiteCatalog, SiteCatalog, Vec<String>)> {
+    let cache_dir = paths::cache_dir();
+    let international = load_site_catalog(client, &cache_dir, TradeSite::International).await?;
+    let russian = load_site_catalog(client, &cache_dir, TradeSite::Russian).await?;
+    let leagues: Vec<String> = trade_client::cache::load_or_fetch(
+        &cache_dir.join("leagues.json"),
+        LEAGUES_MAX_AGE,
+        async {
+            Ok(trade_client::leagues(client)
+                .await?
+                .into_iter()
+                .map(|league| league.id)
+                .collect::<Vec<String>>())
+        },
+    )
+    .await
+    .context("loading the league list")?;
+    ensure!(!leagues.is_empty(), "the league list is empty");
+
+    Ok((international, russian, leagues))
+}
+
+/// The league's poe.ninja market, reloaded once `MARKET_MAX_AGE` old (`fetch_market` keeps its
+/// own half-hour disk cache, so a reload is usually a file read).
+async fn current_market(
+    view: &Entity<PriceCheckApp>,
+    cx: &mut AsyncApp,
+    client: &Arc<dyn HttpClient>,
+    league: &str,
+) -> Result<Market> {
+    let cached = view.read_with(cx, |state, _| {
+        state
+            .market
+            .as_ref()
+            .filter(|(_, loaded_at)| loaded_at.elapsed() < MARKET_MAX_AGE)
+            .map(|(market, _)| market.clone())
+    });
+    if let Some(market) = cached {
+        return Ok(market);
+    }
+    let market = trade_client::ninja::fetch_market(client, league, &paths::cache_dir())
+        .await
+        .context("загрузка цен poe.ninja")?;
+    // A market that arrives after the player switched leagues is not this league's.
+    view.update(cx, |state, cx| {
+        if state.league == league {
+            state.market = Some((market.clone(), Instant::now()));
+            cx.notify();
+        }
+    });
+    Ok(market)
+}
+
+/// The league's poe2scout prices, reloaded once `MARKET_MAX_AGE` old (`fetch_prices` keeps its
+/// own half-hour disk cache).
+async fn current_scout(
+    view: &Entity<PriceCheckApp>,
+    cx: &mut AsyncApp,
+    client: &Arc<dyn HttpClient>,
+    league: &str,
+) -> Result<()> {
+    let fresh = view.read_with(cx, |state, _| {
+        state
+            .scout
+            .as_ref()
+            .is_some_and(|(_, loaded_at)| loaded_at.elapsed() < MARKET_MAX_AGE)
+    });
+    if fresh {
+        return Ok(());
+    }
+    let prices = trade_client::scout::fetch_prices(client, league, &paths::cache_dir())
+        .await
+        .context("загрузка цен poe2scout")?;
+    // Prices that arrive after the player switched leagues are not this league's.
+    view.update(cx, |state, cx| {
+        if state.league == league {
+            state.scout = Some((prices, Instant::now()));
+            cx.notify();
+        }
+    });
+    Ok(())
+}
+
+/// Opens the price-check `Entity`, immediately in `BootstrapState::Loading`, and spawns the task
+/// that loads the catalogs and leagues (`PriceCheckApp::apply_bootstrap`) -- then again every
+/// `CATALOG_REFRESH` while the app runs, and after a failed first load sooner
+/// (`BOOTSTRAP_RETRY`).
+pub fn create_app(
+    cx: &mut App,
+    http_client: Arc<dyn HttpClient>,
+    settings: Settings,
+) -> Entity<PriceCheckApp> {
+    let view = cx.new(|_cx| PriceCheckApp::loading(http_client.clone(), settings));
+
+    let weak = view.downgrade();
+    cx.spawn(async move |cx| {
+        let mut failures = 0;
+        loop {
+            let result = bootstrap_catalogs(&http_client).await;
+            let loaded = result.is_ok();
+            let applied = weak.update(cx, |state, cx| {
+                state.apply_bootstrap(result, cx);
+                matches!(state.bootstrap, BootstrapState::Ready)
+            });
+            let Ok(ready) = applied else {
+                return;
+            };
+            failures = if loaded { 0 } else { failures + 1 };
+            let wait = if ready {
+                CATALOG_REFRESH
+            } else {
+                BOOTSTRAP_RETRY[(failures - 1).min(BOOTSTRAP_RETRY.len() - 1)]
+            };
+            cx.background_executor().timer(wait).await;
+        }
+    })
+    .detach();
+
+    view
+}
+
+/// Sets up the price-check hotkey (the player's, `Ctrl+E` by default) and installs the Esc hook,
+/// then spawns the long-lived tasks that bridge them onto GPUI's executor: the hotkey follows
+/// the foreground window (`PriceCheckApp::sync_hotkey_registration`), its presses run the
+/// price-check pipeline, and Esc presses close the panel. Each task awaits a channel its OS
+/// callback feeds, so an idle app does no work at all. Must be called from the thread
+/// `application().run` pumps the platform message loop on (`global_hotkey`'s and the foreground
+/// hook's own requirement).
+///
+/// The panel closes only on Esc (or its × button), never on mouse movement -- the player moves
+/// into it to use the filters -- and Esc is taken from the game only while the panel is open.
+///
+/// The tasks live as long as the app, so they hold only a `WeakEntity` and tolerate the window
+/// having closed.
+pub fn register_hotkeys(cx: &mut App, view: Entity<PriceCheckApp>) -> Result<()> {
+    // Before anything is registered: `global_hotkey` settles on its channel for good with the
+    // first event it delivers.
+    let (press_tx, presses) = async_channel::unbounded();
+    GlobalHotKeyEvent::set_event_handler(Some(move |event: GlobalHotKeyEvent| {
+        if event.state() == HotKeyState::Pressed {
+            let _ = press_tx.try_send(event);
+        }
+    }));
+    let manager = GlobalHotKeyManager::new().context("GlobalHotKeyManager::new failed")?;
+    let esc_presses = esc_hook::install()?;
+    let foreground_changes = game_window::watch_foreground()?;
+    view.update(cx, |state, _| {
+        state.hotkeys = Some(manager);
+        state.sync_hotkey_registration(game_window::foreground());
+    });
+
+    let weak = view.downgrade();
+    cx.spawn(async move |cx| {
+        while let Ok(mut foreground) = foreground_changes.recv().await {
+            // Alt+Tab through several windows is a burst of changes: one sync, to where it ended.
+            while let Ok(later) = foreground_changes.try_recv() {
+                foreground = later;
+            }
+            let Some(view) = weak.upgrade() else {
+                return;
+            };
+            view.update(cx, |state, _| state.sync_hotkey_registration(foreground));
+            // Events can land out of step with where the foreground settles (a console window's
+            // activation was seen reported after the game had already taken the foreground back),
+            // so once things are quiet the actual foreground has the last word.
+            cx.background_executor().timer(FOREGROUND_SETTLE).await;
+            if foreground_changes.is_empty() {
+                let settled = game_window::foreground();
+                view.update(cx, |state, _| state.sync_hotkey_registration(settled));
+            }
+        }
+    })
+    .detach();
+
+    let weak = view.downgrade();
+    cx.spawn(async move |cx| {
+        while let Ok(event) = presses.recv().await {
+            let Some(view) = weak.upgrade() else {
+                return;
+            };
+            match view.read_with(cx, |state, _| state.pressed(event.id())) {
+                Some(Pressed::PriceCheck) => run_price_check(&view, cx).await,
+                Some(Pressed::QuickAction(action)) => {
+                    run_quick_action(action, cx).await;
+                    // Presses that queued up meanwhile are dropped, as EE2's `restoreShortly`
+                    // drops an action while the last one's clipboard is still out: a mashed key
+                    // must not flood the chat -- the game disconnects for too many actions.
+                    while presses.try_recv().is_ok() {}
+                }
+                None => {}
+            }
+        }
+    })
+    .detach();
+
+    // Esc is taken from the game exactly while the panel is shown.
+    cx.observe(&view, |view, cx| esc_hook::set_armed(view.read(cx).visible))
+        .detach();
+    // Separate from the hotkey task, which stays busy through a check's clipboard poll: Esc must
+    // close the panel the moment it's pressed.
+    let weak = view.downgrade();
+    cx.spawn(async move |cx| {
+        while esc_presses.recv().await.is_ok() {
+            let Some(view) = weak.upgrade() else {
+                return;
+            };
+            view.update(cx, |state, cx| {
+                if state.visible {
+                    state.visible = false;
+                    cx.notify();
+                }
+            });
+        }
+    })
+    .detach();
+
+    Ok(())
+}
+
+/// What a hotkey press is for (`PriceCheckApp::pressed`).
+enum Pressed {
+    PriceCheck,
+    QuickAction(QuickAction),
+}
+
+/// Types a quick action into the game (`game_chat`): its text through the clipboard, which gets
+/// the player's own content back right after.
+async fn run_quick_action(action: QuickAction, cx: &mut AsyncApp) {
+    // The hotkey is held only while the game is in front, but a press can race the player's
+    // switch to another program, and must not type there.
+    if game_window::foreground() != Foreground::Game {
+        return;
+    }
+    let Some(hotkey) = action.hotkey else {
+        return;
+    };
+    let mut held = vec![VIRTUAL_KEY(hotkey.key.virtual_key())];
+    for (down, key) in [
+        (hotkey.ctrl, VK_CONTROL),
+        (hotkey.shift, VK_SHIFT),
+        (hotkey.alt, VK_MENU),
+    ] {
+        if down {
+            held.push(key);
+        }
+    }
+    log::info!("{hotkey}: quick action ({:?})", action.kind);
+    game_chat::type_action(&action, &held, cx).await;
+}
+
+/// `Ctrl+E, F5` -- for the log and the diagnostics report.
+fn hotkey_list(hotkeys: &[Hotkey]) -> String {
+    if hotkeys.is_empty() {
+        return "none".to_owned();
+    }
+    hotkeys
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// The full pipeline for one hotkey trigger: synthesize the copy combo, poll the clipboard,
+/// parse, build filters, and kick off the initial search. The panel then stays open until Esc or
+/// its × button (see `register_hotkeys`).
+async fn run_price_check(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
+    // A press that raced the foreground switch -- the player just went to another program: the
+    // copy combo must not land there.
+    if game_window::foreground() == Foreground::Other {
+        return;
+    }
+    let ready = view.read_with(cx, |state, _| match state.bootstrap {
+        BootstrapState::Ready => Some((
+            state.advanced_mod_desc_key,
+            state.settings.hotkey,
+            state.settings.ui_scale,
+        )),
+        _ => None,
+    });
+    let Some((mod_key, hotkey, ui_scale)) = ready else {
+        // Nothing to parse against yet: the panel says why (still loading, or the first load
+        // failed), and a failed load is tried again at once.
+        view.update(cx, |state, cx| {
+            state.visible = true;
+            if let Some(placement) = game_window::panel_rect_at_cursor(state.settings.ui_scale) {
+                state.placement = Some(placement);
+            }
+            if matches!(state.bootstrap, BootstrapState::Failed(_)) {
+                state.retry_bootstrap(cx);
+            }
+            cx.notify();
+        });
+        return;
+    };
+
+    // Where the check happened, recorded before anything is synthesized -- EE2 reads the cursor
+    // (`screen.getCursorScreenPoint()`) ahead of `pressKeysToCopyItemText` for the same reason.
+    let placement = game_window::panel_rect_at_cursor(ui_scale);
+
+    // After the player clicked into the open panel, the panel -- not the game -- has keyboard
+    // focus, and the copy combo would land in the panel. Hand focus back first.
+    if game_window::reclaim_game_focus() {
+        cx.background_executor()
+            .timer(game_window::FOCUS_SWITCH_DELAY)
+            .await;
+    }
+
+    // EE2's `keepModKeys` (leave the player's own Ctrl alone) only while Ctrl is still physically
+    // held: a quick tap can release it before this runs, and the game copies nothing on a bare
+    // Alt+C. The hotkey's own key is released first, and so is a held Shift: the game copies on
+    // Ctrl+Alt+C, not with Shift added.
+    let keep_mod_keys = ctrl_is_down();
+    let mut release = vec![VIRTUAL_KEY(hotkey.key.virtual_key())];
+    if hotkey.shift {
+        release.push(VK_SHIFT);
+    }
+    let clipboard_text = clipboard_poll::poll_item_clipboard(
+        cx,
+        move || synth_input::send_copy_item_combo(mod_key, keep_mod_keys, &release),
+        CLIPBOARD_INITIAL_DELAY,
+        CLIPBOARD_POLL_INTERVAL,
+        CLIPBOARD_TIMEOUT,
+    )
+    .await;
+
+    let Some(text) = clipboard_text else {
+        // Usually no item under the cursor: nothing to say, as in EE2 (its empty `.catch`). But a
+        // copy combo another program holds swallows every check, and the player can't tell why
+        // -- that one gets the panel.
+        if synth_input::copy_combo_taken(mod_key) {
+            let combo = synth_input::copy_combo_label(mod_key);
+            log::warn!("no item text: another program holds {combo}");
+            view.update(cx, |state, cx| {
+                state.visible = true;
+                if placement.is_some() {
+                    state.placement = placement;
+                }
+                state.show_problem(format!(
+                    "Игра не копирует предмет: сочетание {combo} перехватывает другая \
+                     программа — чаще всего оверлей видеокарты, запись экрана или Discord. \
+                     Освободите его в настройках той программы."
+                ));
+                cx.notify();
+            });
+        }
+        return;
+    };
+
+    let (has_item, diagnosis) = view.update(cx, |state, cx| {
+        state.visible = true;
+        if placement.is_some() {
+            state.placement = placement;
+        }
+        let parsed = match item_site(&text, state.settings.client_language.item_language()) {
+            Some((language, site)) => {
+                state.site = site;
+                item_parser::parse_clipboard(&text, language, &state.catalog(site).stats)
+            }
+            None => Err(ParseError::UnknownLanguage),
+        };
+        let has_item = parsed.is_ok();
+        let diagnosis = match &parsed {
+            // A gamble offer is fully understood: there is just nothing to price.
+            Err(ParseError::Unrevealed) => None,
+            Err(_) => Some(UnparsedReason::Rejected),
+            Ok(item) if has_unread_lines(item) => Some(UnparsedReason::UnreadLines),
+            Ok(_) => None,
+        };
+        match parsed {
+            Ok(item) => {
+                state.filters = stat_filters::build_filters(
+                    &item,
+                    state.settings.search_tolerance_percent,
+                    &state.catalog(state.site).stats,
+                );
+                state.filter_ui = state
+                    .filters
+                    .iter()
+                    .map(|filter| FilterRowUi::new(cx, filter))
+                    .collect();
+                let catalog = state.catalog(state.site);
+                let route =
+                    trade_client::route_search(&item, &catalog.currencies, &catalog.item_types);
+                let scope = match &route {
+                    SearchRoute::Filtered { scope } => {
+                        trade_client::switched_scope(scope, &item, &catalog.item_types).map(
+                            |switched| ScopeChoice {
+                                default: scope.clone(),
+                                switched,
+                                switched_on: false,
+                            },
+                        )
+                    }
+                    _ => None,
+                };
+                state.priced_by_market = matches!(route, SearchRoute::Market { .. });
+                state.uncorrupted_only = match &route {
+                    SearchRoute::Filtered { scope } => {
+                        (scope.misc.corrupted == Some(false)).then_some(true)
+                    }
+                    _ => None,
+                };
+                state.scope = scope;
+                state.item = Some(item);
+                state.problem = None;
+                state.show_hidden = false;
+                state.listing_status = state.settings.listing_status.into();
+                state.search = SearchState::NotSearched;
+            }
+            Err(err) => {
+                log::warn!("not parsed: {err:?}");
+                state.show_problem(describe_parse_error(&err));
+            }
+        }
+        cx.notify();
+        (has_item, diagnosis)
+    });
+
+    // With `KEEP_ITEM_TEXTS_ENV` set every checked text is kept, not only the troubled ones.
+    let diagnosis =
+        diagnosis.or_else(|| std::env::var_os(KEEP_ITEM_TEXTS_ENV).map(|_| UnparsedReason::Sample));
+    if let Some(reason) = diagnosis {
+        match save_unparsed(&paths::unparsed_dir(), &text, reason) {
+            // A rejected item says where its text went, so the player can send it in.
+            Ok(path) if reason == UnparsedReason::Rejected => view.update(cx, |state, cx| {
+                if let Some(message) = &mut state.problem {
+                    message.push_str(&format!("\n\nТекст предмета сохранён: {}", path.display()));
+                    cx.notify();
+                }
+            }),
+            Ok(_) => {}
+            Err(err) => log::warn!("saving the item text failed: {err:#}"),
+        }
+    }
+
+    // Detached: the next press -- another check, a quick action -- must not wait on the network
+    // (a rate-limit wait alone can take `MAX_RATE_LIMIT_WAIT`). A newer search supersedes this
+    // one through `search_generation`.
+    if has_item {
+        let view = view.clone();
+        cx.spawn(async move |cx| run_search(&view, cx).await)
+            .detach();
+    }
+    // A unique shows poe2scout's price too: fresh prices for it, if the league's are stale.
+    let scout_refresh = view.read_with(cx, |state, _| {
+        let unique = state
+            .item
+            .as_ref()
+            .is_some_and(|item| item.rarity == Some(ItemRarity::Unique));
+        unique.then(|| (state.http_client.clone(), state.league.clone()))
+    });
+    if let Some((client, league)) = scout_refresh {
+        let view = view.clone();
+        cx.spawn(async move |cx| {
+            if let Err(err) = current_scout(&view, cx, &client, &league).await {
+                log::warn!("{err:#}");
+            }
+        })
+        .detach();
+    }
+}
+
+/// Set (to anything) to keep every checked item's text beside the troubled ones: real client
+/// copies to build parser fixtures from, e.g. by sweeping an inventory.
+const KEEP_ITEM_TEXTS_ENV: &str = "POE2_ORACLE_KEEP_ITEM_TEXTS";
+
+/// Why an item text is kept for diagnosis.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum UnparsedReason {
+    /// The parser refused the text.
+    Rejected,
+    /// The item parsed, but some stat lines matched nothing in the site's stat catalog.
+    UnreadLines,
+    /// Kept because `KEEP_ITEM_TEXTS_ENV` asks for every text.
+    Sample,
+}
+
+/// How many kept item texts stay on disk; the oldest go first.
+const UNPARSED_KEEP: usize = 100;
+
+/// Any stat line the parser couldn't resolve to a trade stat id -- inside a resolved modifier, or
+/// a whole modifier none of whose lines resolved (`ParsedItem::unknown_mods`).
+fn has_unread_lines(item: &ParsedItem) -> bool {
+    !item.unknown_mods.is_empty()
+        || item
+            .mods
+            .iter()
+            .flat_map(|modifier| &modifier.stats)
+            .any(|stat| stat.stat_id.is_none())
+}
+
+/// Writes `text` into `dir` as `<unix millis>-<reason>.txt`, then drops the oldest files beyond
+/// `UNPARSED_KEEP` (the millisecond prefix sorts them oldest first).
+fn save_unparsed(dir: &Path, text: &str, reason: UnparsedReason) -> Result<PathBuf> {
+    fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
+    let millis = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_millis());
+    let suffix = match reason {
+        UnparsedReason::Rejected => "rejected",
+        UnparsedReason::UnreadLines => "unread-lines",
+        UnparsedReason::Sample => "sample",
+    };
+    let path = dir.join(format!("{millis}-{suffix}.txt"));
+    fs::write(&path, text).with_context(|| format!("writing {}", path.display()))?;
+
+    let mut kept: Vec<PathBuf> = fs::read_dir(dir)?
+        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+        .filter(|path| path.extension().is_some_and(|ext| ext == "txt"))
+        .collect();
+    if kept.len() > UNPARSED_KEEP {
+        kept.sort();
+        for old in &kept[..kept.len() - UNPARSED_KEEP] {
+            let _ = fs::remove_file(old);
+        }
+    }
+    Ok(path)
+}
+
+/// Which parser language and trade site `text` belongs to: the client language the player set
+/// (`Settings::client_language`), else the one detected from the text -- `None` for a client
+/// language this app can't parse (the poll accepts every language, so this is a real, reportable
+/// case).
+fn item_site(text: &str, forced: Option<ItemLanguage>) -> Option<(ItemLanguage, TradeSite)> {
+    match forced.or_else(|| item_parser::detect_item_language(text))? {
+        ItemLanguage::English => Some((ItemLanguage::English, TradeSite::International)),
+        ItemLanguage::Russian => Some((ItemLanguage::Russian, TradeSite::Russian)),
+    }
+}
+
+/// Re-runs search for whatever item/filters are currently in `state` -- the same entry point the
+/// initial post-parse auto-search uses, and what the UI calls again when the user presses Enter
+/// in a filter input or clicks the Search affordance (neither editing a filter's checkbox/min/max
+/// nor building the filter list itself triggers this on its own -- matches the reference's own
+/// lack of any debounce anywhere in its codebase).
+pub async fn run_search(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
+    let prepared = view.update(cx, |state, cx| {
+        let item = state.item.as_ref()?;
+        let catalog = state.catalog(state.site);
+        let mut route = trade_client::route_search(item, &catalog.currencies, &catalog.item_types);
+        if let (SearchRoute::Filtered { scope }, Some(choice)) = (&mut route, &state.scope) {
+            *scope = choice.current().clone();
+        }
+        if let (SearchRoute::Filtered { scope }, Some(false)) = (&mut route, state.uncorrupted_only)
+        {
+            scope.misc.corrupted = None;
+        }
+        if let SearchRoute::Filtered { scope } = &mut route {
+            scope.price = state.price_currency;
+        }
+        let key = search_key(
+            state.site,
+            &state.league,
+            state.listing_status,
+            &route,
+            &state.filters,
+        );
+        let cached = state.cached_results(&key);
+        let item_name = item.name.clone();
+        // One line per check: what was checked and how it's priced -- with the outcome line
+        // below, the audit trail of a session's checks.
+        log::info!(
+            "{} / {} [{}] -> {}",
+            item.name,
+            item.base_type.as_deref().unwrap_or("-"),
+            item.category
+                .as_ref()
+                .map_or("-", |category| category.id.as_str()),
+            match &route {
+                SearchRoute::Market { .. } => "market",
+                SearchRoute::Exact { .. } => "exact",
+                SearchRoute::Filtered { .. } => "filtered",
+            }
+        );
+        state.search = SearchState::Searching;
+        state.search_generation += 1;
+        cx.notify();
+        Some((
+            state.http_client.clone(),
+            state.site,
+            state.league.clone(),
+            route,
+            state.filters.clone(),
+            state.listing_status,
+            state.search_generation,
+            (key, cached, item_name),
+        ))
+    });
+    let Some((client, site, league, route, filters, status, generation, (key, cached, item_name))) =
+        prepared
+    else {
+        return;
+    };
+    let target = SearchTarget {
+        client: &client,
+        site,
+        league: &league,
+        status,
+        generation,
+        item_name: &item_name,
+    };
+
+    let from_cache = cached.is_some();
+    let outcome = match cached {
+        Some(results) => Ok(RouteOutcome::Listings(results)),
+        None => execute_route(view, cx, &target, route, &filters).await,
+    };
+    if !from_cache && let Ok(RouteOutcome::Listings(results)) = &outcome {
+        let results = results.clone();
+        view.update(cx, |state, _| state.remember_results(key, results));
+    }
+    // The estimate's rates; without them the listings still show, just unestimated.
+    let market = match &outcome {
+        Ok(RouteOutcome::Listings(results)) if !results.rows.is_empty() => {
+            current_market(view, cx, &client, &league).await.ok()
+        }
+        _ => None,
+    };
+
+    match &outcome {
+        Ok(RouteOutcome::Market(price)) => {
+            log::info!("  market {:.4} div", price.divine_value);
+        }
+        Ok(RouteOutcome::Listings(results)) => log::info!(
+            "  {} found, {} listed{}{}",
+            results.total,
+            results.rows.len(),
+            results
+                .relaxed
+                .map(|(least, of)| format!(" matching {least} of {of} stats"))
+                .unwrap_or_default(),
+            if from_cache { " (cached)" } else { "" }
+        ),
+        Err(err) => log::warn!("search failed: {err:#}"),
+    }
+    view.update(cx, |state, cx| {
+        if state.search_generation != generation {
+            return;
+        }
+        // Rows stay in the order they arrived in: the search sorts by price across currencies,
+        // which raw amounts ("1 divine" vs "40 exalted") can't.
+        state.search = match outcome {
+            Ok(RouteOutcome::Market(price)) => SearchState::Market(price),
+            Ok(RouteOutcome::Listings(results)) if results.rows.is_empty() => SearchState::Empty,
+            Ok(RouteOutcome::Listings(results)) => {
+                let prices: Vec<(f64, &str)> = results
+                    .rows
+                    .iter()
+                    .map(|row| (row.price_amount, row.price_currency.as_str()))
+                    .collect();
+                let estimate = market
+                    .as_ref()
+                    .and_then(|market| trade_client::rates::estimate(&prices, market))
+                    .map(|mut estimate| {
+                        // Items that lack some of this one's stats -- perhaps the one that makes
+                        // it worth something -- price it only roughly.
+                        if results.relaxed.is_some() {
+                            estimate.confidence = Confidence::Low;
+                        }
+                        estimate
+                    });
+                SearchState::Matched {
+                    total: results.total,
+                    rows: results.rows,
+                    trade_url: results.trade_url,
+                    estimate,
+                    relaxed: results.relaxed,
+                }
+            }
+            Err(err) => SearchState::Failed(describe_search_error(&err)),
+        };
+        cx.notify();
+    });
+}
+
+/// The trade site's own results page for `query_id` -- on the item's site, so a Russian item's
+/// link opens the Russian trade site like EE2's does.
+fn trade_site_url(site: TradeSite, league: &str, query_id: &str) -> String {
+    format!(
+        "{}/trade2/search/poe2/{}/{query_id}",
+        site.origin(),
+        urlencode_league(league)
+    )
+}
+
+fn urlencode_league(league: &str) -> String {
+    league.replace(' ', "%20")
+}
+
+/// A trade search's listing rows, plus the search's own total and trade-site link.
+#[derive(Clone)]
+struct SearchResults {
+    rows: Vec<ListingRow>,
+    total: u64,
+    trade_url: String,
+    /// See `SearchState::Matched::relaxed`.
+    relaxed: Option<(u32, u32)>,
+}
+
+/// What pricing an item produced: trade listings, or an exchange item's market price.
+enum RouteOutcome {
+    Listings(SearchResults),
+    Market(MarketPrice),
+}
+
+/// What every request of one search shares.
+struct SearchTarget<'a> {
+    client: &'a Arc<dyn HttpClient>,
+    site: TradeSite,
+    league: &'a str,
+    status: ListingStatus,
+    /// `PriceCheckApp::search_generation` when this search started.
+    generation: u64,
+    /// The item's own name: what an exchange item poe.ninja doesn't price is searched by.
+    item_name: &'a str,
+}
+
+async fn execute_route(
+    view: &Entity<PriceCheckApp>,
+    cx: &mut AsyncApp,
+    target: &SearchTarget<'_>,
+    route: SearchRoute,
+    filters: &[stat_filters::SearchFilter],
+) -> Result<RouteOutcome> {
+    let SearchTarget {
+        client,
+        site,
+        league,
+        status,
+        generation,
+        item_name,
+    } = *target;
+    match route {
+        SearchRoute::Market { trade_id } => {
+            let market = match current_market(view, cx, client, league).await {
+                Ok(market) => market,
+                // poe.ninja down (or behind Cloudflare): the trade site's own listings still
+                // price the item, if more roughly -- better than no price at all.
+                Err(err) => {
+                    log::warn!("{err:#}; pricing {trade_id} from trade listings instead");
+                    return exact_listings(view, cx, target, item_name).await;
+                }
+            };
+            match market.price(&trade_id).cloned() {
+                Some(price) => Ok(RouteOutcome::Market(price)),
+                // poe.ninja doesn't price every exchange item (live: a Regal Shard): its trade
+                // listings by name, then.
+                None => exact_listings(view, cx, target, item_name).await,
+            }
+        }
+        SearchRoute::Filtered { mut scope } => {
+            // Every stat row together first; when that finds nothing, fewer of them (the trade
+            // site's "count" group) -- a rare item's mods, all of them rolled high, rarely have a
+            // twin listed, but items with most of them price it just as well.
+            let wanted = trade_client::enabled_stat_rows(filters);
+            let mut fewer = trade_client::relaxed_matches(filters).into_iter();
+            loop {
+                let mut limiter =
+                    limiter_for_request(view, cx, generation, Endpoint::Search).await?;
+                let result = trade_client::search_with_filters(
+                    client,
+                    site,
+                    league,
+                    &scope,
+                    filters,
+                    status,
+                    &mut limiter,
+                )
+                .await;
+                store_limiter(view, cx, Endpoint::Search, limiter);
+                let outcome = result?;
+                if outcome.total == 0
+                    && let Some(relaxed) = fewer.next()
+                {
+                    scope.stat_match = relaxed;
+                    continue;
+                }
+                let mut results = fetch_listings(view, cx, target, outcome).await?;
+                if let StatMatch::AtLeast(least) = scope.stat_match {
+                    results.relaxed = Some((least, wanted));
+                }
+                return Ok(RouteOutcome::Listings(results));
+            }
+        }
+        SearchRoute::Exact { exact_type } => exact_listings(view, cx, target, &exact_type).await,
+    }
+}
+
+/// The listings of an exact search by type (EE2's exact search): the `Exact` route, and the
+/// fallback for an exchange item the market has no price for, or no market at all.
+async fn exact_listings(
+    view: &Entity<PriceCheckApp>,
+    cx: &mut AsyncApp,
+    target: &SearchTarget<'_>,
+    exact_type: &str,
+) -> Result<RouteOutcome> {
+    let mut limiter = limiter_for_request(view, cx, target.generation, Endpoint::Search).await?;
+    let result = trade_client::search_exact(
+        target.client,
+        target.site,
+        target.league,
+        exact_type,
+        target.status,
+        &mut limiter,
+    )
+    .await;
+    store_limiter(view, cx, Endpoint::Search, limiter);
+    Ok(RouteOutcome::Listings(
+        fetch_listings(view, cx, target, result?).await?,
+    ))
+}
+
+/// How long a search's listings are reused for the same search -- the same item checked again,
+/// or filters edited back: listings change over minutes, and the trade API's windows are tight.
+const SEARCH_CACHE_TTL: Duration = Duration::from_secs(120);
+/// How many recent searches are kept.
+const SEARCH_CACHE_ENTRIES: usize = 8;
+
+/// Everything that decides a search's listings: site, league, sellers, how the item is routed,
+/// and every filter row as it stands.
+fn search_key(
+    site: TradeSite,
+    league: &str,
+    status: ListingStatus,
+    route: &SearchRoute,
+    filters: &[stat_filters::SearchFilter],
+) -> String {
+    let route = match route {
+        SearchRoute::Market { trade_id } => format!("market {trade_id}"),
+        SearchRoute::Exact { exact_type } => format!("exact {exact_type}"),
+        SearchRoute::Filtered { scope } => format!("filtered {scope:?}"),
+    };
+    format!("{site:?} {league} {status:?} {route} {filters:?}")
+}
+
+/// The first listings of a search -- the `Filtered` and `Exact` routes' shared second step --
+/// with a seller's repeated listings folded into one row, as EE2 shows them.
+async fn fetch_listings(
+    view: &Entity<PriceCheckApp>,
+    cx: &mut AsyncApp,
+    target: &SearchTarget<'_>,
+    outcome: SearchOutcome,
+) -> Result<SearchResults> {
+    let trade_url = trade_site_url(target.site, target.league, &outcome.query_id);
+    let mut groups = Vec::new();
+    for ids in outcome
+        .listing_ids
+        .chunks(FETCH_PAGE_SIZE)
+        .take(FETCH_PAGES)
+    {
+        let mut limiter = limiter_for_request(view, cx, target.generation, Endpoint::Fetch).await?;
+        let result = trade_client::fetch(
+            target.client,
+            target.site,
+            ids,
+            &outcome.query_id,
+            &mut limiter,
+        )
+        .await;
+        store_limiter(view, cx, Endpoint::Fetch, limiter);
+        // Unpriced listings are dropped before grouping, so they can't decide which rows count
+        // as a seller's "last two".
+        trade_client::group_listings(
+            &mut groups,
+            result?.into_iter().filter(|item| item.price.is_some()),
+        );
+    }
+    Ok(SearchResults {
+        rows: groups.into_iter().map(ListingRow::from).collect(),
+        total: outcome.total,
+        trade_url,
+        relaxed: None,
+    })
+}
+
+/// The trade API's independently rate-limited endpoint families -- one `RateLimiter` each,
+/// indexing `PriceCheckApp::limiters`.
+#[derive(Clone, Copy)]
+enum Endpoint {
+    Search,
+    Fetch,
+}
+
+/// A request refused locally: the trade API's restriction outlasts `MAX_RATE_LIMIT_WAIT`.
+#[derive(Debug)]
+struct RateLimitedFor(Duration);
+
+impl std::fmt::Display for RateLimitedFor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "trade API rate limit: {}s left", self.0.as_secs())
+    }
+}
+
+impl std::error::Error for RateLimitedFor {}
+
+/// A copy of `endpoint`'s limiter for the next request, after sitting out whatever wait it says
+/// the trade API needs first (shown in the panel meanwhile, if this is still the current search).
+/// The network calls need `&mut RateLimiter` outside any `state.update` borrow, so each request
+/// works on this copy and `store_limiter` merges it back -- on failure too: a 429 teaches the
+/// limiter the restriction.
+async fn limiter_for_request(
+    view: &Entity<PriceCheckApp>,
+    cx: &mut AsyncApp,
+    generation: u64,
+    endpoint: Endpoint,
+) -> Result<RateLimiter> {
+    let wait = view.read_with(cx, |state, _| {
+        state.limiters[endpoint as usize].required_wait()
+    });
+    if let Some(wait) = wait {
+        if wait > MAX_RATE_LIMIT_WAIT {
+            return Err(RateLimitedFor(wait).into());
+        }
+        show_search_state(
+            view,
+            cx,
+            generation,
+            SearchState::RateLimiting {
+                wait_secs: wait.as_secs_f64().ceil() as u64,
+            },
+        );
+        cx.background_executor().timer(wait).await;
+        show_search_state(view, cx, generation, SearchState::Searching);
+    }
+    Ok(view.read_with(cx, |state, _| state.limiters[endpoint as usize].clone()))
+}
+
+fn show_search_state(
+    view: &Entity<PriceCheckApp>,
+    cx: &mut AsyncApp,
+    generation: u64,
+    search: SearchState,
+) {
+    view.update(cx, |state, cx| {
+        if state.search_generation == generation {
+            state.search = search;
+            cx.notify();
+        }
+    });
+}
+
+/// Merges a request's limiter copy back: concurrent searches each work on their own copy, and
+/// the last to finish must not erase a restriction another one just learned.
+fn store_limiter(
+    view: &Entity<PriceCheckApp>,
+    cx: &mut AsyncApp,
+    endpoint: Endpoint,
+    limiter: RateLimiter,
+) {
+    view.update(cx, |state, _cx| {
+        state.limiters[endpoint as usize].merge(&limiter);
+    });
+}
+
+fn describe_parse_error(err: &ParseError) -> String {
+    match err {
+        ParseError::Empty => "Не удалось разобрать предмет".to_string(),
+        // The clipboard poll only returns text that looks like an item in *some* client
+        // language, so reaching this means a client language the parser doesn't cover.
+        ParseError::UnknownLanguage | ParseError::WrongLanguage { .. } => {
+            "Не удалось разобрать предмет: поддерживаются только русский и английский клиенты"
+                .to_string()
+        }
+        ParseError::MissingNameplate => {
+            "Не удалось разобрать предмет: не найдено название".to_string()
+        }
+        ParseError::UnrecognizedItemClass(class) => {
+            format!("Не удалось разобрать предмет: неизвестный класс «{class}»")
+        }
+        ParseError::Unrevealed => "Это ставка у торговца: какой предмет выпадет, станет \
+            известно только после покупки. На площадке такие не продаются."
+            .to_string(),
+    }
+}
+
+fn describe_search_error(err: &anyhow::Error) -> String {
+    if let Some(RateLimitedFor(wait)) = err.downcast_ref::<RateLimitedFor>() {
+        return rate_limit_message(Some(wait.as_secs()));
+    }
+    if let Some(api) = err.downcast_ref::<TradeApiError>() {
+        if api.is_rate_limited() {
+            return rate_limit_message(api.retry_after_secs);
+        }
+        return format!(
+            "Trade API отклонил запрос (HTTP {}): {}",
+            api.status, api.message
+        );
+    }
+    // A request that never got through (no network, no DNS, a refused or dropped connection):
+    // the player's connection, not the search.
+    if err
+        .chain()
+        .any(|cause| cause.downcast_ref::<std::io::Error>().is_some())
+    {
+        return format!("Нет связи с сайтом торговли — проверьте интернет и повторите.\n\n{err:#}");
+    }
+    format!("Ошибка поиска: {err:#}")
+}
+
+fn rate_limit_message(retry_after_secs: Option<u64>) -> String {
+    match retry_after_secs {
+        Some(secs) => format!("Слишком много запросов к trade API — повторите через {secs} с"),
+        None => "Слишком много запросов к trade API — повторите чуть позже".to_owned(),
+    }
+}
+
+fn ctrl_is_down() -> bool {
+    // High bit of the return value indicates the key is currently down; `GetAsyncKeyState`
+    // returns a `u16`-repr `SHORT` in the `windows` crate, so a "negative" (high-bit-set) value
+    // is the down state.
+    (unsafe { GetAsyncKeyState(VK_CONTROL.0.into()) } as i16) < 0
+}

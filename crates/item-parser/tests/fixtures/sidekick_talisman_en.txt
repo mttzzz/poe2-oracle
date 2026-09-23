@@ -1,0 +1,13 @@
+Item Class: Talismans
+Rarity: Magic
+Lumbering Talisman of Consumption
+--------
+Physical Damage: 71-107
+Critical Hit Chance: 5.00%
+Attacks per Second: 1.10
+--------
+Requires: Level 52, 60 Str, 43 Int
+--------
+Item Level: 77
+--------
+Gain 19 Mana per enemy killed

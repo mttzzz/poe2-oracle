@@ -1,0 +1,11 @@
+Item Class: Sceptres
+Rarity: Magic
+Burning Rattling Sceptre
+--------
+Spirit: 100
+--------
+Requires: Level 66, 46 Str, 117 Int
+--------
+Item Level: 70
+--------
+Allies in your Presence deal 9 to 13 additional Attack Fire Damage

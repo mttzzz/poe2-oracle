@@ -1,0 +1,46 @@
+name: Release
+
+# Pushing a tag vX.Y.Z builds the Windows installer and publishes it with SHA256SUMS as that tag's
+# GitHub release: the layout crates/auto-update reads (tag vX.Y.Z; assets
+# PoE2-Oracle-Setup-X.Y.Z.exe and SHA256SUMS). packaging/build-release.ps1 does the building --
+# the same script used by hand on a Windows machine -- and refuses a tag that is not "v" + the
+# workspace version.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  windows-installer:
+    # windows-latest (Windows Server 2025, checked 2026-09-22) ships Rust 1.98, the Windows SDK
+    # (fxc.exe for gpui's release-mode shaders, rc.exe for the exe's icon and version) and the
+    # GitHub CLI. NSIS is not on it; build-release.ps1 fetches its pinned zip.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build the exe, the installer and SHA256SUMS
+        shell: pwsh
+        env:
+          TAG: ${{ github.ref_name }}
+        run: ./packaging/build-release.ps1 -Tag $env:TAG
+
+      # `gh release create` with files keeps the release a draft until every file is uploaded, so
+      # the updater never sees a latest release without its installer.
+      - name: Publish the release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          $version = $env:TAG.Substring(1)
+          $flags = @('--verify-tag', '--generate-notes', '--title', "PoE2 Oracle $version")
+          # GitHub's "latest" release never points at a pre-release, so a vX.Y.Z-rc.N reaches
+          # only those who install it by hand.
+          if ($version.Contains('-')) { $flags += '--prerelease' }
+          gh release create $env:TAG "target/dist/PoE2-Oracle-Setup-$version.exe" target/dist/SHA256SUMS @flags
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

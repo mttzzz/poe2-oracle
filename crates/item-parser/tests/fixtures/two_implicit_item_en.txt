@@ -1,0 +1,24 @@
+Item Class: Belts
+Rarity: Rare
+Corpse Snare
+Ornate Belt
+--------
+Requires: Level 59
+--------
+Item Level: 80
+--------
+{ Implicit Modifier }
+14(15-10)% reduced Charm Charges used
+{ Implicit Modifier — Charm }
+Has 2(1-3) Charm Slots
+--------
+{ Prefix Modifier "Transformative" (Tier: 4) }
+11(10-15)% increased Charm Effect Duration
+{ Prefix Modifier "Fecund" (Tier: 1) — Life }
++161(150-174) to maximum Life
+{ Suffix Modifier "of the Volcano" (Tier: 3) — Elemental, Fire, Resistance }
++32(31-35)% to Fire Resistance
+{ Suffix Modifier "of the Titan" (Tier: 2) — Attribute }
++33(31-33) to Strength
+{ Suffix Modifier "of Steel Skin" (Tier: 6) }
++94(73-97) to Stun Threshold

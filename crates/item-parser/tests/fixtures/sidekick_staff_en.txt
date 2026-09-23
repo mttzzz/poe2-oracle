@@ -1,0 +1,12 @@
+Item Class: Staves
+Rarity: Magic
+Chalybeous Ashen Staff of the Augur
+--------
+Requirements:
+Level: 58
+Int: 133 (unmet)
+--------
+Item Level: 60
+--------
++148 to maximum Mana
++20 to Intelligence

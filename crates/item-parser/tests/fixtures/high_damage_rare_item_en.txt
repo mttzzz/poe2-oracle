@@ -1,0 +1,37 @@
+Item Class: Crossbows
+Rarity: Rare
+Dragon Core
+Siege Crossbow
+--------
+Quality: +29% (augmented)
+Physical Damage: 414-1,043 (augmented)
+Critical Hit Chance: 5.00%
+Attacks per Second: 2.07 (augmented)
+Reload Time: 0.60 (augmented)
+--------
+Requires: Level 79, 89 (unmet) Str, 89 Dex
+--------
+Sockets: S S
+--------
+Item Level: 82
+--------
+36% increased Physical Damage (rune)
+--------
+{ Implicit Modifier }
+Grenade Skills Fire an additional Projectile
+--------
+{ Prefix Modifier "Merciless" (Tier: 1) — Damage, Physical, Attack }
+173(170-179)% increased Physical Damage
+{ Prefix Modifier "Dictator's" (Tier: 1) — Damage, Physical, Attack }
+78(75-79)% increased Physical Damage
++175(175-200) to Accuracy Rating
+{ Prefix Modifier "Flaring" (Tier: 1) — Damage, Physical, Attack }
+Adds 54(37-55) to 94(63-94) Physical Damage (desecrated)
+{ Suffix Modifier "of Infamy" — Attack, Speed }
+25(23-25)% increased Attack Speed (fractured)
+{ Suffix Modifier "of the Sniper" (Tier: 1) }
++7 to Level of all Projectile Skills
+{ Suffix Modifier "of Bursting" (Tier: 1) — Attack }
+Loads 2 additional bolts
+--------
+Fractured Item

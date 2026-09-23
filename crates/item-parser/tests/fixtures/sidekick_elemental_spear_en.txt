@@ -1,0 +1,27 @@
+Item Class: Spears
+Rarity: Rare
+Hypnotic Edge
+Forked Spear
+--------
+Quality: +11% (augmented)
+Physical Damage: 31-52 (augmented)
+Elemental Damage: 2-4 (cold), 3-67 (lightning)
+Critical Hit Chance: 6.40% (augmented)
+Attacks per Second: 1.84 (augmented)
+--------
+Requires: Level 26, 20 Str, 48 Dex
+--------
+Sockets: S 
+--------
+Item Level: 32
+--------
+Adds 1 to 20 Lightning Damage (rune)
+--------
+Grants Skill: Spear Throw
+--------
+Adds 11 to 15 Physical Damage
+Adds 2 to 4 Cold Damage
+Adds 2 to 47 Lightning Damage
++1.4% to Critical Hit Chance
+15% increased Attack Speed
+Grants 3 Life per Enemy Hit

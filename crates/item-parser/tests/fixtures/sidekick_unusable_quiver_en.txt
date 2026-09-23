@@ -1,0 +1,13 @@
+Item Class: Quivers
+Rarity: Normal
+You cannot use this item. Its stats will be ignored
+--------
+Fire Quiver
+--------
+Requires: Level 8
+--------
+Item Level: 8
+--------
+Adds 3 to 5 Fire damage to Attacks (implicit)
+--------
+Can only be equipped if you are wielding a Bow.

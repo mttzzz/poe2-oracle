@@ -1,0 +1,25 @@
+Item Class: Tablet
+Rarity: Rare
+Planar Challenge
+Delirium Precursor Tablet
+--------
+Item Level: 84
+--------
+{ Implicit Modifier }
+Adds a Mirror of Delirium to a Map
+17 uses remaining
+--------
+{ Prefix Modifier "Breeding" }
+7(4-10)% increased Pack Size in Map
+{ Prefix Modifier "Teeming" }
+Map has 16(25-70)% increased Magic Monsters
+{ Suffix Modifier "of the Simulacrum" (Tier: 1) }
+6(10-30)% increased Stack size of Simulacrum Splinters found in Map
+{ Suffix Modifier "of Phobia" (Tier: 1) }
+Delirium Encounters in Map are 5(10-30)% more likely to spawn Unique Bosses
+--------
+Can be used in a personal Map Device to add modifiers to a Map.
+--------
+Corrupted
+--------
+Note: ~b/o 1 exalted

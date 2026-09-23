@@ -1,0 +1,17 @@
+Item Class: Two Hand Maces
+Rarity: Magic
+Crackling Temple Maul of the Brute
+--------
+Physical Damage: 35-72
+Lightning Damage: 1-50 (lightning)
+Critical Hit Chance: 5.00%
+Attacks per Second: 1.20
+--------
+Requires: Level 28, 57 (augmented) Str
+--------
+Item Level: 32
+--------
+{ Prefix Modifier "Crackling" (Tier: 7) — Damage, Elemental, Lightning, Attack }
+Adds 1(1-4) to 50(46-66) Lightning Damage
+{ Suffix Modifier "of the Brute" (Tier: 8) — Attribute }
++8(5-8) to Strength

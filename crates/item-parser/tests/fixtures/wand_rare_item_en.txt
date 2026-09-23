@@ -1,0 +1,22 @@
+Item Class: Wands
+Rarity: Rare
+Doom Bite
+Withered Wand
+--------
+Requires: Level 90 (unmet), 125 (augmented) Int
+--------
+Item Level: 82
+--------
+Grants Skill: Level 20 Chaos Bolt
+--------
+{ Prefix Modifier "Malignant" (Tier: 4) — Damage, Chaos }
+71(65-74)% increased Chaos Damage
+{ Prefix Modifier "Frostbound" (Tier: 1) — Damage, Elemental, Cold }
+Gain 28(28-30)% of Damage as Extra Cold Damage
+{ Suffix Modifier "of the Hearth" (Tier: 1) — Mana }
+22(18-22)% increased Mana Regeneration Rate
+15% increased Light Radius
+{ Suffix Modifier "of the Apt" (Tier: 4) }
+20% reduced Attribute Requirements
+--------
+Note: ~b/o 5 exalted

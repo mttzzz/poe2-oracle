@@ -1,0 +1,10 @@
+Item Class: Rings
+Rarity: Magic
+Sapphire Ring
+--------
+Item Level: 54
+--------
+{ Implicit Modifier — Elemental, Cold, Resistance }
++23(20-30)% to Cold Resistance
+--------
+Unidentified (Tier 4)

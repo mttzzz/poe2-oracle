@@ -1,0 +1,31 @@
+explicit.stat_1050105434	explicit	# к максимуму маны
+explicit.stat_3299347043	explicit	# к максимуму здоровья
+explicit.stat_4220027924	explicit	#% к сопротивлению холоду
+explicit.stat_3372524247	explicit	#% к сопротивлению огню
+explicit.stat_328541901	explicit	# к интеллекту
+explicit.stat_4080418644	explicit	# к силе
+explicit.stat_3325883026	explicit	Регенерация # здоровья в секунду
+explicit.stat_803737631	explicit	# к меткости
+explicit.stat_2974417149	explicit	#% увеличение урона от чар
+explicit.stat_2891184298	explicit	#% повышение скорости сотворения чар
+explicit.stat_3695891184	explicit	Дарует # здоровья за каждого убитого врага
+explicit.stat_1754445556	explicit	Добавляет от # до # урона от молнии к атакам
+explicit.stat_691932474	explicit	# к меткости (На предмете)
+explicit.stat_2144192055	explicit	# к уклонению
+explicit.stat_2231156303	explicit	#% увеличение урона от молнии
+explicit.stat_55876295	explicit	#% физического урона от атак похищается в виде здоровья
+explicit.stat_821021828	explicit	Дарует # здоровья за каждый удар по врагу
+explicit.stat_92381065	explicit	Монстры наносят #% от их урона в виде дополнительного урона от огня
+explicit.stat_2570249991	explicit	Монстры уклончивы
+explicit.stat_4226189338	explicit	# к уровню всех камней умений чар хаоса
+explicit.stat_3473929743	explicit	#% повышение скорости накопления шкалы пригвождения
+explicit.stat_2696027455	explicit	#% увеличение урона копьями
+explicit.stat_2897413282	explicit	# ко всем характеристикам
+implicit.stat_2923486259	implicit	#% к сопротивлению хаосу
+implicit.stat_1416292992	implicit	Имеет # ячейку для оберегов
+implicit.stat_2891184298	implicit	#% повышение скорости сотворения чар
+implicit.stat_958696139	implicit	Дарует 1 дополнительную ячейку умений
+implicit.stat_680068163	implicit	#% увеличение порога оглушения
+implicit.stat_2369421690	implicit	Добавляет Бездны на карту\nОсталось зарядов - #
+implicit.stat_1980802737	implicit	Умения гранат выпускают дополнительный снаряд
+skill.chaosbolt	skill	Дарует умение: Снаряд хаоса # уровня

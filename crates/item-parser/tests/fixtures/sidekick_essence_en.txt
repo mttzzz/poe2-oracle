@@ -1,0 +1,9 @@
+Item Class: Stackable Currency
+Rarity: Currency
+Essence of Enhancement
+--------
+Stack Size: 1/10
+--------
+Upgrades a normal item to Magic with one Defence modifier
+--------
+Right click this item then left click a normal item to apply it.

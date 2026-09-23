@@ -1,0 +1,14 @@
+Item Class: Jewels
+Rarity: Rare
+Fulgent Shard
+Time-Lost Ruby
+--------
+Radius: Small
+--------
+Item Level: 64
+--------
+Small Passive Skills in Radius also grant 2% increased Totem Damage
+Notable Passive Skills in Radius also grant 4% increased Magnitude of Bleeding you inflict
+Notable Passive Skills in Radius also grant 7% increased Stun Buildup with Maces
+--------
+Place into an allocated Jewel Socket on the Passive Skill Tree. Right click to remove from the Socket.

@@ -1,0 +1,29 @@
+Item Class: Boots
+Rarity: Rare
+Loath Tread
+Runeforged Sekhema Sandals
+--------
+Quality: +20% (augmented)
+Energy Shield: 203 (augmented)
+Runic Ward: 221 (augmented)
+--------
+Requires: Level 80, 108 Int
+--------
+Sockets: S 
+--------
+Item Level: 82
+--------
+18% increased Armour, Evasion and Energy Shield (rune)
+--------
+{ Prefix Modifier "Cheetah's" (Tier: 2) — Speed }
+30% increased Movement Speed
+{ Prefix Modifier "Indomitable" (Tier: 2) — Energy Shield }
+91(80-91)% increased Energy Shield
+{ Desecrated Prefix Modifier "Pulsing" (Tier: 2) — Energy Shield }
++47(42-47) to maximum Energy Shield
+{ Suffix Modifier "of Tzteosh" (Tier: 1) — Elemental, Fire, Resistance }
++42(41-45)% to Fire Resistance
+{ Suffix Modifier "of the Thunderhead" (Tier: 5) — Elemental, Lightning, Resistance }
++21(21-25)% to Lightning Resistance
+{ Crafted Suffix Modifier "of the Stars" }
++11(10-15) to Spirit

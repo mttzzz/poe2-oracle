@@ -1,0 +1,24 @@
+Item Class: Boots
+Rarity: Rare
+Victory Hoof
+Bastion Sabatons
+--------
+Quality: +20% (augmented)
+Armour: 149 (augmented)
+Evasion Rating: 118 (augmented)
+--------
+Requires: Level 59, 44 Str, 44 Dex
+--------
+Sockets: S 
+--------
+Item Level: 66
+--------
++14% to Fire Resistance (rune)
+--------
+25% increased Movement Speed
++83 to maximum Life
++20% to Fire Resistance
++22% to Cold Resistance
++34% to Lightning Resistance
++32 to Armour (desecrated)
++14 to Evasion Rating (desecrated)

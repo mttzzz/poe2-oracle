@@ -1,0 +1,13 @@
+Item Class: Jewels
+Rarity: Rare
+Soul Bliss
+Emerald
+--------
+Item Level: 26
+--------
+3% increased Attack Speed
+Damage Penetrates 5% Lightning Resistance
+7% increased Magnitude of Ailments you inflict
+14% increased Pin Buildup
+--------
+Place into an allocated Jewel Socket on the Passive Skill Tree. Right click to remove from the Socket.

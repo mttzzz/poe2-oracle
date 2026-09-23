@@ -1,0 +1,11 @@
+Item Class: Wands
+Rarity: Rare
+Volatile Wand
+--------
+Requires: 113 Intelligence
+--------
+Item Level: 69
+--------
+Grants Skill: Level 15 Volatile Dead
+--------
+Unidentified

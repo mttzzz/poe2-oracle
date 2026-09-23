@@ -1,0 +1,11 @@
+Item Class: Boots
+Rarity: Rare
+Dunerunner Sandals
+--------
+Energy Shield: 58
+--------
+Requires: 78 (unmet) Intelligence
+--------
+Item Level: 68
+--------
+Unidentified

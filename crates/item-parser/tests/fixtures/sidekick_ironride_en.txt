@@ -1,0 +1,32 @@
+Item Class: Helmets
+Rarity: Unique
+Ironride
+Visored Helm
+--------
+Quality: +20% (augmented)
+Armour: 105 (augmented)
+Evasion Rating: 89 (augmented)
+--------
+Requires: Level 16, 14 (augmented) Str, 14 (augmented) Dex
+--------
+Sockets: S 
+--------
+Item Level: 81
+--------
+{ Corruption Enhancement — Mana }
+30(20-30)% increased Mana Regeneration Rate
+--------
+{ Unique Modifier — Armour, Evasion }
+62(60-80)% increased Armour and Evasion
+{ Unique Modifier — Elemental, Lightning, Resistance }
++10(10-15)% to Lightning Resistance
+{ Unique Modifier — Mana }
++40(30-50) to maximum Mana
+{ Unique Modifier }
+You have no Accuracy Penalty at Distance — Unscalable Value
+{ Unique Modifier — Life }
++44(30-50) to maximum Life
+--------
+Let the rider's aim be true.
+--------
+Corrupted

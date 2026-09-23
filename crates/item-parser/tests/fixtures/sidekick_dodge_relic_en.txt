@@ -1,0 +1,9 @@
+Item Class: Relics
+Rarity: Magic
+Layered Urn Relic of Eluding
+--------
+Item Level: 80
+--------
++0.7 metres to Dodge Roll distance
+--------
+Place this item on the Relic Altar at the start of the Trial of the Sekhemas

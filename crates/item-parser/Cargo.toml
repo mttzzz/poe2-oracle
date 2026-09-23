@@ -5,5 +5,16 @@ edition.workspace = true
 publish.workspace = true
 
 [dependencies]
-# Parses clipboard text into poe2-domain::Item; needs nothing beyond that output shape.
+# Parses clipboard text into poe2-domain::Item; needs nothing beyond that output shape plus a
+# regex engine for the client's own line grammars (REQUIRES_LINE, MODIFIER_LINE, UNIDENTIFIED,
+# etc. -- see client_strings.rs).
 poe2-domain = { path = "../poe2-domain" }
+regex = "1"
+
+[dev-dependencies]
+# `tests/routing.rs` runs every parsed fixture through the filter builder and the search router
+# the app runs it through; neither depends on this crate, so no cycle. `examples/sweep.rs` does
+# the same for swept item texts, with the app's cached catalogs (read with serde_json).
+serde_json = "1"
+stat-filters = { path = "../stat-filters" }
+trade-client = { path = "../trade-client" }

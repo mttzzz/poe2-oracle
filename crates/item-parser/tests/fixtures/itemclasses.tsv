@@ -1,0 +1,93 @@
+LifeFlask	Life Flasks	Флаконы жизни
+ManaFlask	Mana Flasks	Флаконы маны
+Currency	Currency	Вещи на обмен
+Amulet	Amulets	Амулеты
+Ring	Rings	Кольца
+Claw	Claws	Когти
+Dagger	Daggers	Кинжалы
+Wand	Wands	Жезлы
+One Hand Sword	One Hand Swords	Одноручные мечи
+One Hand Axe	One Hand Axes	Одноручные топоры
+One Hand Mace	One Hand Maces	Одноручные булавы
+Bow	Bows	Луки
+Staff	Staves	Посохи
+Two Hand Sword	Two Hand Swords	Двуручные мечи
+Two Hand Axe	Two Hand Axes	Двуручные топоры
+Two Hand Mace	Two Hand Maces	Двуручные булавы
+Active Skill Gem	Skill Gems	Камни умений
+Support Skill Gem	Support Gems	Камни поддержки
+Quiver	Quivers	Колчаны
+Belt	Belts	Пояса
+Gloves	Gloves	Перчатки
+Boots	Boots	Обувь
+Body Armour	Body Armours	Нательные доспехи
+Helmet	Helmets	Шлемы
+Shield	Shields	Щиты
+SmallRelic	Small Relics	Малые реликвии
+MediumRelic	Medium Relics	Средние реликвии
+LargeRelic	Large Relics	Большие реликвии
+StackableCurrency	Stackable Currency	Валюта
+QuestItem	Quest Items	Вещи для заданий
+Sceptre	Sceptres	Скипетры
+UtilityFlask	Charms	Обереги
+Map	Waystones	Путевые камни
+FishingRod	Fishing Rods	Удочки
+MapFragment	Map Fragments	Обрывки карт
+AtlasCurrency	Map Fragments	Обрывки карт
+HideoutDoodad	Hideout Doodads	Предметы убежища
+Microtransaction	Microtransactions	Микротранзакции
+Jewel	Jewels	Самоцветы
+DivinationCard	Divination Cards	Гадальные карты
+MiscMapItem	Misc Map Items	Прочие предметы карт
+Leaguestone	Leaguestones	Камни лиги
+PantheonSoul	Pantheon Souls	Души Пантеона
+UniqueFragment	Pieces	Фрагменты
+AbyssJewel	Abyss Jewels	Самоцветы Бездны
+IncursionItem	Incursion Items	Предметы Вмешательства
+DelveSocketableCurrency	Delve Socketable Currency	Валюта Спуска
+Incubator	Incubators	Инкубаторы
+UniqueShard	Shards	Осколки
+UniqueShardBase	Shard Hearts	Стержни осколков
+Warstaff	Quarterstaves	Боевые посохи
+DelveStackableSocketableCurrency	Delve Stackable Socketable Currency	Валюта Спуска
+AtlasUpgradeItem	Atlas Upgrade Items	Предметы улучшения Атласа
+HiddenItem	Hidden Items	Сокрытые предметы
+HeistContract	Contracts	Контракты
+HeistEquipmentWeapon	Heist Gear	Разбойничьи принадлежности
+HeistEquipmentTool	Heist Tools	Разбойничий инструмент
+HeistEquipmentUtility	Heist Cloaks	Разбойничьи накидки
+HeistEquipmentReward	Heist Brooches	Разбойничьи броши
+HeistBlueprint	Blueprints	Чертежи
+Trinket	Trinkets	Украшения
+HeistObjective	Heist Targets	Предметы кражи
+ExpeditionLogbook	Expedition Logbooks	Журналы экспедиции
+Expedition2Logbooks	Expedition Logbook	Журнал экспедиции
+IncubatorStackable	Incubators	Инкубаторы
+ArchnemesisMod	Archnemesis Mods	Свойства Возмездия
+Spear	Spears	Копья
+Crossbow	Crossbows	Самострелы
+Focus	Foci	Фокусы
+InstanceLocalItem	Instance Local Items	Местные предметы области
+SentinelDrone	Sentinels	Часовые
+MemoryLine	Memories	Воспоминания
+Flail	Flails	Кистени
+Relic	Relics	Реликвии
+SanctumSpecialRelic	Sanctified Relics	Священные реликвии
+Breachstone	Breachstones	Камни Разлома
+VaultKey	Vault Keys	Ключи от хранилищ
+ItemisedSanctum	Trial Coins	Монеты Испытания
+Buckler	Bucklers	Баклеры
+TrapTool	Traps	Ловушки
+SkillGemToken	Currency	Вещи на обмен
+UltimatumKey	Inscribed Ultimatum	Начертанные Ультиматумы
+SoulCore	Augment	Усилители
+TowerAugmentation	Tablet	Плитки
+Omen	Omen	Предзнаменования
+Talisman	Talismans	Талисманы
+UncutSkillGemStackable	Uncut Skill Gems	Неогранённые камни умений
+UncutSupportGemStackable	Uncut Support Gems	Неогранённые камни поддержки
+UncutReservationGemStackable	Uncut Spirit Gems	Неогранённые камни духа
+IncursionArm	Transcendent Arm	Вознесённая рука
+IncursionLeg	Transcendent Leg	Вознесённая нога
+BrequelFruit	Wombgifts	Дары утробы
+PinnacleKeyStackable	Pinnacle Keys	Верховные ключи

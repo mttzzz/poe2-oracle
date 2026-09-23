@@ -10,14 +10,16 @@ members = [
     "crates/poe2-domain",
     "crates/item-parser",
     "crates/trade-client",
+    "crates/stat-filters",
     "crates/data-pipeline",
     "crates/auto-update",
-    "crates/auto-update-helper",
     "crates/poe2-oracle",
 ]
 
 [workspace.package]
-version = "0.0.0"
+# The app's version (the exe's VERSIONINFO, the installer name, the update check's baseline);
+# release tags are `v` + this.
+version = "0.1.0"
 edition = "2024"
 publish = false
 

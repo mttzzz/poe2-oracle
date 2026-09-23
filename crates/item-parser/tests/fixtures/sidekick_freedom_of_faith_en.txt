@@ -1,0 +1,21 @@
+Item Class: Tablet
+Rarity: Unique
+Freedom of Faith
+Ritual Tablet
+--------
+Item Level: 79
+--------
+{ Implicit Modifier }
+Adds Ritual Altars to a Map
+5 uses remaining
+--------
+{ Unique Modifier }
+Can Reroll Favours at Ritual Altars in your Maps twice as many times — Unscalable Value
+{ Unique Modifier }
+Favours at Ritual Altars in Area costs 15(10-15)% increased Tribute
+--------
+When darkness comes, we pray for light.
+When darkness is all that there is,
+we pray for death.
+--------
+Can be used in a personal Map Device to add modifiers to a Map.

@@ -1,0 +1,23 @@
+Item Class: Waystones
+Rarity: Rare
+Desolate Route
+Waystone (Tier 14)
+--------
+Revives Available: 2 (augmented)
+Pack Size: +34% (augmented)
+Rare Monsters: +28% (augmented)
+Waystone Drop Chance: +75% (augmented)
+--------
+Item Level: 80
+--------
+{ Prefix Modifier "Shocking" (Tier: 1) }
+Area has patches of Shocked Ground — Unscalable Value
+{ Prefix Modifier "Painful" (Tier: 1) }
+28(26-30)% increased Monster Damage
+{ Suffix Modifier "of Splitting" (Tier: 2) }
+Monsters fire 2 additional Projectiles
+{ Suffix Modifier "of Destruction" (Tier: 1) }
+Monsters have 293(260-300)% increased Critical Hit Chance
++26(26-30)% to Monster Critical Damage Bonus
+--------
+Can be used in a Map Device, allowing you to enter a Map. Waystones can only be used once.

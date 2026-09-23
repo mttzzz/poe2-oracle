@@ -1,0 +1,15 @@
+Item Class: Shields
+Rarity: Normal
+Polished Targe
+--------
+Block chance: 25%
+Armour: 71
+Evasion Rating: 64
+--------
+Requires: Level 54, 42 Str, 42 Dex
+--------
+Item Level: 54
+--------
+Grants Skill: Raise Shield
+--------
+Note: ~b/o 1 aug

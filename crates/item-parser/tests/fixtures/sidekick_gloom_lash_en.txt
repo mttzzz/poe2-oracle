@@ -1,0 +1,28 @@
+Item Class: Belts
+Rarity: Rare
+Gloom Lash
+Utility Belt
+--------
+Requires: Level 59
+--------
+Item Level: 81
+--------
+{ Implicit Modifier }
+20% of Flask Recovery applied Instantly
+{ Implicit Modifier — Charm }
+Has 1(1-3) Charm Slot
+--------
+{ Desecrated Prefix Modifier "Kurgal's" (Tier: 1) — Mana, Armour }
+Gain 9(6-12)% of Maximum Mana as Armour
+{ Prefix Modifier "Jagged" (Tier: 1) — Damage, Physical }
+136(101-151) to 154(152-220) Physical Thorns damage
+{ Crafted Prefix Modifier "Verisium" }
+22(20-30)% increased Explicit Resistance Modifier magnitudes — Unscalable Value
+{ Suffix Modifier "of the Maelstrom" (Tier: 3) — Elemental, Lightning, Resistance — 22% Increased }
++33(31-35)% to Lightning Resistance
+{ Suffix Modifier "of the Furnace" (Tier: 4) — Elemental, Fire, Resistance — 22% Increased }
++29(26-30)% to Fire Resistance
+{ Suffix Modifier "of Eviction" (Tier: 4) — Chaos, Resistance — 22% Increased }
++13(12-15)% to Chaos Resistance
+--------
+Note: ~b/o 2 divine

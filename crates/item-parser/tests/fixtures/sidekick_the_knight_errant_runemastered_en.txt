@@ -1,0 +1,28 @@
+Item Class: Boots
+Rarity: Unique
+The Knight-errant
+Runemastered Mail Sabatons
+--------
+Armour: 71 (augmented)
+Evasion Rating: 62 (augmented)
+Runic Ward: 54
+--------
+Requires: Level 38, 29 Str, 29 (unmet) Dex
+--------
+Item Level: 39
+--------
+{ Implicit Modifier — Speed }
+5% increased Movement Speed
+--------
+{ Unique Modifier — Armour, Evasion }
+41(30-50)% increased Armour and Evasion
+{ Unique Modifier }
++38(30-50) to Stun Threshold
+{ Unique Modifier — Speed }
+10% increased Movement Speed
+{ Unique Modifier — Armour, Evasion }
+Iron Reflexes — Unscalable Value
+{ Unique Modifier }
++50(30-50) to Ailment Threshold
+--------
+Some search forever for their path.

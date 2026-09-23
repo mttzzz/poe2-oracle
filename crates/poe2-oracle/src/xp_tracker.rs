@@ -1,0 +1,1496 @@
+//! Experience tracking for the XP overlay: how fast the character levels, how much play is left
+//! until the next level, and how long the current map has taken.
+//!
+//! Pure and not Windows-gated, so the native test pass covers all of it. The Windows side only
+//! feeds it -- `platform::xp_bar` captures the bar's pixels, `platform::client_log` tails the game
+//! log -- and `ui::xp_overlay` only renders [`XpStatus`]:
+//!
+//! - [`XpBarGeometry`] and [`read_fill`]: where PoE2 draws its experience bar and how the bar's
+//!   pixels read as the fraction of the level already earned.
+//! - [`parse_log_line`]: the `Client.txt` lines that say the character levelled up, entered an
+//!   area instance, or logged out.
+//! - [`XpTracker`]: the rate (levels per hour of play, over a window the settings pick), the time
+//!   to the next level, and the current map run ([`MapStatus`]): its time, its experience, and
+//!   the average time of the maps before it.
+//! - [`format_rate`], [`format_eta`], [`format_percent`], [`format_clock`]: the overlay's wording.
+
+use std::ops::{Range, RangeInclusive};
+use std::time::Duration;
+
+use crate::overlay_layout::PhysicalRect;
+
+// --- Where the bar is ---------------------------------------------------------------------------
+//
+// Measured live 2026-09-22 on the test machine's 3840x2160 borderless game (the bar at ~65 %,
+// fixture `tests/fixtures/xp_bar_4k_65pct.rgb`): a bar of 20 segments centred under the game at
+// the bottom edge of the HUD, its segments separated by 19 ornamental ticks whose dark stems hang
+// below the fill. PoE2 scales its HUD with the game's height -- the assumption
+// `overlay_layout::panel_rect` makes for the side panels -- so every length below is in pixels of
+// a 2160-row game and gets multiplied by `height / 2160`; horizontally the bar is centred on the
+// client area.
+
+const REFERENCE_HEIGHT: f64 = 2160.0;
+/// Half the fill track's width: filled pixels start at x = 1154, so the track ends at 2686 if it
+/// is symmetric -- its right end hasn't been seen filled; empty, it is the same grey as the frame.
+const FILL_HALF_WIDTH: f64 = 766.0;
+/// Half the captured width: the fill track and a pixel or two of frame on each side.
+const CAPTURE_HALF_WIDTH: f64 = 768.0;
+/// Tick to tick, fitted over all 19 stems (residuals under 0.6 px); the middle tick sits on the
+/// centre line.
+const TICK_SPACING: f64 = 77.27;
+const TICK_COUNT: usize = 19;
+/// How far a tick's ornament reaches into the fill band on either side: those columns show the
+/// ornament, not the fill.
+const TICK_HALF_WIDTH: f64 = 5.0;
+/// The fill band's core rows (2141-2145 of 2160) as distances from the client area's bottom
+/// edge: cream-to-orange where filled, neutral grey where empty. The rows around it blend into
+/// the frame.
+const FILL_BAND: (f64, f64) = (19.0, 14.0);
+/// The rows just below the fill (2147-2150), where each tick's stem is a dark notch in the frame.
+const STEM_BAND: (f64, f64) = (13.0, 9.0);
+/// The frame's top edge (row 2126): the overlay window stays above it, out of the capture.
+const FRAME_TOP: f64 = 34.0;
+/// Rows between the frame and the overlay window.
+const OVERLAY_GAP: f64 = 6.0;
+/// The smallest game height read at all: at 720 rows the fill band is already a single row and a
+/// tick stem a single column; any smaller and the bar can't be told apart from other pixels.
+const MIN_HEIGHT: i32 = 720;
+
+// Pixel tests, all with wide margins on the measured bar: every stem is at most 0.45 of its
+// surroundings' brightness; filled columns have (R-B)/R of 0.31-0.34 with R >= 138, empty ones
+// -0.03-0.02 with R of 46-62.
+const MIN_TICKS_SEEN: usize = 17;
+const STEM_MAX_RATIO: f64 = 0.7;
+const STEM_MIN_DEPTH: f64 = 6.0;
+const MAX_UNKNOWN_SHARE: f64 = 0.1;
+const MAX_ERROR_SHARE: f64 = 0.03;
+
+/// Where the experience bar is in a game window of a given size.
+#[derive(Debug, Clone, PartialEq)]
+pub struct XpBarGeometry {
+    /// The screen rect to capture for [`read_fill`], physical pixels: the fill band and the tick
+    /// stems below it, the full width of the bar.
+    pub capture: PhysicalRect,
+    /// Game pixels per reference pixel: 1.0 for a 2160-row game.
+    scale: f64,
+    /// Screen x of the bar's centre line and screen y of its frame's top edge.
+    centre: f64,
+    frame_top: f64,
+    /// Capture-local, in continuous coordinates (pixel `i` spans `[i, i + 1)`).
+    fill_start: f64,
+    fill_end: f64,
+    ticks: [f64; TICK_COUNT],
+    /// Capture-local rows.
+    fill_rows: Range<usize>,
+    stem_rows: Range<usize>,
+}
+
+impl XpBarGeometry {
+    /// The bar in a game whose client area is `client` (physical pixels); `None` for a game too
+    /// small to read, or too narrow for the whole bar -- the capture never reaches outside the
+    /// game's client area.
+    pub fn for_client(client: PhysicalRect) -> Option<Self> {
+        if client.height < MIN_HEIGHT {
+            return None;
+        }
+        let scale = f64::from(client.height) / REFERENCE_HEIGHT;
+        let centre = f64::from(client.x) + f64::from(client.width) / 2.0;
+        let bottom = f64::from(client.y) + f64::from(client.height);
+        let left = (centre - CAPTURE_HALF_WIDTH * scale).floor();
+        let right = (centre + CAPTURE_HALF_WIDTH * scale).ceil();
+        let fill = rows_between(bottom - FILL_BAND.0 * scale, bottom - FILL_BAND.1 * scale);
+        let stems = rows_between(bottom - STEM_BAND.0 * scale, bottom - STEM_BAND.1 * scale);
+        let top = fill.start;
+        let capture = PhysicalRect {
+            x: left as i32,
+            y: top,
+            width: (right - left) as i32,
+            height: stems.end - top,
+        };
+        if capture.x < client.x || capture.x + capture.width > client.x + client.width {
+            return None;
+        }
+        let local = |rows: Range<i32>| (rows.start - top) as usize..(rows.end - top) as usize;
+        Some(Self {
+            capture,
+            scale,
+            centre,
+            frame_top: bottom - FRAME_TOP * scale,
+            fill_start: centre - FILL_HALF_WIDTH * scale - left,
+            fill_end: centre + FILL_HALF_WIDTH * scale - left,
+            ticks: std::array::from_fn(|i| centre + (i as f64 - 9.0) * TICK_SPACING * scale - left),
+            fill_rows: local(fill),
+            stem_rows: local(stems),
+        })
+    }
+
+    /// Where a `width` x `height` (physical pixels) overlay window goes: centred on the bar, just
+    /// above its frame -- never inside [`Self::capture`], which would then read the overlay.
+    pub fn overlay_rect(&self, width: i32, height: i32) -> PhysicalRect {
+        let bottom = (self.frame_top - OVERLAY_GAP * self.scale).floor() as i32;
+        PhysicalRect {
+            x: (self.centre - f64::from(width) / 2.0).round() as i32,
+            y: bottom - height,
+            width,
+            height,
+        }
+    }
+}
+
+/// The rows whose centres lie in `[from, to)`, at least one.
+fn rows_between(from: f64, to: f64) -> Range<i32> {
+    let start = (from - 0.5).ceil() as i32;
+    let end = ((to - 0.5).ceil() as i32).max(start + 1);
+    start..end
+}
+
+/// The fraction of the level the bar shows, from the pixels of `geometry.capture` -- 32-bit BGRA
+/// rows, top to bottom, as a `BI_RGB` DIB section holds them. `None` unless the bar is
+/// unmistakably what's on screen: nearly all tick stems in place, nearly every column of the fill
+/// track either the fill's warm colour or the empty track's grey, and the filled columns a
+/// prefix. A panel, tooltip or loading screen over the bar fails those checks.
+pub fn read_fill(geometry: &XpBarGeometry, bgra: &[u8]) -> Option<f64> {
+    let width = usize::try_from(geometry.capture.width).ok()?;
+    let height = usize::try_from(geometry.capture.height).ok()?;
+    if bgra.len() != width * height * 4 {
+        return None;
+    }
+    let scale = geometry.scale;
+    let stems: Vec<f64> = band_average(bgra, width, &geometry.stem_rows)
+        .into_iter()
+        .map(luma)
+        .collect();
+    let ticks_seen = geometry
+        .ticks
+        .iter()
+        .filter(|&&tick| stem_visible(&stems, tick, scale))
+        .count();
+    if ticks_seen < MIN_TICKS_SEEN {
+        return None;
+    }
+
+    // Every track column clear of the ticks, left to right: `true` if filled.
+    let mut columns = Vec::with_capacity(width);
+    let mut unknown = 0usize;
+    for (column, colour) in band_average(bgra, width, &geometry.fill_rows)
+        .into_iter()
+        .enumerate()
+    {
+        let centre = column as f64 + 0.5;
+        if centre < geometry.fill_start
+            || centre >= geometry.fill_end
+            || geometry
+                .ticks
+                .iter()
+                .any(|tick| (centre - tick).abs() < TICK_HALF_WIDTH * scale)
+        {
+            continue;
+        }
+        match classify(colour) {
+            Some(filled) => columns.push((column, filled)),
+            None => unknown += 1,
+        }
+    }
+    if columns.is_empty() || unknown as f64 > MAX_UNKNOWN_SHARE * (columns.len() + unknown) as f64 {
+        return None;
+    }
+
+    // The fill is a prefix of the track: take the split the fewest columns contradict.
+    let filled_total = columns.iter().filter(|(_, filled)| *filled).count();
+    let (mut split, mut errors) = (0, filled_total);
+    let (mut empty_before, mut filled_before) = (0, 0);
+    for (index, &(_, filled)) in columns.iter().enumerate() {
+        if filled {
+            filled_before += 1;
+        } else {
+            empty_before += 1;
+        }
+        let contradicted = empty_before + filled_total - filled_before;
+        if contradicted < errors {
+            (split, errors) = (index + 1, contradicted);
+        }
+    }
+    if errors as f64 > MAX_ERROR_SHARE * columns.len() as f64 {
+        return None;
+    }
+    let boundary = match split {
+        0 => geometry.fill_start,
+        n if n == columns.len() => geometry.fill_end,
+        // Between the last filled and the first empty column -- mid-gap when a tick hides it.
+        n => (columns[n - 1].0 + 1 + columns[n].0) as f64 / 2.0,
+    };
+    Some(
+        ((boundary - geometry.fill_start) / (geometry.fill_end - geometry.fill_start))
+            .clamp(0.0, 1.0),
+    )
+}
+
+/// Per-column mean `[R, G, B]` over `rows` of a BGRA image `width` pixels wide.
+fn band_average(bgra: &[u8], width: usize, rows: &Range<usize>) -> Vec<[f64; 3]> {
+    let count = rows.len() as f64;
+    (0..width)
+        .map(|column| {
+            let mut sum = [0.0; 3];
+            for row in rows.clone() {
+                let pixel = &bgra[(row * width + column) * 4..][..4];
+                sum[0] += f64::from(pixel[2]);
+                sum[1] += f64::from(pixel[1]);
+                sum[2] += f64::from(pixel[0]);
+            }
+            sum.map(|channel| channel / count)
+        })
+        .collect()
+}
+
+fn luma([r, g, b]: [f64; 3]) -> f64 {
+    0.299 * r + 0.587 * g + 0.114 * b
+}
+
+/// `Some(true)` for the fill's warm cream/orange, `Some(false)` for the empty track's neutral
+/// grey, `None` for anything else (whatever covers the bar). Relative to the red channel, so a
+/// dimmer UI brightness setting still reads.
+fn classify([r, _, b]: [f64; 3]) -> Option<bool> {
+    if r >= 60.0 && r - b >= 0.15 * r {
+        Some(true)
+    } else if (20.0..=110.0).contains(&r) && (r - b).abs() <= 0.08 * r + 4.0 {
+        Some(false)
+    } else {
+        None
+    }
+}
+
+/// Whether the tick centred at `tick` has its dark stem: the darkest column within 1.5 px of it
+/// well below the columns 5-8 px to either side.
+fn stem_visible(stems: &[f64], tick: f64, scale: f64) -> bool {
+    let columns = |from: f64, to: f64| {
+        let first = (from - 0.5).ceil().max(0.0) as usize;
+        let last = (to - 0.5).floor().min(stems.len() as f64 - 1.0);
+        if last < first as f64 {
+            &stems[0..0]
+        } else {
+            &stems[first..=last as usize]
+        }
+    };
+    let Some(stem) = columns(tick - 1.5 * scale, tick + 1.5 * scale)
+        .iter()
+        .copied()
+        .reduce(f64::min)
+    else {
+        return false;
+    };
+    let mut around: Vec<f64> = columns(tick - 8.0 * scale, tick - 5.0 * scale)
+        .iter()
+        .chain(columns(tick + 5.0 * scale, tick + 8.0 * scale))
+        .copied()
+        .collect();
+    if around.is_empty() {
+        return false;
+    }
+    around.sort_by(f64::total_cmp);
+    let base = around[around.len() / 2];
+    stem < STEM_MAX_RATIO * base && base - stem >= STEM_MIN_DEPTH
+}
+
+// --- What the game log says ---------------------------------------------------------------------
+
+/// A `Client.txt` line that matters to the tracker.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LogEvent {
+    /// A character reached `level`.
+    LevelUp { character: String, level: u32 },
+    /// The character entered an area instance: the area's id (`MapEpitaph`, `HideoutCanal`) and
+    /// the instance's seed. Going back into an instance logs its seed again -- live, `MapEpitaph`
+    /// 2266921739 at 21:50:20 and again at 21:50:36 after a trip to the hideout -- so the seed
+    /// tells a return from a new map.
+    AreaEntered { area: String, seed: u64 },
+    /// The client went back to the login/character-select screen.
+    LoggedOut,
+}
+
+/// Parses one `Client.txt` line, line ending already removed. The formats, from the test
+/// machine's Russian client log (verified 2026-09-22) and, for the English level-up, EE2's
+/// `LOG_LEVEL_UP` and its real-log fixture `specs/web/FullCampaign.txt`:
+///
+/// ```text
+/// 2026/09/22 18:48:06 4189156 3ef23348 [INFO Client 19772] : mttzzz_merc_next (Легионер каменитов) достигает 38 уровня
+/// 2025/12/12 13:03:36 1004610062 3ef232c2 [INFO Client 1157464] : HolyMolyThisIsCharName (Mercenary) is now level 2
+/// 2026/09/22 18:50:44 4347046 2caa229f [DEBUG Client 19772] Generating level 44 area "G3_town" with seed 1
+/// 2026/09/22 21:35:24 14225828 7fbd1225 [INFO Client 31244] [SCENE] Set Source [(unknown)]
+/// ```
+///
+/// The area line is the same in every client language; `(unknown)` is the scene at both client
+/// start and every return to character select.
+pub fn parse_log_line(line: &str) -> Option<LogEvent> {
+    let (_, rest) = line.split_once(" [")?;
+    let (header, message) = rest.split_once("] ")?;
+    if !header.contains(" Client ") {
+        return None;
+    }
+    // System messages start with ": "; chat lines start with the speaker's name or a channel
+    // sigil, so a player can't fake a level-up.
+    if let Some(system) = message.strip_prefix(": ") {
+        return parse_level_up(system);
+    }
+    if let Some(generating) = message.strip_prefix("Generating level ") {
+        let (_, area) = generating.split_once(" area \"")?;
+        let (area, seed) = area.split_once("\" with seed ")?;
+        return Some(LogEvent::AreaEntered {
+            area: area.to_owned(),
+            seed: seed.parse().ok()?,
+        });
+    }
+    (message == "[SCENE] Set Source [(unknown)]").then_some(LogEvent::LoggedOut)
+}
+
+/// `<name> (<class>) достигает <n> уровня` / `<name> (<class>) is now level <n>`.
+fn parse_level_up(message: &str) -> Option<LogEvent> {
+    let (who, level) = message
+        .strip_suffix(" уровня")
+        .and_then(|text| text.rsplit_once(" достигает "))
+        .or_else(|| message.rsplit_once(" is now level "))?;
+    let (character, class) = who.split_once(" (")?;
+    if !class.ends_with(')') {
+        return None;
+    }
+    Some(LogEvent::LevelUp {
+        character: character.to_owned(),
+        level: level.parse().ok()?,
+    })
+}
+
+/// Towns (`G1_town`, `C_G2_town`, `P1_Town`, `G_Endgame_Town`) and hideouts (`HideoutCanal`):
+/// every monster-free area id in the test machine's 15-month log. `MapHideout*_Claimable` is the
+/// map a hideout is found in, and `Delirium_Act1Town` a league encounter -- both have monsters.
+fn is_town(area: &str) -> bool {
+    area.starts_with("Hideout") || area.ends_with("_town") || area.ends_with("_Town")
+}
+
+/// Map instances: every endgame map's area id starts with `Map` (`MapEpitaph`), the map a hideout
+/// is found in (`MapHideout*_Claimable`) included.
+fn is_map(area: &str) -> bool {
+    area.starts_with("Map")
+}
+
+// --- Rate and time to level ---------------------------------------------------------------------
+
+/// Readable samples this close together count as continuous play; the sampler runs every 2 s.
+const MAX_SAMPLE_GAP: Duration = Duration::from_secs(6);
+/// Longer than this without a readable bar (character select, alt-tab, a long look at the
+/// passive tree) and the next reading starts a fresh baseline instead of crediting whatever
+/// changed meanwhile -- it may not even be the same character.
+const REBASE_GAP: Duration = Duration::from_secs(60);
+/// Play time stops counting this long after the last gain, so an idle player in a map doesn't
+/// dilute the rate. Generous: at level 95+ a pixel of the 4K bar takes tens of seconds of
+/// mapping.
+const IDLE_AFTER: Duration = Duration::from_secs(5 * 60);
+/// The rate window unless the settings pick another: play ten minutes ago weighs half as much as
+/// play now. A few maps, so one lucky pack doesn't swing the rate, and a change of farming
+/// strategy shows within a quarter of an hour.
+const DEFAULT_RATE_WINDOW_MINUTES: u16 = 10;
+/// The rate windows the settings may pick, clamped rather than trusted: a minute is the last few
+/// packs, two hours about a whole session. A zero half-life would turn every weight into NaN, and
+/// one of days would never let the rate move.
+const RATE_WINDOW_MINUTES: RangeInclusive<u16> = 1..=120;
+/// No rate until this much play has been counted. Unweighted: with a one-minute window the
+/// weighted play time never gets past ~87 s (the half-life over ln 2).
+const MIN_RATE_TIME: Duration = Duration::from_secs(2 * 60);
+/// A reading this far below the best since the last rebase is a real loss (the death penalty),
+/// not reading noise: ~6 px of the 4K bar.
+const DROP_THRESHOLD: f64 = 0.004;
+/// A drop by more than half a level can only be a level-up: the death penalty costs a fraction
+/// of that (10 % of a level in PoE2 -- not verified live).
+const WRAP_DROP: f64 = 0.5;
+/// How far apart a logged level-up and the bar's wrap may be and still be the same level-up.
+const LEVEL_UP_MATCH: Duration = Duration::from_secs(30);
+/// The bar counts as on screen until it has been unreadable this long, so a tooltip passing over
+/// it doesn't blink the overlay.
+const HIDE_AFTER: Duration = Duration::from_secs(5);
+
+/// What the overlay shows.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct XpStatus {
+    /// The fraction of the current level already earned.
+    pub fraction: Option<f64>,
+    /// Levels earned per hour of play (0.124 = 12.4 % of a level per hour).
+    pub rate_per_hour: Option<f64>,
+    /// The character's current level, once the log has named it since the last login.
+    pub level: Option<u32>,
+    /// Whether the bar is on screen right now.
+    pub bar_visible: bool,
+    /// The current map run, once the character has entered a map since the tracker started or
+    /// the last login.
+    pub map: Option<MapStatus>,
+}
+
+impl XpStatus {
+    /// Play time left until the next level at the current rate.
+    pub fn time_to_level(&self) -> Option<Duration> {
+        let rate = self.rate_per_hour.filter(|rate| *rate > 0.0)?;
+        Duration::try_from_secs_f64((1.0 - self.fraction?) / rate * 3600.0).ok()
+    }
+}
+
+/// The current map run, for the overlay's map line.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct MapStatus {
+    /// Time spent in the current map instance and the side areas entered from it (wall time,
+    /// paused while in a town or hideout).
+    pub time: Duration,
+    /// Levels earned in it (same unit as [`XpStatus::rate_per_hour`]'s numerator: 0.012 = 1.2 %
+    /// of a level).
+    pub gained: f64,
+    /// Whether the character is in it right now; false while it's paused -- in the hideout
+    /// between portals, or anywhere entered from a town.
+    pub active: bool,
+    /// Maps finished since the tracker started or the last login: every map left for another
+    /// one, completed or not -- the log doesn't say.
+    pub finished: u32,
+    /// The finished maps' average time; `None` before the first finishes.
+    pub average: Option<Duration>,
+}
+
+/// The rate window: seconds of play after which a gain weighs half as much in the rate.
+#[derive(Debug, Clone, Copy)]
+struct HalfLife(f64);
+
+impl HalfLife {
+    fn minutes(minutes: u16) -> Self {
+        let minutes = minutes.clamp(*RATE_WINDOW_MINUTES.start(), *RATE_WINDOW_MINUTES.end());
+        Self(f64::from(minutes) * 60.0)
+    }
+}
+
+impl Default for HalfLife {
+    fn default() -> Self {
+        Self::minutes(DEFAULT_RATE_WINDOW_MINUTES)
+    }
+}
+
+/// Turns timestamped bar readings and log events into an [`XpStatus`].
+///
+/// Gains are measured against the best reading since the last rebase, so reading jitter below it
+/// never counts twice, and every reading first goes through a median of the last three, so one
+/// misread sample never moves anything. A drop is either a level-up (the bar wraps: the rest of
+/// the old level plus the new level's start count as gained) or a death (the penalty is lost, not
+/// negative progress: the baseline moves down and re-earning it counts). The rate is play-time
+/// based: time only counts between readable samples, outside towns and hideouts (when the log
+/// says so), and until `IDLE_AFTER` without a gain; it carries over level-ups, deaths and breaks,
+/// and weighs recent play most ([`Self::set_rate_window`]).
+///
+/// Map runs follow the log's area lines. A map instance is known by its seed: back into it
+/// through its portal, the run resumes; a map with another seed finishes the run and starts the
+/// next. Side areas entered from the map (the Abyss depths) are part of its run, anything else
+/// entered from a town (a campaign zone) is not. A run's time is wall time between calls while
+/// the character is in it; its experience also takes what the bar shows in the town right after
+/// it, since nothing in town gives any.
+///
+/// A logout resets everything but the rate window, since the next character may be a different
+/// one.
+#[derive(Debug, Default)]
+pub struct XpTracker {
+    /// The two readings before the latest, oldest first, for the median filter.
+    recent: [Option<f64>; 2],
+    last_readable_at: Option<Duration>,
+    last_sample_at: Option<Duration>,
+    /// The last filtered reading and when it was taken.
+    last: Option<(Duration, f64)>,
+    /// The best filtered reading since the last rebase.
+    best: f64,
+    character: Option<String>,
+    level: Option<u32>,
+    in_town: bool,
+    /// Counted play since the last gain.
+    since_gain: Duration,
+    /// Logged level-ups minus wraps seen on the bar, and when it last changed: positive means a
+    /// wrap is expected, negative that the bar wrapped before the log line arrived.
+    level_up_balance: i32,
+    balance_at: Duration,
+    /// Exponentially weighted gain (levels) and play time (seconds), and the half-life they decay
+    /// with.
+    weighted_gain: f64,
+    weighted_secs: f64,
+    half_life: HalfLife,
+    /// All play counted, unweighted.
+    counted: Duration,
+    maps: MapRuns,
+}
+
+impl XpTracker {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Sets the rate window: play `minutes` ago weighs half as much in the rate as play now,
+    /// clamped to 1..=120 minutes. The play already weighed stays as it is and only decays at the
+    /// new pace from now on, so the rate on screen neither jumps nor vanishes.
+    pub fn set_rate_window(&mut self, minutes: u16) {
+        self.half_life = HalfLife::minutes(minutes);
+    }
+
+    /// Applies what the log said before the tracker started (the tail of `Client.txt`): the
+    /// current area and, if the character levelled up since the last login, its name and level.
+    /// Unlike [`Self::on_log_event`], old level-ups don't make the tracker expect a wrap, and a
+    /// map already underway isn't timed -- when it was entered is unknown -- so it's neither
+    /// shown nor averaged, even after a trip to the hideout and back.
+    pub fn restore(&mut self, history: impl IntoIterator<Item = LogEvent>) {
+        for event in history {
+            match event {
+                LogEvent::LevelUp { character, level } => {
+                    self.note_level(character, level);
+                }
+                LogEvent::AreaEntered { area, seed } => self.enter(area, seed, false),
+                LogEvent::LoggedOut => {
+                    self.character = None;
+                    self.level = None;
+                    self.maps = MapRuns::default();
+                }
+            }
+        }
+    }
+
+    /// A log line that just appeared; `at` is on the same clock as [`Self::on_sample`]'s.
+    pub fn on_log_event(&mut self, event: LogEvent, at: Duration) {
+        self.maps.tick(at);
+        match event {
+            LogEvent::LevelUp { character, level } => {
+                if self.note_level(character, level) {
+                    self.expire_level_up_balance(at);
+                    self.level_up_balance += 1;
+                    self.balance_at = at;
+                }
+            }
+            LogEvent::AreaEntered { area, seed } => {
+                self.enter(area, seed, true);
+                // Changing areas is play: the idle allowance starts over.
+                self.since_gain = Duration::ZERO;
+            }
+            LogEvent::LoggedOut => {
+                *self = Self {
+                    half_life: self.half_life,
+                    ..Self::default()
+                }
+            }
+        }
+    }
+
+    /// Follows the character into an area; `timed` is false for areas replayed from before the
+    /// tracker started.
+    fn enter(&mut self, area: String, seed: u64, timed: bool) {
+        self.in_town = is_town(&area);
+        self.maps.enter(area, seed, self.in_town, timed);
+    }
+
+    /// Records a level-up of `character`, unless another character already levelled since the
+    /// login (a party member's level-up shows up in the log too). Returns whether it was ours.
+    fn note_level(&mut self, character: String, level: u32) -> bool {
+        if self
+            .character
+            .as_ref()
+            .is_some_and(|ours| *ours != character)
+        {
+            return false;
+        }
+        self.character = Some(character);
+        self.level = Some(level);
+        true
+    }
+
+    fn expire_level_up_balance(&mut self, at: Duration) {
+        if at.saturating_sub(self.balance_at) > LEVEL_UP_MATCH {
+            self.level_up_balance = 0;
+        }
+    }
+
+    /// One look at the bar: `fraction` from [`read_fill`], `None` when it wasn't readable. `at`
+    /// is monotonic time since any fixed origin.
+    pub fn on_sample(&mut self, fraction: Option<f64>, at: Duration) {
+        self.maps.tick(at);
+        self.last_sample_at = Some(at);
+        let Some(reading) = fraction else {
+            return;
+        };
+        if self
+            .last_readable_at
+            .is_some_and(|last| at.saturating_sub(last) > REBASE_GAP)
+        {
+            self.recent = [None; 2];
+            self.last = None;
+        }
+        self.last_readable_at = Some(at);
+
+        let median = match self.recent {
+            [Some(a), Some(b)] => Some(reading.clamp(a.min(b), a.max(b))),
+            _ => None,
+        };
+        self.recent = [self.recent[1], Some(reading)];
+        let Some(value) = median else {
+            return;
+        };
+        let Some((last_at, _)) = self.last else {
+            self.best = value;
+            self.last = Some((at, value));
+            return;
+        };
+        self.expire_level_up_balance(at);
+        let gain = self.gain_to(value, at);
+        self.count(at.saturating_sub(last_at), gain);
+        self.maps.credit(gain);
+        self.last = Some((at, value));
+    }
+
+    /// Levels earned between the best reading so far and `value`, which becomes the new best --
+    /// also after a loss, so re-earned experience counts again.
+    fn gain_to(&mut self, value: f64, at: Duration) -> f64 {
+        let drop = self.best - value;
+        let gain = if drop > WRAP_DROP || (self.level_up_balance > 0 && drop > DROP_THRESHOLD) {
+            self.level_up_balance -= 1;
+            self.balance_at = at;
+            1.0 - self.best + value
+        } else if drop < 0.0 {
+            -drop
+        } else if drop > DROP_THRESHOLD {
+            0.0
+        } else {
+            // Jitter below the best reading.
+            return 0.0;
+        };
+        self.best = value;
+        gain
+    }
+
+    /// Credits `elapsed` as play -- unless in town, across a gap nothing was gained over, or past
+    /// `IDLE_AFTER` without a gain -- and folds it and `gain` into the weighted rate.
+    fn count(&mut self, elapsed: Duration, gain: f64) {
+        let eligible = if self.in_town {
+            Duration::ZERO
+        } else if elapsed <= MAX_SAMPLE_GAP {
+            elapsed
+        } else if gain > 0.0 {
+            // The bar was hidden (a panel over it, say) while the player kept earning.
+            elapsed.min(IDLE_AFTER)
+        } else {
+            Duration::ZERO
+        };
+        let played = if gain > 0.0 {
+            self.since_gain = Duration::ZERO;
+            eligible
+        } else {
+            let allowance = IDLE_AFTER.saturating_sub(self.since_gain);
+            self.since_gain += eligible;
+            eligible.min(allowance)
+        };
+        let secs = played.as_secs_f64();
+        self.counted += played;
+        let decay = (-secs / self.half_life.0).exp2();
+        self.weighted_gain = self.weighted_gain * decay + gain;
+        self.weighted_secs = self.weighted_secs * decay + secs;
+    }
+
+    pub fn status(&self) -> XpStatus {
+        XpStatus {
+            fraction: self.last.map(|(_, value)| value),
+            rate_per_hour: (self.counted >= MIN_RATE_TIME)
+                .then(|| self.weighted_gain / self.weighted_secs * 3600.0),
+            level: self.level,
+            bar_visible: match (self.last_readable_at, self.last_sample_at) {
+                (Some(readable), Some(sampled)) => sampled.saturating_sub(readable) <= HIDE_AFTER,
+                _ => false,
+            },
+            map: self.maps.status(),
+        }
+    }
+}
+
+// --- Map runs -----------------------------------------------------------------------------------
+
+/// Where the character is, as far as the current map run goes.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+enum Whereabouts {
+    /// Somewhere no run counts: before the first map, or in an area entered from a town that
+    /// isn't one of the run's (a campaign zone through a waypoint).
+    #[default]
+    Elsewhere,
+    /// In the run's map or one of its side areas: the run's clock runs.
+    InRun,
+    /// In towns and hideouts since leaving the run: its clock stops, but experience read here is
+    /// still the run's. Nothing in town gives experience, and the bar shows a map's last seconds
+    /// a reading or two late -- often after the portal's loading screen.
+    TownAfterRun,
+}
+
+/// One map instance and the side areas entered from it.
+#[derive(Debug)]
+struct MapRun {
+    seed: u64,
+    /// The side areas that joined the run, by area id and seed.
+    side_areas: Vec<(String, u64)>,
+    /// `None` for the map the character was already in when the tracker started: how long it had
+    /// been there is unknown, so the run is neither shown nor averaged.
+    time: Option<Duration>,
+    /// Levels earned in it.
+    gained: f64,
+}
+
+impl MapRun {
+    /// Whether a non-map area the character enters is part of the run: any area entered straight
+    /// from the run joins it (the Abyss depths, a trial opened in the map), and one that joined
+    /// is part of it again when a portal opened in it brings the character back from the hideout.
+    fn admits(&mut self, area: String, seed: u64, from_run: bool) -> bool {
+        if self
+            .side_areas
+            .iter()
+            .any(|(id, known)| *known == seed && *id == area)
+        {
+            return true;
+        }
+        if from_run {
+            self.side_areas.push((area, seed));
+        }
+        from_run
+    }
+}
+
+/// The map runs since the tracker started or the last login.
+#[derive(Debug, Default)]
+struct MapRuns {
+    current: Option<MapRun>,
+    whereabouts: Whereabouts,
+    /// Runs left for another map, and their total time.
+    finished: u32,
+    finished_time: Duration,
+    /// The latest time the tracker was told: the current run's time is counted up to it.
+    clock: Option<Duration>,
+}
+
+impl MapRuns {
+    /// Counts the time since the previous call toward the run while the character is in it. Log
+    /// lines arrive with the time they were read, so the time before one goes to the area it
+    /// left.
+    fn tick(&mut self, at: Duration) {
+        let elapsed = self
+            .clock
+            .map_or(Duration::ZERO, |clock| at.saturating_sub(clock));
+        self.clock = Some(at);
+        if self.whereabouts == Whereabouts::InRun
+            && let Some(time) = self.current.as_mut().and_then(|run| run.time.as_mut())
+        {
+            *time += elapsed;
+        }
+    }
+
+    /// Follows the character into `area`, instance `seed`; `timed` as for [`XpTracker::enter`].
+    fn enter(&mut self, area: String, seed: u64, town: bool, timed: bool) {
+        let from_run = self.whereabouts == Whereabouts::InRun;
+        self.whereabouts = if town {
+            match self.whereabouts {
+                Whereabouts::Elsewhere => Whereabouts::Elsewhere,
+                Whereabouts::InRun | Whereabouts::TownAfterRun => Whereabouts::TownAfterRun,
+            }
+        } else if is_map(&area) {
+            if self.current.as_ref().is_none_or(|run| run.seed != seed) {
+                let run = MapRun {
+                    seed,
+                    side_areas: Vec::new(),
+                    time: timed.then_some(Duration::ZERO),
+                    gained: 0.0,
+                };
+                // Another map: the last one is done, whether or not it was completed.
+                if let Some(MapRun {
+                    time: Some(time), ..
+                }) = self.current.replace(run)
+                {
+                    self.finished += 1;
+                    self.finished_time += time;
+                }
+            }
+            Whereabouts::InRun
+        } else if self
+            .current
+            .as_mut()
+            .is_some_and(|run| run.admits(area, seed, from_run))
+        {
+            Whereabouts::InRun
+        } else {
+            Whereabouts::Elsewhere
+        };
+    }
+
+    /// Adds `gain` (levels) to the run if it was earned there.
+    fn credit(&mut self, gain: f64) {
+        if self.whereabouts != Whereabouts::Elsewhere
+            && let Some(run) = self.current.as_mut()
+        {
+            run.gained += gain;
+        }
+    }
+
+    fn status(&self) -> Option<MapStatus> {
+        let run = self.current.as_ref()?;
+        Some(MapStatus {
+            time: run.time?,
+            gained: run.gained,
+            active: self.whereabouts == Whereabouts::InRun,
+            finished: self.finished,
+            average: self.finished_time.checked_div(self.finished),
+        })
+    }
+}
+
+// --- Wording ------------------------------------------------------------------------------------
+
+/// `+12,4 %/ч`: percent of a level per hour of play.
+pub fn format_rate(rate_per_hour: f64) -> String {
+    format!("+{} %/ч", format_percent(rate_per_hour))
+}
+
+/// A fraction as a percentage number in the price panel's style (PoE Overlay II's): decimal
+/// comma, two decimals under 10, one under 100, none above, trailing zeros dropped -- `3,25`,
+/// `64,8`, `120`.
+pub fn format_percent(fraction: f64) -> String {
+    let value = fraction * 100.0;
+    let decimals = if value < 10.0 {
+        2
+    } else if value < 100.0 {
+        1
+    } else {
+        0
+    };
+    let fixed = format!("{value:.decimals$}");
+    let trimmed = if fixed.contains('.') {
+        fixed.trim_end_matches('0').trim_end_matches('.')
+    } else {
+        &fixed
+    };
+    trimmed.replace('.', ",")
+}
+
+/// `1 ч 32 мин`, `45 мин`, `2 д 3 ч`, `< 1 мин` -- to the nearest minute.
+pub fn format_eta(eta: Duration) -> String {
+    let minutes = (eta.as_secs_f64() / 60.0).round() as u64;
+    let hours = minutes / 60;
+    match minutes {
+        0 => "< 1 мин".to_owned(),
+        1..60 => format!("{minutes} мин"),
+        _ if hours < 24 => match minutes % 60 {
+            0 => format!("{hours} ч"),
+            rest => format!("{hours} ч {rest} мин"),
+        },
+        _ => match hours % 24 {
+            0 => format!("{} д", hours / 24),
+            rest => format!("{} д {rest} ч", hours / 24),
+        },
+    }
+}
+
+/// `0:07`, `4:07`, `1:02:03`: a map's time as a stopwatch shows it -- the whole seconds elapsed,
+/// no leading zero on the first field.
+pub fn format_clock(elapsed: Duration) -> String {
+    let secs = elapsed.as_secs();
+    let (hours, minutes, seconds) = (secs / 3600, secs / 60 % 60, secs % 60);
+    if hours > 0 {
+        format!("{hours}:{minutes:02}:{seconds:02}")
+    } else {
+        format!("{minutes}:{seconds:02}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const GAME_4K: PhysicalRect = PhysicalRect {
+        x: 0,
+        y: 0,
+        width: 3840,
+        height: 2160,
+    };
+
+    /// A capture of `GAME_4K`'s bar from a live screenshot: raw RGB rows, as extracted.
+    fn fixture_bgra(rgb: &[u8]) -> Vec<u8> {
+        let (pixels, _) = rgb.as_chunks::<3>();
+        pixels
+            .iter()
+            .flat_map(|&[r, g, b]| [b, g, r, 255])
+            .collect()
+    }
+
+    #[test]
+    fn reads_the_live_4k_bar() {
+        let geometry = XpBarGeometry::for_client(GAME_4K).unwrap();
+        let bgra = fixture_bgra(include_bytes!("../tests/fixtures/xp_bar_4k_65pct.rgb"));
+        // The last filled pixel is x = 2145 of a track spanning 1154..2686.
+        let expected = (2146.0 - 1154.0) / 1532.0;
+        let fraction = read_fill(&geometry, &bgra).unwrap();
+        assert!((fraction - expected).abs() < 0.001, "{fraction}");
+    }
+
+    #[test]
+    fn refuses_the_bar_under_the_price_panel() {
+        // Live: the price-check panel spanned x = 1485..2508, over the bar's middle.
+        let geometry = XpBarGeometry::for_client(GAME_4K).unwrap();
+        let bgra = fixture_bgra(include_bytes!(
+            "../tests/fixtures/xp_bar_4k_price_panel.rgb"
+        ));
+        assert_eq!(read_fill(&geometry, &bgra), None);
+    }
+
+    #[test]
+    fn geometry_scales_with_the_game_height_and_follows_its_position() {
+        let full = XpBarGeometry::for_client(GAME_4K).unwrap();
+        assert_eq!(
+            full.capture,
+            PhysicalRect {
+                x: 1152,
+                y: 2141,
+                width: 1536,
+                height: 10
+            }
+        );
+        // A 1920x1080 window at (100, 50): everything halves and shifts with it.
+        let window = XpBarGeometry::for_client(PhysicalRect {
+            x: 100,
+            y: 50,
+            width: 1920,
+            height: 1080,
+        })
+        .unwrap();
+        assert_eq!(window.capture.x, 100 + 960 - 384);
+        assert_eq!(window.capture.width, 768);
+        assert_eq!(window.capture.y, 50 + 1070);
+        assert!((window.ticks[9] + f64::from(window.capture.x) - (100.0 + 960.0)).abs() < 1e-9);
+        assert!((window.fill_end - window.fill_start - 766.0).abs() < 1e-9);
+        let overlay = window.overlay_rect(300, 40);
+        assert_eq!(overlay.x + overlay.width / 2, 100 + 960);
+        assert!(overlay.y + overlay.height < window.capture.y);
+        assert!(
+            XpBarGeometry::for_client(PhysicalRect {
+                height: 600,
+                ..GAME_4K
+            })
+            .is_none()
+        );
+        // Portrait: the bar would stick out of the window, so nothing is read at all.
+        assert!(
+            XpBarGeometry::for_client(PhysicalRect {
+                width: 1400,
+                ..GAME_4K
+            })
+            .is_none()
+        );
+    }
+
+    /// Live instances from the test machine's log (2026-09-22): a map, and the Abyss depths
+    /// opened in it.
+    const EPITAPH: u64 = 2_266_921_739;
+    const DEPTHS: u64 = 3_193_393_764;
+
+    #[test]
+    fn parses_level_ups_areas_and_logouts() {
+        assert_eq!(
+            parse_log_line(
+                "2026/09/22 18:48:06 4189156 3ef23348 [INFO Client 19772] : mttzzz_merc_next (Легионер каменитов) достигает 38 уровня"
+            ),
+            Some(LogEvent::LevelUp {
+                character: "mttzzz_merc_next".to_owned(),
+                level: 38
+            })
+        );
+        assert_eq!(
+            parse_log_line(
+                "2025/12/12 13:03:36 1004610062 3ef232c2 [INFO Client 1157464] : HolyMolyThisIsCharName (Mercenary) is now level 2"
+            ),
+            Some(LogEvent::LevelUp {
+                character: "HolyMolyThisIsCharName".to_owned(),
+                level: 2
+            })
+        );
+        for (area, seed, town) in [
+            ("G3_town", 1, true),
+            ("P1_Town", 1, true),
+            ("HideoutCanal", 1, true),
+            ("MapEpitaph", EPITAPH, false),
+            ("Abyss_Depths2", DEPTHS, false),
+            ("MapHideoutCanal_Claimable", 915_220_458, false),
+            ("Delirium_Act1Town", 51_873_904, false),
+        ] {
+            let line = format!(
+                "2026/09/22 21:50:20 15122078 2caa229f [DEBUG Client 31244] Generating level 77 area \"{area}\" with seed {seed}"
+            );
+            assert_eq!(
+                parse_log_line(&line),
+                Some(LogEvent::AreaEntered {
+                    area: area.to_owned(),
+                    seed
+                }),
+                "{area}"
+            );
+            assert_eq!(is_town(area), town, "{area}");
+        }
+        assert_eq!(
+            parse_log_line(
+                "2026/09/22 21:35:24 14225828 7fbd1225 [INFO Client 31244] [SCENE] Set Source [(unknown)]"
+            ),
+            Some(LogEvent::LoggedOut)
+        );
+    }
+
+    #[test]
+    fn ignores_look_alike_lines() {
+        for line in [
+            // A different scene, a death, a system message with "уровня" in it, chat.
+            "2026/09/22 21:35:30 14232109 7fbd1225 [INFO Client 31244] [SCENE] Set Source [Убежище в каналах]",
+            "2026/09/22 18:50:38 4340937 3ef23348 [INFO Client 19772] : mttzzz_merc_next был повержен.",
+            "2026/09/22 16:02:11 7311140 3ef23348 [INFO Client 28800] : Не удалось применить предмет: Уровень предмета слишком низкий для этого уровня",
+            "2026/09/22 16:02:12 7311141 3ef23348 [INFO Client 28800] #Trader: Fake (Mercenary) is now level 99",
+            "2026/09/22 16:02:12 7311141 3ef23348 [INFO Client 28800] Fake: X (Y) достигает 99 уровня",
+        ] {
+            assert_eq!(parse_log_line(line), None, "{line}");
+        }
+    }
+
+    /// One reading every 2 s, `readings` of them, the first at `start` seconds; returns the time
+    /// after the last one.
+    fn play(
+        tracker: &mut XpTracker,
+        start: f64,
+        readings: usize,
+        fraction: impl Fn(f64) -> Option<f64>,
+    ) -> f64 {
+        let mut t = start;
+        for _ in 0..readings {
+            tracker.on_sample(fraction(t), Duration::from_secs_f64(t));
+            t += 2.0;
+        }
+        t
+    }
+
+    /// The log saying the character entered `area`, instance `seed`, at `t` seconds.
+    fn enter(tracker: &mut XpTracker, area: &str, seed: u64, t: f64) {
+        tracker.on_log_event(
+            LogEvent::AreaEntered {
+                area: area.to_owned(),
+                seed,
+            },
+            Duration::from_secs_f64(t),
+        );
+    }
+
+    /// The 4K bar's pixel steps plus a deterministic +-1 px wobble held for two readings at a
+    /// time -- jitter the median filter lets through, like a fill edge flickering between pixels.
+    fn as_read(fraction: f64, t: f64) -> f64 {
+        let pixel = 1.0 / 1532.0;
+        let wobble = [0.0, 0.0, pixel, pixel, 0.0, 0.0, -pixel, -pixel][(t / 2.0) as usize % 8];
+        ((fraction.fract() / pixel).round() * pixel + wobble).clamp(0.0, 1.0)
+    }
+
+    fn assert_near(actual: Option<f64>, expected: f64, tolerance: f64) {
+        let actual = actual.expect("a value");
+        assert!(
+            (actual - expected).abs() <= tolerance * expected,
+            "{actual} vs {expected}"
+        );
+    }
+
+    #[test]
+    fn steady_farming_reads_its_rate_and_time_to_level_despite_jitter() {
+        let mut tracker = XpTracker::new();
+        let rate = 0.12 / 3600.0;
+        let t = play(&mut tracker, 0.0, 60, |t| Some(as_read(0.30 + rate * t, t)));
+        assert_eq!(tracker.status().rate_per_hour, None, "too early for a rate");
+        let t = play(&mut tracker, t, 840, |t| Some(as_read(0.30 + rate * t, t)));
+        let status = tracker.status();
+        assert_near(status.rate_per_hour, 0.12, 0.05);
+        let left = (1.0 - (0.30 + rate * t)) / 0.12 * 3600.0;
+        assert_near(
+            status.time_to_level().map(|eta| eta.as_secs_f64()),
+            left,
+            0.06,
+        );
+        assert!(status.bar_visible);
+    }
+
+    #[test]
+    fn a_level_up_carries_the_rate_over() {
+        let mut tracker = XpTracker::new();
+        let rate = 0.20 / 3600.0;
+        let fraction = move |t: f64| Some(as_read(0.90 + rate * t, t));
+        // Wraps after 30 minutes; the log names the new level as it happens.
+        let t = play(&mut tracker, 0.0, 900, fraction);
+        tracker.on_log_event(
+            LogEvent::LevelUp {
+                character: "hero".to_owned(),
+                level: 75,
+            },
+            Duration::from_secs_f64(t),
+        );
+        // A minute into the new level the rate is still the old one, not a fresh measurement.
+        play(&mut tracker, t, 30, fraction);
+        let status = tracker.status();
+        assert_near(status.rate_per_hour, 0.20, 0.05);
+        assert!(status.fraction.unwrap() < 0.1);
+        assert_eq!(status.level, Some(75));
+    }
+
+    #[test]
+    fn a_death_costs_experience_but_not_rate() {
+        let mut tracker = XpTracker::new();
+        let rate = 0.10 / 3600.0;
+        let t = play(&mut tracker, 0.0, 600, |t| {
+            Some(as_read(0.50 + rate * t, t))
+        });
+        let before = tracker.status();
+        // The penalty takes a tenth of the level; 30 s on the death screen, then back to it.
+        let t = play(&mut tracker, t, 15, |_| None);
+        play(&mut tracker, t, 300, |t| Some(as_read(0.40 + rate * t, t)));
+        let after = tracker.status();
+        assert_near(after.rate_per_hour, 0.10, 0.05);
+        assert!(after.fraction.unwrap() < before.fraction.unwrap());
+        assert!(after.time_to_level().unwrap() > before.time_to_level().unwrap());
+    }
+
+    /// Ten minutes of mapping at 12 % of a level per hour from `from`, starting at `start`
+    /// seconds; returns the end time and fraction.
+    fn map_for_ten_minutes(tracker: &mut XpTracker, start: f64, from: f64) -> (f64, f64) {
+        let rate = 0.12 / 3600.0;
+        let end = play(tracker, start, 300, |t| {
+            Some(as_read(from + rate * (t - start), t))
+        });
+        (end, from + rate * (end - start))
+    }
+
+    #[test]
+    fn town_and_idle_time_do_not_dilute_the_rate() {
+        // Ten minutes in the hideout between two maps, the log saying so.
+        let mut logged = XpTracker::new();
+        let (t, parked) = map_for_ten_minutes(&mut logged, 0.0, 0.2);
+        enter(&mut logged, "HideoutCanal", 1, t);
+        let t = play(&mut logged, t, 300, |t| Some(as_read(parked, t)));
+        enter(&mut logged, "MapBluff", 17, t);
+        map_for_ten_minutes(&mut logged, t, parked);
+        assert_near(logged.status().rate_per_hour, 0.12, 0.05);
+
+        // Twenty idle minutes in a map and no log: only `IDLE_AFTER` of them count, which the
+        // weighting puts at ~0.099 (all twenty would make it ~0.072).
+        let mut idle = XpTracker::new();
+        let (t, parked) = map_for_ten_minutes(&mut idle, 0.0, 0.2);
+        let t = play(&mut idle, t, 600, |t| Some(as_read(parked, t)));
+        map_for_ten_minutes(&mut idle, t, parked);
+        let diluted = idle.status().rate_per_hour.unwrap();
+        assert!(diluted > 0.088 && diluted < 0.11, "{diluted}");
+    }
+
+    #[test]
+    fn a_logged_level_up_across_a_loading_screen_is_not_a_death() {
+        // Campaign pace: a boss kill worth most of a level, landed right before a loading screen.
+        let run = |logged: bool| {
+            let mut tracker = XpTracker::new();
+            let t = play(&mut tracker, 0.0, 120, |t| {
+                Some(as_read(0.30 + 0.25 * t / 240.0, t))
+            });
+            if logged {
+                tracker.on_log_event(
+                    LogEvent::LevelUp {
+                        character: "hero".to_owned(),
+                        level: 3,
+                    },
+                    Duration::from_secs_f64(t),
+                );
+            }
+            let t = play(&mut tracker, t, 10, |_| None);
+            play(&mut tracker, t, 3, |t| Some(as_read(0.30, t)));
+            tracker.status().rate_per_hour.unwrap()
+        };
+        // Wrapped from 0.55 to 0.30: 0.75 of a level on top of the steady 0.25.
+        assert!(run(true) > 3.0 * run(false));
+    }
+
+    #[test]
+    fn single_misreads_move_nothing() {
+        let mut tracker = XpTracker::new();
+        let spiky = |t: f64| {
+            let n = (t / 2.0) as usize;
+            Some(match n % 50 {
+                10 => 0.95,
+                30 => 0.05,
+                _ => 0.5,
+            })
+        };
+        play(&mut tracker, 0.0, 200, spiky);
+        let status = tracker.status();
+        assert_eq!(status.fraction, Some(0.5));
+        assert_eq!(status.rate_per_hour, Some(0.0));
+        assert_eq!(status.time_to_level(), None);
+    }
+
+    /// Half an hour at 10 % of a level per hour, then five minutes at 30 %; returns the rate
+    /// right after.
+    fn rate_after_a_change_of_pace(tracker: &mut XpTracker) -> f64 {
+        let (slow, fast) = (0.10 / 3600.0, 0.30 / 3600.0);
+        let change = play(tracker, 0.0, 900, |t| Some(as_read(0.2 + slow * t, t)));
+        let from = 0.2 + slow * change;
+        play(tracker, change, 150, |t| {
+            Some(as_read(from + fast * (t - change), t))
+        });
+        tracker.status().rate_per_hour.unwrap()
+    }
+
+    #[test]
+    fn a_shorter_rate_window_follows_a_new_pace_sooner() {
+        let mut quick = XpTracker::new();
+        quick.set_rate_window(5);
+        let mut steady = XpTracker::new();
+        steady.set_rate_window(30);
+        // Five minutes are one half-life of the short window: about halfway from 10 % to 30 %.
+        let quick_rate = rate_after_a_change_of_pace(&mut quick);
+        assert!(quick_rate > 0.18, "{quick_rate}");
+        let steady_rate = rate_after_a_change_of_pace(&mut steady);
+        assert!(steady_rate < 0.16, "{steady_rate}");
+        // A new window only changes how play decays from now on: the rate on screen stays put.
+        let before = steady.status();
+        steady.set_rate_window(5);
+        assert_eq!(steady.status(), before);
+    }
+
+    #[test]
+    fn the_rate_window_is_clamped_and_outlives_a_logout() {
+        let rate = |minutes: u16, logged_out: bool| {
+            let mut tracker = XpTracker::new();
+            tracker.set_rate_window(minutes);
+            if logged_out {
+                tracker.on_log_event(LogEvent::LoggedOut, Duration::ZERO);
+            }
+            rate_after_a_change_of_pace(&mut tracker)
+        };
+        assert_eq!(rate(0, false), rate(1, false));
+        assert_eq!(rate(u16::MAX, false), rate(120, false));
+        assert_eq!(rate(5, true), rate(5, false));
+        assert_ne!(rate(5, true), rate(10, false));
+    }
+
+    #[test]
+    fn logging_out_forgets_the_character() {
+        let mut tracker = XpTracker::new();
+        tracker.restore([
+            LogEvent::LevelUp {
+                character: "old".to_owned(),
+                level: 90,
+            },
+            LogEvent::LoggedOut,
+            LogEvent::AreaEntered {
+                area: "HideoutCanal".to_owned(),
+                seed: 1,
+            },
+        ]);
+        assert_eq!(tracker.status().level, None);
+        tracker.restore([LogEvent::LevelUp {
+            character: "new".to_owned(),
+            level: 12,
+        }]);
+        assert_eq!(tracker.status().level, Some(12));
+
+        let t = play(&mut tracker, 0.0, 200, |t| Some(0.4 + t / 36_000.0));
+        tracker.on_log_event(LogEvent::LoggedOut, Duration::from_secs_f64(t));
+        assert_eq!(tracker.status(), XpStatus::default());
+    }
+
+    #[test]
+    fn a_map_run_pauses_in_the_hideout_and_counts_its_side_areas() {
+        // The live sequence from 21:50:20, in seconds: into the map, back from a trip to the
+        // hideout at 21:50:36, the Abyss depths opened in the map at 21:53:52, the map again at
+        // 22:00:59, then the hideout.
+        let mut tracker = XpTracker::new();
+        let unread = |_: f64| None;
+        enter(&mut tracker, "MapEpitaph", EPITAPH, 0.0);
+        let t = play(&mut tracker, 0.0, 5, unread);
+        enter(&mut tracker, "HideoutCanal", 1, t);
+        play(&mut tracker, t, 3, unread);
+        let paused = tracker.status().map.unwrap();
+        assert_eq!(
+            (paused.time, paused.active),
+            (Duration::from_secs(10), false)
+        );
+        enter(&mut tracker, "MapEpitaph", EPITAPH, 16.0);
+        play(&mut tracker, 16.0, 98, unread);
+        enter(&mut tracker, "Abyss_Depths2", DEPTHS, 212.0);
+        play(&mut tracker, 212.0, 213, unread);
+        enter(&mut tracker, "MapEpitaph", EPITAPH, 639.0);
+        play(&mut tracker, 639.0, 30, unread);
+        enter(&mut tracker, "HideoutCanal", 1, 700.0);
+        play(&mut tracker, 700.0, 30, unread);
+        assert_eq!(
+            tracker.status().map,
+            Some(MapStatus {
+                time: Duration::from_secs(694),
+                gained: 0.0,
+                active: false,
+                finished: 0,
+                average: None,
+            })
+        );
+    }
+
+    #[test]
+    fn a_new_map_finishes_the_last_one_and_averages_the_finished() {
+        let mut tracker = XpTracker::new();
+        let unread = |_: f64| None;
+        enter(&mut tracker, "MapEpitaph", EPITAPH, 0.0);
+        play(&mut tracker, 0.0, 150, unread);
+        enter(&mut tracker, "HideoutCanal", 1, 300.0);
+        // The same map, but another instance: a new run, the first one done in 5:00.
+        enter(&mut tracker, "MapEpitaph", 915_220_458, 330.0);
+        play(&mut tracker, 330.0, 210, unread);
+        let second = tracker.status().map.unwrap();
+        assert_eq!(
+            (second.time, second.finished, second.average),
+            (Duration::from_secs(418), 1, Some(Duration::from_secs(300)))
+        );
+        // On to a third map, never back to the second: it counts with the 7:00 it had.
+        enter(&mut tracker, "HideoutCanal", 1, 750.0);
+        enter(&mut tracker, "MapBluff", 17, 760.0);
+        play(&mut tracker, 760.0, 30, unread);
+        assert_eq!(
+            tracker.status().map,
+            Some(MapStatus {
+                time: Duration::from_secs(58),
+                gained: 0.0,
+                active: true,
+                finished: 2,
+                average: Some(Duration::from_secs(360)),
+            })
+        );
+    }
+
+    #[test]
+    fn a_campaign_zone_after_a_town_is_not_part_of_the_run() {
+        let mut tracker = XpTracker::new();
+        let unread = |_: f64| None;
+        let run = |tracker: &XpTracker| {
+            let map = tracker.status().map.unwrap();
+            (map.time, map.active)
+        };
+        enter(&mut tracker, "MapEpitaph", EPITAPH, 0.0);
+        enter(&mut tracker, "Abyss_Depths2", DEPTHS, 100.0);
+        // A portal from the depths to the hideout, then a waypoint to a campaign zone.
+        enter(&mut tracker, "HideoutCanal", 1, 200.0);
+        enter(&mut tracker, "G2_3", 42, 220.0);
+        play(&mut tracker, 220.0, 40, unread);
+        assert_eq!(run(&tracker), (Duration::from_secs(200), false));
+        // Back to the hideout and through that portal into the depths: the run again.
+        enter(&mut tracker, "HideoutCanal", 1, 300.0);
+        enter(&mut tracker, "Abyss_Depths2", DEPTHS, 320.0);
+        play(&mut tracker, 320.0, 41, unread);
+        assert_eq!(run(&tracker), (Duration::from_secs(280), true));
+    }
+
+    #[test]
+    fn gains_count_toward_the_run_they_were_earned_in() {
+        let gained = |tracker: &XpTracker| tracker.status().map.unwrap().gained;
+        let mut tracker = XpTracker::new();
+        enter(&mut tracker, "MapEpitaph", EPITAPH, 0.0);
+        let (t, reached) = map_for_ten_minutes(&mut tracker, 0.0, 0.2);
+        // The boss's hundredth of a level shows on the bar right before the portal; the median
+        // filter passes it on only once the hideout has loaded.
+        let boss = reached + 0.01;
+        let t = play(&mut tracker, t, 1, |t| Some(as_read(boss, t)));
+        enter(&mut tracker, "HideoutCanal", 1, t);
+        let t = play(&mut tracker, t, 5, |_| None);
+        let t = play(&mut tracker, t, 30, |t| Some(as_read(boss, t)));
+        assert_near(Some(gained(&tracker)), 0.03, 0.05);
+        // A campaign zone through a waypoint: what's earned there isn't the map's.
+        let from_map = gained(&tracker);
+        enter(&mut tracker, "G2_3", 42, t);
+        let (t, reached) = map_for_ten_minutes(&mut tracker, t, boss);
+        assert_eq!(gained(&tracker), from_map);
+        // Back through the map's portal, the run earns again.
+        enter(&mut tracker, "HideoutCanal", 1, t);
+        enter(&mut tracker, "MapEpitaph", EPITAPH, t + 10.0);
+        map_for_ten_minutes(&mut tracker, t + 10.0, reached);
+        assert_near(Some(gained(&tracker)), 0.05, 0.05);
+    }
+
+    #[test]
+    fn logging_out_forgets_the_map_runs() {
+        let mut tracker = XpTracker::new();
+        enter(&mut tracker, "MapEpitaph", EPITAPH, 0.0);
+        enter(&mut tracker, "HideoutCanal", 1, 100.0);
+        enter(&mut tracker, "MapBluff", 17, 120.0);
+        assert_eq!(tracker.status().map.unwrap().finished, 1);
+        tracker.on_log_event(LogEvent::LoggedOut, Duration::from_secs(200));
+        assert_eq!(tracker.status().map, None);
+        // In again and back into the instance left open: a fresh run, nothing finished before it.
+        enter(&mut tracker, "HideoutCanal", 1, 260.0);
+        enter(&mut tracker, "MapBluff", 17, 270.0);
+        play(&mut tracker, 270.0, 16, |_| None);
+        assert_eq!(
+            tracker.status().map,
+            Some(MapStatus {
+                time: Duration::from_secs(30),
+                gained: 0.0,
+                active: true,
+                finished: 0,
+                average: None,
+            })
+        );
+    }
+
+    #[test]
+    fn a_map_underway_before_the_tracker_started_is_neither_shown_nor_averaged() {
+        let mut tracker = XpTracker::new();
+        // Started in the hideout, halfway through a map.
+        tracker.restore([
+            LogEvent::AreaEntered {
+                area: "MapEpitaph".to_owned(),
+                seed: EPITAPH,
+            },
+            LogEvent::AreaEntered {
+                area: "HideoutCanal".to_owned(),
+                seed: 1,
+            },
+        ]);
+        enter(&mut tracker, "MapEpitaph", EPITAPH, 0.0);
+        play(&mut tracker, 0.0, 60, |_| None);
+        assert_eq!(tracker.status().map, None);
+        enter(&mut tracker, "HideoutCanal", 1, 120.0);
+        enter(&mut tracker, "MapBluff", 17, 130.0);
+        play(&mut tracker, 130.0, 31, |_| None);
+        assert_eq!(
+            tracker.status().map,
+            Some(MapStatus {
+                time: Duration::from_secs(60),
+                gained: 0.0,
+                active: true,
+                finished: 0,
+                average: None,
+            })
+        );
+    }
+
+    #[test]
+    fn wording() {
+        assert_eq!(format_rate(0.1244), "+12,4 %/ч");
+        assert_eq!(format_rate(0.0325), "+3,25 %/ч");
+        assert_eq!(format_rate(1.5), "+150 %/ч");
+        assert_eq!(format_percent(0.64752), "64,8");
+        assert_eq!(format_eta(Duration::from_secs(20)), "< 1 мин");
+        assert_eq!(format_eta(Duration::from_secs(45 * 60)), "45 мин");
+        assert_eq!(format_eta(Duration::from_secs(92 * 60)), "1 ч 32 мин");
+        // 59.8 minutes round up to a whole hour, not "60 мин".
+        assert_eq!(format_eta(Duration::from_secs(3588)), "1 ч");
+        assert_eq!(
+            format_eta(Duration::from_secs(26 * 3600 + 10 * 60)),
+            "1 д 2 ч"
+        );
+    }
+
+    #[test]
+    fn clock_wording() {
+        assert_eq!(format_clock(Duration::from_secs(7)), "0:07");
+        assert_eq!(format_clock(Duration::from_secs(4 * 60 + 7)), "4:07");
+        // Whole seconds elapsed: the hour doesn't show before it has passed.
+        assert_eq!(format_clock(Duration::from_millis(3_599_900)), "59:59");
+        assert_eq!(
+            format_clock(Duration::from_secs(3600 + 2 * 60 + 3)),
+            "1:02:03"
+        );
+    }
+}

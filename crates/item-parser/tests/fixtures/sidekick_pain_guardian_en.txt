@@ -1,0 +1,35 @@
+Item Class: Body Armours
+Rarity: Rare
+Pain Guardian
+Sacramental Robe
+--------
+Quality: +20% (augmented)
+Energy Shield: 600 (augmented)
+Runic Ward: 30 (augmented)
+--------
+Requires: Level 75, 84 (augmented) Int
+--------
+Sockets: S S 
+--------
+Item Level: 79
+--------
++25 to maximum Runic Ward (rune)
+18% increased Armour, Evasion and Energy Shield (rune)
+--------
+{ Implicit Modifier — Energy Shield }
+20(20-25)% increased Energy Shield Recharge Rate
+--------
+{ Desecrated Prefix Modifier "Pope's" (Tier: 1) — Life, Energy Shield }
+42(39-42)% increased Energy Shield
++46(42-49) to maximum Life
+{ Prefix Modifier "Archon's" (Tier: 2) — Energy Shield }
++24(21-25) to maximum Energy Shield
+37(33-38)% increased Energy Shield
+{ Prefix Modifier "Scintillating" (Tier: 3) — Energy Shield }
++77(74-80) to maximum Energy Shield
+{ Suffix Modifier "of the Starfish" (Tier: 8) — Life }
+4.7(4.1-6) Life Regeneration per second
+{ Suffix Modifier "of the Skilled" (Tier: 2) }
+30% reduced Attribute Requirements
+{ Crafted Suffix Modifier "of the Essence" }
+Hits against you have 43(40-50)% reduced Critical Damage Bonus

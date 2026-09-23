@@ -1,0 +1,25 @@
+Item Class: Waystones
+Rarity: Rare
+Putrid Navigation
+Waystone (Tier 13)
+--------
+Waystone Tier: 13
+Revives Available: 1 (augmented)
+Monster Pack Size: +10% (augmented)
+Magic Monsters: +33% (augmented)
+Rare Monsters: +25% (augmented)
+Item Rarity: +38% (augmented)
+Waystone Drop Chance: +70% (augmented)
+--------
+Item Level: 80
+--------
+Area has patches of Ignited Ground
+33% increased number of Magic Monsters
+25% increased number of Rare Monsters
+Monsters have 276% increased Critical Hit Chance
++30% to Monster Critical Damage Bonus
+50% less effect of Curses on Monsters
+Players have 40% less Recovery Rate of Life and Energy Shield
+Rare Monsters have 1 additional Modifier
+--------
+Can be used in a Map Device, allowing you to enter a Map. Waystones can only be used once.

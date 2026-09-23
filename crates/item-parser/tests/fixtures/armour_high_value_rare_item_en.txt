@@ -1,0 +1,31 @@
+Item Class: Body Armours
+Rarity: Rare
+Hate Pelt
+Soldier Cuirass
+--------
+Quality: +20% (augmented)
+Armour: 3075 (augmented)
+--------
+Requires: Level 65, 121 (unmet) Str
+--------
+Sockets: S S S
+--------
+Item Level: 80
+--------
+54% increased Armour, Evasion and Energy Shield (rune)
+--------
+{ Prefix Modifier "Impenetrable" (Tier: 1) — Defences }
+103(101-110)% increased Armour
+{ Prefix Modifier "Hardened" (Tier: 1) — Defences }
++70(70-86) to Armour
+41(39-42)% increased Armour
+{ Prefix Modifier "Unmoving" (Tier: 2) — Defences }
++256(226-256) to Armour (desecrated)
+{ Suffix Modifier "of the Titan" (Tier: 1) — Attribute }
++32(31-33) to Strength
+{ Suffix Modifier "of Allaying" (Tier: 3) — Physical, Ailment }
+48(50-46)% reduced Duration of Bleeding on You
+{ Suffix Modifier "of the Essence" (Tier: 1) }
+Hits against you have 44(40-50)% reduced Critical Damage Bonus
+--------
+Note: ~b/o 10 divine

@@ -1,0 +1,7 @@
+Item Class: Uncut Support Gems
+Rarity: Currency
+Uncut Support Gem (Level 5)
+--------
+Creates a Support Gem
+--------
+Right Click to engrave a Support Gem.

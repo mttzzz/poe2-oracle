@@ -1,0 +1,9 @@
+Item Class: Jewels
+Rarity: Magic
+Clashing Ruby of Valour
+--------
+Item Level: 26
+--------
+12% increased Melee Damage
+--------
+Place into an allocated Jewel Socket on the Passive Skill Tree. Right click to remove from the Socket.

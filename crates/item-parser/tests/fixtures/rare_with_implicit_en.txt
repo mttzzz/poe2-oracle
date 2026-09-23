@@ -1,0 +1,21 @@
+Item Class: Rings
+Rarity: Rare
+Rune Loop
+Prismatic Ring
+--------
+Requires: Level 45
+--------
+Item Level: 79
+--------
+{ Implicit Modifier — Elemental, Fire, Cold, Lightning, Resistance }
++8(7-10)% to all Elemental Resistances
+--------
+{ Prefix Modifier "Vaporous" (Tier: 3) — Defences }
++143(124-151) to Evasion Rating
+{ Suffix Modifier "of the Wrestler" (Tier: 7) — Attribute }
++12(9-12) to Strength
+{ Suffix Modifier "of Warmth" (Tier: 3) — Mana }
+8(8-12)% increased Mana Regeneration Rate
+5% increased Light Radius
+{ Suffix Modifier "of the Penguin" (Tier: 7) — Elemental, Cold, Resistance }
++15(11-15)% to Cold Resistance

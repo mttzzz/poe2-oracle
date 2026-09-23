@@ -1,0 +1,10 @@
+Item Class: Relics
+Rarity: Magic
+Revitalising Urn Relic of Flowing
+--------
+Item Level: 22
+--------
+Fountains have 6% chance to grant double Sacred Water
+9% increased Honour restored
+--------
+Place this item on the Relic Altar at the start of the Trial of the Sekhemas

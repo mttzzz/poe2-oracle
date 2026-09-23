@@ -1,0 +1,28 @@
+Item Class: Boots
+Rarity: Unique
+Thunderstep
+Steeltoe Boots
+--------
+Evasion Rating: 129 (augmented)
+--------
+Requirements:
+Level: 28
+Dex: 49
+--------
+Sockets: S 
+--------
+Item Level: 36
+--------
+22% increased Evasion Rating (enchant)
+--------
++12% to Fire Resistance (rune)
+--------
+10% increased Movement Speed
+41% increased Evasion Rating
++5% to Maximum Lightning Resistance
++33% to Lightning Resistance
+--------
+Where legends tread,
+the world hearkens.
+--------
+Corrupted

@@ -1,0 +1,13 @@
+Item Class: Jewels
+Rarity: Rare
+Dragon Ichor
+Emerald
+--------
+Item Level: 24
+--------
+8% increased Damage with Crossbows
+9% increased Duration of Ignite, Shock and Chill on Enemies
+7% increased Magnitude of Poison you inflict
+13% increased Crossbow Reload Speed
+--------
+Place into an allocated Jewel Socket on the Passive Skill Tree. Right click to remove from the Socket.

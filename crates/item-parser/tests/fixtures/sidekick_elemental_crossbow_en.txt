@@ -1,0 +1,21 @@
+Item Class: Crossbows
+Rarity: Rare
+Blood Core
+Bleak Crossbow
+--------
+Physical Damage: 23-92
+Elemental Damage: 20-31 (fire), 2-91 (lightning)
+Critical Hit Chance: 5.00%
+Attacks per Second: 1.60
+Reload Time: 0.80
+--------
+Requirements:
+Level: 62
+Str: 78
+Dex: 78
+--------
+Item Level: 69
+--------
+Adds 20 to 31 Fire Damage
+Adds 2 to 91 Lightning Damage
+Grants 3 Life per Enemy Hit

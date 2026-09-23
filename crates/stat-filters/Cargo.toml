@@ -1,0 +1,9 @@
+[package]
+name = "stat-filters"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+# Pure search-filter-construction logic over poe2-domain::ParsedItem; no I/O, no other deps.
+poe2-domain = { path = "../poe2-domain" }

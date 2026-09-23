@@ -32,6 +32,14 @@ global-hotkey = "0.8"
 # error on Windows only, while the identical Linux code compiles fine.
 raw-window-handle = { version = "0.6", features = ["std"] }
 anyhow = "1"
+# Cache directory for the stat/currency catalog (`price_check.rs`'s bootstrap): same
+# `ProjectDirs::from("", "", "poe2-oracle")` convention already established in `trade-client`'s
+# own `cache.rs` doc comment -- that crate's `load_or_fetch` takes an explicit path rather than
+# constructing one itself, so the one real call site (here) needs this dependency too.
+directories = "5"
+# The player's settings file (src/settings.rs): `Settings` round-trips through JSON.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 # This crate is the shipped app: it only ever reads data-pipeline's JSON output at build/runtime
 # (see crates/data-pipeline), never touches poe-bundle/poe-dat/Oodle directly -- that machinery
 # only runs where the Bundles2 SMB share is reachable. Domain types, clipboard item parsing, and
@@ -40,19 +48,71 @@ anyhow = "1"
 poe2-domain = { path = "../poe2-domain" }
 item-parser = { path = "../item-parser" }
 trade-client = { path = "../trade-client" }
+stat-filters = { path = "../stat-filters" }
 auto-update = { path = "../auto-update" }
+# Everything the app reports goes through `log`'s macros (GPUI/gpui_wgpu's own device-lost/
+# surface/adapter-fallback warnings too), and `env_logger` writes it to the log file
+# (src/logging.rs) -- and to stderr when one is attached, so `RUST_LOG=debug` still surfaces
+# real diagnostics in a console.
+log = "0.4"
+env_logger = "0.11"
 
 [target.'cfg(target_os = "windows")'.dependencies]
+# Carries hotkey presses, tray-menu clicks, consumed Esc presses and foreground-window changes
+# from the OS callbacks that report them to the GPUI tasks that act on them, so nothing polls.
+# Already in the tree through GPUI's executor (smol).
+async-channel = "2"
+# The diagnostics report is one zip the player attaches to a bug report (src/diagnostics.rs).
+# Deflate through flate2, already in the tree; none of zip's other codecs.
+zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2"] }
 # Same major version gpui/gpui_windows pin in Zed's own workspace at this commit. Only the raw
-# Win32 APIs needed for src/platform/win32.rs (SetWindowLongPtrW/SetWindowPos and friends) --
-# not talking to any gpui_windows type directly, just a HWND reconstructed from the
+# Win32 APIs needed for src/platform/win32.rs (SetWindowLongPtrW/SetWindowPos and friends), the
+# `poe2_production_Config.ini` `[ACTION_KEYS]` reader (src/platform/game_config.rs, no raw
+# Win32 API surface -- plain file I/O -- but grouped with the rest of the Windows-only platform
+# layer), and SendInput-based synthetic key combos (src/platform/synth_input.rs, needs
+# `Win32_UI_Input_KeyboardAndMouse` for `SendInput`/`INPUT`/`KEYBDINPUT`/`VIRTUAL_KEY`) -- not
+# talking to any gpui_windows type directly, just a HWND reconstructed from the
 # raw-window-handle isize, so exact-version lockstep with gpui's internal `windows` isn't
 # required for correctness, only for keeping one coherent toolchain in the repo.
-windows = { version = "0.62", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
+# Plus `Win32_Graphics_Dwm` (removing the Windows 11 frame around the overlay), `Win32_Graphics_Gdi`
+# + `Win32_UI_HiDpi` (game-window/monitor geometry and DPI scale for EE2's panel placement --
+# src/platform/game_window.rs, and the process DPI-awareness opt-in in src/app.rs),
+# `Win32_System_LibraryLoader` (module handle for the Esc low-level keyboard hook,
+# src/platform/esc_hook.rs).
+# `Win32_System_Registry` (the per-user `Run` value behind "start with Windows",
+# src/platform/autostart.rs, and the Windows version in the diagnostics report).
+# `Win32_System_Threading` (the game process's image path, beside which its `logs\Client.txt`
+# lives -- src/platform/client_log.rs).
+# `Win32_UI_Accessibility` (the WinEvent hook that reports foreground-window changes,
+# src/platform/game_window.rs).
+# `Win32_System_Console` (whether a stderr is attached, src/logging.rs) and
+# `Win32_System_SystemInformation` (the local time the diagnostics report is named by).
+# `Win32_System_Diagnostics_Debug` (`MessageBeep`, the trade overlay's new-request sound,
+# src/ui/trade_overlay.rs).
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Dwm",
+    "Win32_Graphics_Gdi",
+    "Win32_System_Console",
+    "Win32_System_Diagnostics_Debug",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Registry",
+    "Win32_System_SystemInformation",
+    "Win32_System_Threading",
+    "Win32_UI_Accessibility",
+    "Win32_UI_HiDpi",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Input_KeyboardAndMouse",
+] }
+# Notification-area icon with a Quit item: the overlay is a `WindowKind::PopUp` (no taskbar
+# button by design), so without it the running app is invisible and can only be killed from Task
+# Manager -- EE2 ships the same tray entry for the same reason. Same tauri-apps family as
+# `global-hotkey`, driven by the same GPUI main-thread message loop. Default features are
+# Linux-only (libxdo/appindicator), so they're off.
+tray-icon = { version = "0.25", default-features = false }
 
-[dev-dependencies]
-# Diagnostic-only: GPUI/gpui_wgpu log through the standard `log` facade
-# (`log::warn!`/`log::error!` in gpui_wgpu's device-lost/surface/adapter-fallback paths); without
-# an installed logger backend those calls are silently dropped. Installed explicitly in each
-# example's `main()` via `env_logger::init()` so `RUST_LOG=debug` surfaces real GPU diagnostics.
-env_logger = "0.11"
+[build-dependencies]
+# build.rs embeds the app icon and VERSIONINFO into the exe: rc.exe on MSVC, mingw's windres on the
+# Linux lane's windows-gnu cross builds, nothing for other targets. The crate and major version
+# gpui's own build script already uses for its manifest resource, so nothing new gets built.
+embed-resource = "3.0"

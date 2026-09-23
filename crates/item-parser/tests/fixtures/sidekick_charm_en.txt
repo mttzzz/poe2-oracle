@@ -1,0 +1,19 @@
+Item Class: Charms
+Rarity: Magic
+Analyst's Stone Charm of the Practitioner
+--------
+Lasts 3.60 (augmented) Seconds
+Consumes 16 (augmented) of 40 Charges on use
+Currently has 40 Charges
+Cannot be Stunned
+--------
+Requires: Level 16
+--------
+Item Level: 51
+--------
+Used when you become Stunned (implicit)
+--------
+21% increased Duration
+19% reduced Charges per use
+--------
+Used automatically when condition is met. Can only hold charges while in belt. Refill at Wells or by killing monsters.

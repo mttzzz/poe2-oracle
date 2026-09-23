@@ -1,0 +1,14 @@
+Item Class: Bucklers
+Rarity: Magic
+Hale Wooden Buckler
+--------
+Block chance: 20%
+Evasion Rating: 16
+--------
+Requires: Level 5, 11 Dex
+--------
+Item Level: 5
+--------
+Grants Skill: Parry
+--------
++12 to maximum Life

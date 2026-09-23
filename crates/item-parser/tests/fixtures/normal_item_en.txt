@@ -1,0 +1,11 @@
+Item Class: Helmets
+Rarity: Normal
+Superior Divine Crown
+--------
+Quality: +9% (augmented)
+Armour: 174 (augmented)
+Energy Shield: 60 (augmented)
+--------
+Requires: Level 75, 67 (augmented) Str, 67 (augmented) Int
+--------
+Item Level: 81

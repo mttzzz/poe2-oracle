@@ -1,0 +1,14 @@
+Item Class: Boots
+Rarity: Unique
+The Knight-errant
+Mail Sabatons
+--------
+Armour: 71 (augmented)
+Evasion Rating: 62 (augmented)
+Runic Ward: 54
+--------
+Requires: Level 38, 29 Str, 29 (unmet) Dex
+--------
+Item Level: 39
+--------
+Some search forever for their path.

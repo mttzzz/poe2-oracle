@@ -483,11 +483,18 @@ dependencies = [
 
 [[package]]
 name = "auto-update"
-version = "0.0.0"
-
-[[package]]
-name = "auto-update-helper"
-version = "0.0.0"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "futures",
+ "http_client",
+ "parking_lot",
+ "semver",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+]
 
 [[package]]
 name = "autocfg"
@@ -1320,7 +1327,7 @@ dependencies = [
 
 [[package]]
 name = "data-pipeline"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "oodle-ffi",
@@ -1504,6 +1511,12 @@ checksum = "d4b8a88685455ed29a21542a33abd9cb6510b6b129abadabdcef0f4c55bc8f61"
 dependencies = [
  "litrs",
 ]
+
+[[package]]
+name = "dpi"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d8b14ccef22fc6f5a8f4d7d768562a182c04ce9a3b3157b91390b52ddfdf1a76"
 
 [[package]]
 name = "dunce"
@@ -2132,7 +2145,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8c386b0a4a70cb2d39fffd74480f985b6f0bfbcb934b6a6b6b7e630e448f242e"
 dependencies = [
  "crossbeam-channel",
- "keyboard-types",
+ "keyboard-types 0.7.0",
  "objc2 0.6.4",
  "objc2-app-kit 0.3.2",
  "once_cell",
@@ -2992,9 +3005,13 @@ checksum = "a6cb138bb79a146c1bd460005623e142ef0181e3d0219cb493e02f7d08a35695"
 
 [[package]]
 name = "item-parser"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "poe2-domain",
+ "regex",
+ "serde_json",
+ "stat-filters",
+ "trade-client",
 ]
 
 [[package]]
@@ -3146,6 +3163,16 @@ dependencies = [
  "bitflags 2.13.2",
  "serde",
  "unicode-segmentation",
+]
+
+[[package]]
+name = "keyboard-types"
+version = "0.8.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0fbe853b403ae61a04233030ae8a79d94975281ed9770a1f9e246732b534b28d"
+dependencies = [
+ "bitflags 2.13.2",
+ "serde",
 ]
 
 [[package]]
@@ -3525,6 +3552,25 @@ checksum = "bb85c154ba489f01b25c0d36ae69a87e4a1c73a72631fc6c0eb6dde34a73e44b"
 dependencies = [
  "num-traits",
  "pxfm",
+]
+
+[[package]]
+name = "muda"
+version = "0.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cca139e57da4383727f189e43e66e84fa372347027fc996f9f1a007ec0a37996"
+dependencies = [
+ "crossbeam-channel",
+ "dpi",
+ "keyboard-types 0.8.3",
+ "objc2 0.6.4",
+ "objc2-app-kit 0.3.2",
+ "objc2-core-foundation",
+ "objc2-foundation 0.3.2",
+ "once_cell",
+ "png 0.18.1",
+ "thiserror 2.0.20",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4157,7 +4203,7 @@ dependencies = [
 
 [[package]]
 name = "oodle-ffi"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "libloading",
@@ -4400,7 +4446,7 @@ dependencies = [
 
 [[package]]
 name = "poe-bundle"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "oodle-ffi",
@@ -4408,7 +4454,7 @@ dependencies = [
 
 [[package]]
 name = "poe-dat"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "directories",
@@ -4420,28 +4466,37 @@ dependencies = [
 
 [[package]]
 name = "poe2-domain"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "poe2-oracle"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-channel",
  "auto-update",
+ "directories",
+ "embed-resource",
  "env_logger",
  "global-hotkey",
  "gpui",
  "gpui_platform",
  "http_client",
  "item-parser",
+ "log",
  "poe2-domain",
  "raw-window-handle",
  "reqwest_client",
+ "serde",
+ "serde_json",
+ "stat-filters",
  "trade-client",
+ "tray-icon",
  "windows 0.62.2",
+ "zip",
 ]
 
 [[package]]
@@ -5716,6 +5771,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 
 [[package]]
+name = "stat-filters"
+version = "0.1.0"
+dependencies = [
+ "poe2-domain",
+]
+
+[[package]]
 name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6371,14 +6433,35 @@ dependencies = [
 
 [[package]]
 name = "trade-client"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
+ "directories",
  "futures",
  "http_client",
  "poe2-domain",
  "serde",
  "serde_json",
+ "stat-filters",
+]
+
+[[package]]
+name = "tray-icon"
+version = "0.25.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b2b9c52859a94554803ccd4a24b98f74148ebc73b90676d783f3490b1bff9d72"
+dependencies = [
+ "crossbeam-channel",
+ "muda",
+ "objc2 0.6.4",
+ "objc2-app-kit 0.3.2",
+ "objc2-core-foundation",
+ "objc2-core-graphics",
+ "objc2-foundation 0.3.2",
+ "once_cell",
+ "png 0.18.1",
+ "thiserror 2.0.20",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6395,6 +6478,12 @@ checksum = "d2df906b07856748fa3f6e0ad0cbaa047052d4a7dd609e231c4f72cee8c36f31"
 dependencies = [
  "core_maths",
 ]
+
+[[package]]
+name = "typed-path"
+version = "0.12.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8e28f89b80c87b8fb0cf04ab448d5dd0dd0ade2f8891bae878de66a75a28600e"
 
 [[package]]
 name = "typeid"
@@ -8045,6 +8134,19 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.6",
+]
+
+[[package]]
+name = "zip"
+version = "8.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d04a6b5381502aa6087c94c669499eb1602eb9c5e8198e534de571f7154809b"
+dependencies = [
+ "crc32fast",
+ "flate2",
+ "indexmap",
+ "memchr",
+ "typed-path",
 ]
 
 [[package]]
