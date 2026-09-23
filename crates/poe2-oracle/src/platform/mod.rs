@@ -20,6 +20,8 @@ pub mod game_window;
 #[cfg(target_os = "windows")]
 pub mod instance;
 #[cfg(target_os = "windows")]
+pub mod login_window;
+#[cfg(target_os = "windows")]
 pub mod synth_input;
 #[cfg(target_os = "windows")]
 pub mod win32;

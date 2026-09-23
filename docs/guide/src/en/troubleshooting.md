@@ -34,8 +34,7 @@ With no item under the cursor, pressing the hotkey does nothing at all; that is 
 |---|---|
 | «Загрузка каталога…» | The first start downloads the trade site's data. Wait a few seconds. |
 | «Нет данных сайта торговли — нет интернета или сайт недоступен. Повторяю попытку сам.» | Check that pathofexile.com opens in your browser and that your firewall or antivirus lets PoE2 Oracle connect. The app tries again by itself, and again every time you press the hotkey. |
-| «Ничего не найдено» | No listing matches. Untick some filter rows, lower some **min** values, switch «База» to «Класс» or let offline sellers in with the «Продавцы:» chip. |
-| Results without the estimate card | The estimate appears once poe.ninja prices have loaded. If poe.ninja cannot be reached, you still get the listings. |
+| «Ничего не найдено» | No listing matches. The buttons under the message search more broadly, one trade search each: «Широкий −10 %» (broad −10%) searches the same ticked rows with each **min** 10% below your roll, «Совпадение N из M» (N of M match) finds listings with all the ticked rows but one. You can also untick some filter rows, lower some **min** values, switch «База» to «Класс» or let other sellers in with the «Продавцы:» chip. See [When nothing matches exactly](price-check.md#when-nothing-matches-exactly). |
 
 ## "No connection" message
 
@@ -50,7 +49,7 @@ click «Поиск» or press <kbd>Enter</kbd> in a filter box.
   waits a few seconds before searching.
 - «Сайт торговли временно ограничил поиск — повторите через N мин.» means the trade site has
   locked searches from your IP address for a while, often for minutes. PoE2 Oracle sends no trade
-  request until then. Wait that long, then search again; poe.ninja prices keep working.
+  request until then. Wait that long, then search again; Currency Exchange prices keep working.
 
 The trade site counts every request from your IP address: the site in your browser and other trade
 tools use the same limits. Many checks in a row, or several tools at once, run into them sooner.
@@ -135,8 +134,8 @@ No. PoE2 Oracle searches the trade site like a visitor who is not signed in. See
 [Privacy](privacy.md).
 
 **Does it play for me?**
-No. Each hotkey press or click does one thing: it copies one item, sends one chat message or
-pastes one search. Whispers to sellers are only copied; you send them yourself.
+No. Each hotkey press does one thing: it copies one item, sends one chat message or pastes one
+search. Whispers to sellers are only copied; you send them yourself.
 
 **Where are my settings? How do I start over?**
 In `%APPDATA%\poe2-oracle\config\settings.json`. Quit PoE2 Oracle from the tray, delete the file,

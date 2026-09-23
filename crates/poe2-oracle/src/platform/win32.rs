@@ -1,7 +1,4 @@
-//! Win32 platform helper: the Windows half of what becomes a small `Platform` trait later. The
-//! X11 half (`src/platform/x11.rs`) is the reference implementation this mirrors; see it for the
-//! shared rationale (`Window::set_input_region` covers Wayland only, never X11 or Windows, so
-//! both platforms need a raw escape hatch for click-through).
+//! Win32 platform helper: the raw Win32 calls behind the app's overlay windows.
 //!
 //! This module only covers what GPUI's own Windows backend does not already expose
 //! declaratively:
@@ -13,15 +10,14 @@
 //!   recipe (`WS_EX_LAYERED` for a compositor-blended window, `WS_EX_TRANSPARENT` to remove the
 //!   window from hit-testing so clicks fall through to whatever is behind it).
 //! - Always-on-top: `WindowKind::PopUp` already sets `WS_EX_TOOLWINDOW | WS_EX_TOPMOST` at
-//!   creation time (`gpui_windows/src/window.rs:490`) -- genuinely native, real always-on-top,
-//!   no raw code needed for the static case (unlike X11, where override-redirect popups are not
-//!   WM-stacked at all and the EWMH hint is only a best-effort ask). `set_always_on_top` here
-//!   exists only so this module's shape matches `X11Overlay`'s for the runtime-toggle case, via
-//!   `SetWindowPos` with the `HWND_TOPMOST`/`HWND_NOTOPMOST` sentinel handles.
+//!   creation time (`gpui_windows/src/window.rs:490`) -- genuinely native, real always-on-top;
+//!   [`Win32Overlay::set_bounds`] keeps it topmost when it moves the window.
 //!
-//! Frameless + transparent-background + popup window kind need no raw code at all here either,
-//! same as X11: `WindowOptions { kind: WindowKind::PopUp, titlebar: None,
-//! window_background: WindowBackgroundAppearance::Transparent, .. }`.
+//! A transparent background and the popup window kind need no raw code:
+//! `WindowOptions { kind: WindowKind::PopUp, titlebar: None,
+//! window_background: WindowBackgroundAppearance::Transparent, .. }`. The frame Windows still
+//! draws around such a window does (see [`Win32Overlay::disable_dwm_frame`] and
+//! [`Win32Overlay::remove_frame`]).
 //!
 //! Verified live on the test machine (Windows 11, 200 % DPI) since 2026-09-22: click-through,
 //! frame removal, placement and focus all behave as described here.
@@ -41,11 +37,11 @@ use windows::Win32::Graphics::Dwm::{
 use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
 use windows::Win32::UI::WindowsAndMessaging::{
     CallWindowProcW, GWL_EXSTYLE, GWL_STYLE, GWLP_WNDPROC, GetForegroundWindow, GetWindowLongPtrW,
-    HWND_NOTOPMOST, HWND_TOPMOST, MA_NOACTIVATE, SW_HIDE, SW_SHOWNOACTIVATE, SWP_FRAMECHANGED,
-    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetForegroundWindow, SetWindowLongPtrW,
-    SetWindowPos, ShowWindow, WM_MOUSEACTIVATE, WNDPROC, WS_CAPTION, WS_EX_CLIENTEDGE,
-    WS_EX_DLGMODALFRAME, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_STATICEDGE, WS_EX_TRANSPARENT,
-    WS_EX_WINDOWEDGE, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
+    HWND_TOPMOST, MA_NOACTIVATE, SW_HIDE, SW_SHOWNOACTIVATE, SWP_FRAMECHANGED, SWP_NOACTIVATE,
+    SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos,
+    ShowWindow, WM_MOUSEACTIVATE, WNDPROC, WS_CAPTION, WS_EX_CLIENTEDGE, WS_EX_DLGMODALFRAME,
+    WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_STATICEDGE, WS_EX_TRANSPARENT, WS_EX_WINDOWEDGE,
+    WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
 };
 
 use crate::overlay_layout::PhysicalRect;
@@ -78,11 +74,6 @@ impl Win32Overlay {
         Ok(Self { hwnd })
     }
 
-    /// The raw `HWND` value, as an integer, for diagnostics/logging.
-    pub fn window_id(&self) -> isize {
-        self.hwnd.0 as isize
-    }
-
     /// Toggles mouse-transparency via `WS_EX_LAYERED | WS_EX_TRANSPARENT` on `GWL_EXSTYLE`.
     ///
     /// `enabled = true` adds both bits: `WS_EX_TRANSPARENT` removes the window from hit-testing
@@ -113,29 +104,6 @@ impl Win32Overlay {
             }
         }
         Ok(())
-    }
-
-    /// Runtime always-on-top toggle via `SetWindowPos`'s `HWND_TOPMOST`/`HWND_NOTOPMOST`
-    /// sentinel handles. Not needed for this POC's static case -- see the module doc comment --
-    /// provided so this type's shape matches `X11Overlay`'s.
-    pub fn set_always_on_top(&self, enabled: bool) -> Result<()> {
-        let insert_after = if enabled {
-            HWND_TOPMOST
-        } else {
-            HWND_NOTOPMOST
-        };
-        unsafe {
-            SetWindowPos(
-                self.hwnd,
-                Some(insert_after),
-                0,
-                0,
-                0,
-                0,
-                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
-            )
-        }
-        .context("SetWindowPos(HWND_TOPMOST/HWND_NOTOPMOST) failed")
     }
 
     /// Removes the 1px border and rounded corners Windows 11's DWM draws around every top-level
@@ -254,13 +222,12 @@ impl Win32Overlay {
         let _ = unsafe { ShowWindow(self.hwnd, command) };
     }
 
-    /// Makes a click on the window leave the keyboard where it is: the trade overlay's buttons
-    /// act on the game, which must keep focus -- and a game that loses it makes other overlays
-    /// react (PoE Overlay II opens its Session Recap). `WS_EX_NOACTIVATE` alone isn't enough:
-    /// `gpui_windows` answers every `WM_MOUSEACTIVATE` with `MA_ACTIVATE` itself (`events.rs`),
-    /// so the window procedure is wrapped to answer `MA_NOACTIVATE` and hand everything else to
-    /// GPUI's. Deferred like [`Self::set_bounds`]: the style change sends `WM_STYLECHANGED`
-    /// synchronously.
+    /// Makes a click on the window leave the keyboard with the game: a game that loses focus makes
+    /// other overlays react (PoE Overlay II opens its Session Recap). `WS_EX_NOACTIVATE` alone
+    /// isn't enough: `gpui_windows` answers every `WM_MOUSEACTIVATE` with `MA_ACTIVATE` itself
+    /// (`events.rs`), so the window procedure is wrapped to answer `MA_NOACTIVATE` and hand
+    /// everything else to GPUI's. Deferred like [`Self::set_bounds`]: the style change sends
+    /// `WM_STYLECHANGED` synchronously.
     pub fn set_no_activate(&self) -> Result<()> {
         let wrapper: unsafe extern "system" fn(HWND, u32, WPARAM, LPARAM) -> LRESULT =
             no_activate_proc;

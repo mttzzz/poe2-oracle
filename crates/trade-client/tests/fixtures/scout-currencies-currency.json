@@ -1,0 +1,297 @@
+{
+ "CurrentPage": 1,
+ "Pages": 1,
+ "Total": 5,
+ "Items": [
+  {
+   "CurrencyItemId": 14,
+   "ItemId": 291,
+   "CurrencyCategoryId": 21,
+   "ApiId": "divine",
+   "BaseItemTypeId": "Metadata/Items/Currency/CurrencyModValues",
+   "Text": "Divine Orb",
+   "CategoryApiId": "currency",
+   "IconUrl": "https://web.poecdn.com//gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvQ3VycmVuY3kvQ3VycmVuY3lNb2RWYWx1ZXMiLCJzY2FsZSI6MSwicmVhbG0iOiJwb2UyIn1d/2986e220b3/CurrencyModValues.png",
+   "ItemMetadata": {
+    "name": "Divine Orb",
+    "base_type": "Divine Orb",
+    "icon": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvQ3VycmVuY3kvQ3VycmVuY3lNb2RWYWx1ZXMiLCJ3IjoxLCJoIjoxLCJzY2FsZSI6MSwicmVhbG0iOiJwb2UyIn1d/af4036c345/CurrencyModValues.png",
+    "stack_size": 1,
+    "max_stack_size": 10,
+    "description": "Right click this item then left click an item to apply it.",
+    "effect": [
+     "Randomises the numeric values of modifiers on an item"
+    ]
+   },
+   "PriceLogs": [
+    {
+     "Price": 503.69006,
+     "Time": "2026-09-23T00:00:00.0000000Z",
+     "Quantity": 8739932
+    },
+    {
+     "Price": 524.8253,
+     "Time": "2026-09-22T00:00:00.0000000Z",
+     "Quantity": 22277300
+    },
+    {
+     "Price": 492.0356,
+     "Time": "2026-09-21T00:00:00.0000000Z",
+     "Quantity": 21315555
+    },
+    {
+     "Price": 478.89795,
+     "Time": "2026-09-20T00:00:00.0000000Z",
+     "Quantity": 22306026
+    },
+    {
+     "Price": 500.87497,
+     "Time": "2026-09-19T00:00:00.0000000Z",
+     "Quantity": 21449779
+    },
+    {
+     "Price": 474.10004,
+     "Time": "2026-09-18T00:00:00.0000000Z",
+     "Quantity": 19732598
+    },
+    {
+     "Price": 485.97095,
+     "Time": "2026-09-17T00:00:00.0000000Z",
+     "Quantity": 19200111
+    }
+   ],
+   "CurrentPrice": 491.84064,
+   "CurrentQuantity": 1011865
+  },
+  {
+   "CurrencyItemId": 15,
+   "ItemId": 292,
+   "CurrencyCategoryId": 21,
+   "ApiId": "annul",
+   "BaseItemTypeId": "Metadata/Items/Currency/CurrencyRemoveMod",
+   "Text": "Orb of Annulment",
+   "CategoryApiId": "currency",
+   "IconUrl": "https://web.poecdn.com//gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvQ3VycmVuY3kvQW5udWxsT3JiIiwic2NhbGUiOjEsInJlYWxtIjoicG9lMiJ9XQ/2daba8ccca/AnnullOrb.png",
+   "ItemMetadata": {
+    "name": "Orb of Annulment",
+    "base_type": "Orb of Annulment",
+    "icon": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvQ3VycmVuY3kvQW5udWxsT3JiIiwidyI6MSwiaCI6MSwic2NhbGUiOjEsInJlYWxtIjoicG9lMiJ9XQ/9b33007500/AnnullOrb.png",
+    "stack_size": 1,
+    "max_stack_size": 20,
+    "description": "Right click this item then left click on a magic or rare item to apply it.",
+    "effect": [
+     "Removes a random modifier from an item"
+    ]
+   },
+   "PriceLogs": [
+    {
+     "Price": 368.10458,
+     "Time": "2026-09-23T00:00:00.0000000Z",
+     "Quantity": 309667
+    },
+    {
+     "Price": 361.5377,
+     "Time": "2026-09-22T00:00:00.0000000Z",
+     "Quantity": 841224
+    },
+    {
+     "Price": 319.9683,
+     "Time": "2026-09-21T00:00:00.0000000Z",
+     "Quantity": 899037
+    },
+    {
+     "Price": 318.92676,
+     "Time": "2026-09-20T00:00:00.0000000Z",
+     "Quantity": 929711
+    },
+    {
+     "Price": 344.23245,
+     "Time": "2026-09-19T00:00:00.0000000Z",
+     "Quantity": 947911
+    },
+    {
+     "Price": 353.52255,
+     "Time": "2026-09-18T00:00:00.0000000Z",
+     "Quantity": 845320
+    },
+    {
+     "Price": 354.59274,
+     "Time": "2026-09-17T00:00:00.0000000Z",
+     "Quantity": 896224
+    }
+   ],
+   "CurrentPrice": 366.1509,
+   "CurrentQuantity": 37898
+  },
+  {
+   "CurrencyItemId": 10,
+   "ItemId": 287,
+   "CurrencyCategoryId": 21,
+   "ApiId": "chaos",
+   "BaseItemTypeId": "Metadata/Items/Currency/CurrencyRerollRare",
+   "Text": "Chaos Orb",
+   "CategoryApiId": "currency",
+   "IconUrl": "https://web.poecdn.com//gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvQ3VycmVuY3kvQ3VycmVuY3lSZXJvbGxSYXJlIiwic2NhbGUiOjEsInJlYWxtIjoicG9lMiJ9XQ/c0ca392a78/CurrencyRerollRare.png",
+   "ItemMetadata": {
+    "name": "Chaos Orb",
+    "base_type": "Chaos Orb",
+    "icon": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvQ3VycmVuY3kvQ3VycmVuY3lSZXJvbGxSYXJlIiwidyI6MSwiaCI6MSwic2NhbGUiOjEsInJlYWxtIjoicG9lMiJ9XQ/20cd0159b7/CurrencyRerollRare.png",
+    "stack_size": 1,
+    "max_stack_size": 20,
+    "description": "Right click this item then left click a rare item to apply it.",
+    "effect": [
+     "Removes a random modifier and augments a Rare item with a new random modifier"
+    ]
+   },
+   "PriceLogs": [
+    {
+     "Price": 64.44064,
+     "Time": "2026-09-23T00:00:00.0000000Z",
+     "Quantity": 26118334
+    },
+    {
+     "Price": 65.15317,
+     "Time": "2026-09-22T00:00:00.0000000Z",
+     "Quantity": 68604603
+    },
+    {
+     "Price": 59.42719,
+     "Time": "2026-09-21T00:00:00.0000000Z",
+     "Quantity": 70381212
+    },
+    {
+     "Price": 57.04465,
+     "Time": "2026-09-20T00:00:00.0000000Z",
+     "Quantity": 76068083
+    },
+    {
+     "Price": 59.0499,
+     "Time": "2026-09-19T00:00:00.0000000Z",
+     "Quantity": 77115492
+    },
+    {
+     "Price": 55.692684,
+     "Time": "2026-09-18T00:00:00.0000000Z",
+     "Quantity": 71717213
+    },
+    {
+     "Price": 52.92745,
+     "Time": "2026-09-17T00:00:00.0000000Z",
+     "Quantity": 76712936
+    }
+   ],
+   "CurrentPrice": 63.382828,
+   "CurrentQuantity": 2948797
+  },
+  {
+   "CurrencyItemId": 13,
+   "ItemId": 290,
+   "CurrencyCategoryId": 21,
+   "ApiId": "exalted",
+   "BaseItemTypeId": "Metadata/Items/Currency/CurrencyAddModToRare",
+   "Text": "Exalted Orb",
+   "CategoryApiId": "currency",
+   "IconUrl": "https://web.poecdn.com//gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvQ3VycmVuY3kvQ3VycmVuY3lBZGRNb2RUb1JhcmUiLCJzY2FsZSI6MSwicmVhbG0iOiJwb2UyIn1d/ad7c366789/CurrencyAddModToRare.png",
+   "ItemMetadata": {
+    "name": "Exalted Orb",
+    "base_type": "Exalted Orb",
+    "icon": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvQ3VycmVuY3kvQ3VycmVuY3lBZGRNb2RUb1JhcmUiLCJ3IjoxLCJoIjoxLCJzY2FsZSI6MSwicmVhbG0iOiJwb2UyIn1d/4ef5836606/CurrencyAddModToRare.png",
+    "stack_size": 1,
+    "max_stack_size": 20,
+    "description": "Right click this item then left click a rare item to apply it. Rare items can have up to six random modifiers.",
+    "effect": [
+     "Augments a Rare item with a new random modifier"
+    ]
+   },
+   "PriceLogs": [
+    {
+     "Price": 1,
+     "Time": "2026-09-23T00:00:00.0000000Z",
+     "Quantity": 71227977
+    },
+    {
+     "Price": 1,
+     "Time": "2026-09-22T00:00:00.0000000Z",
+     "Quantity": 173757410
+    },
+    {
+     "Price": 1,
+     "Time": "2026-09-21T00:00:00.0000000Z",
+     "Quantity": 182414935
+    },
+    {
+     "Price": 1,
+     "Time": "2026-09-20T00:00:00.0000000Z",
+     "Quantity": 211119714
+    },
+    {
+     "Price": 1,
+     "Time": "2026-09-19T00:00:00.0000000Z",
+     "Quantity": 214056322
+    },
+    {
+     "Price": 1,
+     "Time": "2026-09-18T00:00:00.0000000Z",
+     "Quantity": 202476856
+    },
+    {
+     "Price": 1,
+     "Time": "2026-09-17T00:00:00.0000000Z",
+     "Quantity": 223133299
+    }
+   ],
+   "CurrentPrice": 1,
+   "CurrentQuantity": 8027691
+  },
+  {
+   "CurrencyItemId": 3,
+   "ItemId": 280,
+   "CurrencyCategoryId": 21,
+   "ApiId": "regal-shard",
+   "BaseItemTypeId": "Metadata/Items/Currency/CurrencyUpgradeMagicToRareShard",
+   "Text": "Regal Shard",
+   "CategoryApiId": "currency",
+   "IconUrl": "https://web.poecdn.com//gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvQ3VycmVuY3kvQ3VycmVuY3lVcGdyYWRlTWFnaWNUb1JhcmVTaGFyZCIsInNjYWxlIjoxLCJyZWFsbSI6InBvZTIifV0/e4128abe92/CurrencyUpgradeMagicToRareShard.png",
+   "ItemMetadata": {
+    "name": "Regal Shard",
+    "base_type": "Regal Shard",
+    "icon": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvQ3VycmVuY3kvQ3VycmVuY3lVcGdyYWRlTWFnaWNUb1JhcmVTaGFyZCIsInciOjEsImgiOjEsInNjYWxlIjoxLCJyZWFsbSI6InBvZTIifV0/795e43e374/CurrencyUpgradeMagicToRareShard.png",
+    "stack_size": 1,
+    "max_stack_size": 10,
+    "description": "A stack of 10 shards becomes a Regal Orb.",
+    "effect": []
+   },
+   "PriceLogs": [
+    null,
+    {
+     "Price": 0.16666667,
+     "Time": "2026-09-22T00:00:00.0000000Z",
+     "Quantity": 6
+    },
+    {
+     "Price": 20.967522,
+     "Time": "2026-09-21T00:00:00.0000000Z",
+     "Quantity": 13
+    },
+    {
+     "Price": 28.324217,
+     "Time": "2026-09-20T00:00:00.0000000Z",
+     "Quantity": 3
+    },
+    {
+     "Price": 0.33333334,
+     "Time": "2026-09-19T00:00:00.0000000Z",
+     "Quantity": 6
+    },
+    {
+     "Price": 26.239464,
+     "Time": "2026-09-18T00:00:00.0000000Z",
+     "Quantity": 28
+    },
+    null
+   ],
+   "CurrentPrice": 0.16666667,
+   "CurrentQuantity": 6
+  }
+ ]
+}

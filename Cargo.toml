@@ -4,14 +4,10 @@
 # explicitly or Cargo silently falls back to the legacy v1 resolver for the whole workspace.
 resolver = "3"
 members = [
-    "crates/oodle-ffi",
-    "crates/poe-bundle",
-    "crates/poe-dat",
     "crates/poe2-domain",
     "crates/item-parser",
     "crates/trade-client",
     "crates/stat-filters",
-    "crates/data-pipeline",
     "crates/auto-update",
     "crates/poe2-oracle",
 ]
@@ -28,24 +24,3 @@ authors = ["mttzzz"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/mttzzz/poe2-oracle"
 homepage = "https://mttzzz.github.io/poe2-oracle/"
-
-[profile.dist]
-# Cargo only allows [profile.*] tables in the workspace root manifest, never in a member crate --
-# so this necessarily lives here even though it is only meaningful for crates/poe2-oracle's app
-# binary and examples (the only crates this workspace ever ships to an end user's machine).
-#
-# For shipping example binaries to the Windows box, not for local dev iteration. Deliberately
-# inherits "dev", not "release": `gpui_windows`'s build script only precompiles HLSL shaders via
-# `fxc.exe` when `debug_assertions` is off (`#[cfg(not(debug_assertions))] compile_shaders();`,
-# gated by an *outer* `#[cfg(target_os = "windows")]` that build scripts evaluate against the
-# *build host*, not the `--target` -- so it's inert either way when cross-compiling from Linux),
-# and it locates `fxc.exe` via the Windows registry and Windows SDK install layout, neither of
-# which exist on this Linux lane runner. A real `--release` build therefore fails outright
-# ("couldn't read .../out/shaders_bytes.rs") when cross-compiled from here; `debug_assertions`
-# must stay on so gpui_windows falls back to its runtime `D3DCompileFromFile` shader path
-# instead (confirmed present as a runtime dependency of the debug .exe via `objdump -p`).
-# `opt-level`/`strip` still shrink the binary a lot (~400MB debug -> a fraction of that) without
-# touching that fxc-dependent path at all.
-inherits = "dev"
-opt-level = 2
-strip = true

@@ -71,13 +71,12 @@ the game. See [Quick actions](quick-actions.md).
 
 Section «Поиск» (search).
 
-- «Допуск значений» (value tolerance), ±10% by default, from 0 to 50% in steps of 5: how far below
-  your roll the **min** of each filter row starts, that is, how much the listings' values may
-  differ from yours.
 - «Продавцы по умолчанию» (default sellers): which sellers a new check searches. «выкуп и онлайн»
-  (instant buyout and sellers online, the default), «только мгновенный выкуп» (instant buyout
-  only), «только онлайн» (only sellers online), «все, включая офлайн» (everyone, offline too). The
-  «Продавцы:» chip on the panel still switches it for one item.
+  (instant buyout and sellers online), «только мгновенный выкуп» (instant buyout only, the
+  default), «только онлайн» (only sellers online), «все, включая офлайн» (everyone, offline too).
+  The «Продавцы:» chip on the panel still switches it for one item. Settings saved by an older
+  version with its default, «выкуп и онлайн», move to «только мгновенный выкуп» once; after that,
+  your choice stays.
 - «Колонка продавца» (seller column), on by default: the seller's account name in the results
   table.
 
@@ -85,7 +84,7 @@ Section «Поиск» (search).
 
 Section «Внешний вид» (appearance), row «Масштаб интерфейса» (interface scale): 100% by default,
 from 80 to 150% in steps of 5. It sizes the text and controls of everything PoE2 Oracle draws over
-the game: the price panel (its width too), the trade request cards and the XP overlay.
+the game: the price panel (its width too) and the XP overlay.
 
 ## XP overlay
 
@@ -97,15 +96,6 @@ Section «Оверлей опыта» (XP overlay). See [XP overlay](xp-overlay.
 | «Процент уровня» | off | Also show how much of the current level is done |
 | «Таймер карты» | on | Also show the time in the current map, the experience it gave and the session's average map time |
 | «Сглаживание скорости» | 10 мин | Rate smoothing: 5, 10, 20 or 30 minutes. Shorter shows a change of farming sooner, longer reads steadier |
-
-## Trading
-
-Section «Торговля» (trading). See [Trade requests](trade-requests.md).
-
-- «Запросы покупателей» (buyer requests), on by default: cards for buyers' whispers, with buttons
-  that answer them in the game.
-- «Звук при новом запросе» (sound on a new request), on by default: plays the Windows "Asterisk"
-  system sound when a new card appears.
 
 ## System
 

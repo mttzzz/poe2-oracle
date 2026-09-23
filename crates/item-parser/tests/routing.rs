@@ -9,6 +9,7 @@
 
 use item_parser::{ItemLanguage, parse_clipboard};
 use poe2_domain::{ItemRarity, ParsedItem, StatCatalog};
+use stat_filters::SearchProfile;
 use trade_client::catalog::StaticCurrency;
 use trade_client::{RarityFilter, SearchRoute, route_search};
 
@@ -161,7 +162,7 @@ fn every_fixture_gets_filters_and_a_route() {
         let catalog = exchange_catalog_for(&name);
         let item = parse_fixture(&name);
         // Must not panic, whatever the item.
-        let filters = stat_filters::build_filters(&item, 10, &stats);
+        let filters = stat_filters::build_filters(&item, SearchProfile::default_for(&item), &stats);
         let route = route_search(&item, &catalog, &[]);
         let kind = match &route {
             SearchRoute::Market { trade_id } => {
@@ -417,6 +418,12 @@ fn currency_missing_from_the_exchange_is_searched_by_its_type() {
     }
 }
 
+/// A fixture's rows, as the panel first shows them: with the item's default search profile.
+fn built(name: &str, stats: &StatCatalog) -> Vec<stat_filters::SearchFilter> {
+    let item = parse_fixture(name);
+    stat_filters::build_filters(&item, SearchProfile::default_for(&item), stats)
+}
+
 fn row<'a>(filters: &'a [stat_filters::SearchFilter], id: &str) -> &'a stat_filters::SearchFilter {
     filters
         .iter()
@@ -430,8 +437,7 @@ fn gems_waystones_and_tablets_carry_ee2s_property_rows() {
 
     // Herald of Ice: level 18, 20% quality, 4 sockets -- EE2 searches quality from 16 and
     // sockets from 3, level only from 19.
-    let gem =
-        stat_filters::build_filters(&parse_fixture("sidekick_herald_of_ice_en.txt"), 10, &stats);
+    let gem = built("sidekick_herald_of_ice_en.txt", &stats);
     let level = row(&gem, "misc_filters.gem_level");
     assert_eq!(level.roll.as_ref().and_then(|r| r.min), Some(18.0));
     assert!(!level.enabled);
@@ -439,8 +445,7 @@ fn gems_waystones_and_tablets_carry_ee2s_property_rows() {
     assert!(row(&gem, "misc_filters.gem_sockets").enabled);
 
     // A tier-16 rare waystone searches its tier exactly; its properties are offered, unchecked.
-    let waystone =
-        stat_filters::build_filters(&parse_fixture("rare_map_all_props_en.txt"), 10, &stats);
+    let waystone = built("rare_map_all_props_en.txt", &stats);
     let tier = row(&waystone, "map_filters.map_tier");
     let roll = tier.roll.as_ref().expect("tier roll");
     assert_eq!((roll.min, roll.max), (Some(16.0), Some(16.0)));
@@ -450,11 +455,7 @@ fn gems_waystones_and_tablets_carry_ee2s_property_rows() {
     assert!(!pack_size.enabled);
 
     // The live RU magic waystone names its tier only in its name; the tier row is its search.
-    let ru_waystone = stat_filters::build_filters(
-        &parse_fixture("ru_live_adskiy_putevoy_kamen_ur_13_ukloneniya.txt"),
-        10,
-        &stats,
-    );
+    let ru_waystone = built("ru_live_adskiy_putevoy_kamen_ur_13_ukloneniya.txt", &stats);
     let tier = row(&ru_waystone, "map_filters.map_tier");
     let roll = tier.roll.as_ref().expect("tier roll");
     assert_eq!((roll.min, roll.max), (Some(13.0), Some(13.0)));
@@ -482,7 +483,7 @@ fn gems_waystones_and_tablets_carry_ee2s_property_rows() {
     ))
     .expect("fixture text");
     let item = parse_clipboard(&text, ItemLanguage::English, &catalog).expect("parses");
-    let tablet = stat_filters::build_filters(&item, 10, &catalog);
+    let tablet = stat_filters::build_filters(&item, SearchProfile::default_for(&item), &catalog);
     let uses = row(&tablet, "pseudo.pseudo_number_of_uses_remaining");
     assert_eq!(uses.roll.as_ref().and_then(|r| r.min), Some(10.0));
     assert!(uses.enabled);

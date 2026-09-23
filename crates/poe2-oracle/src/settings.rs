@@ -28,11 +28,10 @@ use trade_client::ListingStatus;
 use crate::paths;
 
 /// The file layout [`Settings`] reads and writes. A change to what an existing field means bumps
-/// it, and [`load`] converts older files before handing them out.
-pub const SETTINGS_VERSION: u32 = 1;
+/// it, and [`load`] converts older files before handing them out. 2: new checks search instant
+/// buyouts by default, and a version-1 file's old default moves there.
+pub const SETTINGS_VERSION: u32 = 2;
 
-/// The widest [`Settings::search_tolerance_percent`].
-pub const MAX_SEARCH_TOLERANCE_PERCENT: u8 = 50;
 /// The smallest [`Settings::ui_scale`].
 pub const MIN_UI_SCALE: f32 = 0.8;
 /// The largest [`Settings::ui_scale`].
@@ -57,10 +56,6 @@ pub struct Settings {
     /// The global price-check hotkey; passes [`Hotkey::check`] once loaded.
     #[serde(deserialize_with = "or_default")]
     pub hotkey: Hotkey,
-    /// How far, in percent either way, a search lets each stat roll differ from the checked
-    /// item's -- EE2's `searchStatRange`, whose default is 10 (`PriceCheckWindow.vue`). At most
-    /// [`MAX_SEARCH_TOLERANCE_PERCENT`].
-    pub search_tolerance_percent: u8,
     /// The sellers a new price check searches; the panel's chip still switches them per item.
     #[serde(deserialize_with = "or_default")]
     pub listing_status: ListingStatusChoice,
@@ -88,10 +83,6 @@ pub struct Settings {
     /// [`MAX_QUICK_ACTIONS`].
     #[serde(deserialize_with = "or_default")]
     pub quick_actions: Vec<QuickAction>,
-    /// Buyers' trade requests (the trade site's whispers), shown with buttons that answer them.
-    pub trade_requests: bool,
-    /// A sound when a new one comes in.
-    pub trade_sound: bool,
 }
 
 impl Default for Settings {
@@ -102,7 +93,6 @@ impl Default for Settings {
             client_language: ClientLanguage::default(),
             autostart: false,
             hotkey: Hotkey::default(),
-            search_tolerance_percent: 10,
             listing_status: ListingStatusChoice::default(),
             show_seller_column: true,
             ui_scale: 1.0,
@@ -118,17 +108,21 @@ impl Default for Settings {
                 text: "/hideout".to_owned(),
                 hotkey: None,
             }],
-            trade_requests: true,
-            trade_sound: true,
         }
     }
 }
 
 impl Settings {
-    /// A loaded file under this version's rules: the current layout version (what a save writes
-    /// back), numbers inside the ranges the settings window offers, and the default hotkey in
-    /// place of one [`Hotkey::check`] rejects -- a hand-edited file can hold anything.
+    /// A loaded file under this version's rules: an older layout's values carried over, the
+    /// current layout version (what a save writes back), numbers inside the ranges the settings
+    /// window offers, and the default hotkey in place of one [`Hotkey::check`] rejects -- a
+    /// hand-edited file can hold anything.
     fn normalized(mut self) -> Settings {
+        // Version 1 searched in-person sellers too by default. A file still on that default moves
+        // to instant buyout once: saved as version 2 from then on, a player's switch back stays.
+        if self.version < 2 && self.listing_status == ListingStatusChoice::Available {
+            self.listing_status = ListingStatusChoice::Securable;
+        }
         self.version = SETTINGS_VERSION;
         // A typed league as typed, minus the spaces around it; nothing typed is no choice.
         self.league = match std::mem::take(&mut self.league) {
@@ -136,9 +130,6 @@ impl Settings {
             LeagueChoice::Custom(name) => LeagueChoice::Custom(name.trim().to_owned()),
             choice => choice,
         };
-        self.search_tolerance_percent = self
-            .search_tolerance_percent
-            .min(MAX_SEARCH_TOLERANCE_PERCENT);
         self.ui_scale = self.ui_scale.clamp(MIN_UI_SCALE, MAX_UI_SCALE);
         // The nearest offered window: a hand-edited 15 reads as 10 or 20, whichever is closer.
         self.xp_rate_window_minutes = XP_RATE_WINDOWS
@@ -277,9 +268,9 @@ impl ClientLanguage {
 #[serde(rename_all = "snake_case")]
 pub enum ListingStatusChoice {
     /// Instant buyout and in person.
-    #[default]
     Available,
-    /// Instant buyout only.
+    /// Instant buyout only: the game's own auction sells without the seller online.
+    #[default]
     Securable,
     /// In person, seller online.
     Online,
@@ -633,7 +624,6 @@ mod tests {
                 alt: true,
                 key: key("7"),
             },
-            search_tolerance_percent: 25,
             listing_status: ListingStatusChoice::Any,
             show_seller_column: false,
             ui_scale: 1.25,
@@ -718,6 +708,65 @@ mod tests {
     }
 
     #[test]
+    fn a_version_1_file_loads_with_instant_buyout_once() {
+        let dir = TempDir::new();
+        let path = dir.settings_file();
+        // As version 1 saved it, with the value tolerance and the buyers' requests it had then.
+        write_file(
+            &path,
+            r#"{
+                "version": 1,
+                "league": {"named": "Standard"},
+                "client_language": "russian",
+                "autostart": false,
+                "hotkey": {"ctrl": true, "shift": false, "alt": false, "key": "E"},
+                "search_tolerance_percent": 10,
+                "listing_status": "available",
+                "show_seller_column": false,
+                "ui_scale": 1.25,
+                "xp_overlay": true,
+                "xp_show_percent": false,
+                "xp_map_timer": true,
+                "xp_rate_window_minutes": 10,
+                "check_updates": true,
+                "waystone_marks": {"explicit.stat_1": "danger"},
+                "quick_actions": [{"kind": "chat_command", "text": "/hideout", "hotkey": null}],
+                "trade_requests": true,
+                "trade_sound": true
+            }"#,
+        );
+        let loaded = load_from(&path);
+        assert!(path.exists(), "a readable old file stays where it is");
+        assert_eq!(
+            loaded,
+            Settings {
+                league: LeagueChoice::Named("Standard".to_owned()),
+                client_language: ClientLanguage::Russian,
+                listing_status: ListingStatusChoice::Securable,
+                show_seller_column: false,
+                ui_scale: 1.25,
+                waystone_marks: BTreeMap::from([(
+                    "explicit.stat_1".to_owned(),
+                    WaystoneMark::Danger
+                )]),
+                ..Settings::default()
+            }
+        );
+
+        // Saved as version 2, the player's switch back to both kinds of sellers stays.
+        let chosen = Settings {
+            listing_status: ListingStatusChoice::Available,
+            ..loaded
+        };
+        save_to(&path, &chosen).unwrap();
+        assert_eq!(load_from(&path), chosen);
+
+        // A version 1 file on another choice keeps it.
+        write_file(&path, r#"{"version": 1, "listing_status": "online"}"#);
+        assert_eq!(load_from(&path).listing_status, ListingStatusChoice::Online);
+    }
+
+    #[test]
     fn a_typed_league_loads_trimmed_and_an_empty_one_as_auto() {
         let dir = TempDir::new();
         let path = dir.settings_file();
@@ -736,16 +785,12 @@ mod tests {
         let path = dir.settings_file();
         write_file(
             &path,
-            r#"{"version": 7, "search_tolerance_percent": 90, "ui_scale": 3.0, "hotkey": {"key": "E"}, "xp_rate_window_minutes": 27}"#,
+            r#"{"version": 7, "ui_scale": 3.0, "hotkey": {"key": "E"}, "xp_rate_window_minutes": 27}"#,
         );
         let loaded = load_from(&path);
         assert_eq!(
             loaded.version, SETTINGS_VERSION,
             "a save writes this layout"
-        );
-        assert_eq!(
-            loaded.search_tolerance_percent,
-            MAX_SEARCH_TOLERANCE_PERCENT
         );
         assert_eq!(loaded.ui_scale, MAX_UI_SCALE);
         assert_eq!(

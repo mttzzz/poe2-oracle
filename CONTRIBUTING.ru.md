@@ -52,20 +52,16 @@
 
 ```text
 crates/
-  poe2-oracle/     сама программа: панель цены, настройки, оверлей опыта, запросы покупателей,
+  poe2-oracle/     сама программа: панель цены, настройки, оверлей опыта, слежение за поиском,
                    трей, обновления, окна-оверлеи Win32, горячие клавиши и ввод в игру
   item-parser/     текст предмета из буфера обмена -> ParsedItem (русский и английский клиенты)
   stat-filters/    ParsedItem -> строки фильтров поиска (по умолчаниям Exiled Exchange 2)
   trade-client/    API торговли (лиги, каталоги, поиск, лоты, ограничения запросов), рынок
-                   poe.ninja, цены poe2scout
+                   валютной биржи по часовым сводкам GGG, цены poe2scout
   poe2-domain/     общие типы предметов и свойств, без ввода-вывода
   auto-update/     проверка выпусков на GitHub и скачивание установщика с проверкой SHA-256
-  oodle-ffi/, poe-bundle/, poe-dat/, data-pipeline/
-                   чтение данных из файлов игры (Bundles2 и .datc64 через настоящую библиотеку
-                   Oodle); программа от них не зависит
 packaging/         скрипт выпуска, установщик NSIS, генераторы таблиц данных (packaging/data)
 docs/guide/        руководство пользователя (mdBook), публикуется вместе с сайтом
-docs/dev/          заметки разработки, например итоги проверки GPUI
 site/              главные страницы сайта проекта
 lanes/             Linux-контейнер для сборки, который использует CI
 ```
@@ -112,7 +108,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File packaging\build-release.ps1
 - `POE2_ORACLE_KEEP_ITEM_TEXTS=1` сохраняет в `data\unparsed` текст каждого проверенного предмета,
   а не только проблемных: удобно собирать образцы для тестов парсера.
 - `POE2_ORACLE_CLIENT_LOG=<файл>` заставляет программу читать этот файл вместо `Client.txt` игры:
-  запросы покупателей и оверлей опыта можно проверять, дописывая в него строки.
+  оверлей опыта можно проверять, дописывая в него строки.
 - `POE2_ORACLE_RELEASES_URL` читается при сборке: программа будет искать обновления по этому
   адресу, а не в последнем выпуске этого репозитория на GitHub, — чтобы проверить обновление
   целиком на локальной подмене.
@@ -134,7 +130,7 @@ docker run --rm --user "$(id -u):$(id -g)" -v "$PWD":/workspace -w /workspace \
     cargo clippy --workspace --all-targets --exclude poe2-oracle -- -D warnings
     cargo clippy -p poe2-oracle --all-targets --target x86_64-pc-windows-gnu -- -D warnings
     cargo test --workspace --exclude poe2-oracle
-    cargo test -p poe2-oracle --lib --example trade_api --example hotkey_clipboard --example text_rendering
+    cargo test -p poe2-oracle --lib
     cargo build --workspace --target x86_64-pc-windows-gnu
   '
 ```
@@ -165,9 +161,8 @@ docker run --rm --user "$(id -u):$(id -g)" -v "$PWD":/workspace -w /workspace \
 # Как клиент печатает свойства: crates/item-parser/data/stat-matchers-{en,ru}.tsv
 python3 packaging/data/generate_stat_matchers.py <EE2>/renderer/public/data
 
-# Справочник предметов (названия, картинки): crates/poe2-oracle/assets/data/item-refs.tsv
-python3 packaging/data/generate_item_refs.py \
-  <EE2>/renderer/public/data/en/items.ndjson <EE2>/renderer/public/data/ru/items.ndjson
+# Справочник предметов (названия, картинки, основы): crates/poe2-oracle/assets/data/item-refs.tsv
+python3 packaging/data/generate_item_refs.py <EE2>/renderer/public/data <папка RePoE>
 ```
 
 `crates/stat-filters/src/better.rs` (свойства, у которых меньшее значение лучше) ведётся вручную
@@ -186,6 +181,26 @@ cargo run -p item-parser --example sweep -- <папка с каталогами>
 
 Команда перечислит все предметы и строки, с которыми не справилась, и в этом случае завершится с
 ненулевым кодом.
+
+Три таблицы построены по данным самой игры, как их выгружает [RePoE](https://repoe-fork.github.io/poe2/)
+(MIT; данные принадлежат Grinding Gear Games), — см. `crates/stat-filters/data/NOTICE`,
+`crates/trade-client/data/NOTICE` и `crates/poe2-oracle/assets/data/NOTICE`: тиры модификаторов,
+id биржевых предметов и основы в справочнике предметов, для ссылки на Craft of Exile (команда для
+него — выше). После патча игры скачайте `mods.json` и `base_items.json` из RePoE в отдельную
+папку, сохраните список биржевых предметов английского сайта торговли
+(`https://www.pathofexile.com/api/trade2/data/static`) в файл `static.json` и запустите:
+
+```sh
+# Тиры модификаторов и нужный им уровень предмета: crates/stat-filters/data/mod-tiers.tsv
+python3 packaging/data/generate_mod_tiers.py <папка RePoE> <EE2>/renderer/public/data
+
+# Id сайта торговли для каждого предмета из данных биржи GGG: crates/trade-client/data/cx-items.tsv
+python3 packaging/data/generate_cx_ids.py <папка RePoE>/base_items.json static.json
+```
+
+Если третьим аргументом передать сохранённый час данных биржи
+(`https://web.poecdn.com/api/currency-exchange/poe2/<unix-время часа>`), `generate_cx_ids.py`
+заодно перечислит предметы, которыми в тот час торговали, но у которых нет id сайта торговли.
 
 ## Зависимости и лицензии
 

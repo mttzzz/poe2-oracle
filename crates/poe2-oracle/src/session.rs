@@ -1,19 +1,22 @@
-//! The player's pathofexile.com web session -- the site's `POESESSID` cookie, pasted into the
-//! settings -- and what carries it. Signed in, searches reach the player's private leagues and live
-//! search can watch a search (`crate::live_search`).
+//! The player's pathofexile.com web session -- the site's `POESESSID` cookie, taken from the
+//! sign-in window (`crate::login`) -- and what carries it. Signed in, searches reach the player's
+//! private leagues and live search can watch a search (`crate::live_search`).
 //!
 //! The session is a key to the player's web account, so it goes nowhere it isn't needed:
 //! - it is kept in the Windows Credential Manager (`platform::credentials`), never in the settings
 //!   file, the log or the diagnostics report, and a `Debug` print of anything holding it masks it;
+//!   the sign-in window's browser keeps no copy (`platform::login_window`);
 //! - it is sent only as `Cookie: POESESSID=<value>`, and only to `https://www.pathofexile.com` and
 //!   `https://ru.pathofexile.com` -- by [`SessionHttpClient`] for the app's HTTP requests and by
-//!   live search's socket handshake; never to poe.ninja, poe2scout, the site's image CDN or GitHub.
+//!   live search's socket handshake; never to poe2scout, GGG's CDN (item images, exchange prices)
+//!   or GitHub.
 //!   A redirect to another host drops it (reqwest strips `Cookie` on a cross-host redirect), and
 //!   the session check follows no redirect at all.
 //!
 //! [`TradeSession`] holds the value, shared by the HTTP client and the live search threads;
-//! [`SessionStatus`] is what the app knows of it -- checked against the account page at startup
-//! and at every sign-in -- for the settings window and the panel. Both are GPUI globals.
+//! [`SessionStatus`] is what the app knows of it -- checked against the account page at startup,
+//! and before a sign-in keeps it ([`check_candidate`]) -- for the settings window and the panel.
+//! Both are GPUI globals.
 
 use std::fmt;
 use std::pin::Pin;
@@ -131,25 +134,10 @@ impl HttpClient for SessionHttpClient {
     }
 }
 
-/// The session id in what the player pasted: the cookie's value, or `POESESSID=<value>` as a
-/// browser may copy it, with spaces, quotes and a trailing `;` around it ignored. `None` for
-/// anything else: a POESESSID is 32 hex digits, and letting through only ASCII letters and digits
-/// means nothing pasted can change what the `Cookie` header says.
-pub fn parse_pasted(pasted: &str) -> Option<String> {
-    const NAME: &str = "POESESSID";
-    let mut value = pasted.trim().trim_end_matches(';').trim();
-    if value
-        .get(..NAME.len())
-        .is_some_and(|name| name.eq_ignore_ascii_case(NAME))
-    {
-        value = value[NAME.len()..].trim_start();
-        value = value
-            .strip_prefix('=')
-            .or_else(|| value.strip_prefix(':'))
-            .unwrap_or(value)
-            .trim();
-    }
-    let value = value.trim_matches(|c| c == '"' || c == '\'');
+/// `value` if it can be the session id, `None` if not: a POESESSID is 32 hex digits, and letting
+/// through only ASCII letters and digits means nothing in it can change what the `Cookie` header
+/// says.
+pub fn parse(value: &str) -> Option<String> {
     ((16..=128).contains(&value.len()) && value.bytes().all(|byte| byte.is_ascii_alphanumeric()))
         .then(|| value.to_owned())
 }
@@ -190,7 +178,7 @@ static CHECKS: AtomicU64 = AtomicU64::new(0);
 #[cfg(target_os = "windows")]
 pub fn load() -> TradeSession {
     match crate::platform::credentials::read(CREDENTIAL_TARGET) {
-        Ok(saved) => TradeSession::new(saved.as_deref().and_then(parse_pasted)),
+        Ok(saved) => TradeSession::new(saved.as_deref().and_then(parse)),
         Err(err) => {
             log::warn!("reading the saved pathofexile.com session failed: {err:#}");
             TradeSession::default()
@@ -198,22 +186,46 @@ pub fn load() -> TradeSession {
     }
 }
 
-/// Makes `session` -- the one the HTTP client was built with -- the app's, and checks it if there
-/// is one.
-pub fn init(session: TradeSession, cx: &mut App) {
+/// The HTTP client [`SessionHttpClient`] wraps, without the stored session: a session the sign-in
+/// window found is checked through it, carrying that one instead ([`check_candidate`]).
+struct InnerClient(Arc<dyn HttpClient>);
+
+impl Global for InnerClient {}
+
+/// Makes `session` -- the one the app's HTTP client was built with, around `inner` -- the app's,
+/// and checks it if there is one. A sign-in the app didn't live to finish may have left its
+/// browser's profile behind: that goes first.
+pub fn init(session: TradeSession, inner: Arc<dyn HttpClient>, cx: &mut App) {
+    #[cfg(target_os = "windows")]
+    crate::platform::login_window::wipe_profiles();
     cx.set_global(session);
+    cx.set_global(InnerClient(inner));
     cx.set_global(SessionStatus::SignedOut);
     check(cx);
 }
 
-/// Signs in with `session` (as `parse_pasted` returns it): saved in the Credential Manager, used
-/// from the next request on, and checked.
+/// Asks the account page about `session` -- one the sign-in window found, not the app's -- through
+/// a client that carries it instead of the stored one, to the same hosts only.
+pub fn check_candidate(
+    session: String,
+    cx: &App,
+) -> impl Future<Output = anyhow::Result<AccountCheck>> + use<> {
+    let client: Arc<dyn HttpClient> = Arc::new(SessionHttpClient::new(
+        cx.global::<InnerClient>().0.clone(),
+        TradeSession::new(Some(session)),
+    ));
+    async move { account::check_session(&client).await }
+}
+
+/// Signs in with `session`, which the account page just accepted (for `account`, when the page
+/// names it): saved in the Credential Manager, and used from the next request on.
 #[cfg(target_os = "windows")]
-pub fn sign_in(session: String, cx: &mut App) -> anyhow::Result<()> {
+pub fn sign_in(session: String, account: Option<String>, cx: &mut App) -> anyhow::Result<()> {
     crate::platform::credentials::write(CREDENTIAL_TARGET, CREDENTIAL_USER, &session)?;
     cx.global::<TradeSession>().set(session);
+    CHECKS.fetch_add(1, Ordering::Relaxed);
+    cx.set_global(SessionStatus::SignedIn { account });
     log::info!("pathofexile.com session saved");
-    check(cx);
     Ok(())
 }
 
@@ -239,7 +251,7 @@ pub fn refused(cx: &mut App) {
 }
 
 /// Asks the account page about the stored session and shows the answer.
-pub fn check(cx: &mut App) {
+fn check(cx: &mut App) {
     let check = CHECKS.fetch_add(1, Ordering::Relaxed) + 1;
     if !cx.global::<TradeSession>().is_signed_in() {
         cx.set_global(SessionStatus::SignedOut);
@@ -347,7 +359,7 @@ mod tests {
                     "https://pathofexile.com/my-account",
                     "https://www.pathofexile.com.example.org/my-account",
                     "https://web.poecdn.com/image/Art/2DItems/Currency/CurrencyRerollRare.png",
-                    "https://poe.ninja/poe2/api/data/index-state",
+                    "https://web.poecdn.com/api/currency-exchange/poe2/1790157600",
                     "https://api.poe2scout.com/poe2/Leagues/Standard/Items",
                     "https://api.github.com/repos/mttzzz/poe2-oracle/releases/latest",
                 ],
@@ -387,17 +399,15 @@ mod tests {
     }
 
     #[test]
-    fn a_pasted_session_is_read_in_the_forms_browsers_copy_it() {
-        let expected = Some(SESSION.to_owned());
-        assert_eq!(parse_pasted(SESSION), expected);
-        assert_eq!(parse_pasted(&format!("  {SESSION}\n")), expected);
-        assert_eq!(parse_pasted(&format!("POESESSID={SESSION};")), expected);
-        assert_eq!(parse_pasted(&format!("poesessid: \"{SESSION}\"")), expected);
+    fn only_a_bare_session_id_is_taken() {
+        assert_eq!(parse(SESSION), Some(SESSION.to_owned()));
         // Nothing that could say more than one cookie, or isn't a session at all.
-        assert_eq!(parse_pasted(&format!("{SESSION}; other=1")), None);
-        assert_eq!(parse_pasted(&format!("{SESSION}\r\nX-Other: 1")), None);
-        assert_eq!(parse_pasted("короткий"), None);
-        assert_eq!(parse_pasted("abc"), None);
-        assert_eq!(parse_pasted(""), None);
+        assert_eq!(parse(&format!("{SESSION}; other=1")), None);
+        assert_eq!(parse(&format!("{SESSION}\r\nX-Other: 1")), None);
+        assert_eq!(parse(&format!("POESESSID={SESSION}")), None);
+        assert_eq!(parse(&format!(" {SESSION}")), None);
+        assert_eq!(parse("короткий"), None);
+        assert_eq!(parse("abc"), None);
+        assert_eq!(parse(""), None);
     }
 }

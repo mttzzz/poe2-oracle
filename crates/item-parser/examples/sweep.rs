@@ -116,7 +116,11 @@ fn main() -> ExitCode {
                 continue;
             }
         };
-        let filters = stat_filters::build_filters(&item, 10, &catalogs.stats);
+        let filters = stat_filters::build_filters(
+            &item,
+            stat_filters::SearchProfile::default_for(&item),
+            &catalogs.stats,
+        );
         let route = route_search(&item, &catalogs.currencies, &catalogs.item_types);
         let kind = route_label(&route);
         *routes

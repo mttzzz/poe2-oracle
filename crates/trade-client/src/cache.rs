@@ -7,8 +7,7 @@
 //! Cache directory convention (not a public API here -- path construction is the app layer's job,
 //! since it alone knows the real cache root): `directories::ProjectDirs::from("", "",
 //! "poe2-oracle").cache_dir()`, joined with a per-catalog file name (e.g. `stat-catalog.json`,
-//! `static-items.json`) -- matching the convention already established for `poe-dat`'s own
-//! schema cache (`crates/poe-dat/src/schema.rs`'s `schema_cache_dir`).
+//! `static-items.json`).
 
 use std::path::Path;
 use std::time::{Duration, SystemTime};
@@ -86,12 +85,13 @@ fn read_fresh_cache<T: DeserializeOwned>(cache_path: &Path, max_age: Duration) -
 }
 
 /// Reads and deserializes `cache_path` regardless of age. `None` if missing or unparseable.
-fn read_stale_cache<T: DeserializeOwned>(cache_path: &Path) -> Option<T> {
+pub(crate) fn read_stale_cache<T: DeserializeOwned>(cache_path: &Path) -> Option<T> {
     let body = std::fs::read_to_string(cache_path).ok()?;
     serde_json::from_str(&body).ok()
 }
 
-fn write_cache<T: Serialize>(cache_path: &Path, value: &T) -> Result<()> {
+/// Writes `value` to `cache_path` as JSON, creating its folder when missing.
+pub(crate) fn write_cache<T: Serialize>(cache_path: &Path, value: &T) -> Result<()> {
     if let Some(parent) = cache_path.parent() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("creating cache directory {}", parent.display()))?;

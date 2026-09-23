@@ -21,8 +21,8 @@ pub mod stat_forms;
 
 use poe2_domain::{ModifierType, ParsedItem, StatCatalog};
 
-/// A display/parse language for clipboard item text. Scoped to what `poe2-domain::Language`
-/// already covers (English + Russian) -- see that type's own doc comment for why.
+/// A display/parse language for clipboard item text: the two game client languages this project
+/// supports. The trade API knows more, but nothing here needs them yet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ItemLanguage {
     English,

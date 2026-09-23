@@ -11,12 +11,14 @@
 //!
 //! EE2 removes the per-mod rows a rule reads; here they stay, unselected and hidden
 //! (`SearchFilter::hidden`), so every folded stat is still one click away behind the panel's
-//! "show hidden" toggle. The pseudo rows EE2 hides are hidden the same way.
+//! "show hidden" toggle. The pseudo rows EE2 hides are hidden the same way. A total starts
+//! unselected: the search profile picks it by the best score of the mods it sums (`rank`), as
+//! PoE Overlay II's `finalizeModMetadata` scores a pseudo total.
 
 use poe2_domain::{ItemRarity, ModifierType, ParsedItem, StatCatalog};
 
 use crate::property::{folded_into_properties, uses_exact_preset};
-use crate::{FilterTag, SearchFilter, build_roll, catalog_text};
+use crate::{FilterTag, RollBound, SearchFilter, SearchFilterRoll, catalog_text};
 
 // Resistance bits of `Stat::Resistance`: an EE2 `RESISTANCES_INFO` entry's elements and chaos.
 const FIRE: u8 = 1;
@@ -95,21 +97,16 @@ static STATS: &[(&str, Stat)] = &[
     ("stat_1416455556", Stat::MovementSpeed),
 ];
 
-/// How a row starts: EE2's `disabled` flag (default `true`) and its `mutate` hooks. A hidden row
-/// is never selected.
+/// Whether a row starts hidden: EE2's `hidden` and its `mutate` hooks. A hidden row is never
+/// selected.
 #[derive(Clone, Copy)]
-enum Start {
-    Selected,
-    Unselected,
+enum Hide {
+    Never,
     /// EE2's all-elemental total (`filters.hide_total_all_res`).
-    Hidden,
-    /// Selected unless the row's only source is one of `types`; then unselected, and hidden too
-    /// when `hide` is set -- EE2's chaos resistance (a lone rune: `filters.hide_crafted_chaos`)
-    /// and movement speed (a lone implicit) `mutate`s.
-    UnlessSoleSourceIs {
-        types: &'static [ModifierType],
-        hide: bool,
-    },
+    Always,
+    /// When the row's only source is one of these types: EE2's chaos resistance granted by a lone
+    /// rune (`filters.hide_crafted_chaos`).
+    WhenSoleSourceIs(&'static [ModifierType]),
 }
 
 /// EE2's rule `group`s, each settled by a pass over its rows once every rule has run
@@ -136,7 +133,7 @@ struct Rule {
     weight: fn(Stat) -> Option<f64>,
     /// A stat the item must carry for the rule to fire (EE2's `required: true`).
     required: Option<Stat>,
-    start: Start,
+    hide: Hide,
     group: Option<Group>,
 }
 
@@ -147,7 +144,7 @@ static RULES: &[Rule] = &[
         english: "+#% total to all Elemental Resistances",
         weight: |stat| resists(stat, ELEMENTS),
         required: None,
-        start: Start::Hidden,
+        hide: Hide::Always,
         group: Some(Group::AllElementalResistances),
     },
     Rule {
@@ -161,7 +158,7 @@ static RULES: &[Rule] = &[
             _ => None,
         },
         required: None,
-        start: Start::Selected,
+        hide: Hide::Never,
         group: None,
     },
     Rule {
@@ -169,7 +166,7 @@ static RULES: &[Rule] = &[
         english: "+#% total to Fire Resistance",
         weight: |stat| resists(stat, FIRE),
         required: None,
-        start: Start::Unselected,
+        hide: Hide::Never,
         group: Some(Group::ElementalResistance),
     },
     Rule {
@@ -177,7 +174,7 @@ static RULES: &[Rule] = &[
         english: "+#% total to Cold Resistance",
         weight: |stat| resists(stat, COLD),
         required: None,
-        start: Start::Unselected,
+        hide: Hide::Never,
         group: Some(Group::ElementalResistance),
     },
     Rule {
@@ -185,7 +182,7 @@ static RULES: &[Rule] = &[
         english: "+#% total to Lightning Resistance",
         weight: |stat| resists(stat, LIGHTNING),
         required: None,
-        start: Start::Unselected,
+        hide: Hide::Never,
         group: Some(Group::ElementalResistance),
     },
     Rule {
@@ -193,10 +190,7 @@ static RULES: &[Rule] = &[
         english: "+#% total to Chaos Resistance",
         weight: |stat| resists(stat, CHAOS),
         required: None,
-        start: Start::UnlessSoleSourceIs {
-            types: &[ModifierType::Augment, ModifierType::AddedAugment],
-            hide: true,
-        },
+        hide: Hide::WhenSoleSourceIs(&[ModifierType::Augment, ModifierType::AddedAugment]),
         group: None,
     },
     Rule {
@@ -205,7 +199,7 @@ static RULES: &[Rule] = &[
         // `# to all Attributes` alone; EE2 deliberately leaves the other attribute stats out.
         weight: |stat| only(stat, Stat::Attributes(ALL_ATTRIBUTES)),
         required: None,
-        start: Start::Unselected,
+        hide: Hide::Never,
         group: Some(Group::AllAttributes),
     },
     Rule {
@@ -213,7 +207,7 @@ static RULES: &[Rule] = &[
         english: "+# total to Strength",
         weight: |stat| attribute(stat, STR),
         required: None,
-        start: Start::Unselected,
+        hide: Hide::Never,
         group: Some(Group::Attribute),
     },
     Rule {
@@ -221,7 +215,7 @@ static RULES: &[Rule] = &[
         english: "+# total to Dexterity",
         weight: |stat| attribute(stat, DEX),
         required: None,
-        start: Start::Unselected,
+        hide: Hide::Never,
         group: Some(Group::Attribute),
     },
     Rule {
@@ -229,7 +223,7 @@ static RULES: &[Rule] = &[
         english: "+# total to Intelligence",
         weight: |stat| attribute(stat, INT),
         required: None,
-        start: Start::Unselected,
+        hide: Hide::Never,
         group: Some(Group::Attribute),
     },
     Rule {
@@ -242,7 +236,7 @@ static RULES: &[Rule] = &[
             _ => None,
         },
         required: Some(Stat::MaximumLife),
-        start: Start::Selected,
+        hide: Hide::Never,
         group: None,
     },
     Rule {
@@ -255,7 +249,7 @@ static RULES: &[Rule] = &[
             _ => None,
         },
         required: Some(Stat::MaximumMana),
-        start: Start::Unselected,
+        hide: Hide::Never,
         group: None,
     },
     Rule {
@@ -263,7 +257,7 @@ static RULES: &[Rule] = &[
         english: "#% total increased maximum Energy Shield",
         weight: |stat| only(stat, Stat::IncreasedMaximumEnergyShield),
         required: None,
-        start: Start::Unselected,
+        hide: Hide::Never,
         group: None,
     },
     Rule {
@@ -271,7 +265,7 @@ static RULES: &[Rule] = &[
         english: "+# total maximum Energy Shield",
         weight: |stat| only(stat, Stat::MaximumEnergyShield),
         required: None,
-        start: Start::Unselected,
+        hide: Hide::Never,
         group: None,
     },
     Rule {
@@ -279,10 +273,7 @@ static RULES: &[Rule] = &[
         english: "#% increased Movement Speed",
         weight: |stat| only(stat, Stat::MovementSpeed),
         required: None,
-        start: Start::UnlessSoleSourceIs {
-            types: &[ModifierType::Implicit],
-            hide: false,
-        },
+        hide: Hide::Never,
         group: None,
     },
 ];
@@ -353,25 +344,28 @@ impl Total {
     }
 }
 
-/// One stat line on the item that some rule reads (EE2's `StatSource`).
+/// One stat line on the item that some rule reads (EE2's `StatSource`), and its mod's index in
+/// `item.mods`.
 struct Source {
     stat: Stat,
     modifier_type: ModifierType,
+    modifier: usize,
     roll: Total,
 }
 
 struct Row {
     rule: &'static Rule,
     total: Total,
-    selected: bool,
     hidden: bool,
+    /// The mods whose lines the total counts.
+    sources: Vec<usize>,
 }
 
-/// EE2's `filterPseudo`: the pseudo rows for `item`, in rule order, with every row in
-/// `mod_filters` that a rule reads deselected and hidden. Each row searches its pseudo trade id
-/// and reads as that id's template in `catalog` (the site's language), or the English one when
-/// `catalog` lacks it. Stats a property row already counts feed no total: EE2 removes them first
-/// (`item-property.ts:165-173`).
+/// EE2's `filterPseudo`: the pseudo rows for `item`, in rule order, each with the mods it sums
+/// (indexes into `item.mods`), and with every row in `mod_filters` that a rule reads deselected
+/// and hidden. Each row searches its pseudo trade id and reads as that id's template in `catalog`
+/// (the site's language), or the English one when `catalog` lacks it. Stats a property row
+/// already counts feed no total: EE2 removes them first (`item-property.ts:165-173`).
 ///
 /// EE2 runs it only in its default preset (`create-presets.ts:45-83`), so an item it prices with
 /// the exact preset (`uses_exact_preset`) gets neither; nor do Split Personality and uniques that
@@ -379,10 +373,9 @@ struct Row {
 /// runes their owners socketed, so a total counting this copy's runes would not describe them.
 pub(crate) fn pseudo_filters(
     item: &ParsedItem,
-    search_percent: u8,
     catalog: &StatCatalog,
     mod_filters: &mut [SearchFilter],
-) -> Vec<SearchFilter> {
+) -> Vec<(SearchFilter, Vec<usize>)> {
     if uses_exact_preset(item)
         || (item.rarity == Some(ItemRarity::Unique)
             && (takes_rune_sockets(item) || SPLIT_PERSONALITY.contains(&item.name.as_str())))
@@ -409,24 +402,37 @@ pub(crate) fn pseudo_filters(
         .collect();
     settle_groups(&mut rows, &sources);
     rows.into_iter()
-        .map(|row| SearchFilter {
-            trade_ids: vec![row.rule.id.to_owned()],
-            stat_ref: row.rule.english.to_owned(),
-            display_text: catalog_text(catalog, row.rule.id, row.rule.english).to_owned(),
-            tag: FilterTag::Pseudo,
-            // A total spans mods of different tiers; no single tier describes it.
-            tier: None,
-            // EE2's pseudo stats carry no decimals.
-            roll: Some(build_roll(
-                row.total.value,
-                Some((row.total.min, row.total.max)),
-                false,
-                search_percent,
-            )),
-            enabled: row.selected,
-            hidden: row.hidden,
-            generation: None,
-            inverted: false,
+        .map(|row| {
+            // A total with no range to roll in is searched at its value whatever the profile.
+            let bound = if row.total.min == row.total.max {
+                RollBound::AtLeast
+            } else {
+                RollBound::Higher
+            };
+            let filter = SearchFilter {
+                trade_ids: vec![row.rule.id.to_owned()],
+                stat_ref: row.rule.english.to_owned(),
+                display_text: catalog_text(catalog, row.rule.id, row.rule.english).to_owned(),
+                tag: FilterTag::Pseudo,
+                // A total spans mods of different tiers; no single tier describes it.
+                tier: None,
+                // EE2's pseudo stats carry no decimals.
+                roll: Some(SearchFilterRoll {
+                    value: row.total.value,
+                    min: None,
+                    max: None,
+                    dp: false,
+                    bound,
+                }),
+                enabled: false,
+                hidden: row.hidden,
+                generation: None,
+                inverted: false,
+                score: None,
+                tier_info: None,
+                weighted_sum: false,
+            };
+            (filter, row.sources)
         })
         .collect()
 }
@@ -455,7 +461,8 @@ fn classify(trade_id: &str) -> Option<Stat> {
 fn sources(item: &ParsedItem) -> Vec<Source> {
     item.mods
         .iter()
-        .flat_map(|modifier| {
+        .enumerate()
+        .flat_map(|(index, modifier)| {
             modifier.stats.iter().filter_map(move |stat| {
                 let stat_id = stat.stat_id.as_deref()?;
                 if folded_into_properties(item, stat_id) {
@@ -464,6 +471,7 @@ fn sources(item: &ParsedItem) -> Vec<Source> {
                 Some(Source {
                     stat: classify(stat_id)?,
                     modifier_type: modifier.info.modifier_type,
+                    modifier: index,
                     roll: Total {
                         value: stat.value,
                         min: stat.min,
@@ -482,6 +490,7 @@ fn evaluate(rule: &'static Rule, sources: &[Source]) -> Option<Row> {
     let mut count = 0;
     let mut first_type = None;
     let mut has_required = rule.required.is_none();
+    let mut modifiers = Vec::new();
     for source in sources {
         let Some(weight) = (rule.weight)(source.stat) else {
             continue;
@@ -490,24 +499,25 @@ fn evaluate(rule: &'static Rule, sources: &[Source]) -> Option<Row> {
         count += 1;
         first_type.get_or_insert(source.modifier_type);
         has_required |= rule.required == Some(source.stat);
+        if !modifiers.contains(&source.modifier) {
+            modifiers.push(source.modifier);
+        }
     }
     if count == 0 || !has_required {
         return None;
     }
-    let (selected, hidden) = match rule.start {
-        Start::Selected => (true, false),
-        Start::Unselected => (false, false),
-        Start::Hidden => (false, true),
-        Start::UnlessSoleSourceIs { types, hide } => {
-            let lone = count == 1 && first_type.is_some_and(|first| types.contains(&first));
-            (!lone, lone && hide)
+    let hidden = match rule.hide {
+        Hide::Never => false,
+        Hide::Always => true,
+        Hide::WhenSoleSourceIs(types) => {
+            count == 1 && first_type.is_some_and(|first| types.contains(&first))
         }
     };
     Some(Row {
         rule,
         total,
-        selected,
         hidden,
+        sources: modifiers,
     })
 }
 
@@ -622,7 +632,7 @@ mod tests {
     use poe2_domain::{ItemCategory, ModifierInfo, ParsedModifier, ParsedStat, TradeStat};
 
     use super::*;
-    use crate::build_filters;
+    use crate::{SearchProfile, build_filters};
 
     fn stat(trade_id: &str, text: &str, value: f64) -> ParsedStat {
         ParsedStat {
@@ -661,7 +671,7 @@ mod tests {
     }
 
     fn filters_without_catalog(item: &ParsedItem) -> Vec<SearchFilter> {
-        build_filters(item, 10, &StatCatalog::default())
+        build_filters(item, SearchProfile::QuickPrice, &StatCatalog::default())
     }
 
     fn row<'a>(filters: &'a [SearchFilter], trade_id: &str) -> Option<&'a SearchFilter> {
@@ -701,7 +711,7 @@ mod tests {
             }],
         };
 
-        let filters = build_filters(&item, 10, &russian);
+        let filters = build_filters(&item, SearchProfile::QuickPrice, &russian);
 
         let total = row(&filters, "pseudo.pseudo_total_elemental_resistance")
             .expect("total elemental resistance row");
@@ -713,7 +723,7 @@ mod tests {
         );
         assert!(
             !total.enabled && !total.hidden,
-            "the total is listed but, like every pseudo total, starts unselected (select_by_tier)"
+            "the total is listed, unselected: its mods score under Quick Price's 3"
         );
         for folded in ["explicit.stat_3372524247", "explicit.stat_4220027924"] {
             let filter = row(&filters, folded).expect("a folded row stays listed");
@@ -759,18 +769,14 @@ mod tests {
     fn items_without_folded_stats_get_no_pseudo_rows() {
         let item = rare(vec![modifier(
             ModifierType::Explicit,
-            stat(
-                "explicit.stat_3917489142",
-                "#% increased Rarity of Items found",
-                20.0,
-            ),
+            stat("explicit.stat_803737631", "# to Accuracy Rating", 120.0),
         )]);
 
         let filters = filters_without_catalog(&item);
 
         assert!(filters.iter().all(|filter| filter.tag != FilterTag::Pseudo));
-        let rarity = row(&filters, "explicit.stat_3917489142").expect("rarity row");
-        assert!(rarity.enabled && !rarity.hidden);
+        let accuracy = row(&filters, "explicit.stat_803737631").expect("accuracy row");
+        assert!(!accuracy.hidden);
     }
 
     #[test]
@@ -922,8 +928,8 @@ mod tests {
                 stat(trade_id, "#% to Chaos Resistance", 7.0),
             )])
         };
-        // (selected, hidden) -- every pseudo total starts unselected (`select_by_tier`); a
-        // rune-only chaos total is also folded away, as EE2 hides it.
+        // (selected, hidden) -- a total's mods scoring under 3 leave it unselected; a rune-only
+        // chaos total is also folded away, as EE2 hides it.
         let state = |item: &ParsedItem| {
             let filters = filters_without_catalog(item);
             let total =
@@ -964,11 +970,6 @@ mod tests {
             let filters = filters_without_catalog(&exempt);
             assert!(filters.iter().all(|filter| filter.tag != FilterTag::Pseudo));
             let fire = row(&filters, "explicit.stat_3372524247").expect("fire resistance row");
-            assert_eq!(
-                fire.enabled,
-                crate::per_mod_filters(&exempt, 10, &StatCatalog::default())[0].enabled,
-                "no total deselects it"
-            );
             assert!(!fire.hidden, "no total hides it");
         }
 

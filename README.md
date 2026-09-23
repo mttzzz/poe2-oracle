@@ -5,8 +5,9 @@
 PoE2 Oracle is a price checker for Path of Exile 2 on Windows. Hover an item in the game and
 press `Ctrl+E`: a panel opens next to your inventory with the item's stats as search filters and
 the cheapest current listings from the official trade site. Currency and other Currency Exchange
-items are priced from poe.ninja; poe2scout adds prices for uniques and for exchange items that
-poe.ninja doesn't track. It is a native Windows program written in Rust with
+items are priced from GGG's own hourly record of the trades made on the exchange; poe2scout adds a
+chart of the week and prices uniques and exchange items that haven't traded lately. It is a native
+Windows program written in Rust with
 [GPUI](https://github.com/zed-industries/zed/tree/main/crates/gpui), without Electron, a browser
 engine or Overwolf.
 
@@ -19,27 +20,33 @@ The app's own interface is in Russian. The game client can be English or Russian
 - **Price check.** The panel shows the item's name and art with links to poe2db, the wiki and a
   problem report for this item, one row per stat with its min/max values and mod tier, and the
   cheapest listings on the trade site (one page of 10 per search): price, item level, seller and
-  how long ago it was listed, with a price estimate on top. Searches go to www.pathofexile.com or
-  ru.pathofexile.com, matching the language of the item. `Esc` closes the panel.
+  how long ago it was listed. Searches go to www.pathofexile.com or ru.pathofexile.com, matching
+  the language of the item. `Esc` closes the panel.
+- **Search profiles** set up which stats are searched and how far below your rolls, as PoE Overlay
+  II's do: «Быстрая цена» (Quick Price: up to four of the most valuable stats, picked by PoE
+  Overlay II's scoring of tier, tags and roll), «Точное совпадение» (Exact Match), «Широкий −10 %»
+  (Broad) and «База для крафта» (Crafting Base). A modifier row's slider spans its rolls across all
+  tiers, and its tier badge tells the item level the tier needs and the best tier the item's level
+  allows. When nothing is found, the panel offers a broader search instead of spending the trade
+  site's limit on its own.
 - **Search chips** narrow or widen the search with one click: the item's base type or its whole
   class, its rarity (a magic item is compared with magic items, a rare with every non-unique item),
-  corrupted listings in or out, every stat or none, which sellers to include, and the currency of
-  the price. A magic item's prefix and suffix are both selected from the start, whatever their tier.
+  corrupted listings in or out, every stat or none, which sellers to include (instant buyout only by
+  default), and the currency of the price.
 - **Whispers.** Click a listing whose seller trades in person and the trade site's whisper is copied;
   paste it into the game chat.
 - **Currency Exchange items** (currency, omens, runes, essences and the like) get a market card from
-  poe.ninja: the value in divine, exalted and chaos orbs, the week's chart, the hourly volume and
-  what the copied stack is worth. When poe.ninja doesn't track an item in your league (common in
-  small leagues such as Standard), the panel shows poe2scout's price instead and searches the trade
-  site only when you press «Лоты на площадке» (Trade listings), since every search counts against
-  the trade site's limit. Without a poe2scout price either, the trade site is searched right away.
+  GGG's own record of the trades made on the exchange: the value in divine, exalted and chaos orbs
+  for the last complete hour (up to three for a rarely traded item; the card names the hours),
+  poe2scout's chart of the week, the hourly volume and what the copied stack is worth. When an item
+  hasn't traded in your league in the last hours (common in small leagues such as Standard), the
+  panel shows poe2scout's price instead and searches the trade site only when you press «Лоты на
+  площадке» (Trade listings), since every search counts against the trade site's limit. Without a
+  poe2scout price either, the trade site is searched right away.
 - **Waystones.** Click the ◇ at the end of a modifier to mark it as dangerous, doubtful or wanted;
   the marks are remembered and highlighted on every waystone you check.
 - **Vendor gamble offers** are recognised: the panel says the item is only revealed after buying
   instead of searching for it.
-- **Trade requests.** When a buyer whispers you from the trade site, a card at the top of the screen
-  shows the item, the price, the stash tab and position and the buyer's note. Its buttons answer in
-  the game chat (invite, trade, one moment, sold, thanks, kick) or find the item in your open stash.
 - **XP overlay** above the experience bar: how fast you level (percent of a level per hour) and the
   time to the next level, optionally the level percentage and a timer for the current map.
 - **Quick actions:** your own hotkeys that type a chat command (`/hideout`, `@last thanks`) or a
@@ -53,7 +60,7 @@ The app's own interface is in Russian. The game client can be English or Russian
 - Path of Exile 2 in **Windowed Fullscreen** or **Windowed** mode. The panel can't be shown over
   exclusive Fullscreen; the app's settings window warns you about it.
 - An English or Russian game client.
-- Internet access to pathofexile.com, poe.ninja and poe2scout.
+- Internet access to pathofexile.com, web.poecdn.com and poe2scout.
 
 ## Install
 
@@ -129,8 +136,8 @@ reporting, see [SECURITY.md](SECURITY.md).
 If searches stop with «Сайт торговли временно ограничил поиск» (the trade site has temporarily
 restricted searching), you have hit the trade site's limit on requests from one IP address, which
 is shared with the trade site open in your browser. After the site refuses a request, the app sends
-it nothing until the lockout ends: wait for the time the panel shows and try again. poe.ninja
-prices keep working meanwhile.
+it nothing until the lockout ends: wait for the time the panel shows and try again. Currency
+Exchange prices keep working meanwhile.
 
 ## Privacy
 
@@ -139,13 +146,12 @@ PoE2 Oracle has no telemetry, no analytics and no accounts of its own. It connec
 | Where | What for |
 |---|---|
 | www.pathofexile.com, ru.pathofexile.com | The trade site's API: leagues, stat and item catalogs, your searches (the item's stats) and the listings they find |
-| poe.ninja | Currency Exchange prices for your league |
-| api.poe2scout.com | Prices of uniques, and of Currency Exchange items poe.ninja doesn't track in your league |
-| web.poecdn.com | Item images |
+| api.poe2scout.com | Prices of uniques; the week's prices and pages of Currency Exchange items, and prices of those that haven't traded in your league lately |
+| web.poecdn.com | Item images, and GGG's hourly record of the trades made on the Currency Exchange (one file per hour for all leagues, the same for everyone) |
 | api.github.com, github.com | The update check (30 seconds after start while update checks are on, or from the tray menu) and the installer download |
 
 Everything else stays on your computer. The app reads the item text the game copies, the game's
-own log (`Client.txt`: whispers, level-ups, area changes), the game's settings file and the screen
+own log (`Client.txt`: level-ups, area changes), the game's settings file and the screen
 pixels of the experience bar itself. It keeps its files here:
 
 | What | Where |
@@ -157,7 +163,7 @@ pixels of the experience bar itself. It keeps its files here:
 
 The diagnostics report is made only when you ask for it, and the app never sends it anywhere:
 reporting a bug only opens GitHub's form in your browser, and you decide what to submit. Links on
-the panel (poe2db, the wiki, poe.ninja, the trade site) open in your browser too.
+the panel (poe2db, the wiki, poe2scout, the trade site) open in your browser too.
 
 ## Contributing
 

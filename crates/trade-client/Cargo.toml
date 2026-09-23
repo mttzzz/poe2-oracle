@@ -9,28 +9,21 @@ repository.workspace = true
 homepage.workspace = true
 
 [dependencies]
-# Request/response shapes (Item/Currency etc.) come from poe2-domain; nothing else needed for
-# the dependency graph itself. poe2-domain is still an empty skeleton as of this migration (its
-# real types land in a later step, informed by data-pipeline's localization spike) -- this
-# crate's migrated request/response structs stay locally defined for now, same shapes poe2-domain
-# will mirror once it exists, not yet a shared import.
+# `ParsedItem` and the stat catalog's shapes. The trade API's own request/response structs stay
+# local to this crate.
 poe2-domain = { path = "../poe2-domain" }
 # The `HttpClient` trait + `AsyncBody`/`Json` this crate's functions are written against --
 # *not* `reqwest_client` (the concrete implementation): the caller constructs and injects the
-# real client (see crates/poe2-oracle's examples), keeping this crate UI/runtime-agnostic.
+# real client (crates/poe2-oracle's `app.rs`), keeping this crate UI/runtime-agnostic.
 http_client = { git = "https://github.com/zed-industries/zed", rev = "b54cc1d0acc8fe3f7581721ee1195516e7581f9d" }
 futures = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 anyhow = "1"
-# Warnings (stale cache fallbacks, a poe.ninja category left out) and the rate-limit audit trail
+# Warnings (stale cache fallbacks, an exchange source out of reach) and the rate-limit audit trail
 # (`checked_body`) go through the `log` facade: the app's logger writes them into its log file,
 # where a release build's detached stderr would lose them.
 log = "0.4"
 # `SearchFilter` -- the shape `search_with_filters` (step 7) builds a stat-filtered trade search
 # request body from.
 stat-filters = { path = "../stat-filters" }
-# Disk cache location for the stat/currency catalog (`cache.rs`): `ProjectDirs::from("", "",
-# "poe2-oracle").cache_dir()`, matching the convention already established for `poe-dat`'s own
-# schema cache.
-directories = "5"

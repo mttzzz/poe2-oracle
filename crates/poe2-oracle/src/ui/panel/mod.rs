@@ -99,7 +99,7 @@ fn render_ready(state: &PriceCheckApp, window: &Window, cx: &Context<PriceCheckA
         .flex_col()
         .flex_1()
         .min_h_0()
-        .child(render_title_bar(state, cx))
+        .child(render_title_bar(state, window, cx))
         .child(main)
         .into_any_element()
 }
@@ -135,7 +135,7 @@ fn render_item(
                         this.child(render_sections(state, item, window, cx))
                             .children(render_waystone_marks(state, item))
                             .child(render_search_button(state, cx))
-                            .child(render_search_choices(state, cx))
+                            .child(render_search_choices(state, window, cx))
                             .child(render_results(state, item, cx))
                             .children(render_empty_watch(state, cx))
                     }

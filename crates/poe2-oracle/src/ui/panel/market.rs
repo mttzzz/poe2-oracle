@@ -1,4 +1,5 @@
-//! A Currency Exchange item's market card, priced from poe.ninja rather than from listings.
+//! A Currency Exchange item's market card, priced by GGG's record of the exchange rather than
+//! from listings.
 
 use gpui::{
     FontWeight, IntoElement, PathBuilder, canvas, div, linear_color_stop, linear_gradient, point,
@@ -6,8 +7,11 @@ use gpui::{
 };
 
 use poe2_domain::ParsedItem;
-use trade_client::ninja::{Market, MarketPrice};
+use trade_client::cx::{Market, MarketPrice, TradedHours};
 use trade_client::rates::PriceUnit;
+use windows::Win32::Foundation::{FILETIME, SYSTEMTIME};
+use windows::Win32::System::SystemInformation::GetLocalTime;
+use windows::Win32::System::Time::{FileTimeToSystemTime, SystemTimeToTzSpecificLocalTime};
 
 use crate::price_check::PriceCheckApp;
 use crate::ui::theme::{
@@ -18,10 +22,10 @@ use crate::ui::theme::{
 use super::format::{amount_in, currency_img, format_compact, format_ru};
 use super::results::render_link;
 
-/// A Currency Exchange item's market, the way poe.ninja shows it (the player's reference for
-/// exchange prices): the value in the unit that reads best with its icon, the other units, how
-/// many a divine buys when it's cheap, the week's chart and change, the hourly volume, the most
-/// traded pair, and what the copied stack is worth.
+/// A Currency Exchange item's market: the value in the unit that reads best with its icon, the
+/// other units, how many a divine buys when it's cheap, poe2scout's week of prices and change,
+/// the hourly volume, the most traded pair, what the copied stack is worth, and the hours the
+/// value comes from.
 pub(super) fn render_market_card(
     state: &PriceCheckApp,
     item: &ParsedItem,
@@ -163,10 +167,10 @@ pub(super) fn render_market_card(
                         .child(format_compact(price.volume_divine))
                         .children(currency_img(state.currency_icon("divine"), 14.)),
                 ))
-                .children(
-                    most_traded_pair(state, price)
-                        .map(|pair| market_line("Чаще всего меняют", pair)),
-                )
+                .child(market_line(
+                    "Чаще всего меняют",
+                    most_traded_pair(state, price),
+                ))
                 .children(stack.map(|count| {
                     let (total, total_unit) =
                         value_not_in_itself(market, price, divines * f64::from(count));
@@ -198,10 +202,16 @@ pub(super) fn render_market_card(
                 .text_xs()
                 .text_color(rgb(TEXT_MUTED))
                 .child(format!(
-                    "{} · валютная биржа, обновление раз в час",
-                    ninja_category_ru(&price.category)
+                    "{} · курс за {}",
+                    category_ru(&price.category),
+                    local_hours(price.hours)
                 ))
-                .child(render_link("poe.ninja ↗", price.details_url.clone())),
+                .children(
+                    price
+                        .details_url
+                        .clone()
+                        .map(|url| render_link("poe2scout ↗", url)),
+                ),
         )
 }
 
@@ -228,56 +238,90 @@ fn market_line(label: &'static str, value: impl IntoElement) -> impl IntoElement
         .child(value)
 }
 
-/// poe.ninja's "Most Popular" column: the core currency the item trades against most and the
-/// rate, written the way that reads best -- "1 [div] ⇆ 164 [item]" for a cheap item, "4,1k [div]
-/// ⇆ 1 [item]" for a dear one. The rate always means units of the item per unit of that currency.
-fn most_traded_pair(state: &PriceCheckApp, price: &MarketPrice) -> Option<impl IntoElement> {
-    let currency = price.most_traded_with.as_deref()?;
-    let rate = price
-        .most_traded_rate
-        .filter(|rate| rate.is_finite() && *rate > 0.0)?;
+/// The item's busiest pair with a core currency and its rate, written the way that reads best --
+/// "1 [div] ⇆ 164 [item]" for a cheap item, "4,1k [div] ⇆ 1 [item]" for a dear one. The rate
+/// always means units of the item per unit of that currency.
+fn most_traded_pair(state: &PriceCheckApp, price: &MarketPrice) -> impl IntoElement {
+    let rate = price.most_traded_rate;
     let (currency_amount, item_amount) = if rate >= 1.0 {
         (1.0, rate)
     } else {
         (1.0 / rate, 1.0)
     };
-    Some(
-        div()
-            .flex()
-            .items_center()
-            .gap(rems_from_px(3.))
-            .child(format_compact(currency_amount))
-            .children(currency_img(state.currency_icon(currency), 14.))
-            .child(format!("⇆ {}", format_compact(item_amount)))
-            .children(currency_img(state.currency_icon(&price.id), 14.)),
-    )
+    div()
+        .flex()
+        .items_center()
+        .gap(rems_from_px(3.))
+        .child(format_compact(currency_amount))
+        .children(currency_img(
+            state.currency_icon(&price.most_traded_with),
+            14.,
+        ))
+        .child(format!("⇆ {}", format_compact(item_amount)))
+        .children(currency_img(state.currency_icon(&price.id), 14.))
 }
 
-/// poe.ninja's sidebar page titles, in Russian.
-fn ninja_category_ru(category: &str) -> &str {
+/// The trade site's groups of exchange items, as its Russian site names them.
+fn category_ru(category: &str) -> &str {
     match category {
         "Currency" => "Валюта",
         "Fragments" => "Фрагменты",
-        "Abyssal Bones" => "Кости Бездны",
-        "Uncut Gems" => "Неогранённые камни",
-        "Lineage Gems" => "Династические камни",
-        "Essences" => "Сущности",
-        "Soul Cores" => "Ядра душ",
-        "Idols" => "Идолы",
-        "Runes" => "Руны",
-        "Omens" => "Предзнаменования",
-        "Expedition" => "Экспедиция",
-        "Liquid Emotions" => "Жидкие эмоции",
-        "Catalysts" => "Катализаторы",
         "Verisium" => "Веризий",
+        "Runes" => "Руны",
+        "Expedition" => "Экспедиция",
+        "Vaal" => "Ваал",
+        "Delirium" => "Делириум",
+        "Breach" => "Разлом",
+        "Ritual" => "Ритуал",
+        "Abyss" => "Кости Бездны",
+        "Essences" => "Сущности",
+        "UncutGems" => "Неогранённые камни",
+        "LineageSupportGems" => "Династические камни поддержки",
+        "Waystones" => "Путевые камни",
         other => other,
     }
 }
 
-/// poe.ninja's "Last 7 days" chart: the day-by-day change (percent against 7 days ago) as a line
-/// over a fading area, in the colour of the week's change -- drawn the way poe.ninja draws it:
-/// points evenly spaced by day, the line broken where a day had no trades, and a y axis that
-/// always spans at least -5..+5 % so a flat week reads flat.
+/// The hours a price comes from on the player's clock: `09:00–10:00`, dated when not today's:
+/// `22.09 09:00–10:00`.
+fn local_hours(hours: TradedHours) -> String {
+    let (start, end) = (local_time(hours.start), local_time(hours.end));
+    let today = unsafe { GetLocalTime() };
+    let date = if (start.wYear, start.wMonth, start.wDay) == (today.wYear, today.wMonth, today.wDay)
+    {
+        String::new()
+    } else {
+        format!("{:02}.{:02} ", start.wDay, start.wMonth)
+    };
+    format!(
+        "{date}{:02}:{:02}–{:02}:{:02}",
+        start.wHour, start.wMinute, end.wHour, end.wMinute
+    )
+}
+
+/// A unix time on the player's clock, by the time zone rules of that date.
+fn local_time(unix: u64) -> SYSTEMTIME {
+    // FILETIME counts 100 ns ticks since 1601-01-01 UTC.
+    let ticks = (unix + 11_644_473_600) * 10_000_000;
+    let file_time = FILETIME {
+        dwLowDateTime: ticks as u32,
+        dwHighDateTime: (ticks >> 32) as u32,
+    };
+    let (mut utc, mut local) = (SYSTEMTIME::default(), SYSTEMTIME::default());
+    // Neither fails for an hour of GGG's record; should the zone rules, UTC it is.
+    unsafe {
+        let _ = FileTimeToSystemTime(&file_time, &mut utc);
+        if SystemTimeToTzSpecificLocalTime(None, &utc, &mut local).is_err() {
+            local = utc;
+        }
+    }
+    local
+}
+
+/// poe2scout's week: the day-by-day change (percent against its first day) as a line over a
+/// fading area, in the colour of the week's change -- points evenly spaced by day, the line broken
+/// where a day had no price, and a y axis that always spans at least -5..+5 % so a flat week reads
+/// flat.
 fn render_sparkline(points: &[Option<f64>], color: u32) -> impl IntoElement {
     let count = points.len();
     let points = points.to_vec();

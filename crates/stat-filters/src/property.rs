@@ -10,12 +10,15 @@
 //! `stats.ndjson` gives each stat ref it names in `calc-q20.ts` -- a local and a global id for
 //! several of them, since the clipboard text can't tell the two apart -- each checked against
 //! the live `/api/trade2/data/stats` (2026-09-22).
-
-use std::ops::{Add, Mul};
+//!
+//! The defence and damage rows are what PoE Overlay II merges an item's local mods into: each
+//! takes the best score of the mods scaling it (its property pseudo totals and
+//! `syncPropertyRanking`, `9505.bundle.js` ~18100 and ~25299), and a search profile picks it by
+//! that score. The other rows keep EE2's own checkbox in every profile.
 
 use poe2_domain::{ElementKind, ItemRarity, ParsedItem};
 
-use crate::{FilterTag, SearchFilter, build_roll};
+use crate::{FilterTag, RollBound, SearchFilter, SearchFilterRoll};
 
 /// Whether EE2 prices `item` with its exact preset -- by base type, item level enabled, no
 /// defence or damage rows -- rather than its default "pseudo" preset (`create-presets.ts:45-72`):
@@ -37,7 +40,7 @@ pub fn uses_exact_preset(item: &ParsedItem) -> bool {
 /// then -- in the default preset only, which alone calls `filterItemProp` -- the armour, weapon or
 /// waystone rows that head the stat list. A gem gets EE2's gem filters alone
 /// (`createGemFilters`, `create-item-filters.ts:489-566`).
-pub(crate) fn property_filters(item: &ParsedItem, search_percent: u8) -> Vec<SearchFilter> {
+pub(crate) fn property_filters(item: &ParsedItem) -> Vec<SearchFilter> {
     let exact = uses_exact_preset(item);
     let category = category_id(item);
     let mut rows = Vec::new();
@@ -54,47 +57,90 @@ pub(crate) fn property_filters(item: &ParsedItem, search_percent: u8) -> Vec<Sea
     }
     if !exact {
         if is_armour(category) {
-            armour_rows(item, search_percent, &mut rows);
+            armour_rows(item, &mut rows);
         }
         if is_weapon(category) {
-            weapon_rows(item, category, search_percent, &mut rows);
+            weapon_rows(item, &mut rows);
         }
     }
     rows
+}
+
+/// Whether a property row is one of the defence and damage rows a search profile picks by
+/// score (`merged_mods`), rather than one keeping EE2's own checkbox.
+pub(crate) fn scored(trade_id: &str) -> bool {
+    trade_id.starts_with("equipment_filters.") && trade_id != "equipment_filters.rune_sockets"
+}
+
+/// The mods of `item` a property row counts, whose best score it takes (PoE Overlay II's
+/// property pseudo totals, ~18100): the local ones scaling it, which fold into it
+/// (`folded_into_properties`). Total DPS and reload time have none; block takes the local block
+/// chance mods EE2 folds into it, which PoE Overlay II leaves listed as mods of their own.
+pub(crate) fn merged_mods(item: &ParsedItem, trade_id: &str) -> Vec<usize> {
+    let scaling: &[&[&str]] = match trade_id {
+        "equipment_filters.ar" => &[ARMOUR.flat, ARMOUR.incr],
+        "equipment_filters.ev" => &[EVASION.flat, EVASION.incr],
+        "equipment_filters.es" => &[ENERGY_SHIELD.flat, ENERGY_SHIELD.incr],
+        "equipment_filters.ward" => &[RUNIC_WARD.flat, RUNIC_WARD.incr],
+        "equipment_filters.block" => &[BLOCK.incr],
+        "equipment_filters.pdps" => &[PHYSICAL_DAMAGE.flat, PHYSICAL_DAMAGE.incr],
+        "equipment_filters.edps" => &[ELEMENTAL_DAMAGE.flat],
+        "equipment_filters.aps" => &[ATTACK_SPEED.incr],
+        // Its `local_critical_strike_chance` alone: the flat local roll.
+        "equipment_filters.crit" => &[CRIT_CHANCE.flat],
+        "equipment_filters.spirit" => &[SPIRIT.incr],
+        _ => return Vec::new(),
+    };
+    let merged = |stat_id: &str| {
+        folded_into_properties(item, stat_id)
+            && scaling
+                .iter()
+                .any(|hashes| hashes.contains(&stat_hash(stat_id)))
+    };
+    item.mods
+        .iter()
+        .enumerate()
+        .filter(|(_, modifier)| {
+            modifier
+                .stats
+                .iter()
+                .any(|stat| stat.stat_id.as_deref().is_some_and(merged))
+        })
+        .map(|(index, _)| index)
+        .collect()
 }
 
 /// EE2's `createGemFilters` for a gem: its socket count (enabled from 3), quality (from 16%) and
 /// level (from 19), each a minimum.
 fn gem_rows(item: &ParsedItem, rows: &mut Vec<SearchFilter>) {
     if let Some(sockets) = item.gem_sockets {
-        let number = f64::from(sockets.number);
         rows.push(property_row(
             "Gem Sockets: #",
             "misc_filters.gem_sockets",
-            Roll::exact(number),
+            f64::from(sockets.number),
             false,
             sockets.number >= 3,
-            0,
+            RollBound::AtLeast,
         ));
     }
     if let Some(quality) = present(item.quality) {
         rows.push(property_row(
             "Quality: #%",
             "type_filters.quality",
-            Roll::exact(quality),
+            quality,
             false,
             quality >= 16.0,
-            0,
+            RollBound::AtLeast,
         ));
     }
     if let Some(level) = item.gem_level {
         rows.push(property_row(
             "Gem Level: #",
             "misc_filters.gem_level",
-            Roll::exact(f64::from(level)),
+            f64::from(level),
             false,
             level >= 19,
-            0,
+            RollBound::AtLeast,
         ));
     }
 }
@@ -105,10 +151,10 @@ fn area_level_row(item: &ParsedItem, category: &str) -> Option<SearchFilter> {
     Some(property_row(
         "Area Level: #",
         "misc_filters.area_level",
-        Roll::exact(f64::from(area_level)),
+        f64::from(area_level),
         false,
         true,
-        0,
+        RollBound::AtLeast,
     ))
 }
 
@@ -122,18 +168,14 @@ fn waystone_rows(item: &ParsedItem, exact: bool, rows: &mut Vec<SearchFilter>) {
         return;
     };
     if let Some(tier) = waystone.tier {
-        let mut row = property_row(
+        rows.push(property_row(
             "Waystone Tier: #",
             "map_filters.map_tier",
-            Roll::exact(f64::from(tier)),
+            f64::from(tier),
             false,
             true,
-            0,
-        );
-        if let Some(roll) = &mut row.roll {
-            roll.max = Some(f64::from(tier));
-        }
-        rows.push(row);
+            RollBound::Exactly,
+        ));
     }
     if exact {
         return;
@@ -188,10 +230,10 @@ fn waystone_rows(item: &ParsedItem, exact: bool, rows: &mut Vec<SearchFilter>) {
         let mut row = property_row(
             label,
             trade_id,
-            Roll::exact(f64::from(value)),
+            f64::from(value),
             false,
             false,
-            0,
+            RollBound::AtLeast,
         );
         row.hidden = trade_id == "map_filters.map_revives";
         rows.push(row);
@@ -292,8 +334,7 @@ const ATTACK_SPEED: Scaling = Scaling {
 const CRIT_CHANCE: Scaling = Scaling {
     // "#% to Critical Hit Chance".
     flat: &["stat_518292764"],
-    // "#% increased Critical Hit Chance".
-    incr: &["stat_587431675"],
+    incr: &[],
 };
 const SPIRIT: Scaling = Scaling {
     flat: &[],
@@ -313,8 +354,7 @@ const ARMOUR_STATS: [&[&str]; 9] = [
     RUNIC_WARD.incr,
     BLOCK.incr,
 ];
-/// EE2's `WEAPON_STATS` (`item-property.ts:176-187`): "#% increased Critical Hit Chance" scales
-/// the crit row but is not among them.
+/// EE2's `WEAPON_STATS` (`item-property.ts:176-187`).
 const WEAPON_STATS: [&[&str]; 6] = [
     PHYSICAL_DAMAGE.flat,
     PHYSICAL_DAMAGE.incr,
@@ -324,70 +364,19 @@ const WEAPON_STATS: [&[&str]; 6] = [
     SPIRIT.incr,
 ];
 
-/// EE2's `StatRoll`: a property's value and the lowest and highest it could be, given the rolls
-/// its mods could have had.
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
-struct Roll {
-    value: f64,
-    min: f64,
-    max: f64,
-}
-
-impl Roll {
-    fn exact(value: f64) -> Self {
-        Self {
-            value,
-            min: value,
-            max: value,
-        }
-    }
-}
-
-impl Add for Roll {
-    type Output = Self;
-
-    fn add(self, other: Self) -> Self {
-        Self {
-            value: self.value + other.value,
-            min: self.min + other.min,
-            max: self.max + other.max,
-        }
-    }
-}
-
-impl Mul for Roll {
-    type Output = Self;
-
-    fn mul(self, other: Self) -> Self {
-        Self {
-            value: self.value * other.value,
-            min: self.min * other.min,
-            max: self.max * other.max,
-        }
-    }
-}
-
 /// The item's summed flat and increased rolls of `scaling`'s stats -- EE2's `calcPropBase`.
-fn scaling_rolls(item: &ParsedItem, scaling: &Scaling) -> (Roll, Roll) {
-    let mut flat = Roll::default();
-    let mut incr = Roll::default();
+fn scaling_rolls(item: &ParsedItem, scaling: &Scaling) -> (f64, f64) {
+    let mut flat = 0.0;
+    let mut incr = 0.0;
     for stat in item.mods.iter().flat_map(|modifier| &modifier.stats) {
         let Some(hash) = stat.stat_id.as_deref().map(stat_hash) else {
             continue;
         };
-        let total = if scaling.flat.contains(&hash) {
-            &mut flat
+        if scaling.flat.contains(&hash) {
+            flat += stat.value;
         } else if scaling.incr.contains(&hash) {
-            &mut incr
-        } else {
-            continue;
-        };
-        *total = *total
-            + Roll {
-                value: stat.value,
-                min: stat.min,
-                max: stat.max,
-            };
+            incr += stat.value;
+        }
     }
     (flat, incr)
 }
@@ -405,40 +394,16 @@ fn with_increases(flat: f64, incr: f64, more: f64) -> f64 {
 /// `total` recomputed at 20% quality -- EE2's `propAt20Quality`, which prices a modifiable
 /// item's defences and physical damage as if already raised to 20%, where quality currency takes
 /// any modifiable item. Quality multiplies separately from the item's own increases.
-fn at_20_quality(item: &ParsedItem, total: f64, scaling: &Scaling) -> Roll {
+fn at_20_quality(item: &ParsedItem, total: f64, scaling: &Scaling) -> f64 {
     let (flat, incr) = scaling_rolls(item, scaling);
     let quality = f64::from(item.quality.unwrap_or(0));
-    let base = without_increases(total, incr.value, quality) - flat.value;
+    let base = without_increases(total, incr, quality) - flat;
     let quality = if is_modifiable(item) {
         quality.max(20.0)
     } else {
         quality
     };
-    Roll {
-        value: with_increases(base + flat.value, incr.value, quality),
-        min: with_increases(base + flat.min, incr.min, quality),
-        max: with_increases(base + flat.max, incr.max, quality),
-    }
-}
-
-/// `calcFlat`/`calcIncreased`'s shape: `(amount, incr_pct, more_pct) -> amount`.
-type Rescale = fn(f64, f64, f64) -> f64;
-
-/// `total` with the range its mods' rolls allow -- EE2's `calcPropBounds`. `inverted` is for a
-/// lower-is-better property that increases divide rather than multiply (reload time).
-fn with_bounds(item: &ParsedItem, total: f64, scaling: &Scaling, inverted: bool) -> Roll {
-    let (flat, incr) = scaling_rolls(item, scaling);
-    let (strip, apply): (Rescale, Rescale) = if inverted {
-        (with_increases, without_increases)
-    } else {
-        (without_increases, with_increases)
-    };
-    let base = strip(total, incr.value, 0.0) - flat.value;
-    Roll {
-        value: apply(base + flat.value, incr.value, 0.0),
-        min: apply(base + flat.min, incr.min, 0.0),
-        max: apply(base + flat.max, incr.max, 0.0),
-    }
+    with_increases(base + flat, incr, quality)
 }
 
 /// EE2's `itemIsModifiable` (`ParsedItem.ts`): not corrupted, mirrored, sanctified or marked
@@ -541,30 +506,38 @@ fn shown_value(value: f64, dp: bool) -> f64 {
 }
 
 /// One property row searching `trade_id` (`<group>.<key>`), labelled with an English template
-/// whose `#` stands for the value. `roll`'s range bounds the search band, as EE2's
-/// `calculatedStatToFilter` bounds a property's; `enabled` is EE2's default checkbox state. Not
-/// hidden: the DPS rows EE2 hides set that themselves.
+/// whose `#` stands for the value, bounded the way `bound` says once the search profile applies
+/// (`apply_profile`). `enabled` is EE2's checkbox for a row keeping it (`scored`); a scored row
+/// starts unchecked, for the profile to pick. Not hidden: the DPS rows EE2 hides set that
+/// themselves.
 fn property_row(
     label: &str,
     trade_id: &str,
-    roll: Roll,
+    value: f64,
     dp: bool,
     enabled: bool,
-    search_percent: u8,
+    bound: RollBound,
 ) -> SearchFilter {
-    let mut search = build_roll(roll.value, Some((roll.min, roll.max)), dp, search_percent);
-    search.value = shown_value(roll.value, dp);
     SearchFilter {
         trade_ids: vec![trade_id.to_owned()],
         stat_ref: label.to_owned(),
         display_text: label.to_owned(),
         tag: FilterTag::Property,
         tier: None,
-        roll: Some(search),
+        roll: Some(SearchFilterRoll {
+            value: shown_value(value, dp),
+            min: None,
+            max: None,
+            dp,
+            bound,
+        }),
         enabled,
         hidden: false,
         generation: None,
         inverted: false,
+        score: None,
+        tier_info: None,
+        weighted_sum: false,
     }
 }
 
@@ -589,14 +562,13 @@ fn item_level_row(item: &ParsedItem, category: &str, exact: bool) -> Option<Sear
         return None;
     }
     let enabled = (exact && !is_flask(category) && category != "flask.charm") || item.is_veiled;
-    let value = f64::from(item_level.min(max_useful));
     Some(property_row(
         "Item Level: #",
         "type_filters.ilvl",
-        Roll::exact(value),
+        f64::from(item_level.min(max_useful)),
         false,
         enabled,
-        0,
+        RollBound::AtLeast,
     ))
 }
 
@@ -608,10 +580,10 @@ fn rune_sockets_row(item: &ParsedItem) -> Option<SearchFilter> {
     Some(property_row(
         "Sockets: #",
         "equipment_filters.rune_sockets",
-        Roll::exact(f64::from(sockets.current)),
+        f64::from(sockets.current),
         false,
         enabled,
-        0,
+        RollBound::AtLeast,
     ))
 }
 
@@ -636,17 +608,16 @@ fn quality_row(item: &ParsedItem, category: &str) -> Option<SearchFilter> {
     Some(property_row(
         "Quality: #%",
         "type_filters.quality",
-        Roll::exact(f64::from(quality)),
+        f64::from(quality),
         false,
         enabled,
-        0,
+        RollBound::AtLeast,
     ))
 }
 
-/// `armourProps` (`item-property.ts:65-174`): armour, evasion and energy shield at 20% quality,
-/// enabled (EE2's `isSingleAttrArmour` gate returns true for every item since its PoE2 port);
-/// block and runic ward as they are, disabled.
-fn armour_rows(item: &ParsedItem, search_percent: u8, rows: &mut Vec<SearchFilter>) {
+/// `armourProps` (`item-property.ts:65-174`): armour, evasion and energy shield at 20% quality;
+/// block and runic ward as they are.
+fn armour_rows(item: &ParsedItem, rows: &mut Vec<SearchFilter>) {
     let defences = [
         (item.armour, &ARMOUR, "Armour: #", "equipment_filters.ar"),
         (
@@ -664,163 +635,113 @@ fn armour_rows(item: &ParsedItem, search_percent: u8, rows: &mut Vec<SearchFilte
     ];
     for (value, scaling, label, trade_id) in defences {
         if let Some(value) = present(value) {
-            let roll = at_20_quality(item, value, scaling);
+            let value = at_20_quality(item, value, scaling);
             rows.push(property_row(
                 label,
                 trade_id,
-                roll,
+                value,
                 false,
-                true,
-                search_percent,
+                false,
+                RollBound::Higher,
             ));
         }
     }
     if let Some(block) = present(item.block_chance) {
-        let roll = with_bounds(item, block, &BLOCK, false);
         rows.push(property_row(
             "Block: #%",
             "equipment_filters.block",
-            roll,
+            block,
             false,
             false,
-            search_percent,
+            RollBound::Higher,
         ));
     }
     if let Some(ward) = present(item.runic_ward) {
-        let roll = with_bounds(item, ward, &RUNIC_WARD, false);
         rows.push(property_row(
             "Runic Ward: #",
             "equipment_filters.ward",
-            roll,
+            ward,
             false,
             false,
-            search_percent,
+            RollBound::Higher,
         ));
     }
-}
-
-/// EE2's `isPdpsImportant` (`item-property.ts:651-668`): the martial weapons bought for their
-/// physical damage.
-fn physical_dps_matters(category: &str) -> bool {
-    matches!(
-        category,
-        "weapon.oneaxe"
-            | "weapon.twoaxe"
-            | "weapon.onesword"
-            | "weapon.twosword"
-            | "weapon.onemace"
-            | "weapon.twomace"
-            | "weapon.bow"
-            | "weapon.warstaff"
-            | "weapon.crossbow"
-            | "weapon.spear"
-            | "weapon.flail"
-    )
 }
 
 /// `weaponProps` (`item-property.ts:189-447`). Physical DPS is the physical damage at 20% quality
 /// times attacks per second, elemental DPS the fire, cold and lightning damage times attacks per
-/// second, total DPS their sum; each bound multiplies the bounds of its factors. Total and
-/// elemental DPS only exist on a weapon with elemental damage. Enabled: total DPS; elemental DPS
-/// from 15% of the total; physical DPS on martial weapons from 67% of it; spirit. Below those
-/// shares EE2 also hides the elemental and physical DPS rows, on any weapon. Attacks per second,
-/// critical hit chance and reload time start disabled.
-fn weapon_rows(
-    item: &ParsedItem,
-    category: &str,
-    search_percent: u8,
-    rows: &mut Vec<SearchFilter>,
-) {
-    let attacks_per_second =
-        with_bounds(item, item.weapon_aps.unwrap_or(0.0), &ATTACK_SPEED, false);
+/// second, total DPS their sum. Total and elemental DPS only exist on a weapon with elemental
+/// damage. EE2 hides the elemental DPS row under 15% of the total and the physical one under 67%.
+/// Reload time is better lower.
+fn weapon_rows(item: &ParsedItem, rows: &mut Vec<SearchFilter>) {
+    let attacks_per_second = item.weapon_aps.unwrap_or(0.0);
     let physical = physical_damage(item);
     let elemental = elemental_damage(item);
     let physical_dps = at_20_quality(item, physical, &PHYSICAL_DAMAGE) * attacks_per_second;
-    let elemental_dps = with_bounds(item, elemental, &ELEMENTAL_DAMAGE, false) * attacks_per_second;
+    let elemental_dps = elemental * attacks_per_second;
     let total_dps = physical_dps + elemental_dps;
+    let row = |label, trade_id, value, dp| {
+        property_row(label, trade_id, value, dp, false, RollBound::Higher)
+    };
 
     if elemental != 0.0 {
-        rows.push(property_row(
+        rows.push(row(
             "Total DPS: #",
             "equipment_filters.dps",
             total_dps,
             false,
-            true,
-            search_percent,
         ));
-        let minor = elemental_dps.value / total_dps.value < 0.15;
         rows.push(SearchFilter {
-            hidden: minor,
-            ..property_row(
+            hidden: elemental_dps / total_dps < 0.15,
+            ..row(
                 "Elemental DPS: #",
                 "equipment_filters.edps",
                 elemental_dps,
                 false,
-                !minor,
-                search_percent,
             )
         });
     }
     if physical != 0.0 {
-        let minor = physical_dps.value / total_dps.value < 0.67;
         rows.push(SearchFilter {
-            hidden: minor,
-            ..property_row(
+            hidden: physical_dps / total_dps < 0.67,
+            ..row(
                 "Physical DPS: #",
                 "equipment_filters.pdps",
                 physical_dps,
                 false,
-                physical_dps_matters(category) && !minor,
-                search_percent,
             )
         });
     }
     if present_f64(item.weapon_aps).is_some() {
-        rows.push(property_row(
+        rows.push(row(
             "Attacks per Second: #",
             "equipment_filters.aps",
             attacks_per_second,
             true,
-            false,
-            search_percent,
         ));
     }
     if let Some(crit) = present_f64(item.weapon_crit) {
-        rows.push(property_row(
+        rows.push(row(
             "Critical Hit Chance: #%",
             "equipment_filters.crit",
-            with_bounds(item, crit, &CRIT_CHANCE, false),
+            crit,
             true,
-            false,
-            search_percent,
         ));
     }
     if let Some(reload) = present_f64(item.weapon_reload_time) {
-        let mut row = property_row(
-            "Reload Time: #",
-            "equipment_filters.reload_time",
-            with_bounds(item, reload, &ATTACK_SPEED, true),
-            true,
-            false,
-            search_percent,
-        );
         // Lower is better, so EE2 presets the upper bound instead (`calculatedStatToFilter`'s
         // `item.reload_time` case).
-        if let Some(roll) = &mut row.roll {
-            roll.max = Some(roll.default_max);
-            roll.min = None;
-        }
-        rows.push(row);
+        rows.push(property_row(
+            "Reload Time: #",
+            "equipment_filters.reload_time",
+            reload,
+            true,
+            false,
+            RollBound::Lower,
+        ));
     }
     if let Some(spirit) = present(item.spirit) {
-        rows.push(property_row(
-            "Spirit: #",
-            "equipment_filters.spirit",
-            with_bounds(item, spirit, &SPIRIT, false),
-            false,
-            true,
-            search_percent,
-        ));
+        rows.push(row("Spirit: #", "equipment_filters.spirit", spirit, false));
     }
 }
 
@@ -891,32 +812,25 @@ mod tests {
     }
 
     #[test]
-    fn weapon_dps_follows_ee2_at_20_quality() {
-        let rows = property_filters(&rare_mace(), 10);
+    fn weapon_dps_follows_ee2_at_20_quality_and_broad_bounds_drop_it_by_a_tenth() {
+        let mut rows = property_filters(&rare_mace());
+        crate::apply_profile(&mut rows, crate::SearchProfile::Broad);
 
         // Physical: 150 average at 10% quality with 50% increased is 90.9 base, 163.6 at 20%
-        // quality, times 1.2 attacks per second: 196.4, bounded by the 40-60% and 8-12% rolls to
-        // 179.9-213.3. Elemental: 30 * 1.2 = 36 (29.5-42.8). Total: 232.4 (209.4-256.0).
-        let physical = row(&rows, "equipment_filters.pdps");
-        let physical_roll = physical.roll.as_ref().expect("roll");
-        assert_eq!(physical_roll.value, 196.0);
-        assert_eq!(physical_roll.min, Some(179.0));
-        assert!(physical.enabled, "84% physical on a mace");
-
-        let elemental = row(&rows, "equipment_filters.edps");
-        let elemental_roll = elemental.roll.as_ref().expect("roll");
-        assert_eq!(elemental_roll.value, 36.0);
-        assert_eq!(elemental_roll.min, Some(32.0));
-        assert!(elemental.enabled, "15.5% of the total is elemental");
-
-        let total = row(&rows, "equipment_filters.dps");
-        let total_roll = total.roll.as_ref().expect("roll");
-        assert_eq!(total_roll.value, 232.0);
-        assert_eq!(total_roll.min, Some(209.0));
-        assert!(total.enabled);
-
-        let attack_speed = row(&rows, "equipment_filters.aps");
-        assert!(!attack_speed.enabled);
+        // quality, times 1.2 attacks per second: 196.4, shown 196; Broad searches from
+        // 196 - 19.6 = 176.4, rounded down: 176. Elemental: 30 * 1.2 = 36, from 32.4: 32. Total:
+        // 232.4, shown 232, from 208.8: 208. Attacks per second 1.2, from 1.08.
+        let min = |trade_id| {
+            let roll = row(&rows, trade_id).roll.as_ref().expect("roll");
+            (roll.value, roll.min, roll.max)
+        };
+        assert_eq!(min("equipment_filters.pdps"), (196.0, Some(176.0), None));
+        assert_eq!(min("equipment_filters.edps"), (36.0, Some(32.0), None));
+        assert_eq!(min("equipment_filters.dps"), (232.0, Some(208.0), None));
+        assert_eq!(min("equipment_filters.aps"), (1.2, Some(1.08), None));
+        // 84% physical, 15.5% elemental: neither share is minor. A scored row starts unchecked,
+        // for the search profile to pick.
+        assert!(rows.iter().all(|row| !row.hidden && !row.enabled));
     }
 
     #[test]
@@ -928,26 +842,18 @@ mod tests {
             mods: vec![explicit("fractured.stat_210067635", 25.0, 23.0, 25.0)],
             ..Default::default()
         };
-        let rows = property_filters(&crossbow, 10);
+        let rows = property_filters(&crossbow);
         let attack_speed = row(&rows, "equipment_filters.aps");
         assert_eq!(attack_speed.roll.as_ref().expect("roll").value, 2.07);
     }
 
     #[test]
-    fn minor_dps_shares_start_disabled_and_hidden() {
-        let mut dagger = rare_mace();
-        dagger.category = category("weapon.dagger");
-        let rows = property_filters(&dagger, 10);
-        let physical = row(&rows, "equipment_filters.pdps");
-        assert!(!physical.enabled, "not a martial weapon");
-        assert!(!physical.hidden, "still 84% of the total");
-
+    fn minor_dps_shares_are_hidden() {
         let mut mostly_fire = rare_mace();
         mostly_fire.weapon_elemental = vec![(ElementKind::Fire, 200, 400)];
-        let rows = property_filters(&mostly_fire, 10);
-        let physical = row(&rows, "equipment_filters.pdps");
+        let rows = property_filters(&mostly_fire);
         assert!(
-            !physical.enabled && physical.hidden,
+            row(&rows, "equipment_filters.pdps").hidden,
             "below 67% of the total"
         );
 
@@ -955,10 +861,9 @@ mod tests {
         barely_fire.weapon_elemental = vec![(ElementKind::Fire, 10, 20)];
         // Its 15 fire damage is all base: no added fire damage mod.
         barely_fire.mods.truncate(2);
-        let rows = property_filters(&barely_fire, 10);
-        let elemental = row(&rows, "equipment_filters.edps");
+        let rows = property_filters(&barely_fire);
         assert!(
-            !elemental.enabled && elemental.hidden,
+            row(&rows, "equipment_filters.edps").hidden,
             "below 15% of the total"
         );
     }
@@ -972,18 +877,16 @@ mod tests {
             mods: vec![explicit("explicit.stat_1062208444", 50.0, 40.0, 60.0)],
             ..Default::default()
         };
-        let rows = property_filters(&body_armour, 10);
+        let rows = property_filters(&body_armour);
         let armour = row(&rows, "equipment_filters.ar");
-        // 300 / 1.5 = 200 base; at 20% quality 200 * 1.5 * 1.2 = 360, bounded to 336-384.
+        // 300 / 1.5 = 200 base; at 20% quality 200 * 1.5 * 1.2 = 360.
         assert_eq!(armour.roll.as_ref().expect("roll").value, 360.0);
-        assert_eq!(armour.roll.as_ref().expect("roll").min, Some(336.0));
-        assert!(armour.enabled);
 
         let corrupted = ParsedItem {
             is_corrupted: true,
             ..body_armour
         };
-        let rows = property_filters(&corrupted, 10);
+        let rows = property_filters(&corrupted);
         let armour = row(&rows, "equipment_filters.ar");
         assert_eq!(armour.roll.as_ref().expect("roll").value, 300.0);
     }
@@ -1002,15 +905,15 @@ mod tests {
             }),
             ..Default::default()
         };
-        let rows = property_filters(&body_armour, 10);
+        let rows = property_filters(&body_armour);
 
         let item_level = row(&rows, "type_filters.ilvl");
         assert!(item_level.enabled);
         let item_level_roll = item_level.roll.as_ref().expect("roll");
         assert_eq!(
-            item_level_roll.min,
-            Some(82.0),
-            "capped at the useful maximum"
+            (item_level_roll.value, item_level_roll.bound),
+            (82.0, RollBound::AtLeast),
+            "a minimum, capped at the useful maximum"
         );
         assert!(
             row(&rows, "equipment_filters.rune_sockets").enabled,
@@ -1026,7 +929,7 @@ mod tests {
             rarity: Some(ItemRarity::Rare),
             ..body_armour
         };
-        let rows = property_filters(&rare, 10);
+        let rows = property_filters(&rare);
         assert!(!row(&rows, "type_filters.ilvl").enabled);
         assert!(
             rows.iter()

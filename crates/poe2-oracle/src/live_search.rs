@@ -1,9 +1,9 @@
 //! Live search: a search the player watches ("Следить" in the results header) reports each new
-//! listing the moment the trade site lists it, as a card in the trade overlay (`ui::trade_overlay`)
-//! with its new-request sound. Each watch is the trade site's live search socket
-//! (`trade_client::live` has the protocol), blocking on a thread of its own; the ids the sockets
-//! hear go to one GPUI task, which fetches the listings through the price check's own fetch path
-//! and rate limiter (`price_check::fetch_new_listings`).
+//! listing the moment the trade site lists it, as a card in the trade overlay
+//! (`ui::trade_overlay`). Each watch is the trade site's live search socket (`trade_client::live`
+//! has the protocol), blocking on a thread of its own; the ids the sockets hear go to one GPUI
+//! task, which fetches the listings through the price check's own fetch path and rate limiter
+//! (`price_check::fetch_new_listings`).
 //!
 //! A socket that drops is opened again after 5 s, then 10, 20 ... up to 5 min between tries --
 //! back to 5 s once one has stayed up a while. A refusal no retry can change (401: the site doesn't
@@ -649,8 +649,8 @@ mod app_side {
         log::warn!("live search {watch}: ended ({end:?})");
         let reason = if end == LiveEnd::Unauthorized {
             session::refused(cx);
-            "сайт не принял вход — войдите на pathofexile.com заново и вставьте новый POESESSID \
-             в настройках"
+            "сайт не принял вход — сессия истекла, войдите заново в настройках, раздел «Аккаунт \
+             pathofexile.com»"
         } else {
             "поиска больше нет на сайте — повторите его и включите слежение снова"
         };

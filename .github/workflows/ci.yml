@@ -38,18 +38,12 @@ jobs:
       #
       # Ordered fastest/cheapest-to-fail first: a trivial `cargo fmt` miss shouldn't burn CI time
       # on the expensive cross-compile step. Clippy and test both run in two passes because
-      # `poe2-oracle` is the one crate with real platform-gated code
-      # (`src/platform/win32.rs`, `#[cfg(target_os = "windows")]`) that one of its own examples
-      # (`window_chrome.rs`) imports unconditionally: building it natively on this Linux runner
-      # fails to resolve the `windows`-only module, not because of a real bug, so it's excluded
-      # from the native passes and covered instead by the windows-gnu build step below (which
-      # builds every example, `window_chrome` included, for the real target). `cargo test`
-      # otherwise runs natively (Linux), not cross-compiled -- GPUI's gpui_linux backend builds
-      # and runs directly on this runner, and cross-compiled Windows binaries can't execute here
-      # anyway (no Wine). It also never touches poe-bundle's tests/live_share.rs (gated behind
-      # the `live-share` feature, off by default) or a real Oodle DLL (oodle-ffi's own test
-      # skips cleanly without ODLE_TEST_DLL_PATH) -- both need LAN access to the real PoE2
-      # install, unavailable from a hosted CI runner.
+      # `poe2-oracle`, the app, is mostly Windows-only code (its platform layer, UI and price
+      # check are `#[cfg(target_os = "windows")]`): its clippy pass targets windows-gnu, where all
+      # of it compiles. `cargo test` runs natively (Linux), not cross-compiled -- GPUI's gpui_linux
+      # backend builds and runs directly on this runner, and cross-compiled Windows binaries can't
+      # execute here anyway (no Wine) -- so the app's own pass runs the tests of its
+      # platform-independent modules (`--lib`).
       - name: cargo fmt / clippy / test / build (windows-gnu)
         run: |
           docker run --rm \
@@ -64,6 +58,6 @@ jobs:
               cargo clippy --workspace --all-targets --exclude poe2-oracle -- -D warnings
               cargo clippy -p poe2-oracle --all-targets --target x86_64-pc-windows-gnu -- -D warnings
               cargo test --workspace --exclude poe2-oracle
-              cargo test -p poe2-oracle --lib --example trade_api --example hotkey_clipboard --example text_rendering
+              cargo test -p poe2-oracle --lib
               cargo build --workspace --target x86_64-pc-windows-gnu
             '

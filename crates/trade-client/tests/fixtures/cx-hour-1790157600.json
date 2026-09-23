@@ -1,0 +1,341 @@
+{
+ "next_change_id": 1790161200,
+ "markets": [
+  {
+   "league": "Forbidden Rites",
+   "market_id": "Metadata/Items/Currency/CurrencyRerollRare|Metadata/Items/Currency/CurrencyModValues",
+   "market_pair": [
+    "Metadata/Items/Currency/CurrencyRerollRare",
+    "Metadata/Items/Currency/CurrencyModValues"
+   ],
+   "volume_traded": {
+    "Metadata/Items/Currency/CurrencyRerollRare": 1516744,
+    "Metadata/Items/Currency/CurrencyModValues": 195452
+   },
+   "lowest_stock": {
+    "Metadata/Items/Currency/CurrencyRerollRare": 129093,
+    "Metadata/Items/Currency/CurrencyModValues": 65026
+   },
+   "highest_stock": {
+    "Metadata/Items/Currency/CurrencyRerollRare": 175781,
+    "Metadata/Items/Currency/CurrencyModValues": 81308
+   },
+   "lowest_ratio": {
+    "Metadata/Items/Currency/CurrencyRerollRare": 6,
+    "Metadata/Items/Currency/CurrencyModValues": 1
+   },
+   "highest_ratio": {
+    "Metadata/Items/Currency/CurrencyRerollRare": 8,
+    "Metadata/Items/Currency/CurrencyModValues": 1
+   }
+  },
+  {
+   "league": "Forbidden Rites",
+   "market_id": "Metadata/Items/Currency/CurrencyRerollRare|Metadata/Items/Currency/OmenOnAnnulRemoveAbyssMod",
+   "market_pair": [
+    "Metadata/Items/Currency/CurrencyRerollRare",
+    "Metadata/Items/Currency/OmenOnAnnulRemoveAbyssMod"
+   ],
+   "volume_traded": {
+    "Metadata/Items/Currency/CurrencyRerollRare": 151293,
+    "Metadata/Items/Currency/OmenOnAnnulRemoveAbyssMod": 2906
+   },
+   "lowest_stock": {
+    "Metadata/Items/Currency/CurrencyRerollRare": 905,
+    "Metadata/Items/Currency/OmenOnAnnulRemoveAbyssMod": 763
+   },
+   "highest_stock": {
+    "Metadata/Items/Currency/CurrencyRerollRare": 63698,
+    "Metadata/Items/Currency/OmenOnAnnulRemoveAbyssMod": 1206
+   },
+   "lowest_ratio": {
+    "Metadata/Items/Currency/CurrencyRerollRare": 45,
+    "Metadata/Items/Currency/OmenOnAnnulRemoveAbyssMod": 1
+   },
+   "highest_ratio": {
+    "Metadata/Items/Currency/CurrencyRerollRare": 56,
+    "Metadata/Items/Currency/OmenOnAnnulRemoveAbyssMod": 1
+   }
+  },
+  {
+   "league": "Forbidden Rites",
+   "market_id": "Metadata/Items/Currency/CurrencyRerollRare|Metadata/Items/Currency/CurrencyRemoveMod",
+   "market_pair": [
+    "Metadata/Items/Currency/CurrencyRerollRare",
+    "Metadata/Items/Currency/CurrencyRemoveMod"
+   ],
+   "volume_traded": {
+    "Metadata/Items/Currency/CurrencyRerollRare": 61431,
+    "Metadata/Items/Currency/CurrencyRemoveMod": 10784
+   },
+   "lowest_stock": {
+    "Metadata/Items/Currency/CurrencyRerollRare": 87330,
+    "Metadata/Items/Currency/CurrencyRemoveMod": 8384
+   },
+   "highest_stock": {
+    "Metadata/Items/Currency/CurrencyRerollRare": 142323,
+    "Metadata/Items/Currency/CurrencyRemoveMod": 9250
+   },
+   "lowest_ratio": {
+    "Metadata/Items/Currency/CurrencyRerollRare": 5,
+    "Metadata/Items/Currency/CurrencyRemoveMod": 1
+   },
+   "highest_ratio": {
+    "Metadata/Items/Currency/CurrencyRerollRare": 6,
+    "Metadata/Items/Currency/CurrencyRemoveMod": 1
+   }
+  },
+  {
+   "league": "Forbidden Rites",
+   "market_id": "Metadata/Items/Currency/CurrencyRerollRare|Metadata/Items/Currency/CurrencyAddModToRare",
+   "market_pair": [
+    "Metadata/Items/Currency/CurrencyRerollRare",
+    "Metadata/Items/Currency/CurrencyAddModToRare"
+   ],
+   "volume_traded": {
+    "Metadata/Items/Currency/CurrencyRerollRare": 9900,
+    "Metadata/Items/Currency/CurrencyAddModToRare": 627490
+   },
+   "lowest_stock": {
+    "Metadata/Items/Currency/CurrencyRerollRare": 8555,
+    "Metadata/Items/Currency/CurrencyAddModToRare": 155319
+   },
+   "highest_stock": {
+    "Metadata/Items/Currency/CurrencyRerollRare": 11154,
+    "Metadata/Items/Currency/CurrencyAddModToRare": 184961
+   },
+   "lowest_ratio": {
+    "Metadata/Items/Currency/CurrencyRerollRare": 1,
+    "Metadata/Items/Currency/CurrencyAddModToRare": 65
+   },
+   "highest_ratio": {
+    "Metadata/Items/Currency/CurrencyRerollRare": 1,
+    "Metadata/Items/Currency/CurrencyAddModToRare": 35
+   }
+  },
+  {
+   "league": "Forbidden Rites",
+   "market_id": "Metadata/Items/Currency/CurrencyModValues|Metadata/Items/Currency/OmenOnAnnulRemoveAbyssMod",
+   "market_pair": [
+    "Metadata/Items/Currency/CurrencyModValues",
+    "Metadata/Items/Currency/OmenOnAnnulRemoveAbyssMod"
+   ],
+   "volume_traded": {
+    "Metadata/Items/Currency/CurrencyModValues": 58649,
+    "Metadata/Items/Currency/OmenOnAnnulRemoveAbyssMod": 8483
+   },
+   "lowest_stock": {
+    "Metadata/Items/Currency/CurrencyModValues": 18375,
+    "Metadata/Items/Currency/OmenOnAnnulRemoveAbyssMod": 15650
+   },
+   "highest_stock": {
+    "Metadata/Items/Currency/CurrencyModValues": 51624,
+    "Metadata/Items/Currency/OmenOnAnnulRemoveAbyssMod": 17967
+   },
+   "lowest_ratio": {
+    "Metadata/Items/Currency/CurrencyModValues": 6,
+    "Metadata/Items/Currency/OmenOnAnnulRemoveAbyssMod": 1
+   },
+   "highest_ratio": {
+    "Metadata/Items/Currency/CurrencyModValues": 8,
+    "Metadata/Items/Currency/OmenOnAnnulRemoveAbyssMod": 1
+   }
+  },
+  {
+   "league": "Forbidden Rites",
+   "market_id": "Metadata/Items/Currency/CurrencyModValues|Metadata/Items/Currency/CurrencyRemoveMod",
+   "market_pair": [
+    "Metadata/Items/Currency/CurrencyModValues",
+    "Metadata/Items/Currency/CurrencyRemoveMod"
+   ],
+   "volume_traded": {
+    "Metadata/Items/Currency/CurrencyModValues": 19858,
+    "Metadata/Items/Currency/CurrencyRemoveMod": 26402
+   },
+   "lowest_stock": {
+    "Metadata/Items/Currency/CurrencyModValues": 35560,
+    "Metadata/Items/Currency/CurrencyRemoveMod": 38468
+   },
+   "highest_stock": {
+    "Metadata/Items/Currency/CurrencyModValues": 39772,
+    "Metadata/Items/Currency/CurrencyRemoveMod": 48115
+   },
+   "lowest_ratio": {
+    "Metadata/Items/Currency/CurrencyModValues": 1,
+    "Metadata/Items/Currency/CurrencyRemoveMod": 2
+   },
+   "highest_ratio": {
+    "Metadata/Items/Currency/CurrencyModValues": 1,
+    "Metadata/Items/Currency/CurrencyRemoveMod": 1
+   }
+  },
+  {
+   "league": "Forbidden Rites",
+   "market_id": "Metadata/Items/Currency/CurrencyModValues|Metadata/Items/Currency/CurrencyAddModToRare",
+   "market_pair": [
+    "Metadata/Items/Currency/CurrencyModValues",
+    "Metadata/Items/Currency/CurrencyAddModToRare"
+   ],
+   "volume_traded": {
+    "Metadata/Items/Currency/CurrencyModValues": 6526,
+    "Metadata/Items/Currency/CurrencyAddModToRare": 3205461
+   },
+   "lowest_stock": {
+    "Metadata/Items/Currency/CurrencyModValues": 1698,
+    "Metadata/Items/Currency/CurrencyAddModToRare": 444701
+   },
+   "highest_stock": {
+    "Metadata/Items/Currency/CurrencyModValues": 2225,
+    "Metadata/Items/Currency/CurrencyAddModToRare": 618077
+   },
+   "lowest_ratio": {
+    "Metadata/Items/Currency/CurrencyModValues": 1,
+    "Metadata/Items/Currency/CurrencyAddModToRare": 517
+   },
+   "highest_ratio": {
+    "Metadata/Items/Currency/CurrencyModValues": 1,
+    "Metadata/Items/Currency/CurrencyAddModToRare": 430
+   }
+  },
+  {
+   "league": "Forbidden Rites",
+   "market_id": "Metadata/Items/Currency/OmenOnAnnulRemoveAbyssMod|Metadata/Items/Currency/CurrencyAddModToRare",
+   "market_pair": [
+    "Metadata/Items/Currency/OmenOnAnnulRemoveAbyssMod",
+    "Metadata/Items/Currency/CurrencyAddModToRare"
+   ],
+   "volume_traded": {
+    "Metadata/Items/Currency/OmenOnAnnulRemoveAbyssMod": 7,
+    "Metadata/Items/Currency/CurrencyAddModToRare": 20823
+   },
+   "lowest_stock": {
+    "Metadata/Items/Currency/OmenOnAnnulRemoveAbyssMod": 19,
+    "Metadata/Items/Currency/CurrencyAddModToRare": 69626
+   },
+   "highest_stock": {
+    "Metadata/Items/Currency/OmenOnAnnulRemoveAbyssMod": 23,
+    "Metadata/Items/Currency/CurrencyAddModToRare": 78192
+   },
+   "lowest_ratio": {
+    "Metadata/Items/Currency/OmenOnAnnulRemoveAbyssMod": 1,
+    "Metadata/Items/Currency/CurrencyAddModToRare": 3251
+   },
+   "highest_ratio": {
+    "Metadata/Items/Currency/OmenOnAnnulRemoveAbyssMod": 1,
+    "Metadata/Items/Currency/CurrencyAddModToRare": 2855
+   }
+  },
+  {
+   "league": "Forbidden Rites",
+   "market_id": "Metadata/Items/Currency/CurrencyRemoveMod|Metadata/Items/Currency/CurrencyAddModToRare",
+   "market_pair": [
+    "Metadata/Items/Currency/CurrencyRemoveMod",
+    "Metadata/Items/Currency/CurrencyAddModToRare"
+   ],
+   "volume_traded": {
+    "Metadata/Items/Currency/CurrencyRemoveMod": 629,
+    "Metadata/Items/Currency/CurrencyAddModToRare": 185355
+   },
+   "lowest_stock": {
+    "Metadata/Items/Currency/CurrencyRemoveMod": 23,
+    "Metadata/Items/Currency/CurrencyAddModToRare": 213902
+   },
+   "highest_stock": {
+    "Metadata/Items/Currency/CurrencyRemoveMod": 80,
+    "Metadata/Items/Currency/CurrencyAddModToRare": 296591
+   },
+   "lowest_ratio": {
+    "Metadata/Items/Currency/CurrencyRemoveMod": 1,
+    "Metadata/Items/Currency/CurrencyAddModToRare": 329
+   },
+   "highest_ratio": {
+    "Metadata/Items/Currency/CurrencyRemoveMod": 1,
+    "Metadata/Items/Currency/CurrencyAddModToRare": 275
+   }
+  },
+  {
+   "league": "Forbidden Rites",
+   "market_id": "Metadata/Items/SoulCores/IdolHawk|Metadata/Items/Currency/CurrencyRerollRare",
+   "market_pair": [
+    "Metadata/Items/SoulCores/IdolHawk",
+    "Metadata/Items/Currency/CurrencyRerollRare"
+   ],
+   "volume_traded": {
+    "Metadata/Items/SoulCores/IdolHawk": 8,
+    "Metadata/Items/Currency/CurrencyRerollRare": 16
+   },
+   "lowest_stock": {
+    "Metadata/Items/SoulCores/IdolHawk": 159,
+    "Metadata/Items/Currency/CurrencyRerollRare": 0
+   },
+   "highest_stock": {
+    "Metadata/Items/SoulCores/IdolHawk": 167,
+    "Metadata/Items/Currency/CurrencyRerollRare": 1
+   },
+   "lowest_ratio": {
+    "Metadata/Items/SoulCores/IdolHawk": 1,
+    "Metadata/Items/Currency/CurrencyRerollRare": 2
+   },
+   "highest_ratio": {
+    "Metadata/Items/SoulCores/IdolHawk": 1,
+    "Metadata/Items/Currency/CurrencyRerollRare": 2
+   }
+  },
+  {
+   "league": "Forbidden Rites",
+   "market_id": "Metadata/Items/SoulCores/ThesisOfExperiments|Metadata/Items/Currency/CurrencyModValues",
+   "market_pair": [
+    "Metadata/Items/SoulCores/ThesisOfExperiments",
+    "Metadata/Items/Currency/CurrencyModValues"
+   ],
+   "volume_traded": {
+    "Metadata/Items/SoulCores/ThesisOfExperiments": 0,
+    "Metadata/Items/Currency/CurrencyModValues": 0
+   },
+   "lowest_stock": {
+    "Metadata/Items/SoulCores/ThesisOfExperiments": 23,
+    "Metadata/Items/Currency/CurrencyModValues": 16
+   },
+   "highest_stock": {
+    "Metadata/Items/SoulCores/ThesisOfExperiments": 23,
+    "Metadata/Items/Currency/CurrencyModValues": 18
+   },
+   "lowest_ratio": {
+    "Metadata/Items/SoulCores/ThesisOfExperiments": 0,
+    "Metadata/Items/Currency/CurrencyModValues": 0
+   },
+   "highest_ratio": {
+    "Metadata/Items/SoulCores/ThesisOfExperiments": 0,
+    "Metadata/Items/Currency/CurrencyModValues": 0
+   }
+  },
+  {
+   "league": "Standard",
+   "market_id": "Metadata/Items/Currency/CurrencyModValues|Metadata/Items/Currency/CurrencyAddModToRare",
+   "market_pair": [
+    "Metadata/Items/Currency/CurrencyModValues",
+    "Metadata/Items/Currency/CurrencyAddModToRare"
+   ],
+   "volume_traded": {
+    "Metadata/Items/Currency/CurrencyModValues": 245,
+    "Metadata/Items/Currency/CurrencyAddModToRare": 122236
+   },
+   "lowest_stock": {
+    "Metadata/Items/Currency/CurrencyModValues": 44,
+    "Metadata/Items/Currency/CurrencyAddModToRare": 848185
+   },
+   "highest_stock": {
+    "Metadata/Items/Currency/CurrencyModValues": 47,
+    "Metadata/Items/Currency/CurrencyAddModToRare": 964577
+   },
+   "lowest_ratio": {
+    "Metadata/Items/Currency/CurrencyModValues": 1,
+    "Metadata/Items/Currency/CurrencyAddModToRare": 1681
+   },
+   "highest_ratio": {
+    "Metadata/Items/Currency/CurrencyModValues": 1,
+    "Metadata/Items/Currency/CurrencyAddModToRare": 300
+   }
+  }
+ ]
+}

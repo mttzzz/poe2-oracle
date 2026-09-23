@@ -1,6 +1,5 @@
 //! Tail-follows the game's `Client.txt`. What the lines mean is the caller's: the XP overlay reads
-//! them with `crate::xp_tracker::parse_log_line`, the trade overlay with
-//! `crate::trade_requests::parse_chat_line` -- each through its own `ClientLog`.
+//! them with `crate::xp_tracker::parse_log_line`.
 //!
 //! The log lives in `logs\` beside the game's executable -- on the test machine
 //! `D:\SteamLibrary\steamapps\common\Path of Exile 2\logs\Client.txt`, next to
@@ -32,7 +31,7 @@ use crate::platform::game_window;
 pub const HISTORY_BYTES: u64 = 1 << 20;
 
 /// Set to a file's path to read that file instead of the running game's log: a log the lines of
-/// a test are appended to by hand (the game's own must not get fake whispers other tools read).
+/// a test are appended to by hand (the game's own must not get fake lines other tools read).
 pub const LOG_PATH_ENV: &str = "POE2_ORACLE_CLIENT_LOG";
 
 pub struct ClientLog {

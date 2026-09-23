@@ -8,13 +8,12 @@ items sell for on the official trade site, with the item's modifiers as filters 
 
 ## What it does
 
-- **[Price check](price-check.md).** Listings from the Path of Exile trade site with an estimated
-  price. Currency and other Currency Exchange items are priced from poe.ninja, with a week's
-  chart; unique items also show poe2scout's price. A click copies the whisper to a seller.
+- **[Price check](price-check.md).** Listings from the Path of Exile trade site, cheapest first.
+  Currency and other Currency Exchange items are priced from GGG's own record of the
+  exchange's trades, with poe2scout's chart of the week; unique items also show poe2scout's price.
+  A click copies the whisper to a seller.
 - **Waystone marks.** Mark waystone modifiers as dangerous, doubtful or wanted, and every waystone
   you check shows them.
-- **[Trade requests](trade-requests.md).** A buyer's whisper becomes a card at the top of the game
-  with the item, the price and where it lies in your stash, and buttons that answer in the chat.
 - **[Quick actions](quick-actions.md).** Hotkeys that send chat commands such as `/hideout` or paste
   a stash search.
 - **[XP overlay](xp-overlay.md).** Experience per hour and the time to the next level, above the

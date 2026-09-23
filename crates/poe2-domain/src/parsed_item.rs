@@ -5,12 +5,11 @@
 //! cited exhaustively in `.tmp/research/ItemTextFormat.md` section 3) -- cited as the format's
 //! ground truth (dictated by the PoE2 game client itself), never as code to copy.
 //!
-//! Two deliberate departures from the reference, both already settled by the Price Check plan's
-//! own architecture decision (see `data-pipeline/SPIKE_FINDINGS.md` and this crate's own module
-//! doc comment): no `info: BaseType` field. The reference resolves a parsed name/base-type
-//! string against its own bundled local item database to get a canonical `BaseType` record
-//! (icon, tags, craftable/unique/map/gem/armour info); this project deliberately ships no local
-//! item database (every stat/item catalog is trade-API-sourced, see the plan's Context section),
+//! Two deliberate departures from the reference. No `info: BaseType` field: the reference
+//! resolves a parsed name/base-type string against its own bundled local item database to get a
+//! canonical `BaseType` record (icon, tags, craftable/unique/map/gem/armour info); this project
+//! deliberately ships no local item database (every stat/item catalog is trade-API-sourced, see
+//! the plan's Context section),
 //! so `ParsedItem` keeps the raw parsed `name`/`base_type` strings directly instead, and
 //! `category: Option<ItemCategory>` (resolved from `item-parser`'s own `Item Class:` table, not
 //! a local database) stands in for classification. `statsByType: StatCalculated[]` (the

@@ -31,9 +31,9 @@ the stash.
 - While the panel is open, the mouse over it (clicks and the wheel) works on the panel, not on the
   game.
 
-The panel's top bar shows the league being searched, «PoE2 Oracle · *league*», and, once poe.ninja
-prices have loaded, how many Exalted Orbs a Divine Orb is worth, drawn with the two currency icons.
-The gear **⚙** opens the [settings](settings.md); **×** closes the panel.
+The panel's top bar shows the league being searched, «PoE2 Oracle · *league*», and, once the
+exchange prices have loaded, how many Exalted Orbs a Divine Orb is worth, drawn with the two
+currency icons. The gear **⚙** opens the [settings](settings.md); **×** closes the panel.
 
 > [!TIP]
 > The app's interface is in Russian and writes numbers with a decimal comma: `1,72` means 1.72.
@@ -96,14 +96,17 @@ Below the chips, the item's properties are listed in sections:
 | «Префиксы · N» (prefixes) | Prefix modifiers |
 | «Суффиксы · N» (suffixes) | Suffix modifiers |
 | «Прочие свойства» or «Свойства» (other properties) | Enchantments, rune and crafted modifiers and other lines that are not prefixes or suffixes |
-| «Суммарные (псевдо)» (totals, pseudo) | Sums across modifiers: total life, total elemental resistance, all attributes and so on |
+| «Суммарные (псевдо)» (totals, pseudo) | Sums across modifiers: total life, total elemental resistance, all attributes and so on; some are labelled «сумма» (sum) |
 
 Each row has a checkbox (whether the row takes part in the search), the modifier text with your
-roll highlighted in blue, a tier badge and **min**/**max** boxes. The tier badge is gold-filled for
-T1, gold-outlined for T2 and grey for lower tiers. Small labels under a row say where a modifier
-comes from: «усилитель» (from a rune or other augment), «мастер» (crafted), «расколотый»
-(fractured), «зачарование» (enchantment), «очернённый» (desecrated). A line the trade site cannot
-search says «не участвует в поиске» (not part of the search).
+roll highlighted in blue, a tier badge and **min**/**max** boxes; a modifier whose tier the app
+knows also has a roll slider under it (see [Min and max](#min-and-max)). The tier badge is
+gold-filled for T1, gold-outlined for T2 and grey for lower tiers. Small labels under a row say
+where a modifier comes from: «усилитель» (from a rune or other augment), «мастер» (crafted),
+«расколотый» (fractured), «зачарование» (enchantment), «очернённый» (desecrated). The label
+«сумма» (sum), explained when you hover it, marks a total whose value adds up the stat from all
+the item's modifiers: the trade site searches listings by the same sum. A line the trade site
+cannot search says «не участвует в поиске» (not part of the search).
 
 On a magic or rare item that can still take modifiers, rows «Свободный префикс» / «Свободных
 префиксов: N» and «Свободный суффикс» / «Свободных суффиксов: N» (open prefix/suffix slots) can be
@@ -113,38 +116,98 @@ Some rows are folded away: unselected totals, and minor properties such as a wea
 elemental DPS when it is only a small part of the total. «▾ Суммарные и второстепенные: ещё N»
 (totals and minor rows: N more) unfolds them; «▴ Свернуть …» folds them again.
 
-### What is selected at first
+### Search profiles
 
-- Prefixes and suffixes of tier T1 or T2 are selected; lower tiers are not. On a magic item every
-  modifier is selected whatever its tier: its prefix and suffix are the whole item.
-- If no modifier qualifies, the totals are selected instead, so the search is never empty.
-- Defences and total or elemental DPS are selected; attack speed, critical hit chance and reload
-  time are not.
-- On a waystone, the modifiers start unselected: its tier and properties set the price, its
-  modifiers only make the map harder. Select a modifier yourself to search for it.
+A search profile decides which rows are selected and where their bounds start. The row of search
+options under the «Поиск» (Search) button starts with «Профиль:» (profile) and a chip naming the
+current profile. Click the chip for a menu of the four profiles, each with a note on what it
+searches:
+
+| Profile | Note in the menu |
+|---|---|
+| «Быстрая цена» (quick price) | «до 4 самых ценных свойств, от ваших значений» (up to the 4 most valuable properties, from your values) |
+| «Точное совпадение» (exact match) | «все свойства, от ваших значений» (all properties, from your values) |
+| «Широкий −10 %» (broad −10%) | «отмеченные свойства, минимумы на 10 % ниже» (the ticked properties, minimums 10% lower) |
+| «База для крафта» (crafting base) | «собственные и расколотые свойства на этой же базе» (implicit and fractured properties on the same base) |
+
+Picking a profile, the current one included, sets the rows up and searches once. A click outside
+the menu or <kbd>Esc</kbd> closes it without searching. The chip is there only for items searched
+by their filter rows, not for Currency Exchange items or items searched by their exact name.
+
+An item opens with «Точное совпадение» if it is a unique, a relic, a flask or a charm, or if it can
+no longer be modified (corrupted, mirrored, sanctified or unmodifiable) and is not a waystone.
+Every other item opens with «Быстрая цена», and so does a crafting base that can still be
+modified: an item of normal rarity, a fractured item, or one with quality above 20% or more rune
+sockets than its base has.
+
+What each profile selects:
+
+- «Быстрая цена» selects rows the way PoE Overlay II does. Every modifier gets a score from its
+  tier (against the best tier the item's level allows), its tags weighted by the item class, how
+  high it rolled within its range, and a few fixed bonuses. Up to 4 rows scoring 3 or more are
+  selected, highest scores first, and no more than 2 of them may be «сумма» (sum) rows. A local
+  modifier (defences, weapon damage) counts toward the property it changes, and that property's
+  row is selected instead. Magic items follow the same rule.
+- «Точное совпадение» selects every row outside «Свойства предмета» (item properties) that is not
+  folded away, plus the item properties «Быстрая цена» would pick.
+- «Широкий −10 %» keeps the rows that are ticked now and sets each **min** 10% below the item's
+  roll.
+- «База для крафта» selects the implicit, fractured and granted-skill rows and item level, and
+  searches among items of the same base type: the class chip switches to «База: …». The other
+  profiles set that chip back to its default for the item.
+
+In every profile a few stats are always selected: base implicits that define the base, such as
+extra projectiles or bolts, chaining, piercing, maximum elemental resistances, spirit or movement
+speed; unrevealed modifiers; a timeless jewel's legend; and granted skills of level 19 or higher
+(of any level on an amulet).
+
+In «Быстрая цена» and «Точное совпадение», item level, sockets, quality, gem and waystone rows keep
+their usual checkbox. On a waystone, the modifiers start unselected, a desecrated one excepted:
+its tier and properties set the price, its modifiers only make the map harder. Select a modifier
+yourself to search for it.
 
 ### Min and max
 
-- Only **min** is filled in at first: your roll minus the value tolerance, 10% by default (setting
-  «Допуск значений», see [Settings](settings.md#search)). **max** stays empty, since a
-  higher roll is never a reason to leave a listing out.
+- Only **min** is filled in: your roll in «Быстрая цена», «Точное совпадение» and «База для
+  крафта», 10% below it in «Широкий −10 %». **max** stays empty, since a higher roll is never a
+  reason to leave a listing out.
 - For the few modifiers where a lower number is better, **max** is filled in instead.
 - Type digits, a point or a comma (both give a decimal point) and a minus sign. The first key after
   you click into a box replaces its value.
 - <kbd>Enter</kbd> in a box runs the search again with the new bounds.
 
-Ticking or unticking rows and switching the class, rarity or corrupted chips take effect with the
-next search: press <kbd>Enter</kbd> in a box or click «Поиск» (Search).
+Under a modifier row whose tier the app's tier table knows, a slider runs from the lowest to the
+highest roll of that modifier across all its tiers on this kind of item, with those two numbers at
+its ends. A blue tick marks your roll. A gold handle marks the search's **min** (its **max** on
+rows where a lower number is better), and the part of the track the search admits is lit gold.
+Click or drag on the slider to move the handle, and the **min** (or **max**) box follows; typing
+in the box moves the handle. Hover the slider for a short explanation.
+
+Hover a tier badge to see where the tier stands, for example «T3 из 9 · с 68 ур. предмета · лучший
+доступный T2» (T3 of 9 · from item level 68 · best available T2): the tier among all tiers of that
+modifier on this kind of item, the item level that tier needs, and the best tier the item's level
+can roll.
+
+The button «минимум тира» (tier minimum), to the right of «Поиск» (Search), shows while a ticked
+modifier row has a known tier. It sets the **min** of every such ticked row to the bottom of its
+current tier, so the search finds the same tier and better. Rows where a lower number is better
+are left alone.
+
+Ticking or unticking rows, moving a slider, «минимум тира» and switching the class, rarity or
+corrupted chips take effect with the next search: press <kbd>Enter</kbd> in a box or click «Поиск»
+(Search).
 
 ## Search options
 
-Above the results there are two more choices. Each click moves to the next value and searches
-again at once.
+Above the results, the row under the «Поиск» (Search) button starts with «Профиль:» (profile) and
+the current profile's chip, which opens the menu described in [Search profiles](#search-profiles).
+Two more choices follow. Each click on them moves to the next value and searches again at once.
 
-- «Продавцы:» (sellers): «выкуп и онлайн» (instant buyout and sellers online, the default) →
-  «только мгновенный выкуп» (instant buyout only) → «только онлайн» (only sellers online, to trade
-  in person) → «все, включая офлайн» (everyone, offline sellers too). The starting value comes from
-  the [settings](settings.md#search).
+- «Продавцы:» (sellers): «выкуп и онлайн» (instant buyout and sellers online) → «только
+  мгновенный выкуп» (instant buyout only, the default: the game's own auction sells the item
+  without the seller online) → «только онлайн» (only sellers online, to trade in person) → «все,
+  включая офлайн» (everyone, offline sellers too). The starting value comes from the
+  [settings](settings.md#search).
 - «Цена:» (price): «любая валюта» (any currency) → the Exalted Orb or the Divine Orb («или»
   between their icons) → «только» (only) Exalted Orb → only Divine Orb → only Chaos Orb. The
   currencies are shown by their icons.
@@ -189,64 +252,66 @@ The modifiers you search for are marked:
 - «Нет у этого предмета:» (this item lacks) at the foot of the card — selected properties the
   listing does not have at all.
 
-### Estimate
-
-The «Оценочная стоимость» (estimated value) card shows **≈ price** with the currency's icon (a
-Divine Orb or an Exalted Orb, whichever reads better), «Диапазон:» (range) and «Надёжность:»
-(confidence): «высокая» (high), «средняя» (medium) or «низкая» (low). The estimate needs
-poe.ninja's exchange rates and appears once they have loaded.
-
-When most listings are priced in unusual currencies, the card says «Цены в основном в редкой
-валюте: учтены только хаос, возвышения и божественные» (prices are mostly in rare currency; only
-chaos, exalted and divine orbs are counted) and offers «Искать только цены в … или …» (search only
-prices in exalted or divine orbs, shown by their icons).
-
 ### When nothing matches exactly
 
-If no listing has every selected property, PoE2 Oracle searches again for listings that have most
-of them and says «Точных совпадений нет — показаны предметы хотя бы с N из M выбранных свойств»
-(no exact matches, showing items with at least N of M selected properties). Each row then shows
-how many of the selected properties it has, for example `3/4`, and the estimate's confidence is
-low. This happens only with at least three selected modifiers; selected item properties such as
-defences always stay in the search.
+When a search finds nothing, the panel says «Ничего не найдено» (nothing found) and offers two
+broader searches. Each costs one search on the trade site, and only when you press it:
 
-If even that finds nothing, the panel says «Ничего не найдено» (nothing found). Untick some rows,
-lower some **min** values, search by class instead of base, or let offline sellers in.
+- «Широкий −10 %» (broad −10%): the same ticked rows, each **min** 10% below the item's roll. Not
+  offered when that is already the profile.
+- «Совпадение N из M» (N of M match): listings that have at least N of the M ticked rows, that is,
+  all of them but one. Item properties such as defences, and «сумма» rows, are not counted and
+  always stay required. Offered only when at least two ticked rows count.
+
+After «Совпадение N из M», the results say «Точных совпадений нет — показаны предметы хотя бы с N
+из M выбранных свойств» (no exact matches, showing items with at least N of M selected properties),
+and each row shows how many of the selected properties it has, for example `3/4`. If that search
+finds nothing either, the panel says «Ничего не найдено — даже с N из M выбранных свойств»
+(nothing found, even with N of M selected properties).
+
+You can also widen the search yourself: untick some rows, lower some **min** values, search by
+class instead of base, or let other sellers in with the «Продавцы:» chip.
 
 ## Currency and exchange items
 
 ![The market card for a currency item](../images/market.png)
 
 Items traded on the in-game Currency Exchange (currency, omens, runes, essences, catalysts, soul
-cores, fragments, uncut and lineage gems, plain waystones and the like) are priced from
-poe.ninja's market data instead of trade listings. The market card shows:
+cores, fragments, uncut and lineage gems, plain waystones and the like) are priced from GGG's own
+record of the trades made on the exchange instead of trade listings. GGG publishes it hour by
+hour, a few minutes after each hour ends: the price is the average rate of the last complete hour's
+trades, or of up to three hours for an item traded rarely. The hours downloaded are kept, so
+without an internet connection the card shows the last ones saved. The market card shows:
 
 - **≈ price** with the icon of a Divine Orb or an Exalted Orb, and under it the same value in the
   other core currencies, each with its icon;
 - for cheap items, how many of them one Divine Orb buys;
-- «За 7 дней» (last 7 days): the price change in percent, with a chart of daily prices; days
-  without trades are gaps. «мало данных» means not enough data;
+- «За 7 дней» (last 7 days): the price change in percent over the last seven days on poe2scout,
+  with a chart of daily prices; days without a price are gaps. «мало данных» means not enough data;
 - «Оборот в час» (volume per hour), in Divine Orbs;
 - «Чаще всего меняют» (most traded pair): the rate of the pair this item is traded in most;
 - «Ваша стопка» (your stack): «N шт. ≈ …», what the whole stack you checked is worth;
-- the category and «валютная биржа, обновление раз в час» (currency exchange, updated hourly), with
-  a «poe.ninja ↗» link to the item's page.
+- the category and «курс за 09:00–10:00» (rate for 09:00–10:00): the hours the price comes from,
+  on your computer's clock, with the date when they are not today's; and a «poe2scout ↗» link to
+  the item's page on poe2scout.
 
-### When poe.ninja has no price
+### When the exchange has no recent trades
 
-poe.ninja does not track every exchange item in every league: in a small league such as Standard
-it lists far fewer. For such an item:
+Not every exchange item changes hands every hour: in a small league such as Standard many don't.
+For an item without trades in the last hours:
 
-- if poe2scout has a price, the panel says «poe.ninja не отслеживает этот предмет в лиге …»
-  (poe.ninja does not track this item in league …), shows «Цена по poe2scout:» (poe2scout price)
-  and offers the button «Лоты на площадке» (listings on the trade site). The trade site is
-  searched only when you click it, since every search counts against its request limit;
+- if poe2scout has a price, the panel says «На бирже в лиге … этот предмет за последние часы не
+  меняли.» (this item has not been traded on the exchange in league … in the last hours), shows
+  «Цена по poe2scout:» (poe2scout price) and offers the button «Лоты на площадке» (listings on the
+  trade site). The trade site is searched only when you click it, since every search counts
+  against its request limit;
 - without a poe2scout price, the trade site's listings are searched right away, under the same
   note.
 
-If poe.ninja cannot be reached at all, the panel says «poe.ninja сейчас недоступен.» (poe.ninja is
-unavailable right now) and shows the trade site's listings instead. «На площадке лотов нет» means
-the trade site has no listings of the item.
+If GGG's exchange data cannot be reached and none is saved, the panel says «Данные биржи GGG
+сейчас недоступны.» (GGG's exchange data is unavailable right now) and prices the item from
+poe2scout the same way; if poe2scout cannot be reached either, it shows the trade site's listings.
+«На площадке лотов нет» means the trade site has no listings of the item.
 
 ## Unique items
 
@@ -286,15 +351,15 @@ are not sold on the trade site).
 | «Нет данных сайта торговли — нет интернета или сайт недоступен. Повторяю попытку сам.» | The trade site's data could not be downloaded: no internet, or the site is down. The app retries by itself. |
 | «Наведите курсор на предмет и нажмите Ctrl+E» | Point at an item and press the hotkey. |
 | «Поиск…» | Searching. |
-| «Загрузка цен poe.ninja…» | Loading poe.ninja prices for an exchange item. |
+| «Загрузка цен биржи…» | Loading the Currency Exchange's prices for an exchange item. |
 | «Лимит запросов trade API — ждём N с…» | The trade site's request limit is close; the app waits N seconds and then searches. |
-| «Сайт торговли временно ограничил поиск — повторите через N мин.» | The trade site has locked searches from your IP address for a while. Search again after that time; poe.ninja prices keep working. See [Request limits](#request-limits). |
+| «Сайт торговли временно ограничил поиск — повторите через N мин.» | The trade site has locked searches from your IP address for a while. Search again after that time; Currency Exchange prices keep working. See [Request limits](#request-limits). |
 | «Нет связи с сайтом торговли — проверьте интернет и повторите.» | The trade site could not be reached. Check your connection and search again. |
 | «Trade API отклонил запрос (HTTP …): …» | The trade site refused the search; its own message follows. |
 | «Ошибка поиска: …» | Any other search error. |
-| «Ничего не найдено» | No listings match. |
-| «poe.ninja не отслеживает этот предмет в лиге …» | poe.ninja has no price for this exchange item in your league. See [When poe.ninja has no price](#when-poeninja-has-no-price). |
-| «poe.ninja сейчас недоступен.» | poe.ninja could not be reached; the trade site's listings are shown instead. |
+| «Ничего не найдено» | No listings match. Buttons under it offer broader searches, one trade search each: «Широкий −10 %» and «Совпадение N из M». «Ничего не найдено — даже с N из M выбранных свойств» (nothing found, even with N of M selected properties) means that «Совпадение N из M» found nothing either. See [When nothing matches exactly](#when-nothing-matches-exactly). |
+| «На бирже в лиге … этот предмет за последние часы не меняли.» | This exchange item has not been traded in your league in the last hours; poe2scout's price or the trade site's listings are shown instead. See [When the exchange has no recent trades](#when-the-exchange-has-no-recent-trades). |
+| «Данные биржи GGG сейчас недоступны.» | GGG's exchange data could not be reached; poe2scout's price or the trade site's listings are shown instead. |
 | «На площадке лотов нет» | The trade site has no listings of this exchange item. |
 | «Игра не копирует предмет: сочетание Ctrl+Alt+C перехватывает другая программа…» | Another program holds the copy shortcut, so the game never copied the item. See [Troubleshooting](troubleshooting.md#the-hotkey-does-nothing). |
 | «Не удалось разобрать предмет…» | The item text could not be read. The button «Сообщить разработчику» (tell the developer) under the message opens the item problem form with the text filled in. See [Troubleshooting](troubleshooting.md#an-item-is-not-recognised). |
@@ -310,7 +375,7 @@ listings. PoE2 Oracle reads the limits from the site's answers:
   saying «Лимит запросов trade API — ждём N с…», and then searches by itself;
 - when the trade site refuses a request, it locks your IP address out for a while, often for
   minutes. PoE2 Oracle then sends no trade request at all until the lockout ends and says when to
-  try again: «Сайт торговли временно ограничил поиск — повторите через 9 мин 50 с.» Prices from
-  poe.ninja keep working meanwhile.
+  try again: «Сайт торговли временно ограничил поиск — повторите через 9 мин 50 с.» Currency
+  Exchange prices keep working meanwhile.
 
 Repeating an identical search within two minutes does not send a new request.

@@ -6,10 +6,14 @@
 //! the keystroke before any application sees it. While the panel is closed the hook passes every
 //! key straight through (`CallNextHookEx`), so Esc behaves normally in the game.
 //!
+//! The same hook tells `quick_action::KEY_PRESSES` of every key it sees go down or up, so that one
+//! press of a quick action's key types once. One hook, not a second: each sits in the path of every
+//! keystroke in the system.
+//!
 //! The hook runs on its own thread with its own message loop: the system calls a low-level hook
 //! from the installing thread's message wait and silently skips hooks that take too long, so it
-//! must not depend on how busy GPUI's main thread is. Its only shared state is two atomics and the
-//! channel its presses go out on.
+//! must not depend on how busy GPUI's main thread is. Its only shared state is atomics -- its own
+//! two and `KEY_PRESSES`' -- and the channel its presses go out on.
 
 use std::sync::LazyLock;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -20,10 +24,12 @@ use windows::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Input::KeyboardAndMouse::VK_ESCAPE;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CallNextHookEx, GetMessageW, HC_ACTION, KBDLLHOOKSTRUCT, MSG, SetWindowsHookExW,
-    WH_KEYBOARD_LL, WM_KEYDOWN, WM_SYSKEYDOWN,
+    CallNextHookEx, GetMessageW, HC_ACTION, KBDLLHOOKSTRUCT, LLKHF_INJECTED, MSG,
+    SetWindowsHookExW, WH_KEYBOARD_LL, WM_KEYDOWN, WM_SYSKEYDOWN,
 };
 use windows::core::PCWSTR;
+
+use crate::quick_action::KEY_PRESSES;
 
 /// The panel is open: Esc presses are consumed and reported.
 static ARMED: AtomicBool = AtomicBool::new(false);
@@ -72,9 +78,12 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
     if code == HC_ACTION as i32 {
         // SAFETY: for `HC_ACTION`, `lparam` points to the event's `KBDLLHOOKSTRUCT`.
         let event = unsafe { &*(lparam.0 as *const KBDLLHOOKSTRUCT) };
+        let message = wparam.0 as u32;
+        let is_down = message == WM_KEYDOWN || message == WM_SYSKEYDOWN;
+        if let Ok(vk) = u16::try_from(event.vkCode) {
+            KEY_PRESSES.record(vk, is_down, event.flags.contains(LLKHF_INJECTED));
+        }
         if event.vkCode == u32::from(VK_ESCAPE.0) {
-            let message = wparam.0 as u32;
-            let is_down = message == WM_KEYDOWN || message == WM_SYSKEYDOWN;
             if is_down {
                 if SWALLOWING.load(Ordering::Relaxed) {
                     return LRESULT(1);

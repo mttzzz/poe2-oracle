@@ -5,8 +5,7 @@
 #
 # packaging/build-release.ps1 runs it this way (with --locked) to write
 # target\dist\THIRD-PARTY-NOTICES.html, which the installer puts next to the exe. `-m` limits the
-# graph to the shipped app; run from the workspace root without it, the notices also cover the
-# local game-data tools (data-pipeline and the crates under it), which the app never links.
+# graph to the shipped app.
 #
 # `accepted` is exactly the set of licenses the graph needs, in priority order: a crate that
 # offers a choice ("MIT OR Apache-2.0") is listed under the first of these it offers. The

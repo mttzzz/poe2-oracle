@@ -1,7 +1,10 @@
-//! The XP overlay: one line above PoE2's experience bar -- `+12,4 %/ч · до 75 ур. 1 ч 32 мин`,
-//! how fast the character levels and how much play is left to the next level
+//! The XP overlay: one line above PoE2's experience bar -- `+12,4 %/ч · до 75 ур. 1 ч 32 мин
+//! игры`, how fast the character levels and how much play is left to the next level
 //! (`crate::xp_tracker`) -- and, as the player chooses, how much of the level is earned and the
-//! current map's timer: `64,8 % · +12,4 %/ч · до 75 ур. 1 ч 32 мин · карта 4:07 +1,2 % · ср. 6:30`.
+//! current map's timer: `64,8 % · +12,4 %/ч · до 75 ур. 1 ч 32 мин игры · карта 4:07 +1,2 % ·
+//! ср. 6:30`. In a pause (a town or hideout, or five minutes without a gain) the rate and the
+//! time to level would pass for current ones, so the line dims and says how long the pause has
+//! lasted instead: `64,8 % · пауза · 12 мин · последняя карта 9:00 +3,66 %`.
 //!
 //! A task samples every two seconds, off the UI thread: the game log's new lines
 //! (`platform::client_log`), then the bar's pixels (`platform::xp_bar`) -- in that order, so a
@@ -31,21 +34,25 @@ use crate::ui::theme::{
     BASE_REM_SIZE, BG_PANEL, BORDER_GOLD, GOLD, TEXT, TEXT_DIM, TEXT_MUTED, rems_from_px,
 };
 use crate::xp_tracker::{
-    MapStatus, XpStatus, XpTracker, format_clock, format_eta, format_percent, format_rate,
-    parse_log_line,
+    Activity, MapStatus, RunState, XpStatus, XpTracker, format_clock, format_duration,
+    format_percent, format_rate, parse_log_line,
 };
 
 const SAMPLE_INTERVAL: Duration = Duration::from_secs(2);
 /// The window's logical height at 100 % scale.
 const HEIGHT: f32 = 26.;
 /// Logical widths at 100 % scale: each part's longest wording plus the frame's padding and the
-/// `·` between parts -- `+123 %/ч · до след. ур. 23 ч 59 мин` for the rate,
-/// `карта 12:34 +12,5 % · ср. 12:34` for the map.
+/// `·` between parts -- `+123 %/ч · до 100 ур. 23 ч 59 мин игры` for the rate and
+/// `пауза · 23 ч 59 мин` in its place in a pause; `карта 1:23:45 +12,5 %` for the map, with
+/// `последняя ` before it for the last one and ` · ср. 12:34` after it outside a pause.
 const PADDING_WIDTH: f32 = 24.;
 const SEPARATOR_WIDTH: f32 = 16.;
 const PERCENT_WIDTH: f32 = 64.;
-const RATE_WIDTH: f32 = 250.;
-const MAP_WIDTH: f32 = 214.;
+const RATE_WIDTH: f32 = 275.;
+const PAUSE_WIDTH: f32 = 138.;
+const MAP_WIDTH: f32 = 152.;
+const LAST_MAP_WIDTH: f32 = 79.;
+const AVERAGE_WIDTH: f32 = 78.;
 
 /// What the overlay shows and how big, from the player's settings.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -159,7 +166,7 @@ async fn sample_forever(view: WeakEntity<XpOverlay>, cx: &mut AsyncApp) {
             return;
         };
         view.update(cx, |view, cx| {
-            view.tracker.restore(history);
+            view.tracker.restore(history, at);
             for event in events {
                 view.tracker.on_log_event(event, at);
             }
@@ -202,14 +209,25 @@ impl XpOverlay {
         self.options.map_timer.then_some(self.status.map).flatten()
     }
 
+    fn paused(&self) -> bool {
+        matches!(self.status.activity, Activity::Paused { .. })
+    }
+
     /// The line's logical width at 100 % scale for what it shows now.
     fn content_width(&self) -> f32 {
-        let mut width = PADDING_WIDTH + RATE_WIDTH;
+        let paused = self.paused();
+        let mut width = PADDING_WIDTH + if paused { PAUSE_WIDTH } else { RATE_WIDTH };
         if self.options.show_percent && self.status.fraction.is_some() {
             width += SEPARATOR_WIDTH + PERCENT_WIDTH;
         }
-        if self.map_status().is_some() {
+        if let Some(map) = self.map_status() {
             width += SEPARATOR_WIDTH + MAP_WIDTH;
+            if map.state == RunState::Last {
+                width += LAST_MAP_WIDTH;
+            }
+            if !paused && map.average.is_some() {
+                width += AVERAGE_WIDTH;
+            }
         }
         width
     }
@@ -285,7 +303,7 @@ impl XpOverlay {
         .detach();
     }
 
-    /// `+12,4 %/ч · до 75 ур. 1 ч 32 мин`, or the wait for a first rate.
+    /// `+12,4 %/ч · до 75 ур. 1 ч 32 мин игры`, or the wait for a first rate.
     fn rate_part(&self) -> AnyElement {
         let status = self.status;
         let Some(rate) = status.rate_per_hour else {
@@ -297,11 +315,12 @@ impl XpOverlay {
         };
         let target = match status.level {
             Some(level) => format!("до {} ур.", level + 1),
-            None => "до след. ур.".to_owned(),
+            None => "до ур.".to_owned(),
         };
-        let eta = status
-            .time_to_level()
-            .map_or_else(|| "—".to_owned(), format_eta);
+        let eta = status.time_to_level().map_or_else(
+            || "—".to_owned(),
+            |eta| format!("{} игры", format_duration(eta)),
+        );
         div()
             .flex()
             .items_center()
@@ -317,22 +336,41 @@ impl XpOverlay {
             .into_any_element()
     }
 
-    /// `карта 4:07 +1,2 % · ср. 6:30`: dimmed while the run waits in the hideout.
-    fn map_part(map: MapStatus) -> AnyElement {
-        let mut text = format!("карта {}", format_clock(map.time));
+    /// `пауза · 12 мин`: how long the player has been out of play, in place of the rate.
+    fn pause_part(elapsed: Duration) -> AnyElement {
+        div()
+            .flex()
+            .items_center()
+            .gap(rems_from_px(6.))
+            .child("пауза")
+            .child(separator())
+            .child(format_duration(elapsed))
+            .into_any_element()
+    }
+
+    /// `карта 4:07 +1,2 % · ср. 6:30`, dimmed once the character has left the run, and
+    /// `последняя карта 9:00 +3,66 %` once it is the last one; without the average in a pause.
+    fn map_part(map: MapStatus, paused: bool) -> AnyElement {
+        let label = if map.state == RunState::Last {
+            "последняя карта"
+        } else {
+            "карта"
+        };
+        let mut text = format!("{label} {}", format_clock(map.time));
         if map.gained > 0.0 {
             text += &format!(" +{} %", format_percent(map.gained));
         }
+        let lit = map.state == RunState::Running && !paused;
         div()
             .flex()
             .items_center()
             .gap(rems_from_px(6.))
             .child(
                 div()
-                    .text_color(rgb(if map.active { TEXT } else { TEXT_DIM }))
+                    .text_color(rgb(if lit { TEXT } else { TEXT_DIM }))
                     .child(text),
             )
-            .children(map.average.map(|average| {
+            .children(map.average.filter(|_| !paused).map(|average| {
                 div()
                     .text_color(rgb(TEXT_DIM))
                     .child(format!("· ср. {}", format_clock(average)))
@@ -349,6 +387,7 @@ impl Render for XpOverlay {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.ensure_overlay(window, cx);
         window.set_rem_size(px(BASE_REM_SIZE * self.options.ui_scale));
+        let paused = self.paused();
         let mut parts: Vec<AnyElement> = Vec::new();
         if self.options.show_percent
             && let Some(fraction) = self.status.fraction
@@ -359,9 +398,12 @@ impl Render for XpOverlay {
                     .into_any_element(),
             );
         }
-        parts.push(self.rate_part());
+        parts.push(match self.status.activity {
+            Activity::Playing => self.rate_part(),
+            Activity::Paused { elapsed, .. } => Self::pause_part(elapsed),
+        });
         if let Some(map) = self.map_status() {
-            parts.push(Self::map_part(map));
+            parts.push(Self::map_part(map, paused));
         }
         let mut line = div()
             .flex()
@@ -383,7 +425,7 @@ impl Render for XpOverlay {
             .border_1()
             .border_color(rgb(BORDER_GOLD))
             .text_sm()
-            .text_color(rgb(TEXT))
+            .text_color(rgb(if paused { TEXT_DIM } else { TEXT }))
             .child(line)
     }
 }

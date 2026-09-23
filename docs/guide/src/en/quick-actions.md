@@ -47,11 +47,31 @@ puts the cursor in the window's search box, pastes the text and presses <kbd>Ent
 highlights the matching items. The search string is used exactly as you typed it. Tools such as
 poe2.re build such strings for you.
 
+## Commands that are never sent
+
+Some chat commands destroy something or change it for good. A mis-pressed key must not do that,
+so quick actions never send these, in any letter case and also after a chat channel sign or
+`@last` (`%/destroy`, `@last /destroy`):
+
+| Command | What it does in the game |
+|---|---|
+| `/destroy` | Destroys the item on the cursor |
+| `/clear_ignore_list` | Empties your ignore list |
+| `/convertracereward` | Destroys the race reward unique on the cursor, turning it into an account-bound skin |
+| `/ResetAtlas` | Resets your Atlas (the game allows it only when no map is left to run) |
+
+If an action's text is one of them, a warning appears under it, for example «Команда /destroy
+уничтожает предмет — быстрые действия её не отправляют» (/destroy destroys an item; quick actions
+don't send it), and the settings are not saved («Сохранить нельзя: в быстрых действиях запрещённая
+команда») until you change the text or remove the action. Stash search actions are checked the
+same way. Any other text, such as `@last thanks`, is sent as you wrote it.
+
 ## Good to know
 
 - Quick action hotkeys work only while the game is the window in front. In every other program
   those keys keep their usual meaning.
 - The text arrives through the clipboard, so text in any language arrives intact whatever your
   keyboard layout. Your clipboard is put back right after.
-- Each press sends one message. A press while an action is still typing is ignored.
+- Each press sends one message: holding the key down sends it once, and a press while an action
+  is still typing is ignored.
 - If another program already holds an action's key, that action loses its key when you save.

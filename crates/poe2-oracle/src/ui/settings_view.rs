@@ -1,14 +1,14 @@
 //! The settings window: a copy of [`Settings`] edited in place and handed to `on_save` by
 //! "Сохранить" -- nothing applies before that, except signing in and out of pathofexile.com
-//! (`crate::session`), which keeps its secret out of the settings and applies at once. It reads
-//! as part of the price-check panel (`ui::panel`): the same near-black panel, gold section
-//! headers, chips and buttons. Its last section writes the diagnostics report
+//! (`crate::login`, `crate::session`), which keeps its secret out of the settings and applies at
+//! once. It reads as part of the price-check panel (`ui::panel`): the same near-black panel, gold
+//! section headers, chips and buttons. Its last section writes the diagnostics report
 //! (`crate::diagnostics`), which applies nothing either.
 //!
 //! GPUI has no stock text input or dropdown, so the controls are built here: chips that pick one
 //! of a few choices, switches, -/+ steppers, and hotkey recorders that capture the next
-//! combination pressed while they have focus -- plus `ui::text_field` for the quick actions' text,
-//! a typed league's name and the pasted session.
+//! combination pressed while they have focus -- plus `ui::text_field` for the quick actions' text
+//! and a typed league's name.
 //!
 //! The view draws its own title bar (open the window with `TitlebarOptions::appears_transparent`)
 //! and closes its window once it has reported: `on_save` after "Сохранить", `on_cancel` after
@@ -26,6 +26,8 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, VK_0, VK_9, VK_SH
 
 use crate::bug_report;
 use crate::diagnostics;
+use crate::login::{self, Login, LoginProblem};
+use crate::quick_action::{self, DeniedCommand};
 use crate::session::{self, SessionStatus};
 use crate::settings::{
     self, ClientLanguage, Hotkey, HotkeyProblem, KeyName, LeagueChoice, ListingStatusChoice,
@@ -37,8 +39,11 @@ use crate::ui::theme::{
     BORDER_GOLD, CONTENT_PADDING, GOLD, PRICE_RISE, TEXT, TEXT_DIM, TEXT_MUTED, TEXT_WARNING,
 };
 
-/// What one click of a stepper moves the tolerance and the scale by, in percent.
+/// What one click of a stepper moves the scale by, in percent.
 const STEP_PERCENT: u16 = 5;
+
+/// Microsoft's WebView2 page, at its download section: the sign-in window needs the runtime.
+const WEBVIEW2_DOWNLOAD: &str = "https://developer.microsoft.com/microsoft-edge/webview2/#download";
 
 /// Gets the edited settings when the player saves.
 type SaveHandler = Box<dyn Fn(Settings, &mut App)>;
@@ -89,10 +94,6 @@ pub struct SettingsView {
     action_recorders: Vec<FocusHandle>,
     /// The typed league's name (`LeagueChoice::Custom`); its text goes into the settings on save.
     league_field: Entity<TextField>,
-    /// Where the player pastes their session: masked, and emptied as soon as it is used.
-    session_field: Entity<TextField>,
-    /// Why the last "Войти" went nowhere.
-    session_error: Option<String>,
     /// The modifiers held during a capture, shown until the key comes.
     held: Modifiers,
     /// Why the combination last pressed into the recorder was refused.
@@ -141,10 +142,11 @@ impl SettingsView {
                 cx,
             )
         });
-        let session_field = cx.new(|cx| TextField::masked("Вставьте POESESSID (Ctrl+V)", cx));
-        // The account section shows what the site says of the session, whenever it says it.
+        // The account section shows what the site says of the session, whenever it says it, and
+        // what the sign-in window is doing.
         cx.observe_global::<SessionStatus>(|_, cx| cx.notify())
             .detach();
+        cx.observe_global::<Login>(|_, cx| cx.notify()).detach();
         SettingsView {
             settings,
             leagues,
@@ -156,8 +158,6 @@ impl SettingsView {
             action_fields,
             action_recorders,
             league_field,
-            session_field,
-            session_error: None,
             held: Modifiers::default(),
             recorder_error: None,
             reported: false,
@@ -167,6 +167,10 @@ impl SettingsView {
     }
 
     fn save(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // A quick action that would send a denied command is not saved; its row says why.
+        if self.denied_action(cx).is_some() {
+            return;
+        }
         self.reported = true;
         // A typed league is the field's text; nothing typed is no choice.
         if let LeagueChoice::Custom(_) = self.settings.league {
@@ -193,41 +197,18 @@ impl SettingsView {
         window.remove_window();
     }
 
+    /// The denied command a quick action's text, as its field reads now, would send -- the first
+    /// such action's.
+    fn denied_action(&self, cx: &App) -> Option<&'static DeniedCommand> {
+        self.action_fields
+            .iter()
+            .find_map(|field| quick_action::denied_command(field.read(cx).text()))
+    }
+
     fn cancel(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.reported = true;
         (self.on_cancel)(cx);
         window.remove_window();
-    }
-
-    /// "Войти": the pasted session is saved and used at once -- it needs no "Сохранить" -- then
-    /// checked; the field is emptied either way.
-    fn sign_in(&mut self, cx: &mut Context<Self>) {
-        let pasted = self.session_field.read(cx).text().to_owned();
-        self.session_field.update(cx, |field, cx| {
-            field.clear();
-            cx.notify();
-        });
-        self.session_error = match session::parse_pasted(&pasted) {
-            Some(value) => session::sign_in(value, cx)
-                .err()
-                .map(|err| format!("Не удалось сохранить вход: {err:#}")),
-            None if pasted.trim().is_empty() => {
-                Some("Сначала вставьте POESESSID в поле".to_owned())
-            }
-            None => Some(
-                "Это не похоже на POESESSID: нужно значение куки — 32 знака, цифры и латинские \
-                 буквы"
-                    .to_owned(),
-            ),
-        };
-        cx.notify();
-    }
-
-    /// "Выйти": the session is forgotten at once, from the Credential Manager too.
-    fn sign_out(&mut self, cx: &mut Context<Self>) {
-        session::sign_out(cx);
-        self.session_error = None;
-        cx.notify();
     }
 
     /// Writes the diagnostics report off the main thread, then shows it in Explorer.
@@ -709,7 +690,8 @@ impl SettingsView {
             })
     }
 
-    /// One quick action: its kind, hotkey and a × on top, the text below.
+    /// One quick action: its kind, hotkey and a × on top, the text below -- and under it, why it
+    /// won't be sent if it is a denied command.
     fn render_action(
         &self,
         index: usize,
@@ -776,10 +758,13 @@ impl SettingsView {
                     ),
             )
             .child(div().flex().child(self.action_fields[index].clone()))
+            .children(
+                quick_action::denied_command(self.action_fields[index].read(cx).text())
+                    .map(|denied| note_line(denied.warning, TEXT_WARNING)),
+            )
     }
 
     fn render_search(&self, cx: &Context<Self>) -> impl IntoElement {
-        let tolerance = self.settings.search_tolerance_percent;
         let statuses = vec![
             (ListingStatusChoice::Available, "выкуп и онлайн".into()),
             (
@@ -790,20 +775,7 @@ impl SettingsView {
             (ListingStatusChoice::Any, "все, включая офлайн".into()),
         ];
         section("Поиск")
-            .child(stepper_row(
-                labelled(
-                    "Допуск значений",
-                    Some("Насколько значения свойств в поиске могут отличаться от ваших"),
-                ),
-                format!("±{tolerance}%"),
-                (
-                    tolerance > 0,
-                    tolerance < settings::MAX_SEARCH_TOLERANCE_PERCENT,
-                ),
-                step_tolerance,
-                cx,
-            ))
-            .child(div().pt(px(4.)).child("Продавцы по умолчанию"))
+            .child("Продавцы по умолчанию")
             .child(choice_chips(
                 statuses,
                 &self.settings.listing_status,
@@ -882,56 +854,36 @@ impl SettingsView {
             ))
     }
 
-    fn render_trade(&self, cx: &Context<Self>) -> impl IntoElement {
-        section("Торговля")
-            .child(toggle_row(
-                labelled(
-                    "Запросы покупателей",
-                    Some(
-                        "Кто хочет купить ваш предмет, за сколько и где он лежит — с кнопками \
-                         ответа в игру",
-                    ),
-                ),
-                self.settings.trade_requests,
-                |settings| &mut settings.trade_requests,
-                cx,
-            ))
-            .child(toggle_row(
-                labelled(
-                    "Звук при новом запросе",
-                    Some("И при новом лоте из слежения за поиском"),
-                ),
-                self.settings.trade_sound,
-                |settings| &mut settings.trade_sound,
-                cx,
-            ))
-    }
-
-    /// The pathofexile.com session: what it gives, where to find it and how it is kept, its
-    /// field and buttons, and what the site says of it. Signing in and out apply at once.
+    /// The pathofexile.com session: what it gives, what the site says of it, «Войти» (the sign-in
+    /// window, `crate::login`) or «Выйти», and where it is kept. Signing in and out apply at once.
     fn render_account(&self, cx: &Context<Self>) -> impl IntoElement {
         let status = cx
             .try_global::<SessionStatus>()
             .cloned()
             .unwrap_or_default();
-        let stored = status != SessionStatus::SignedOut;
-        let (line, color): (SharedString, u32) = match &status {
-            SessionStatus::SignedOut => ("Вход не выполнен".into(), TEXT_MUTED),
-            SessionStatus::Checking => ("Проверяю вход…".into(), TEXT_DIM),
-            SessionStatus::SignedIn {
-                account: Some(name),
-            } => (format!("Вход выполнен: {name}").into(), PRICE_RISE),
-            SessionStatus::SignedIn { account: None } => ("Вход выполнен".into(), PRICE_RISE),
-            SessionStatus::Invalid => (
-                "Сессия недействительна — войдите на сайте заново и вставьте новый POESESSID"
-                    .into(),
-                TEXT_WARNING,
-            ),
-            SessionStatus::Unchecked(err) => (
-                format!("Не удалось проверить вход — сессия используется как есть: {err}").into(),
-                TEXT_WARNING,
-            ),
-        };
+        let login = cx.try_global::<Login>();
+        let (line, color): (SharedString, u32) =
+            if login.is_some_and(Login::is_open) && !status.signed_in() {
+                (
+                    "Войдите на сайте в открывшемся окне — после входа оно закроется само".into(),
+                    TEXT_DIM,
+                )
+            } else {
+                match &status {
+                    SessionStatus::SignedOut => ("Вход не выполнен".into(), TEXT_MUTED),
+                    SessionStatus::Checking => ("Проверяю вход…".into(), TEXT_DIM),
+                    SessionStatus::SignedIn {
+                        account: Some(name),
+                    } => (format!("Вы вошли как {name}").into(), PRICE_RISE),
+                    SessionStatus::SignedIn { account: None } => ("Вы вошли".into(), PRICE_RISE),
+                    SessionStatus::Invalid => ("Сессия истекла".into(), TEXT_WARNING),
+                    SessionStatus::Unchecked(err) => (
+                        format!("Не удалось проверить вход — сессия используется как есть: {err}")
+                            .into(),
+                        TEXT_WARNING,
+                    ),
+                }
+            };
         section("Аккаунт pathofexile.com")
             .child(note_line(
                 "Вход нужен для поиска в приватных лигах и для слежения за поиском: новые лоты \
@@ -939,44 +891,36 @@ impl SettingsView {
                 TEXT_DIM,
             ))
             .child(note_line(
-                "Где взять POESESSID: войдите на pathofexile.com в браузере, откройте DevTools \
-                 (F12) → Application → Cookies → https://www.pathofexile.com и скопируйте \
-                 значение POESESSID.",
+                "«Войти» открывает страницу входа pathofexile.com в окне программы: войдите как \
+                 обычно, в том числе через Steam. Сессия хранится в диспетчере учётных данных \
+                 Windows и отправляется только на pathofexile.com.",
                 TEXT_MUTED,
-            ))
-            .child(note_line(
-                "POESESSID — ключ к вашей учётной записи на сайте: никому его не передавайте. \
-                 Приложение хранит его в диспетчере учётных данных Windows и отправляет только \
-                 на pathofexile.com.",
-                TEXT_WARNING,
             ))
             .child(
                 div()
                     .flex()
                     .items_center()
                     .gap(px(8.))
-                    .child(self.session_field.clone())
-                    .child(button("Войти", true).on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(|view, _event: &MouseDownEvent, _window, cx| {
-                            view.sign_in(cx);
-                        }),
-                    ))
-                    .when(stored, |this| {
+                    .child(div().flex_1().min_w_0().text_color(rgb(color)).child(line))
+                    .when(!status.signed_in(), |this| {
+                        this.child(button("Войти", true).on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(|_view, _event: &MouseDownEvent, _window, cx| {
+                                login::open(cx);
+                            }),
+                        ))
+                    })
+                    // «Выйти» forgets the app's copy only: the site stays signed in elsewhere.
+                    .when(status != SessionStatus::SignedOut, |this| {
                         this.child(button("Выйти", false).on_mouse_down(
                             MouseButton::Left,
-                            cx.listener(|view, _event: &MouseDownEvent, _window, cx| {
-                                view.sign_out(cx);
+                            cx.listener(|_view, _event: &MouseDownEvent, _window, cx| {
+                                session::sign_out(cx);
                             }),
                         ))
                     }),
             )
-            .child(div().text_xs().text_color(rgb(color)).child(line))
-            .children(
-                self.session_error
-                    .clone()
-                    .map(|error| div().text_xs().text_color(rgb(TEXT_WARNING)).child(error)),
-            )
+            .children(login.and_then(Login::problem).cloned().map(login_problem))
     }
 
     fn render_system(&self, cx: &Context<Self>) -> impl IntoElement {
@@ -1052,6 +996,8 @@ impl SettingsView {
     }
 
     fn render_footer(&self, cx: &Context<Self>) -> impl IntoElement {
+        // A quick action with a denied command keeps the settings from saving.
+        let blocked = self.denied_action(cx).is_some();
         div()
             .flex()
             .flex_none()
@@ -1062,18 +1008,33 @@ impl SettingsView {
             .bg(rgb(BG_TITLE))
             .border_t_1()
             .border_color(rgb(BORDER))
+            .when(blocked, |this| {
+                this.child(
+                    div()
+                        .flex()
+                        .flex_1()
+                        .items_center()
+                        .text_xs()
+                        .text_color(rgb(TEXT_WARNING))
+                        .child("Сохранить нельзя: в быстрых действиях запрещённая команда"),
+                )
+            })
             .child(button("Отмена", false).on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|view, _event: &MouseDownEvent, window, cx| {
                     view.cancel(window, cx);
                 }),
             ))
-            .child(button("Сохранить", true).on_mouse_down(
-                MouseButton::Left,
-                cx.listener(|view, _event: &MouseDownEvent, window, cx| {
-                    view.save(window, cx);
-                }),
-            ))
+            .child(
+                button("Сохранить", !blocked)
+                    .when(blocked, |this| this.opacity(0.5).cursor_not_allowed())
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|view, _event: &MouseDownEvent, window, cx| {
+                            view.save(window, cx);
+                        }),
+                    ),
+            )
     }
 }
 
@@ -1118,7 +1079,6 @@ impl Render for SettingsView {
                     .child(self.render_search(cx))
                     .child(self.render_appearance(cx))
                     .child(self.render_xp_overlay(cx))
-                    .child(self.render_trade(cx))
                     .child(self.render_account(cx))
                     .child(self.render_system(cx))
                     .child(self.render_diagnostics(cx)),
@@ -1181,17 +1141,6 @@ fn shifted_digit() -> Option<KeyName> {
     KeyName::from_virtual_key(digit)
 }
 
-fn step_tolerance(settings: &mut Settings, up: bool) {
-    let stepped = step_percent(
-        settings.search_tolerance_percent.into(),
-        up,
-        0,
-        settings::MAX_SEARCH_TOLERANCE_PERCENT.into(),
-    );
-    // Within 0..=MAX_SEARCH_TOLERANCE_PERCENT, which is a u8.
-    settings.search_tolerance_percent = stepped as u8;
-}
-
 fn step_scale(settings: &mut Settings, up: bool) {
     let stepped = step_percent(
         scale_percent(settings.ui_scale),
@@ -1250,6 +1199,37 @@ fn labelled(label: &'static str, description: Option<&'static str>) -> gpui::Div
 
 fn note_line(text: &'static str, color: u32) -> impl IntoElement {
     div().text_xs().text_color(rgb(color)).child(text)
+}
+
+/// Why the last «Войти» didn't finish, under the account's buttons.
+fn login_problem(problem: LoginProblem) -> gpui::Div {
+    let text = match problem {
+        LoginProblem::NoRuntime => {
+            return div()
+                .flex()
+                .flex_wrap()
+                .gap_x(px(4.))
+                .text_xs()
+                .text_color(rgb(TEXT_WARNING))
+                .child("Для входа нужен Microsoft Edge WebView2 Runtime, а на этом компьютере его нет.")
+                .child(
+                    div()
+                        .text_color(rgb(GOLD))
+                        .cursor_pointer()
+                        .hover(|style| style.text_color(rgb(TEXT)))
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            |_event: &MouseDownEvent, _window, cx: &mut App| {
+                                cx.open_url(WEBVIEW2_DOWNLOAD);
+                            },
+                        )
+                        .child("Скачать с сайта Microsoft"),
+                );
+        }
+        LoginProblem::Failed(err) => format!("Не удалось открыть окно входа: {err}"),
+        LoginProblem::NotSaved(err) => format!("Не удалось сохранить вход: {err}"),
+    };
+    div().text_xs().text_color(rgb(TEXT_WARNING)).child(text)
 }
 
 /// One chip per choice, the current one outlined in gold; clicking another picks it.

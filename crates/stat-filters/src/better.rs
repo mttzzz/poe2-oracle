@@ -14,7 +14,7 @@
 //! used, ignite, chill and shock on you, and `#% less Damage taken if you have not been Hit
 //! Recently` (EE2 flags the first three `trade.inverted`; the live catalog words all six so).
 
-use crate::SearchFilterRoll;
+use crate::RollBound;
 
 /// Stats a lower roll is better on (`NegativeRoll`). "Require 4 fewer enemies to be Surrounded"
 /// is `Require # additional enemies to be Surrounded` at -4, and a listing at -2 is worse.
@@ -51,20 +51,24 @@ const EXACT: [&str; 10] = [
     "stat_3642528642",    // Only affects Passives in # Ring
 ];
 
-/// Presets `roll`'s search bounds the way `trade_id`'s stat is better, as EE2's
-/// `filterFillMinMax` (`create-stat-filters.ts:597-613`) does: `build_roll` leaves the lower
-/// bound set, right for the stats a higher roll is better on; a stat a lower roll is better on
-/// keeps listings at most the tolerance above the item's roll instead, and a stat with nothing
-/// to compare is searched at exactly the item's roll.
-pub(crate) fn orient(roll: &mut SearchFilterRoll, trade_id: &str) {
+/// Which bound a search presets on a row of `trade_id`'s stat, as EE2's `filterFillMinMax`
+/// (`create-stat-filters.ts:597-613`) and PoE Overlay II's `gQ` do: a minimum for a stat a higher
+/// roll is better on, a maximum for one a lower roll is better on, both at the roll for a stat
+/// with nothing to compare. A `fixed` roll -- one its mods can roll at no other number -- is
+/// searched at itself whatever the search profile's range.
+pub(crate) fn bound(trade_id: &str, fixed: bool) -> RollBound {
     let hash = trade_id.split_once('.').map_or(trade_id, |(_, hash)| hash);
-    if LOWER.contains(&hash) {
-        roll.min = None;
-        roll.max = Some(roll.default_max);
-    } else if EXACT.contains(&hash) {
-        roll.default_min = roll.value;
-        roll.default_max = roll.value;
-        roll.min = Some(roll.value);
-        roll.max = Some(roll.value);
+    if EXACT.contains(&hash) {
+        RollBound::Exactly
+    } else if LOWER.contains(&hash) {
+        if fixed {
+            RollBound::AtMost
+        } else {
+            RollBound::Lower
+        }
+    } else if fixed {
+        RollBound::AtLeast
+    } else {
+        RollBound::Higher
     }
 }

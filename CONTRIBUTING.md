@@ -48,20 +48,16 @@ Security vulnerabilities are not reported in public issues; see [SECURITY.md](SE
 
 ```text
 crates/
-  poe2-oracle/     the app: price panel, settings, XP overlay, trade requests, tray, updates,
+  poe2-oracle/     the app: price panel, settings, XP overlay, live search, tray, updates,
                    Win32 overlay windows, hotkeys and the game's input
   item-parser/     clipboard item text -> ParsedItem (English and Russian clients)
   stat-filters/    ParsedItem -> the trade search's filter rows (Exiled Exchange 2's defaults)
-  trade-client/    trade API (leagues, catalogs, search, fetch, rate limits), poe.ninja market,
-                   poe2scout prices
+  trade-client/    trade API (leagues, catalogs, search, fetch, rate limits), the Currency Exchange
+                   market from GGG's hourly exchange data, poe2scout prices
   poe2-domain/     shared item and stat types, no I/O
   auto-update/     GitHub release check and SHA-256-verified installer download
-  oodle-ffi/, poe-bundle/, poe-dat/, data-pipeline/
-                   local game-data extraction (Bundles2 and .datc64 through a real Oodle DLL);
-                   the app never depends on them
 packaging/         release script, NSIS installer, data table generators (packaging/data)
 docs/guide/        the user guide (mdBook), published with the site
-docs/dev/          development notes, such as the GPUI feasibility findings
 site/              the project site's landing pages
 lanes/             the Linux build container used by CI
 ```
@@ -106,7 +102,7 @@ Things that save time:
 - `POE2_ORACLE_KEEP_ITEM_TEXTS=1` keeps the text of every checked item in `data\unparsed`, not only
   the troubled ones: handy for collecting parser fixtures.
 - `POE2_ORACLE_CLIENT_LOG=<file>` makes the app read that file instead of the game's `Client.txt`,
-  so trade requests and the XP overlay can be tested by appending lines to it.
+  so the XP overlay can be tested by appending lines to it.
 - `POE2_ORACLE_RELEASES_URL` is read at build time: the updater then asks that URL instead of this
   repository's latest GitHub release, for testing an update end to end against a local stand-in.
 
@@ -127,7 +123,7 @@ docker run --rm --user "$(id -u):$(id -g)" -v "$PWD":/workspace -w /workspace \
     cargo clippy --workspace --all-targets --exclude poe2-oracle -- -D warnings
     cargo clippy -p poe2-oracle --all-targets --target x86_64-pc-windows-gnu -- -D warnings
     cargo test --workspace --exclude poe2-oracle
-    cargo test -p poe2-oracle --lib --example trade_api --example hotkey_clipboard --example text_rendering
+    cargo test -p poe2-oracle --lib
     cargo build --workspace --target x86_64-pc-windows-gnu
   '
 ```
@@ -158,9 +154,8 @@ a game patch or at a new league, from the repository root:
 # The ways the client prints stats: crates/item-parser/data/stat-matchers-{en,ru}.tsv
 python3 packaging/data/generate_stat_matchers.py <EE2>/renderer/public/data
 
-# The item reference table (names, art): crates/poe2-oracle/assets/data/item-refs.tsv
-python3 packaging/data/generate_item_refs.py \
-  <EE2>/renderer/public/data/en/items.ndjson <EE2>/renderer/public/data/ru/items.ndjson
+# The item reference table (names, art, bases): crates/poe2-oracle/assets/data/item-refs.tsv
+python3 packaging/data/generate_item_refs.py <EE2>/renderer/public/data <RePoE folder>
 ```
 
 `crates/stat-filters/src/better.rs` (stats where a lower roll is better) is kept by hand from the
@@ -178,6 +173,26 @@ cargo run -p item-parser --example sweep -- <catalog folder> <texts file>
 ```
 
 It lists every item or line it can't handle and exits non-zero if there is one.
+
+Three tables come from the game's own data as [RePoE](https://repoe-fork.github.io/poe2/) exports it
+(MIT; the data belongs to Grinding Gear Games), as named in `crates/stat-filters/data/NOTICE`,
+`crates/trade-client/data/NOTICE` and `crates/poe2-oracle/assets/data/NOTICE`: the mod tiers, the
+exchange item ids and the item reference table's bases, for Craft of Exile's link (its command is
+above). After a game patch, download RePoE's `mods.json` and `base_items.json` into a folder, save
+the English trade site's list of exchange items
+(`https://www.pathofexile.com/api/trade2/data/static`) as `static.json`, and run:
+
+```sh
+# Mod tiers and the item level each needs: crates/stat-filters/data/mod-tiers.tsv
+python3 packaging/data/generate_mod_tiers.py <RePoE folder> <EE2>/renderer/public/data
+
+# The trade id of each item GGG's exchange data names: crates/trade-client/data/cx-items.tsv
+python3 packaging/data/generate_cx_ids.py <RePoE folder>/base_items.json static.json
+```
+
+Given a saved hour of the exchange data
+(`https://web.poecdn.com/api/currency-exchange/poe2/<unix hour>`) as a third argument,
+`generate_cx_ids.py` also lists the items that hour trades without a trade id.
 
 ## Dependencies and licenses
 

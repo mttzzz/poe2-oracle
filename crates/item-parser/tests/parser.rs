@@ -1908,17 +1908,103 @@ fn a_gamble_offer_is_reported_unrevealed() {
     );
 }
 
-/// A magic item is its one prefix and one suffix, so both are searched whatever their tier: the
-/// live wand's T3 `+3 к уровню всех камней умений чар хаоса` is what it sells for (reported by
-/// the player, 2026-09-23), yet the rares' top-tier rule left it out.
+/// A magic item is scored like a rare (PoE Overlay II has no rule of its own for one): the live
+/// wand's two affixes both score Quick Price's 3 -- its T3 `+3 к уровню всех камней умений чар
+/// хаоса`, what it sells for (reported by the player, 2026-09-23), and its T2 spell damage.
 #[test]
-fn a_magic_items_affixes_are_all_searched() {
+fn a_magic_wands_affixes_both_score_quick_prices_three() {
     let wand = parse_ru_live("ru_live_glificheskiy_uvyadshiy_zhezl_katastrofy.txt");
-    let filters = stat_filters::build_filters(&wand, 10, &ru_live_catalog());
+    let filters = stat_filters::build_filters(
+        &wand,
+        stat_filters::SearchProfile::QuickPrice,
+        &ru_live_catalog(),
+    );
     let affixes: Vec<_> = filters
         .iter()
         .filter(|filter| filter.generation.is_some())
         .map(|filter| (filter.tier, filter.enabled))
         .collect();
     assert_eq!(affixes, [(Some(2), true), (Some(3), true)]);
+    // An item level 78 wand (RePoE tiers: 8 of spell damage, T1 at level 80; 5 of chaos spell
+    // levels, T1 at 81), with the caster weapons' weights (Caster 3, Damage, Chaos and Gem 0):
+    // - T2 95(90-104)% spell damage: the best tier in reach, (8 - 2 + 1) / (8 - 2 + 1) * 2 = 2;
+    //   Caster 3 * 0.75 + Damage 0 * 0.5 = 2.25; (95 - 90) / 14 * 0.5 = 0.179: 4.43.
+    // - T3 +3 chaos spell levels: (5 - 3 + 1) / (5 - 2 + 1) * 2 = 1.5; 2.25; a fixed roll 0.25: 4.
+    let scores: Vec<f64> = filters
+        .iter()
+        .filter(|filter| filter.generation.is_some())
+        .filter_map(|filter| filter.score)
+        .collect();
+    assert!((scores[0] - (2.0 + 2.25 + 0.5 * 5.0 / 14.0)).abs() < 1e-9);
+    assert_eq!(scores[1], 4.0);
+}
+
+/// The live RU crossbow (item level 79) scored as PoE Overlay II scores it, with the attack
+/// weapons' weights (Damage and Critical 3; Attack, Elemental, Physical, Caster and Speed 2;
+/// Life 1) and the RePoE tiers each family has on crossbows. Quick Price searches its three mods
+/// scoring 3 or more.
+#[test]
+fn quick_price_scores_the_live_crossbow_as_poe_overlay_ii_does() {
+    let crossbow = parse_ru_live("ru_live_bespamyatnoe_chistilische.txt");
+    let filters = stat_filters::build_filters(
+        &crossbow,
+        stat_filters::SearchProfile::default_for(&crossbow),
+        &ru_live_catalog(),
+    );
+    let row = |id: &str| {
+        filters
+            .iter()
+            .find(|filter| filter.trade_ids[0] == id)
+            .unwrap_or_else(|| panic!("no {id} row"))
+    };
+    let score = |id: &str| row(id).score.expect("scored");
+    let near = |a: f64, b: f64| (a - b).abs() < 1e-9;
+
+    // T1 9.71(9-9.9)% leech: 4 tiers, all in reach: 2; Physical 2 * 0.75 + Attack 2 * 0.5 +
+    // Life 1 * 0.25 = 2.75; (9.71 - 9) / 0.9 * 0.5 = 0.394: 5.14.
+    assert!(near(
+        score("explicit.stat_55876295"),
+        2.0 + 2.75 + 0.5 * 0.71 / 0.9
+    ));
+    // T1 5 life per hit: 2; Attack 2 * 0.75 + Life 1 * 0.5 = 2; a fixed roll 0.25: 4.25.
+    assert!(near(score("explicit.stat_821021828"), 4.25));
+    // T5 +223(168-236) local accuracy: 10 tiers, T1 out of an item level 79's reach,
+    // (10 - 5 + 1) / (10 - 2 + 1) * 2 = 1.333; a lone Attack tag 2 * 0.75 + 0.5 = 2;
+    // 55 / 68 * 0.5 = 0.404: 3.74.
+    assert!(near(
+        score("explicit.stat_691932474"),
+        12.0 / 9.0 + 2.0 + 0.5 * 55.0 / 68.0
+    ));
+    // T2 55(54-68) life per kill: 8 tiers, (8 - 2 + 1) / (8 - 1 + 1) * 2 = 1.75; a lone Life
+    // tag 1 * 0.75, too light for the bonus; 1 / 14 * 0.5 = 0.036: 2.54, under the bar.
+    assert!(near(
+        score("explicit.stat_3695891184"),
+        1.75 + 0.75 + 0.5 / 14.0
+    ));
+
+    let searched: Vec<&str> = filters
+        .iter()
+        .filter(|filter| filter.enabled && filter.tag != stat_filters::FilterTag::Implicit)
+        .map(|filter| filter.trade_ids[0].as_str())
+        .collect();
+    assert_eq!(
+        searched,
+        [
+            "explicit.stat_691932474",
+            "explicit.stat_55876295",
+            "explicit.stat_821021828"
+        ]
+    );
+    // Its accuracy tier's place among the family's: T5 of 10, T2 the best in reach, rolling
+    // from 168, every tier together 11 to 650 -- per the table.
+    let tier = row("explicit.stat_691932474").tier_info.expect("tier info");
+    assert_eq!(
+        (
+            tier.current,
+            tier.count,
+            tier.best_available,
+            tier.tier_floor
+        ),
+        (5, 10, 2, Some(168.0))
+    );
 }

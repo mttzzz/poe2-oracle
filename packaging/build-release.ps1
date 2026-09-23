@@ -108,7 +108,7 @@ try {
     if (Test-Path $dist) { Remove-Item -Recurse -Force $dist }
     New-Item -ItemType Directory -Path $dist | Out-Null
     # Into the installer, next to the exe: the data, the fonts and every crate of the shipped
-    # app's own graph (-m), not the workspace's local game-data tools.
+    # app's own graph (-m).
     Invoke-Native cargo @('about', 'generate', '--locked',
         '-m', (Join-Path $root 'crates\poe2-oracle\Cargo.toml'),
         '-c', (Join-Path $root 'about.toml'),

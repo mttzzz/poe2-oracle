@@ -1,7 +1,6 @@
 //! Reads the item text PoE2 puts on the clipboard in answer to its copy-item combo, then puts back
 //! what the player had copied, via GPUI's own native clipboard
-//! (`App::read_from_clipboard`/`write_to_clipboard`) -- not any third-party clipboard crate,
-//! matching this crate's established convention (see `examples/hotkey_clipboard.rs` and
+//! (`App::read_from_clipboard`/`write_to_clipboard`) -- not any third-party clipboard crate (see
 //! `poe2-oracle/Cargo.toml`'s own comment on why `arboard` is deliberately not a dependency: a
 //! second clipboard client would just race GPUI's own for clipboard ownership).
 //!

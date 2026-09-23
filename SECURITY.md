@@ -24,7 +24,7 @@ released, the advisory is published, crediting you unless you ask not to be name
 
 In scope:
 
-- **The app** (`poe2-oracle.exe`): how it handles answers from the trade site, poe.ninja,
+- **The app** (`poe2-oracle.exe`): how it handles answers from the trade site, GGG's CDN,
   poe2scout and GitHub, the game's log and the clipboard text it reads, and the files it writes.
 - **The installer and uninstaller** (`packaging/installer.nsi`): the per-user install, its registry
   entries and what it deletes.
@@ -35,7 +35,7 @@ In scope:
 
 Out of scope:
 
-- Path of Exile 2, the trade site, poe.ninja, poe2scout and GitHub themselves; please report to
+- Path of Exile 2, the trade site, GGG's CDN, poe2scout and GitHub themselves; please report to
   their owners.
 - Attacks that need someone who already controls your Windows account.
 
@@ -66,7 +66,7 @@ download but not a compromised release.
 
 Входит:
 
-- **Программа** (`poe2-oracle.exe`): как она обрабатывает ответы сайта торговли, poe.ninja,
+- **Программа** (`poe2-oracle.exe`): как она обрабатывает ответы сайта торговли, CDN GGG,
   poe2scout и GitHub, журнал игры и текст из буфера обмена, и какие файлы пишет.
 - **Установщик и деинсталлятор** (`packaging/installer.nsi`): установка для одного пользователя,
   записи в реестре и то, что удаляется.
@@ -77,7 +77,7 @@ download but not a compromised release.
 
 Не входит:
 
-- Сама Path of Exile 2, сайт торговли, poe.ninja, poe2scout и GitHub — о них сообщайте их
+- Сама Path of Exile 2, сайт торговли, CDN GGG, poe2scout и GitHub — о них сообщайте их
   владельцам.
 - Атаки, для которых злоумышленник уже должен управлять вашей учётной записью Windows.
 

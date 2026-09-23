@@ -60,7 +60,7 @@ pub(crate) fn format_ru(value: f64) -> String {
     trimmed.replace('.', ",")
 }
 
-/// poe.ninja's compact style in Russian notation: `891`, `4,1k`, `159k`, `1,2M`.
+/// A number in short form, in Russian notation: `891`, `4,1k`, `159k`, `1,2M`.
 pub(super) fn format_compact(value: f64) -> String {
     if value >= 1e6 {
         format!("{}M", format_ru(value / 1e6))

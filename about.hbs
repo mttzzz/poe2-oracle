@@ -1,11 +1,15 @@
 {{!--
   cargo-about's template for THIRD-PARTY-NOTICES.html (see about.toml for how it is run).
 
-  Two parts: the data and fonts that ship inside the app, written out here because no crate
-  manifest declares them, then every Rust crate in the graph under the license text it ships
-  with. The data section copies crates/poe2-oracle/assets/data/NOTICE,
-  crates/item-parser/data/NOTICE and crates/poe2-oracle/assets/fonts/OFL-*.txt: regenerating the
-  data from another Exiled Exchange 2 commit, or changing a font, changes it here too.
+  Two parts: the data, fonts and native code that ship inside the app, written out here because
+  no crate manifest declares them, then every Rust crate in the graph under the license text it
+  ships with. The data section copies crates/poe2-oracle/assets/data/NOTICE,
+  crates/item-parser/data/NOTICE, crates/stat-filters/data/NOTICE, crates/trade-client/data/NOTICE
+  and crates/poe2-oracle/assets/fonts/OFL-*.txt: regenerating the data from another Exiled
+  Exchange 2 commit or RePoE export, or changing a font, changes it here too. The native code is
+  the WebView2 loader webview2-com-sys bundles (its x64/WebView2LoaderStatic.lib, linked into the
+  MSVC exe) with the WebView2 SDK's LICENSE.txt: a webview2-com update that moves to another SDK
+  changes the version here.
 
   This workspace's own crates (path dependencies: no `source`) are PoE2 Oracle itself, not third
   parties, so they are left out of the crate lists -- together with the license entries only they
@@ -72,7 +76,8 @@
             PoE2 Oracle is licensed under either of the MIT License or the Apache License 2.0, at
             your option: see LICENSE-MIT.txt and LICENSE-APACHE.txt next to this file, or
             <a href="https://github.com/mttzzz/poe2-oracle">github.com/mttzzz/poe2-oracle</a>.
-            It contains the data, fonts and Rust crates listed below, each under its own license.
+            It contains the data, fonts, native code and Rust crates listed below, each under its
+            own license.
         </p>
         <p>
             PoE2 Oracle is a fan-made tool. This product isn't affiliated with or endorsed by
@@ -85,14 +90,49 @@
             <h3 id="exiled-exchange-2">Exiled Exchange 2: item and stat data</h3>
             <p>
                 The item reference table (English and Russian item names and item art), the ways
-                the game client prints stats, and the stats whose lower roll is better are derived
-                from the data of
+                the game client prints stats, the stats whose lower roll is better and the trade
+                stats that key the mod tier table and the bases' implicits are derived from the
+                data of
                 <a href="https://github.com/Kvan7/Exiled-Exchange-2">Exiled Exchange 2</a>, commit
                 0c9c9ba017b1b9b0a3779fe7f8700255753e2e39, under the MIT License.
             </p>
             <pre>MIT License
 
 Copyright (c) 2020 Alexander Drozdov
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.</pre>
+        </section>
+
+        <section class="license">
+            <h3 id="repoe">RePoE: the game's mod and base item tables</h3>
+            <p>
+                The mod tier table, the bases' metadata ids and implicits in the item reference
+                table and the table of Currency Exchange item ids are derived from Path of Exile
+                2's own mod and base item tables as exported by
+                <a href="https://repoe-fork.github.io/poe2/">RePoE</a>, under the MIT License. The
+                data belongs to Grinding Gear Games; RePoE's license adds: "Contents of generated
+                files (all files in the `data` directory) are owned by Grinding Gear Games and shall
+                not be used or published without being in accordance with their terms of use."
+            </p>
+            <pre>MIT License
+
+Copyright (c) 2016 brather1ng
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -213,6 +253,46 @@ INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
 DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
 OTHER DEALINGS IN THE FONT SOFTWARE.</pre>
+        </section>
+
+        <h2 id="native-code">Native code</h2>
+
+        <section class="license">
+            <h3 id="webview2-loader">Microsoft Edge WebView2 loader</h3>
+            <p>
+                The sign-in window shows pathofexile.com in Microsoft Edge WebView2. The exe
+                contains the WebView2 loader of Microsoft's WebView2 SDK 1.0.3800.47
+                (WebView2LoaderStatic.lib, as the webview2-com-sys crate bundles it), under the
+                license below. The WebView2 Runtime itself is not included: it comes with Windows
+                or from Microsoft.
+            </p>
+            <pre>Copyright (C) Microsoft Corporation. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+   * Redistributions of source code must retain the above copyright
+notice, this list of conditions and the following disclaimer.
+   * Redistributions in binary form must reproduce the above
+copyright notice, this list of conditions and the following disclaimer
+in the documentation and/or other materials provided with the
+distribution.
+   * The name of Microsoft Corporation, or the names of its contributors
+may not be used to endorse or promote products derived from this
+software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.</pre>
         </section>
 
         <h2 id="rust-crates">Rust crates</h2>

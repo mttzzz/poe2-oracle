@@ -1,17 +1,10 @@
-//! PoE2 trade API client (leagues -> search -> fetch). Endpoints and request/response shapes are
-//! migrated from the real, independently-verified POC in
-//! `crates/poe2-oracle/examples/trade_api.rs` (see `docs/dev/poc-findings.md`'s "Capability 5"
-//! section for the original cross-check against a separate Python `urllib` call) into a real
-//! library API here -- a move-and-refactor of already-proven logic, not a rewrite. The exact
-//! endpoint URLs, request bodies, and rate-limit-relevant `GET`/`POST` shapes are unchanged from
-//! the POC.
+//! PoE2 trade API client (leagues -> search -> fetch).
 //!
 //! Deliberately UI/runtime-agnostic: takes an already-constructed `Arc<dyn HttpClient>` rather
 //! than building one itself (`reqwest_client::ReqwestClient` construction, including the
 //! `USER_AGENT` choice, stays in `crates/poe2-oracle` -- the one place that actually knows what
-//! kind of app is making the request). Depends only on `poe2-domain` (for the eventual shared
-//! item/currency shapes -- still an empty skeleton as of this migration, see this crate's
-//! `Cargo.toml`) and `http_client` (the trait, not a concrete client).
+//! kind of app is making the request). Item shapes come from `poe2-domain`, filter rows from
+//! `stat-filters`, and `http_client` supplies the trait, not a concrete client.
 //!
 //! `catalog`/`cache`/`rate_limit` extend this crate beyond trade *listings*: `catalog` fetches
 //! the stat/item/currency catalogs those listings get filtered against
@@ -29,8 +22,8 @@
 pub mod account;
 pub mod cache;
 pub mod catalog;
+pub mod cx;
 pub mod live;
-pub mod ninja;
 pub mod rate_limit;
 pub mod rates;
 pub mod scout;
@@ -40,7 +33,7 @@ use std::fmt;
 use std::ops::Range;
 use std::sync::Arc;
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result};
 use futures::AsyncReadExt;
 use http_client::http::HeaderMap;
 use http_client::{AsyncBody, HttpClient, Json, Response, StatusCode};
@@ -214,10 +207,15 @@ pub(crate) async fn checked_body(
     Ok(body)
 }
 
-/// One league as returned by `GET /api/trade2/data/leagues`.
-#[derive(Debug, Deserialize)]
+/// One league as `GET /api/trade2/data/leagues` lists it. `Serialize`/`Deserialize` for the app's
+/// disk cache ([`cache::load_or_fetch`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct League {
+    /// What searches name it by: the same on every site ("Forbidden Rites").
     pub id: String,
+    /// Its name in the site's language: "Запретные ритуалы" on `ru`; the id itself on `www`, and on
+    /// `ru` for a league the site leaves untranslated ("HC Forbidden Rites").
+    pub text: String,
 }
 
 #[derive(Deserialize)]
@@ -225,12 +223,13 @@ struct LeaguesResponse {
     result: Vec<League>,
 }
 
-/// `GET /api/trade2/data/leagues` -- every currently-active league, most-current first (the POC's
-/// proven assumption: taking `leagues[0]` gives the current top league, e.g. "Forbidden Rites").
-/// Always queried on `www`: league ids are shared across subdomains (only the display `text`
-/// differs), and this crate only ever needs the id.
-pub async fn leagues(client: &Arc<dyn HttpClient>) -> Result<Vec<League>> {
-    let url = format!("{}/data/leagues", TradeSite::International.api_base());
+/// `GET /api/trade2/data/leagues` on `site` -- every currently-active league, most-current first
+/// (verified live: taking `leagues[0]` gives the current top league, e.g. "Forbidden Rites"). Every
+/// site lists the same ids in the same order; only `text` is localized (verified live 2026-09-23:
+/// `ru` names "Forbidden Rites", "Runes of Aldur", "Standard" and "Hardcore" "Запретные ритуалы",
+/// "Руны Альдура", "Стандарт" and "Одна жизнь", and leaves the "HC ..." leagues in English).
+pub async fn leagues(client: &Arc<dyn HttpClient>, site: TradeSite) -> Result<Vec<League>> {
+    let url = format!("{}/data/leagues", site.api_base());
     let request = client.get(&url, AsyncBody::default(), true);
     let body = checked_body(request, "GET", &url, None, "leagues").await?;
     let parsed: LeaguesResponse =
@@ -311,7 +310,7 @@ pub struct SearchScope {
     pub category: Option<String>,
     pub rarity: Option<RarityFilter>,
     /// How many of the enabled stat rows a listing must match: all of them, or -- a search that
-    /// found nothing, relaxed -- at least some.
+    /// found nothing, relaxed by the player -- at least some.
     pub stat_match: StatMatch,
     /// Corrupted, mirrored, sanctified and fractured listings the search leaves out or asks for.
     pub misc: MiscChoices,
@@ -403,7 +402,11 @@ impl MiscChoices {
         });
         let tier = self.unidentified_tier.map(|tier| {
             let min = Some(f64::from(tier));
-            let bounds = StatFilterValue { min, max: None };
+            let bounds = StatFilterValue {
+                min,
+                max: None,
+                weight: None,
+            };
             ("unidentified_tier", QueryFilter::Range(bounds))
         });
         yes_no.chain(tier)
@@ -452,13 +455,16 @@ struct StatFilterEntry<'a> {
 }
 /// A stat or property filter's bounds. An unset bound is omitted -- neither `null` nor filled
 /// in -- which leaves that side of the search open: the request shape EE2 sends when its
-/// min-only default leaves `roll.max` `undefined`.
+/// min-only default leaves `roll.max` `undefined`. A weighted sum's entry carries its `weight`
+/// instead.
 #[derive(Serialize)]
 struct StatFilterValue {
     #[serde(skip_serializing_if = "Option::is_none")]
     min: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     max: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    weight: Option<f64>,
 }
 /// One `query.filters.<group>` object (`type_filters`, `equipment_filters`, ...).
 #[derive(Serialize, Default)]
@@ -494,8 +500,8 @@ pub struct SearchOutcome {
 }
 
 /// How many of the enabled stat rows a listing must match: every one (the trade site's `"and"`
-/// group), or at least some -- its `"count"` group, what a search that finds nothing is relaxed
-/// to.
+/// group), or at least some -- its `"count"` group, what the player can relax a search that found
+/// nothing to (`one_fewer_match`).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum StatMatch {
     #[default]
@@ -513,20 +519,12 @@ pub fn enabled_stat_rows(filters: &[stat_filters::SearchFilter]) -> u32 {
         .count() as u32
 }
 
-/// The relaxed searches to try, in order, when matching every enabled stat row finds nothing:
-/// all but one, then half of them rounded up. Fewer than three rows leave nothing worth relaxing
-/// to -- one matching row is no likeness at all.
-pub fn relaxed_matches(filters: &[stat_filters::SearchFilter]) -> Vec<StatMatch> {
+/// The relaxed search the player can ask for when matching every enabled stat row found nothing:
+/// listings with all of them but one, as `(least, of)` -- at least `least` of the `of` rows
+/// (`StatMatch::AtLeast(least)`). `None` under two rows: all but one of one would match anything.
+pub fn one_fewer_match(filters: &[stat_filters::SearchFilter]) -> Option<(u32, u32)> {
     let wanted = enabled_stat_rows(filters);
-    if wanted < 3 {
-        return Vec::new();
-    }
-    let mut steps = vec![wanted - 1];
-    let half = wanted.div_ceil(2);
-    if half < wanted - 1 {
-        steps.push(half);
-    }
-    steps.into_iter().map(StatMatch::AtLeast).collect()
+    (wanted >= 2).then(|| (wanted - 1, wanted))
 }
 
 /// `POST /api/trade2/search/{league}` for gear and everything else priced by its mods and
@@ -541,8 +539,8 @@ pub fn relaxed_matches(filters: &[stat_filters::SearchFilter]) -> Vec<StatMatch>
 /// `<group>.<key>` trade id points, `query.filters.<group>.filters.<key>`, and only while
 /// enabled: EE2 leaves an unchecked property out of the query (`createTradeRequest` skips a
 /// disabled row before placing it, `pathofexile-trade.ts:900`). Either kind carries only the
-/// bounds actually set (`roll.min`/`roll.max`): an unset bound stays open, never filled in from
-/// `default_min`/`default_max`.
+/// bounds actually set (`roll.min`/`roll.max`): an unset bound stays open. Every search folds a
+/// seller's listings of one item into one (`trade_filters.collapse`), as PoE Overlay II's does.
 pub async fn search_with_filters(
     client: &Arc<dyn HttpClient>,
     site: TradeSite,
@@ -587,9 +585,10 @@ fn filtered_search_body<'a>(
         let group = query_filters.entry("misc_filters").or_default();
         group.filters.insert(key, filter);
     }
+    let trade_filters = query_filters.entry("trade_filters").or_default();
+    trade_filters.filters.insert("collapse", COLLAPSE);
     if let Some(option) = scope.price.option() {
-        let group = query_filters.entry("trade_filters").or_default();
-        group
+        trade_filters
             .filters
             .insert("price", QueryFilter::Option(OptionField { option }));
     }
@@ -617,7 +616,8 @@ fn filtered_search_body<'a>(
 /// `explicit.stat_1379411836` and `explicit.stat_2897413282`) gets a `"count"` group of its own
 /// that any one of them satisfies -- sending only the first would lose every listing whose mod
 /// the site files under another. A relaxed search (`StatMatch::AtLeast`) puts every row's ids
-/// into its one `"count"` group instead, where a listing matches a row through any of them.
+/// into its one `"count"` group instead, where a listing matches a row through any of them. A
+/// weighted sum is its own `"weight2"` group in either (`weighted_sum_group`).
 fn stat_groups(
     filters: &[stat_filters::SearchFilter],
     stat_match: StatMatch,
@@ -625,16 +625,19 @@ fn stat_groups(
     let rows = filters
         .iter()
         .filter_map(|filter| Some((filter, stat_filter_entries(filter)?)));
+    let weighted_sums = filters.iter().filter_map(weighted_sum_group);
     if let StatMatch::AtLeast(count) = stat_match {
-        return vec![StatGroup {
+        let relaxed = StatGroup {
             kind: "count",
             value: Some(StatFilterValue {
                 min: Some(f64::from(count)),
                 max: None,
+                weight: None,
             }),
             disabled: false,
             filters: rows.flat_map(|(_, entries)| entries).collect(),
-        }];
+        };
+        return std::iter::once(relaxed).chain(weighted_sums).collect();
     }
     let mut every = StatGroup {
         kind: "and",
@@ -652,23 +655,61 @@ fn stat_groups(
                 value: Some(StatFilterValue {
                     min: Some(1.0),
                     max: None,
+                    weight: None,
                 }),
                 disabled: !filter.enabled,
                 filters: entries,
             });
         }
     }
-    std::iter::once(every).chain(any_of).collect()
+    std::iter::once(every)
+        .chain(any_of)
+        .chain(weighted_sums)
+        .collect()
+}
+
+/// A weighted sum's `"weight2"` group, as PoE Overlay II sends one: every trade id at weight 1,
+/// the group's value the row's bounds, unchecked with the row. `None` for any other row.
+fn weighted_sum_group(filter: &stat_filters::SearchFilter) -> Option<StatGroup<'_>> {
+    if !filter.weighted_sum {
+        return None;
+    }
+    let roll = filter.roll.as_ref()?;
+    Some(StatGroup {
+        kind: "weight2",
+        value: Some(StatFilterValue {
+            min: roll.min,
+            max: roll.max,
+            weight: None,
+        }),
+        disabled: !filter.enabled,
+        filters: filter
+            .trade_ids
+            .iter()
+            .map(|id| StatFilterEntry {
+                id,
+                value: StatFilterValue {
+                    min: None,
+                    max: None,
+                    weight: Some(1.0),
+                },
+                disabled: !filter.enabled,
+            })
+            .collect(),
+    })
 }
 
 /// A stat row's `query.stats` entries, one per trade id, carrying the row's bounds -- none for a
 /// row without a roll: a flag stat (`Enemies in your Presence are Blinded`), which a listing
 /// matches by having it, sent with an empty `value` as EE2's `tradeIdToQuery` sends one. A row
 /// in the item's own words (`SearchFilter::inverted`) has its bounds negated and swapped back
-/// into the catalog's terms. `None` for a row without a trade id, and for a property row, which
-/// `property_filter` places instead.
+/// into the catalog's terms. `None` for a row without a trade id, for a property row, which
+/// `property_filter` places instead, and for a weighted sum (`weighted_sum_group`).
 fn stat_filter_entries(filter: &stat_filters::SearchFilter) -> Option<Vec<StatFilterEntry<'_>>> {
-    if filter.tag == stat_filters::FilterTag::Property || filter.trade_ids.is_empty() {
+    if filter.tag == stat_filters::FilterTag::Property
+        || filter.weighted_sum
+        || filter.trade_ids.is_empty()
+    {
         return None;
     }
     let (min, max) = filter
@@ -686,7 +727,11 @@ fn stat_filter_entries(filter: &stat_filters::SearchFilter) -> Option<Vec<StatFi
             .iter()
             .map(|id| StatFilterEntry {
                 id,
-                value: StatFilterValue { min, max },
+                value: StatFilterValue {
+                    min,
+                    max,
+                    weight: None,
+                },
                 disabled: !filter.enabled,
             })
             .collect(),
@@ -707,6 +752,7 @@ fn property_filter(filter: &stat_filters::SearchFilter) -> Option<(&str, &str, S
         StatFilterValue {
             min: roll.min,
             max: roll.max,
+            weight: None,
         },
     ))
 }
@@ -721,7 +767,11 @@ struct ExactSearchQuery<'a> {
     status: OptionField<'static>,
     #[serde(rename = "type")]
     type_: &'a str,
+    filters: BTreeMap<&'static str, QueryFilterGroup<'static>>,
 }
+
+/// `trade_filters.collapse`: a seller's listings of one item as one.
+const COLLAPSE: QueryFilter<'static> = QueryFilter::Option(OptionField { option: "true" });
 
 /// `POST /api/trade2/search/{league}` for name/base-type-exact items with no useful mod search
 /// (Unique-by-name, Divination Cards, Skill/Support/Meta Gems): `query.type` exact-matches
@@ -745,6 +795,12 @@ pub async fn search_exact(
                 option: status.option(),
             },
             type_: exact_type,
+            filters: BTreeMap::from([(
+                "trade_filters",
+                QueryFilterGroup {
+                    filters: BTreeMap::from([("collapse", COLLAPSE)]),
+                },
+            )]),
         },
         sort: SearchSort { price: "asc" },
     };
@@ -763,7 +819,7 @@ pub async fn search_exact(
 /// How a parsed item is priced.
 pub enum SearchRoute {
     /// Traded on the in-game Currency Exchange, which the trade site's listings don't reflect:
-    /// priced from the market (poe.ninja, see `ninja`), never searched. `trade_id` is the item's
+    /// priced from the exchange market (see `cx`), never searched. `trade_id` is the item's
     /// `/data/static` id, the id the market is keyed by.
     Market {
         trade_id: String,
@@ -1018,7 +1074,7 @@ fn magic_base_type<'a>(name: &str, item_types: &'a [ItemTypeEntry]) -> Option<&'
 struct FetchResponse {
     result: Vec<Option<FetchResultItem>>,
 }
-/// One `result[]` entry. Past the POC-verified basics (`name`, `typeLine`, `ilvl`, `price`,
+/// One `result[]` entry. Past the live-verified basics (`name`, `typeLine`, `ilvl`, `price`,
 /// `account.name`, `indexed`), fields follow EE2's `FetchResult` typing
 /// (`renderer/src/web/price-check/trade/pathofexile-trade.ts`), whose `requestResults` reads them
 /// into its results table; [`FetchedItem`] documents what each one means.
@@ -1751,9 +1807,8 @@ pub struct FetchedItem {
 }
 
 /// `GET /api/trade2/fetch/{ids}?query={query_id}` for up to 10 listing ids at a time (the trade
-/// API's own per-request limit; unenforced here since the POC never needed more than 5 -- pass a
-/// pre-sliced `listing_ids` page). Entries the API returns as `null` (delisted between search and
-/// fetch) are silently dropped, matching the POC's `.flatten()`.
+/// API's own per-request limit, unenforced here -- pass a pre-sliced `listing_ids` page). Entries
+/// the API returns as `null` (delisted between search and fetch) are silently dropped.
 ///
 /// Like every rate-limited call here, `fetch` records its response on `limiter` but never waits
 /// on it: this crate is UI/runtime-agnostic (see the module doc comment) and has no executor to
@@ -1855,59 +1910,11 @@ pub fn group_listings(
     }
 }
 
-/// Convenience wrapper: current league (first from `leagues`) -> `search_with_filters` (no stat
-/// filters, category only) -> `fetch`, taking at most `limit` listings. Mirrors the POC's
-/// `run_trade_flow` end to end. Owns two short-lived [`RateLimiter`]s for this one call (search
-/// and fetch are independent rate-limit families -- see `rate_limit`'s own doc comment -- sharing
-/// one instance between them would let whichever response arrived last silently overwrite the
-/// other endpoint's real state); a caller that issues many search/fetch calls over time (the
-/// price-check app) should own and reuse its own longer-lived `RateLimiter`s instead of going
-/// through this wrapper.
-pub async fn search_current_league(
-    client: &Arc<dyn HttpClient>,
-    category: &str,
-    limit: usize,
-) -> Result<(String, u64, Vec<FetchedItem>)> {
-    let league = leagues(client)
-        .await?
-        .into_iter()
-        .next()
-        .ok_or_else(|| anyhow!("leagues response had no entries"))?
-        .id;
-    let site = TradeSite::International;
-    let mut search_limiter = RateLimiter::new();
-    let scope = SearchScope {
-        category: Some(category.to_owned()),
-        ..SearchScope::default()
-    };
-    let outcome = search_with_filters(
-        client,
-        site,
-        &league,
-        &scope,
-        &[],
-        ListingStatus::Online,
-        &mut search_limiter,
-    )
-    .await?;
-    let take_ids: Vec<String> = outcome.listing_ids.into_iter().take(limit).collect();
-    let mut fetch_limiter = RateLimiter::new();
-    let items = fetch(
-        client,
-        site,
-        &take_ids,
-        &outcome.query_id,
-        &mut fetch_limiter,
-    )
-    .await?;
-    Ok((league, outcome.total, items))
-}
-
 /// A league id as one URL path segment or query value, encoded the way the trade site's own
 /// frontend encodes it (JavaScript's `encodeURIComponent`): letters, digits and `-_.!~*'()` stay as
 /// they are, every other byte of its UTF-8 becomes `%XX`. League ids hold spaces ("Forbidden
 /// Rites") and a private league's parentheses ("My League (PL12345)"), and a name the player typed
-/// may hold anything; the trade API, poe.ninja and poe2scout all take this form.
+/// may hold anything; the trade API and poe2scout take this form.
 pub fn encode_league(league: &str) -> String {
     use std::fmt::Write as _;
     let mut encoded = String::with_capacity(league.len());
@@ -1926,7 +1933,7 @@ pub fn encode_league(league: &str) -> String {
 mod fetch_tests {
     use super::*;
 
-    /// A fetch page shaped after EE2's `FetchResult` typing around the POC-verified basics: an
+    /// A fetch page shaped after EE2's `FetchResult` typing around the live-verified basics: an
     /// online seller's individually noted listing, an AFK seller's tab-priced one, an offline
     /// seller's instant-buyout Merchant-tab listing (`"online": null`), a delisted `null`, and a
     /// flagged stack whose seller has no `online` key at all.
@@ -3035,7 +3042,7 @@ mod trade_api_error_tests {
 
 #[cfg(test)]
 mod search_request_tests {
-    use stat_filters::{FilterTag, SearchFilter, SearchFilterRoll};
+    use stat_filters::{FilterTag, RollBound, SearchFilter, SearchFilterRoll};
 
     use super::*;
 
@@ -3050,14 +3057,16 @@ mod search_request_tests {
                 value: 25.0,
                 min,
                 max,
-                default_min: 22.0,
-                default_max: 28.0,
+                bound: RollBound::Higher,
                 dp: false,
             }),
             enabled: true,
             hidden: false,
             generation: None,
             inverted: false,
+            score: None,
+            tier_info: None,
+            weighted_sum: false,
         }
     }
 
@@ -3109,14 +3118,16 @@ mod search_request_tests {
                 value: min,
                 min: Some(min),
                 max: None,
-                default_min: min,
-                default_max: min,
+                bound: RollBound::AtLeast,
                 dp: false,
             }),
             enabled,
             hidden: false,
             generation: None,
             inverted: false,
+            score: None,
+            tier_info: None,
+            weighted_sum: false,
         }
     }
 
@@ -3150,6 +3161,7 @@ mod search_request_tests {
                     }],
                     "filters": {
                         "equipment_filters": { "filters": { "ar": { "min": 90.0 } } },
+                        "trade_filters": { "filters": { "collapse": { "option": "true" } } },
                         "type_filters": { "filters": {
                             "category": { "option": "armour.chest" },
                             "rarity": { "option": "nonunique" },
@@ -3175,14 +3187,64 @@ mod search_request_tests {
         assert_eq!(query["name"], "The Eternal Spark");
         assert_eq!(query["type"], "Crystal Focus");
         assert_eq!(query["status"]["option"], "online");
-        assert!(
-            query.get("filters").is_none(),
-            "no category, rarity or property"
+        // No category, rarity or property: a seller's listings collapsed, nothing more.
+        assert_eq!(
+            query["filters"],
+            serde_json::json!({ "trade_filters": { "filters": { "collapse": { "option": "true" } } } })
         );
     }
 
     #[test]
-    fn a_relaxed_search_asks_for_some_of_the_enabled_stats() {
+    fn a_weighted_sum_is_a_weight2_group_of_its_stats_kept_out_of_a_relaxed_count() {
+        // A ring's rarity as PoE Overlay II searches it: every mod type's rarity stat, weight 1.
+        let rarity = SearchFilter {
+            trade_ids: vec![
+                "explicit.stat_3917489142".to_owned(),
+                "implicit.stat_3917489142".to_owned(),
+            ],
+            tag: FilterTag::Pseudo,
+            weighted_sum: true,
+            ..strength_filter(Some(30.0), None)
+        };
+        let filters = [strength_filter(Some(22.0), None), rarity.clone()];
+        let weight2 = serde_json::json!({
+            "type": "weight2",
+            "value": { "min": 30.0 },
+            "filters": [
+                { "id": "explicit.stat_3917489142", "value": { "weight": 1.0 }, "disabled": false },
+                { "id": "implicit.stat_3917489142", "value": { "weight": 1.0 }, "disabled": false },
+            ],
+        });
+        let stats = |scope: &SearchScope, filters: &[SearchFilter]| {
+            let body = filtered_search_body(scope, filters, ListingStatus::Online);
+            serde_json::to_value(body).expect("the body serializes")["query"]["stats"].clone()
+        };
+
+        let every = stats(&SearchScope::default(), &filters);
+        assert_eq!(every[0]["filters"].as_array().map(Vec::len), Some(1));
+        assert_eq!(every[1], weight2);
+        // It is its own group in a relaxed search too, and no row of the count: one stat row
+        // beside it leaves nothing to relax.
+        assert_eq!(enabled_stat_rows(&filters), 1);
+        assert_eq!(one_fewer_match(&filters), None);
+        let relaxed = SearchScope {
+            stat_match: StatMatch::AtLeast(1),
+            ..SearchScope::default()
+        };
+        assert_eq!(stats(&relaxed, &filters)[1], weight2);
+        // Unchecked, the group is off.
+        let unchecked = [SearchFilter {
+            enabled: false,
+            ..rarity
+        }];
+        assert_eq!(
+            stats(&SearchScope::default(), &unchecked)[1]["disabled"],
+            true
+        );
+    }
+
+    #[test]
+    fn the_relaxed_search_asks_for_all_the_enabled_stats_but_one() {
         let mut filters = vec![
             strength_filter(Some(22.0), None),
             strength_filter(Some(22.0), None),
@@ -3196,10 +3258,7 @@ mod search_request_tests {
             property("equipment_filters.ar", 90.0, true),
         ];
         assert_eq!(enabled_stat_rows(&filters), 4);
-        assert_eq!(
-            relaxed_matches(&filters),
-            [StatMatch::AtLeast(3), StatMatch::AtLeast(2)]
-        );
+        assert_eq!(one_fewer_match(&filters), Some((3, 4)));
 
         let scope = SearchScope {
             stat_match: StatMatch::AtLeast(3),
@@ -3211,9 +3270,11 @@ mod search_request_tests {
         assert_eq!(stats[0]["value"], serde_json::json!({ "min": 3.0 }));
         assert_eq!(stats[0]["filters"].as_array().map(Vec::len), Some(5));
 
-        // Two stats matched in full or not at all: nothing in between to relax to.
+        // Two rows relax to either; a single row has no likeness to relax to.
         filters.truncate(2);
-        assert!(relaxed_matches(&filters).is_empty());
+        assert_eq!(one_fewer_match(&filters), Some((1, 2)));
+        filters.truncate(1);
+        assert_eq!(one_fewer_match(&filters), None);
     }
 
     #[test]

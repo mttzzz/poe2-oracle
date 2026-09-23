@@ -1,27 +1,36 @@
 //! Search-filter construction from a parsed item: `poe2_domain::ParsedItem` -> `Vec<SearchFilter>`
-//! ready for `trade-client::search_with_filters`. Ports the per-mod aggregation shape of the
-//! real, working reference's `calculatedStatToFilter`
-//! (`exiled-exchange-2/renderer/src/web/price-check/filters/create-stat-filters.ts:352-470`) and
-//! its `pseudo/index.ts` summed pseudo-stat rules (see the `pseudo` module) -- cited as the
-//! aggregation algorithm's ground truth, never as code to copy. Pure logic, no I/O: this crate
-//! depends on nothing but `poe2-domain` by design (see `Cargo.toml`).
+//! ready for `trade-client::search_with_filters`. The rows follow the real, working reference's
+//! per-mod aggregation, `calculatedStatToFilter`
+//! (`exiled-exchange-2/renderer/src/web/price-check/filters/create-stat-filters.ts:352-470`), and
+//! its `pseudo/index.ts` summed pseudo-stat rules (see the `pseudo` module); which rows a search
+//! starts with and how far below a roll it searches follow PoE Overlay II: its mod ranking
+//! (`rank`), weighted sums (`weighted`) and search profiles (`profile`). Both are cited as the
+//! algorithms' ground truth, never as code to copy. Pure logic, no I/O: this crate depends on
+//! nothing but `poe2-domain` by design (see `Cargo.toml`); the RePoE tier table it ranks mods by
+//! is compiled in (`tiers`).
 //!
 //! Property rows (the `property` module) search the trade query's own item filters -- defences,
 //! DPS, item level, sockets, quality -- rather than a stat: their single trade id names that
 //! filter as `<group>.<key>`.
 
 mod better;
+mod profile;
 mod property;
 mod pseudo;
+mod rank;
+mod tiers;
+mod weighted;
 
 use poe2_domain::{
     ItemRarity, ModGeneration, ModifierInfo, ModifierType, ParsedItem, ParsedStat, StatCatalog,
 };
+pub use profile::{SearchProfile, apply_profile};
 use property::property_filters;
 pub use property::uses_exact_preset;
+use rank::{Candidate, Pick};
+pub use tiers::{GameMod, game_mod, printed, stat_hash};
 
-/// Where a `SearchFilter` came from -- drives the reference screenshot's tag pill, and, for
-/// `Explicit`/`Fractured`/`Desecrated`, the default-enabled heuristic in `per_mod_filters`.
+/// Where a `SearchFilter` came from -- drives the panel's tag pill.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FilterTag {
     Pseudo,
@@ -38,20 +47,52 @@ pub enum FilterTag {
     EmptyAffix,
 }
 
-/// The roll band for one `SearchFilter`. `min`/`max` are the CURRENT editable search bounds (what
-/// a UI numeric input would bind to; `None` leaves that side of the search open);
-/// `default_min`/`default_max` are the band's edges, computed from `value` and the caller's
-/// `search_percent` tolerance band -- `min` starts at `default_min`, `max` starts open (see
-/// `build_roll`). Kept distinct from `min`/`max` so a UI can offer a "reset to default"
-/// affordance later without recomputing.
+/// Which bound a search profile sets on a roll, and from what (PoE Overlay II's `gQ`,
+/// `9505.bundle.js` ~69873; `apply_profile`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RollBound {
+    /// A higher roll is better: the minimum is the value less the profile's range, the maximum
+    /// open.
+    Higher,
+    /// A lower roll is better: the maximum is the value plus the profile's range, the minimum
+    /// open.
+    Lower,
+    /// The minimum is the value whatever the profile: a fixed roll, a count, a level.
+    AtLeast,
+    /// The maximum is the value whatever the profile: a fixed roll a lower one beats.
+    AtMost,
+    /// Both bounds are the value: a map tier, a number naming something.
+    Exactly,
+}
+
+/// The roll a `SearchFilter` searches around. `min`/`max` are the CURRENT search bounds (what a
+/// UI numeric input binds to; `None` leaves that side of the search open), which the search
+/// profile sets from `value` the way `bound` says (`apply_profile`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct SearchFilterRoll {
     pub value: f64,
     pub min: Option<f64>,
     pub max: Option<f64>,
-    pub default_min: f64,
-    pub default_max: f64,
     pub dp: bool,
+    pub bound: RollBound,
+}
+
+/// Where a mod row's tier sits in its family on this kind of item, from the RePoE tier table
+/// (`data/mod-tiers.tsv`, see the `tiers` module).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TierInfo {
+    /// The tier the item prints, T1 the best.
+    pub current: u32,
+    /// How many tiers the family has here, at least `current`.
+    pub count: u32,
+    /// The best tier the item's level lets roll, never above `current`.
+    pub best_available: u32,
+    /// The item level the current tier needs.
+    pub min_level: u32,
+    /// The bottom of the current tier's roll range, in the row's terms; `None` for a flag.
+    pub tier_floor: Option<f64>,
+    /// The lowest to the highest roll of every tier, in the row's terms; `None` for a flag.
+    pub range: Option<(f64, f64)>,
 }
 
 /// One row of a Price Check filter panel: a stat aggregated from every contributing mod on the
@@ -64,10 +105,10 @@ pub struct SearchFilter {
     pub stat_ref: String,
     pub display_text: String,
     pub tag: FilterTag,
-    /// Minimum tier across every contributing mod source that has one (`ModifierInfo.tier`);
-    /// `None` if no source carries a tier (a Unique item's fixed mods never do; a rune-granted
-    /// stat never does). Never looked up against a local tier table -- see the workspace Price
-    /// Check plan's Context section for why.
+    /// Minimum tier across every contributing mod source that has one (`ModifierInfo.tier`, the
+    /// game's own number from the advanced copy); `None` if no source carries a tier (a Unique
+    /// item's fixed mods never do; a rune-granted stat never does). `tier_info` places it among
+    /// its family's tiers.
     pub tier: Option<u32>,
     pub roll: Option<SearchFilterRoll>,
     /// `true` = checkbox checked / included in the search -- the NON-inverted sense, deliberately
@@ -75,9 +116,10 @@ pub struct SearchFilter {
     pub enabled: bool,
     /// `true` = listed only behind the panel's "show hidden" toggle, where EE2 hides the row
     /// (its `StatFilter.hidden`): a stat a pseudo total already counts, a total restating
-    /// another, a minor share of a weapon's DPS. A hidden row is never `enabled`. EE2's toggle
-    /// swaps the list to the hidden rows alone and only shows while some row is hidden
-    /// (`FiltersBlock.vue`'s `filteredStats`).
+    /// another, a minor share of a weapon's DPS -- and where PoE Overlay II merges a mod into a
+    /// property or a total. A hidden row is never `enabled`. EE2's toggle swaps the list to the
+    /// hidden rows alone and only shows while some row is hidden (`FiltersBlock.vue`'s
+    /// `filteredStats`).
     pub hidden: bool,
     /// The affix slot behind the row, for grouping it the way the game lists mods: the prefix or
     /// suffix every source mod of a per-mod row occupies (`None` when they differ, and for
@@ -88,6 +130,17 @@ pub struct SearchFilter {
     /// (`word_like_the_item`): `display_text` is the item's, and `roll` is in its terms -- a
     /// search negates the bounds back and swaps them (EE2's `tradeInvert`).
     pub inverted: bool,
+    /// PoE Overlay II's score for what the row searches (`rank`): a mod row's best contributing
+    /// mod's, a property's or a total's best mod merged into it; `None` where it ranks nothing
+    /// (implicits, runes, uniques, map items, free slots). Quick Price searches the best rows
+    /// scoring at least 3.
+    pub score: Option<f64>,
+    /// Where the row's tier sits among its family's on this kind of item: a row of one mod with a
+    /// printed tier the tier table knows.
+    pub tier_info: Option<TierInfo>,
+    /// A weighted sum: a total the trade site has no pseudo stat for, searched as a `weight2`
+    /// stat group adding up `trade_ids` at weight 1 each (see the `weighted` module).
+    pub weighted_sum: bool,
 }
 
 impl SearchFilter {
@@ -101,49 +154,268 @@ impl SearchFilter {
 
 /// Builds every `SearchFilter` row for `item`, in EE2's order (`initUiModFilters`,
 /// `create-stat-filters.ts:222-297`): one per non-`None` base-item property (`property_filters`),
-/// then the pseudo totals (`pseudo::pseudo_filters`), then one per distinct trade-searchable stat
-/// (grouped across mods sharing a stat id and a compatible `ModifierType`, see
-/// `per_mod_filters`), then the free affix slots (`empty_affix_filters`, last like EE2's
-/// `finalFilterTweaks` row) -- with `select_by_tier`'s default selection on top.
-/// `search_percent` is the +/- tolerance band (0-50) applied around each filter's own rolled
-/// value, matching the reference's own default of 10 (`PriceCheckWindow.vue:197`/
-/// `DevWidget.vue:180`). `catalog` is the searched site's stat catalog: pseudo and free-slot rows
-/// read in its language.
+/// then the pseudo totals (`pseudo::pseudo_filters`) and weighted sums (`weighted`), then one per
+/// distinct trade-searchable stat (grouped across mods sharing a stat id and a compatible
+/// `ModifierType`, see `per_mod_filters`), then the free affix slots (`empty_affix_filters`, last
+/// like EE2's `finalFilterTweaks` row). Every row gets its score (`rank`); `profile` picks the rows
+/// searched -- Broad keeps checkboxes, so built fresh it keeps those of the item's own default
+/// profile -- and sets every row's bounds (`apply_profile`). `catalog` is the searched site's stat
+/// catalog: pseudo, weighted-sum and free-slot rows read in its language.
 pub fn build_filters(
     item: &ParsedItem,
-    search_percent: u8,
+    profile: SearchProfile,
     catalog: &StatCatalog,
 ) -> Vec<SearchFilter> {
-    let mut filters = property_filters(item, search_percent);
-    let mut mod_filters = per_mod_filters(item, search_percent, catalog);
-    filters.extend(pseudo::pseudo_filters(
-        item,
-        search_percent,
-        catalog,
-        &mut mod_filters,
-    ));
-    filters.extend(mod_filters);
-    filters.extend(empty_affix_filters(item, catalog));
-    select_by_tier(item, &mut filters);
-    settle_exact_kinds(item, catalog, &mut filters);
+    let picking = match profile {
+        SearchProfile::Broad => SearchProfile::default_for(item),
+        other => other,
+    };
+    let mut rows = Rows::build(item, catalog);
+    rows.rank(item);
+    rows.pick(item, picking);
+    let mut filters = rows.filters;
+    settle_exact_kinds(item, picking, catalog, &mut filters);
     word_like_the_item(item, &mut filters);
+    apply_profile(&mut filters, profile);
     filters
+}
+
+/// `build_filters`'s rows, each with the item's mods behind it (indexes into `item.mods`): the
+/// mods a mod row totals, the local mods a property row counts, the mods a pseudo total or a
+/// weighted sum adds up.
+struct Rows {
+    filters: Vec<SearchFilter>,
+    sources: Vec<Vec<usize>>,
+    /// Each mod's score (`rank::score`).
+    scores: Vec<Option<f64>>,
+    /// The mods merged into a property or a shown total, which take their score: never searched
+    /// by themselves (PoE Overlay II's `markBaseModsAsMerged`).
+    merged: Vec<bool>,
+}
+
+impl Rows {
+    fn build(item: &ParsedItem, catalog: &StatCatalog) -> Self {
+        let mut filters = property_filters(item);
+        let mut sources: Vec<Vec<usize>> = filters
+            .iter()
+            .map(|row| property::merged_mods(item, &row.trade_ids[0]))
+            .collect();
+        let (mut mod_rows, mod_sources) = per_mod_filters(item, catalog);
+        let totals = pseudo::pseudo_filters(item, catalog, &mut mod_rows)
+            .into_iter()
+            .chain(weighted::weighted_sums(item, catalog));
+        for (row, row_sources) in totals {
+            filters.push(row);
+            sources.push(row_sources);
+        }
+        filters.extend(mod_rows);
+        sources.extend(mod_sources);
+        for row in empty_affix_filters(item, catalog) {
+            filters.push(row);
+            sources.push(Vec::new());
+        }
+        Self {
+            filters,
+            sources,
+            scores: Vec::new(),
+            merged: Vec::new(),
+        }
+    }
+
+    /// Scores every mod and row, merges mods into the properties and shown totals counting them
+    /// -- hiding a mod row every mod of which is merged -- and places each one-mod row's tier.
+    fn rank(&mut self, item: &ParsedItem) {
+        let category = item.category.as_ref().map_or("", |category| &category.id);
+        let families: Vec<_> = item
+            .mods
+            .iter()
+            .map(|modifier| tiers::family(modifier, category))
+            .collect();
+        self.scores = item
+            .mods
+            .iter()
+            .zip(&families)
+            .map(|(modifier, &family)| rank::score(item, modifier, family))
+            .collect();
+        self.merged = vec![false; item.mods.len()];
+        for (filter, sources) in self.filters.iter().zip(&self.sources) {
+            let merges = filter.tag == FilterTag::Property
+                || (filter.tag == FilterTag::Pseudo && !filter.hidden);
+            if merges {
+                for &modifier in sources {
+                    self.merged[modifier] = true;
+                }
+            }
+        }
+        for (filter, sources) in self.filters.iter_mut().zip(&self.sources) {
+            filter.score = sources
+                .iter()
+                .filter_map(|&modifier| self.scores[modifier])
+                .reduce(f64::max);
+            if !is_mod_row(filter) {
+                continue;
+            }
+            if !sources.is_empty() && sources.iter().all(|&modifier| self.merged[modifier]) {
+                filter.hidden = true;
+            }
+            if let [modifier] = sources[..]
+                && let (Some(family), Some(tier)) =
+                    (families[modifier], item.mods[modifier].info.tier)
+            {
+                filter.tier_info = filter
+                    .trade_ids
+                    .first()
+                    .and_then(|id| family.tier_info(tier, item.item_level, tiers::stat_hash(id)));
+            }
+        }
+    }
+
+    /// What Quick Price can search, in PoE Overlay II's order: the scored properties, the mods
+    /// neither merged nor rowless, in the item's order, then the shown totals.
+    fn candidates(&self) -> Vec<Candidate> {
+        let rows = |tag| {
+            self.filters
+                .iter()
+                .enumerate()
+                .filter(move |(_, filter)| filter.tag == tag && !filter.hidden)
+                .filter_map(|(index, filter)| {
+                    Some(Candidate {
+                        pick: Pick::Row(index),
+                        score: filter.score?,
+                        weighted_sum: filter.weighted_sum,
+                    })
+                })
+        };
+        let has_row = |modifier: usize| {
+            self.filters
+                .iter()
+                .zip(&self.sources)
+                .any(|(filter, sources)| is_mod_row(filter) && sources.contains(&modifier))
+        };
+        let mods = self
+            .scores
+            .iter()
+            .enumerate()
+            .filter(|&(modifier, _)| !self.merged[modifier] && has_row(modifier))
+            .filter_map(|(modifier, score)| {
+                Some(Candidate {
+                    pick: Pick::Mod(modifier),
+                    score: (*score)?,
+                    weighted_sum: false,
+                })
+            });
+        rows(FilterTag::Property)
+            .chain(mods)
+            .chain(rows(FilterTag::Pseudo))
+            .collect()
+    }
+
+    /// Checks the rows `profile` starts with (PoE Overlay II's `gQ` selection):
+    /// - Quick Price: its pick (`rank::quick_picks`) -- a picked mod checks every row it feeds;
+    /// - Exact Match: every row not hidden, and the properties Quick Price would pick;
+    /// - Crafting Base: the implicit, fractured and granted-skill rows, and the item level.
+    ///
+    /// A property row no score reaches (item level, sockets, quality, gem and waystone rows)
+    /// keeps EE2's own checkbox in Quick Price and Exact Match. Then every profile checks the
+    /// rows PoE Overlay II always searches (`always_searched`). A checked row is shown.
+    fn pick(&mut self, item: &ParsedItem, profile: SearchProfile) {
+        let picks = rank::quick_picks(self.candidates());
+        for (index, (filter, sources)) in self.filters.iter_mut().zip(&self.sources).enumerate() {
+            let picked = || picks.contains(&Pick::Row(index));
+            let on = match (filter.tag, profile) {
+                (FilterTag::Property, _) if !property::scored(&filter.trade_ids[0]) => {
+                    if profile == SearchProfile::CraftingBase {
+                        filter.trade_ids[0] == "type_filters.ilvl"
+                    } else {
+                        filter.enabled
+                    }
+                }
+                (FilterTag::Property, SearchProfile::CraftingBase) => false,
+                (FilterTag::Property, _) => picked(),
+                (FilterTag::Pseudo | FilterTag::EmptyAffix, SearchProfile::CraftingBase) => false,
+                (FilterTag::Pseudo, SearchProfile::QuickPrice | SearchProfile::Broad) => picked(),
+                (FilterTag::EmptyAffix, SearchProfile::QuickPrice | SearchProfile::Broad) => false,
+                (_, SearchProfile::ExactMatch) => !filter.hidden,
+                (_, SearchProfile::QuickPrice | SearchProfile::Broad) => sources
+                    .iter()
+                    .any(|&modifier| picks.contains(&Pick::Mod(modifier))),
+                (_, SearchProfile::CraftingBase) => sources.iter().any(|&modifier| {
+                    matches!(
+                        item.mods[modifier].info.modifier_type,
+                        ModifierType::Implicit | ModifierType::Fractured | ModifierType::Skill
+                    )
+                }),
+            };
+            filter.enabled = on || always_searched(item, filter, sources);
+            if filter.enabled {
+                filter.hidden = false;
+            }
+        }
+    }
+}
+
+/// Whether a row is a mod's own: neither a property, a total nor a free-slot count.
+fn is_mod_row(filter: &SearchFilter) -> bool {
+    !matches!(
+        filter.tag,
+        FilterTag::Property | FilterTag::Pseudo | FilterTag::EmptyAffix
+    )
+}
+
+/// The stats PoE Overlay II searches in every profile (`9505.bundle.js`'s `et` and `ea`): base
+/// implicits naming what the base is (grenade projectiles, chaining, piercing, extra arrows, an
+/// explosion on critical kills, an extra bolt, maximum elemental resistances, spirit, movement
+/// speed), unrevealed mods, and a timeless jewel's legend. Every id checked in the live EN catalog
+/// (2026-09-23).
+const ALWAYS_SEARCHED: [&str; 18] = [
+    "implicit.stat_1980802737",
+    "implicit.stat_1028592286",
+    "implicit.stat_2321178454",
+    "implicit.stat_3885405204",
+    "implicit.stat_1541903247",
+    "implicit.stat_1967051901",
+    "implicit.stat_1978899297",
+    "implicit.stat_3981240776",
+    "implicit.stat_2250533757",
+    "pseudo.pseudo_number_of_unrevealed_mods",
+    "explicit.stat_3418580811|21",
+    "explicit.stat_3418580811|22",
+    "explicit.stat_3418580811|23",
+    "explicit.stat_3418580811|24",
+    "explicit.stat_3418580811|25",
+    "explicit.stat_3418580811|26",
+    "explicit.stat_3418580811|27",
+    "explicit.stat_3418580811|28",
+];
+
+/// Whether PoE Overlay II searches `filter` whatever the profile: an `ALWAYS_SEARCHED` stat, or a
+/// granted skill at level 19 or more -- any on an amulet.
+fn always_searched(item: &ParsedItem, filter: &SearchFilter, sources: &[usize]) -> bool {
+    let skill = sources
+        .iter()
+        .any(|&modifier| item.mods[modifier].info.modifier_type == ModifierType::Skill);
+    let amulet = item
+        .category
+        .as_ref()
+        .is_some_and(|category| category.id == "accessory.amulet");
+    filter
+        .trade_ids
+        .first()
+        .is_some_and(|id| ALWAYS_SEARCHED.contains(&id.as_str()))
+        || (skill && (amulet || filter.roll.as_ref().is_some_and(|roll| roll.value >= 19.0)))
 }
 
 /// Turns each mod row the item words the other way round from the catalog -- `15% reduced
 /// Attribute Requirements`, which the parser read as the catalog's `#% increased Attribute
 /// Requirements` at -15 (`ParsedStat::negated_text`) -- into the item's own words: its text, the
-/// value and bounds negated and swapped into its terms ("at least 15% reduced"), and `inverted`
+/// value negated and the bound turned into its terms ("at least 15% reduced"), and `inverted`
 /// set so the search turns them back: EE2's `filterAdjustmentForNegate`
 /// (`create-stat-filters.ts:615-631`). Only a row that still totals below zero turns: a reduced
-/// roll that an increased one outweighs reads the catalog's way. Runs last, once every rule
-/// above has worked in the catalog's terms.
+/// roll that an increased one outweighs reads the catalog's way. Runs once every rule above has
+/// worked in the catalog's terms, before the profile sets the bounds.
 fn word_like_the_item(item: &ParsedItem, filters: &mut [SearchFilter]) {
     for filter in filters.iter_mut() {
-        if matches!(
-            filter.tag,
-            FilterTag::Property | FilterTag::Pseudo | FilterTag::EmptyAffix
-        ) {
+        if !is_mod_row(filter) {
             continue;
         }
         let Some(roll) = &mut filter.roll else {
@@ -164,13 +436,13 @@ fn word_like_the_item(item: &ParsedItem, filters: &mut [SearchFilter]) {
         else {
             continue;
         };
-        *roll = SearchFilterRoll {
-            value: -roll.value,
-            min: roll.max.map(|max| -max),
-            max: roll.min.map(|min| -min),
-            default_min: -roll.default_max,
-            default_max: -roll.default_min,
-            dp: roll.dp,
+        roll.value = -roll.value;
+        roll.bound = match roll.bound {
+            RollBound::Higher => RollBound::Lower,
+            RollBound::Lower => RollBound::Higher,
+            RollBound::AtLeast => RollBound::AtMost,
+            RollBound::AtMost => RollBound::AtLeast,
+            RollBound::Exactly => RollBound::Exactly,
         };
         filter.display_text = text;
         filter.inverted = true;
@@ -191,17 +463,23 @@ const TABLET_USES: [&str; 8] = [
     "stat_3035440454",
 ];
 
-/// EE2's selection for the item kinds its exact preset searches whole
-/// (`createExactStatFilters`, `create-stat-filters.ts:38-220`), applied over `select_by_tier`:
-/// a tablet searches its `# uses remaining (Tablets)` pseudo total (at least as many uses, shown
-/// on uniques too) and every mod at exactly its roll, leaving its implicit out; a non-unique relic
-/// searches every mod (`enableAllFilters`). A waystone follows EE2's map rule
-/// (`finalFilterTweaks`, `create-stat-filters.ts:718-726`): its tier and properties set the
-/// price, its modifiers only make the map harder -- they start unselected, a desecrated one
-/// excepted. Unlike EE2 they stay listed: the player marks them there.
-fn settle_exact_kinds(item: &ParsedItem, catalog: &StatCatalog, filters: &mut Vec<SearchFilter>) {
+/// EE2's selection for the map items PoE Overlay II ranks nothing on, applied over the profile's
+/// pick. A tablet searches its `# uses remaining (Tablets)` pseudo total (at least as many uses,
+/// shown on uniques too) and every mod at exactly its roll, leaving its implicit out
+/// (`createExactStatFilters`, `create-stat-filters.ts:38-220`). A waystone priced quickly follows
+/// EE2's map rule (`finalFilterTweaks`, `create-stat-filters.ts:718-726`): its tier and
+/// properties set the price, its modifiers only make the map harder -- they start unselected, a
+/// desecrated one excepted. Unlike EE2 they stay listed: the player marks them there. Crafting
+/// Base leaves both to its own pick.
+fn settle_exact_kinds(
+    item: &ParsedItem,
+    profile: SearchProfile,
+    catalog: &StatCatalog,
+    filters: &mut Vec<SearchFilter>,
+) {
     let category = item.category.as_ref().map_or("", |c| c.id.as_str());
     let unique = item.rarity == Some(ItemRarity::Unique);
+    let crafting = profile == SearchProfile::CraftingBase;
     if category == "map.tablet" {
         let uses = item
             .mods
@@ -224,10 +502,9 @@ fn settle_exact_kinds(item: &ParsedItem, catalog: &StatCatalog, filters: &mut Ve
                         filter.hidden = true;
                     }
                     _ => {
-                        filter.enabled = true;
+                        filter.enabled |= !crafting;
                         if let Some(roll) = &mut filter.roll {
-                            roll.min = Some(roll.value);
-                            roll.default_min = roll.value;
+                            roll.bound = RollBound::AtLeast;
                         }
                     }
                 }
@@ -250,118 +527,26 @@ fn settle_exact_kinds(item: &ParsedItem, catalog: &StatCatalog, filters: &mut Ve
                     tier: None,
                     roll: Some(SearchFilterRoll {
                         value: uses,
-                        min: Some(uses),
+                        min: None,
                         max: None,
-                        default_min: uses,
-                        default_max: uses,
                         dp: false,
+                        bound: RollBound::AtLeast,
                     }),
-                    enabled: true,
+                    enabled: !crafting,
                     hidden: false,
                     generation: None,
                     inverted: false,
+                    score: None,
+                    tier_info: None,
+                    weighted_sum: false,
                 },
             );
         }
-    } else if category == "sanctum.relic" && !unique {
-        for filter in filters.iter_mut() {
-            if !matches!(
-                filter.tag,
-                FilterTag::Property | FilterTag::EmptyAffix | FilterTag::Pseudo
-            ) {
-                filter.enabled = true;
-            }
-        }
-    } else if category == "map.waystone" {
+    } else if category == "map.waystone" && profile == SearchProfile::QuickPrice {
         for filter in filters.iter_mut() {
             if !matches!(filter.tag, FilterTag::Property | FilterTag::Desecrated) {
                 filter.enabled = false;
             }
-        }
-    }
-}
-
-/// The best tier number still searched by default (T1 is a mod's best tier).
-const TOP_TIERS: u32 = 2;
-
-/// Trade stat hashes (any mod type) of the mods a build is picked for whatever their tier -- skill
-/// levels and spirit, the ones PoE Overlay II's ranking gives a fixed bonus (its `modRanking`,
-/// 2026-09-23): `# to Level of all {Attack, Chaos, Chaos Spell, Cold, Cold Spell, Corrupted Spell
-/// Skill Gems, Curse, Elemental, Fire, Fire Spell, Lightning, Lightning Spell, Mark, Melee,
-/// Minion, Physical Spell, Projectile, Spell} Skills`, `# to Level of all Skills`, the one-skill
-/// `+# to Level of all <skill> Skills` (every option of `stat_448592698`), `# to Spirit` and `#%
-/// increased Spirit` (live EN catalog, 2026-09-23). A +1 to a skill's level is a T5 roll and still
-/// what the item sells for.
-const VALUE_STATS: [&str; 24] = [
-    "stat_3035140377",
-    "stat_67169579",
-    "stat_4226189338",
-    "stat_1078455967",
-    "stat_2254480358",
-    "stat_2061237517",
-    "stat_805298720",
-    "stat_2901213448",
-    "stat_599749213",
-    "stat_591105508",
-    "stat_1147690586",
-    "stat_1545858329",
-    "stat_1992191903",
-    "stat_9187492",
-    "stat_2162097452",
-    "stat_1600707273",
-    "stat_1202301673",
-    "stat_4283407333",
-    "stat_124131830",
-    "stat_448592698",
-    "stat_3981240776",
-    "stat_2704225257",
-    "stat_1416406066",
-    "stat_3984865854",
-];
-
-/// Whether `filter` searches one of the [`VALUE_STATS`].
-fn is_value_stat(filter: &SearchFilter) -> bool {
-    filter.trade_ids.iter().any(|id| {
-        let hash = id.split_once('.').map_or(id.as_str(), |(_, hash)| hash);
-        let hash = hash.split_once('|').map_or(hash, |(hash, _)| hash);
-        VALUE_STATS.contains(&hash)
-    })
-}
-
-/// The default selection a player expects, by the game's own measure of a mod: an explicit
-/// prefix or suffix of a rare is searched when it rolled in one of its `TOP_TIERS` best tiers and
-/// left out otherwise -- a low-tier mod doesn't set a rare's price, and requiring it only empties
-/// the search -- unless it is one of the [`VALUE_STATS`] (skill levels, spirit), which set the
-/// price at any tier. A magic item's one prefix and one suffix are the whole item, so both are
-/// searched whatever their tier (a T3 `+3 to Level of all Chaos Spell Skills` is what a magic wand
-/// sells for). Pseudo totals start unselected: they restate the mods listed with them -- unless no
-/// affix made the cut, when the totals (EE2's own default) are what the item offers: without them
-/// the search would price the bare base type. Everything else keeps the EE2 default it was built
-/// with (defences/DPS on, implicits and free slots off). Replaces EE2's pseudo-first selection,
-/// which searched a T9 roll while skipping the T1 ones a pseudo total happened to cover.
-fn select_by_tier(item: &ParsedItem, filters: &mut [SearchFilter]) {
-    let is_affix =
-        |filter: &SearchFilter| filter.generation.is_some() && filter.tag != FilterTag::EmptyAffix;
-    let every_affix = item.rarity == Some(ItemRarity::Magic);
-    for filter in filters.iter_mut() {
-        if filter.tag == FilterTag::Pseudo {
-            filter.enabled = false;
-        } else if is_affix(filter) {
-            filter.enabled = every_affix
-                || is_value_stat(filter)
-                || filter.tier.is_some_and(|tier| tier <= TOP_TIERS);
-        }
-    }
-    let has_affixes = filters.iter().any(is_affix);
-    let affix_selected = filters
-        .iter()
-        .any(|filter| is_affix(filter) && filter.enabled);
-    if has_affixes && !affix_selected {
-        for filter in filters
-            .iter_mut()
-            .filter(|filter| filter.tag == FilterTag::Pseudo && !filter.hidden)
-        {
-            filter.enabled = true;
         }
     }
 }
@@ -438,7 +623,9 @@ struct ModStatGroup {
     /// (`ParsedStat::printed_text`).
     printed: Option<String>,
     /// How many stats the row totals.
-    sources: usize,
+    count: usize,
+    /// The mods the row totals (indexes into `item.mods`), in first-seen order.
+    sources: Vec<usize>,
     value: f64,
     min: f64,
     max: f64,
@@ -462,7 +649,8 @@ impl ModStatGroup {
             bucket,
             text: stat.text.clone(),
             printed: stat.printed_text.clone(),
-            sources: 0,
+            count: 0,
+            sources: Vec::new(),
             value: 0.0,
             min: 0.0,
             max: 0.0,
@@ -474,8 +662,11 @@ impl ModStatGroup {
         }
     }
 
-    fn add(&mut self, info: &ModifierInfo, stat: &ParsedStat) {
-        self.sources += 1;
+    fn add(&mut self, modifier: usize, info: &ModifierInfo, stat: &ParsedStat) {
+        self.count += 1;
+        if !self.sources.contains(&modifier) {
+            self.sources.push(modifier);
+        }
         self.value += stat.value;
         self.min += stat.min;
         self.max += stat.max;
@@ -493,56 +684,61 @@ impl ModStatGroup {
         }
     }
 
-    fn into_filter(self, search_percent: u8, catalog: &StatCatalog) -> SearchFilter {
+    /// The row, starting unchecked -- the search profile picks it -- and the mods it totals.
+    fn into_filter(self, catalog: &StatCatalog) -> (SearchFilter, Vec<usize>) {
         let tag = group_tag(&self.modifier_types);
-        let bounds = Some((self.min, self.max));
-        let roll = self.any_scalable.then(|| {
-            let mut roll = build_roll(self.value, bounds, self.dp, search_percent);
-            better::orient(&mut roll, &self.stat_id);
-            roll
+        // A granted skill's level is searched at least as it is whatever the profile, as PoE
+        // Overlay II searches it; a roll no mod can roll otherwise likewise.
+        let bound = if self.bucket == GroupBucket::Solo(ModifierType::Skill) {
+            RollBound::AtLeast
+        } else {
+            better::bound(&self.stat_id, self.min == self.max)
+        };
+        let roll = self.any_scalable.then_some(SearchFilterRoll {
+            value: self.value,
+            min: None,
+            max: None,
+            dp: self.dp,
+            bound,
         });
-        // A flag stat (no roll) starts unchecked: a unique's fixed flags add nothing to its
-        // search. An affix's own tier decides for it afterwards (`select_by_tier`).
-        let enabled = roll.is_some()
-            && matches!(
-                tag,
-                FilterTag::Explicit | FilterTag::Fractured | FilterTag::Desecrated
-            );
         // The item's own words when one line it prints another way than the catalog is the whole
         // row (`40% шанс наложения оцепенения...` for `Накладывает оцепенение...`); a total of
         // several reads the catalog's way.
         let display_text = match self.printed {
-            Some(printed) if self.sources == 1 => printed,
+            Some(printed) if self.count == 1 => printed,
             _ => self.text.clone(),
         };
-        SearchFilter {
+        let filter = SearchFilter {
             trade_ids: same_text_ids(catalog, &self.stat_id),
             stat_ref: self.text,
             display_text,
             tag,
             tier: self.tier,
             roll,
-            enabled,
+            enabled: false,
             hidden: false,
             generation: self.generation,
             inverted: false,
-        }
+            score: None,
+            tier_info: None,
+            weighted_sum: false,
+        };
+        (filter, self.sources)
     }
 }
 
 /// Groups every stat-id-bearing `ParsedStat` across `item.mods` (see `group_bucket`) into one
-/// `SearchFilter` per group, in first-seen order. Stats with `stat_id: None` are skipped --
-/// unmatched against the trade catalog, they already surface via `item.unknown_mods` for display
-/// elsewhere, not this crate's concern -- and so are stats a property row already counts
-/// (`property::folded_into_properties`). A row carries every trade id its text has
-/// (`same_text_ids`).
+/// `SearchFilter` per group, in first-seen order, each with the mods it totals. Stats with
+/// `stat_id: None` are skipped -- unmatched against the trade catalog, they already surface via
+/// `item.unknown_mods` for display elsewhere, not this crate's concern -- and so are stats a
+/// property row already counts (`property::folded_into_properties`). A row carries every trade id
+/// its text has (`same_text_ids`).
 fn per_mod_filters(
     item: &ParsedItem,
-    search_percent: u8,
     catalog: &StatCatalog,
-) -> Vec<SearchFilter> {
+) -> (Vec<SearchFilter>, Vec<Vec<usize>>) {
     let mut groups: Vec<ModStatGroup> = Vec::new();
-    for modifier in &item.mods {
+    for (index, modifier) in item.mods.iter().enumerate() {
         let bucket = group_bucket(modifier.info.modifier_type);
         for stat in &modifier.stats {
             let Some(stat_id) = stat.stat_id.as_deref() else {
@@ -551,7 +747,7 @@ fn per_mod_filters(
             if property::folded_into_properties(item, stat_id) {
                 continue;
             }
-            let idx = groups
+            let group = groups
                 .iter()
                 .position(|g| g.bucket == bucket && g.stat_id == stat_id)
                 .unwrap_or_else(|| {
@@ -563,13 +759,13 @@ fn per_mod_filters(
                     ));
                     groups.len() - 1
                 });
-            groups[idx].add(&modifier.info, stat);
+            groups[group].add(index, &modifier.info, stat);
         }
     }
     groups
         .into_iter()
-        .map(|group| group.into_filter(search_percent, catalog))
-        .collect()
+        .map(|group| group.into_filter(catalog))
+        .unzip()
 }
 
 /// The trade site's pseudo stats counting free affix slots, with their English templates (EE2's
@@ -657,16 +853,18 @@ fn empty_affix_filters(item: &ParsedItem, catalog: &StatCatalog) -> Vec<SearchFi
                 tier: None,
                 roll: Some(SearchFilterRoll {
                     value: free,
-                    min: Some(free),
+                    min: None,
                     max: None,
-                    default_min: free,
-                    default_max: free,
                     dp: false,
+                    bound: RollBound::AtLeast,
                 }),
                 enabled: false,
                 hidden: false,
                 generation: Some(generation),
                 inverted: false,
+                score: None,
+                tier_info: None,
+                weighted_sum: false,
             })
         })
         .collect()
@@ -712,47 +910,6 @@ fn same_text_ids(catalog: &StatCatalog, trade_id: &str) -> Vec<String> {
     ids
 }
 
-/// Computes `value`'s +/- `search_percent`% tolerance band, clamped into `natural_bounds` (the
-/// summed stat's own `[min, max]`) when one is available, and rounded to whole numbers when `dp`
-/// is `false`. Shared by `per_mod_filters`, `property_filters`, and `pseudo::pseudo_filters` so
-/// every filter kind computes `default_min`/`default_max` identically.
-///
-/// Only the lower bound is preset as a search bound: `max` starts `None`, an open-ended search,
-/// because EE2's `filterFillMinMax` (`create-stat-filters.ts:597-613`) presets only `roll.min`
-/// for a positive stat -- a higher roll is never a reason to exclude a listing. A mod row whose
-/// stat is better lower, or compares to nothing, is turned around afterwards
-/// (`better::orient`). `default_max` is still computed: it is the upper bound a UI offers once
-/// the player opts into one.
-pub(crate) fn build_roll(
-    value: f64,
-    natural_bounds: Option<(f64, f64)>,
-    dp: bool,
-    search_percent: u8,
-) -> SearchFilterRoll {
-    // `abs`: a drawback stat's value is negative, and a negative band would put `lo` above `hi`
-    // -- a floor above the item's own roll that excludes the item itself.
-    let band = value.abs() * f64::from(search_percent) / 100.0;
-    let mut lo = value - band;
-    let mut hi = value + band;
-    if let Some((a, b)) = natural_bounds {
-        let (real_lo, real_hi) = if a <= b { (a, b) } else { (b, a) };
-        lo = lo.clamp(real_lo, real_hi);
-        hi = hi.clamp(real_lo, real_hi);
-    }
-    if !dp {
-        lo = lo.floor();
-        hi = hi.ceil();
-    }
-    SearchFilterRoll {
-        value,
-        min: Some(lo),
-        max: None,
-        default_min: lo,
-        default_max: hi,
-        dp,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use poe2_domain::ModGeneration::{Prefix, Suffix};
@@ -771,6 +928,15 @@ mod tests {
             unscalable: false,
             negated_text: None,
             printed_text: None,
+        }
+    }
+
+    /// `stat_with_id` rolled `value` within `min..=max`.
+    fn rolled(stat_id: &str, value: f64, min: f64, max: f64) -> ParsedStat {
+        ParsedStat {
+            min,
+            max,
+            ..stat_with_id(Some(stat_id), "", value)
         }
     }
 
@@ -799,6 +965,13 @@ mod tests {
         affix
     }
 
+    /// An explicit prefix or suffix of tier `tier` granting `stat`.
+    fn tiered(generation: ModGeneration, tier: u32, stat: ParsedStat) -> ParsedModifier {
+        let mut affix = affix(generation, stat);
+        affix.info.tier = Some(tier);
+        affix
+    }
+
     fn item(rarity: ItemRarity, category: &str, mods: Vec<ParsedModifier>) -> ParsedItem {
         ParsedItem {
             rarity: Some(rarity),
@@ -811,13 +984,272 @@ mod tests {
         }
     }
 
+    fn quick(item: &ParsedItem) -> Vec<SearchFilter> {
+        build_filters(item, SearchProfile::QuickPrice, &StatCatalog::default())
+    }
+
+    /// The row whose first trade id is `trade_id`.
+    fn row<'a>(filters: &'a [SearchFilter], trade_id: &str) -> &'a SearchFilter {
+        filters
+            .iter()
+            .find(|filter| filter.trade_ids.first().is_some_and(|id| id == trade_id))
+            .unwrap_or_else(|| panic!("no {trade_id} row"))
+    }
+
     /// The free slot rows' kinds and counts.
     fn free_slots(item: &ParsedItem) -> Vec<(Option<ModGeneration>, f64)> {
-        build_filters(item, 10, &StatCatalog::default())
+        quick(item)
             .into_iter()
             .filter(|filter| filter.tag == FilterTag::EmptyAffix)
             .map(|filter| (filter.generation, filter.roll.expect("roll").value))
             .collect()
+    }
+
+    /// An item level 80 rare ring with a life prefix, two added attack damage prefixes, and fire
+    /// resistance and rarity suffixes, rolled so their scores come out round (tiers and ranges
+    /// from the RePoE table: 8 life tiers up to item level 54, 8 fire resistance tiers up to 82,
+    /// 3 rarity tiers up to 40, 9 tiers of each added damage up to 75).
+    fn ring() -> ParsedItem {
+        let mut ring = item(
+            ItemRarity::Rare,
+            "accessory.ring",
+            vec![
+                // T1 (100-119) at the top of its range.
+                tiered(
+                    Prefix,
+                    1,
+                    rolled("explicit.stat_3299347043", 119.0, 100.0, 119.0),
+                ),
+                // T1 of physical damage to attacks, 17-25.5 on average, halfway.
+                tiered(
+                    Prefix,
+                    1,
+                    rolled("explicit.stat_3032590688", 21.25, 17.0, 25.5),
+                ),
+                // T1 of fire damage to attacks, 31-37 on average, 40% of the way.
+                tiered(
+                    Prefix,
+                    1,
+                    rolled("explicit.stat_1573130764", 33.4, 31.0, 37.0),
+                ),
+                // T4 of fire resistance (26-30) at its bottom.
+                tiered(
+                    Suffix,
+                    4,
+                    rolled("explicit.stat_3372524247", 26.0, 26.0, 30.0),
+                ),
+                // T1 of rarity (15-18) at its bottom.
+                tiered(
+                    Suffix,
+                    1,
+                    rolled("explicit.stat_3917489142", 15.0, 15.0, 18.0),
+                ),
+            ],
+        );
+        ring.item_level = Some(80);
+        ring
+    }
+
+    #[test]
+    fn quick_price_searches_the_four_best_scores_of_three_and_two_weighted_sums_at_most() {
+        let filters = quick(&ring());
+        let score = |trade_id| row(&filters, trade_id).score.expect("scored");
+
+        // Life, merged into the life total: tier 8 of 8 tiers, all at item level 80 or under,
+        // (8 - 1 + 1) / (8 - 1 + 1) * 2 = 2; a lone Life tag on a ring 3 * 0.75 + 0.5 = 2.75;
+        // its roll at the top of its range 0.5. 2 + 2.75 + 0.5 = 5.25.
+        assert_eq!(score("pseudo.pseudo_total_life"), 5.25);
+        // Rarity, merged into its weighted sum: tier 2, no tag it weighs, a bottom roll 0, the
+        // rarity bonus 2: 4.
+        assert_eq!(score("explicit.stat_3917489142"), 4.0);
+        // Added physical damage: tier 2, Damage 2 * 0.75 = 1.5 (Physical and Attack weigh
+        // nothing on a ring), halfway 0.25: 3.75.
+        assert_eq!(score("explicit.stat_3032590688"), 3.75);
+        // Added fire damage: 2 + 1.5 + 0.5 * 0.4 = 3.7.
+        assert!((score("explicit.stat_1573130764") - 3.7).abs() < 1e-9);
+        // Fire resistance, merged into the elemental total: tier 4 of 8 at an item level short of
+        // T1 (level 82), (8 - 4 + 1) / (8 - 2 + 1) * 2 = 10/7; Resistance 3 * 0.75 = 2.25; a
+        // bottom roll 0: 3.68.
+        assert!(
+            (score("pseudo.pseudo_total_elemental_resistance") - (10.0 / 7.0 + 2.25)).abs() < 1e-9
+        );
+
+        // Best first: life 5.25, rarity 4 and physical 3.75 (the two weighted sums allowed), fire
+        // 3.7 skipped as a third weighted sum, resistance 3.68 the fourth.
+        let searched: Vec<&str> = filters
+            .iter()
+            .filter(|filter| filter.enabled)
+            .map(|filter| filter.stat_ref.as_str())
+            .collect();
+        assert_eq!(
+            searched,
+            [
+                "+#% total Elemental Resistance",
+                "+# total maximum Life",
+                "#% increased Rarity of Items found",
+                "Adds # to # Physical Damage to Attacks",
+            ]
+        );
+        let fire = row(&filters, "explicit.stat_1573130764");
+        assert!(fire.weighted_sum && !fire.enabled && !fire.hidden);
+        // A merged mod's own row hides, its total searched in its stead.
+        assert!(
+            filters
+                .iter()
+                .filter(|filter| is_mod_row(filter))
+                .all(|filter| filter.hidden && !filter.enabled)
+        );
+        // Every minimum is the item's own roll, the maximum open.
+        let life = row(&filters, "pseudo.pseudo_total_life")
+            .roll
+            .as_ref()
+            .expect("roll");
+        assert_eq!((life.value, life.min, life.max), (119.0, Some(119.0), None));
+    }
+
+    #[test]
+    fn exact_match_searches_every_shown_row_crafting_base_the_base_and_broad_a_tenth_lower() {
+        let mut ring = ring();
+        ring.mods.insert(
+            0,
+            modifier(
+                ModifierType::Implicit,
+                None,
+                vec![stat_with_id(
+                    Some("implicit.stat_2250533757"),
+                    "#% increased Movement Speed",
+                    5.0,
+                )],
+            ),
+        );
+        ring.mods.pop();
+
+        let exact = build_filters(&ring, SearchProfile::ExactMatch, &StatCatalog::default());
+        // Every shown row but the item level, which keeps EE2's own checkbox (unchecked on a
+        // rare).
+        let shown: Vec<&SearchFilter> = exact
+            .iter()
+            .filter(|filter| !filter.hidden && filter.tag != FilterTag::Property)
+            .collect();
+        assert!(!shown.is_empty());
+        assert!(shown.iter().all(|filter| filter.enabled));
+        assert!(!row(&exact, "type_filters.ilvl").enabled);
+        assert!(
+            exact
+                .iter()
+                .filter(|filter| filter.hidden)
+                .all(|filter| !filter.enabled)
+        );
+        // A free suffix slot is searched too.
+        assert!(row(&exact, "pseudo.pseudo_number_of_empty_suffix_mods").enabled);
+
+        // Crafting Base: the item level and the implicit, which every profile searches besides
+        // (PoE Overlay II's base-defining implicits).
+        let base = build_filters(&ring, SearchProfile::CraftingBase, &StatCatalog::default());
+        let searched: Vec<&str> = base
+            .iter()
+            .filter(|filter| filter.enabled)
+            .map(|filter| filter.trade_ids[0].as_str())
+            .collect();
+        assert_eq!(searched, ["type_filters.ilvl", "implicit.stat_2250533757"]);
+
+        // Broad, built fresh, keeps Quick Price's checkboxes and searches from 10% below each
+        // roll: life 119 - 11.9 = 107.1, rounded to 107.
+        let quick = quick(&ring);
+        let broad = build_filters(&ring, SearchProfile::Broad, &StatCatalog::default());
+        let checked = |filters: &[SearchFilter]| -> Vec<bool> {
+            filters.iter().map(|filter| filter.enabled).collect()
+        };
+        assert_eq!(checked(&broad), checked(&quick));
+        let life = row(&broad, "pseudo.pseudo_total_life")
+            .roll
+            .as_ref()
+            .expect("roll");
+        assert_eq!((life.min, life.max), (Some(107.0), None));
+
+        // Switching back restores the item's own roll, the checkboxes untouched.
+        let mut switched = broad.clone();
+        switched[0].enabled = !switched[0].enabled;
+        apply_profile(&mut switched, SearchProfile::QuickPrice);
+        let life = row(&switched, "pseudo.pseudo_total_life")
+            .roll
+            .as_ref()
+            .expect("roll");
+        assert_eq!(life.min, Some(119.0));
+        assert_eq!(switched[0].enabled, !broad[0].enabled);
+    }
+
+    #[test]
+    fn a_local_defence_mod_merges_into_its_property_which_takes_its_score() {
+        // A body armour's T1 energy shield increase: tier 8 of 8 (all at item level 75 or
+        // under) 2; a lone Defences tag on a body armour 2 * 0.75 + 0.5 = 2; its roll a tenth of
+        // the way through 101-110, 0.5 * 0.1 = 0.05; the local energy shield bonus 0.5: 4.55.
+        let mut chest = item(
+            ItemRarity::Rare,
+            "armour.chest",
+            vec![tiered(
+                Prefix,
+                1,
+                rolled("explicit.stat_4015621042", 101.9, 101.0, 110.0),
+            )],
+        );
+        chest.item_level = Some(75);
+        chest.energy_shield = Some(300);
+
+        let filters = quick(&chest);
+
+        let energy_shield = row(&filters, "equipment_filters.es");
+        assert!((energy_shield.score.expect("scored") - 4.55).abs() < 1e-9);
+        assert!(energy_shield.enabled);
+        assert!(
+            filters
+                .iter()
+                .all(|filter| filter.trade_ids[0] != "explicit.stat_4015621042"),
+            "the local mod folds into the property"
+        );
+    }
+
+    #[test]
+    fn a_one_mod_row_places_its_tier_among_its_familys() {
+        let filters = quick(&ring());
+        let info = row(&filters, "explicit.stat_3372524247")
+            .tier_info
+            .expect("fire resistance tiers");
+        // T4 of 8 fire resistance tiers on a ring (FireResist5, item level 48, 26-30); T1 needs
+        // item level 82, out of an item level 80 ring's reach; every tier together 6-45.
+        assert_eq!(
+            info,
+            TierInfo {
+                current: 4,
+                count: 8,
+                best_available: 2,
+                min_level: 48,
+                tier_floor: Some(26.0),
+                range: Some((6.0, 45.0)),
+            }
+        );
+        // A total spans mods, which no tier describes.
+        assert_eq!(row(&filters, "pseudo.pseudo_total_life").tier_info, None);
+    }
+
+    #[test]
+    fn a_unique_scores_nothing_and_starts_with_every_shown_row() {
+        let mut unique = ring();
+        unique.rarity = Some(ItemRarity::Unique);
+        assert_eq!(
+            SearchProfile::default_for(&unique),
+            SearchProfile::ExactMatch
+        );
+        let filters = build_filters(
+            &unique,
+            SearchProfile::default_for(&unique),
+            &StatCatalog::default(),
+        );
+        assert!(filters.iter().all(|filter| filter.score.is_none()));
+        assert!(filters.iter().all(|filter| filter.enabled != filter.hidden));
+        // A unique gets no weighted sum: its rarity is searched as a mod row.
+        assert!(filters.iter().all(|filter| !filter.weighted_sum));
+        assert!(row(&filters, "explicit.stat_3917489142").enabled);
     }
 
     #[test]
@@ -904,7 +1336,7 @@ mod tests {
             }],
         };
 
-        let filters = build_filters(&ring, 10, &russian);
+        let filters = build_filters(&ring, SearchProfile::QuickPrice, &russian);
 
         let free: Vec<&SearchFilter> = filters
             .iter()
@@ -950,7 +1382,7 @@ mod tests {
             ],
         );
         assert_eq!(free_slots(&jewel), [(Some(Prefix), 1.0)]);
-        let merged = build_filters(&jewel, 10, &StatCatalog::default())
+        let merged = quick(&jewel)
             .into_iter()
             .find(|filter| filter.trade_ids == ["explicit.stat_a"])
             .expect("merged row");
@@ -988,178 +1420,33 @@ mod tests {
     }
 
     #[test]
-    fn affixes_are_selected_by_tier_and_pseudo_totals_start_unselected() {
-        // The live ring the player reported: a T9 evasion prefix was searched while the T1 mana
-        // prefix was not, because a pseudo mana total "covered" it.
-        let tiered = |generation, tier, trade_id: &str, text: &str| {
-            let mut modifier = affix(generation, stat_with_id(Some(trade_id), text, 50.0));
-            modifier.info.tier = Some(tier);
-            modifier
-        };
-        let ring = item(
-            ItemRarity::Rare,
-            "accessory.ring",
-            vec![
-                tiered(Prefix, 9, "explicit.stat_2144192055", "# to Evasion Rating"),
-                tiered(Prefix, 1, "explicit.stat_1050105434", "# to maximum Mana"),
-                tiered(Suffix, 2, "explicit.stat_1379411836", "# to all Attributes"),
-            ],
-        );
-
-        let filters = build_filters(&ring, 10, &StatCatalog::default());
-
-        let enabled = |trade_id: &str| {
-            filters
-                .iter()
-                .find(|filter| filter.trade_ids == [trade_id])
-                .map(|filter| filter.enabled)
-        };
-        assert_eq!(enabled("explicit.stat_2144192055"), Some(false));
-        assert_eq!(enabled("explicit.stat_1050105434"), Some(true));
-        assert_eq!(enabled("explicit.stat_1379411836"), Some(true));
-        assert!(
-            filters
-                .iter()
-                .filter(|filter| filter.tag == FilterTag::Pseudo)
-                .all(|filter| !filter.enabled)
-        );
-    }
-
-    #[test]
-    fn skill_levels_and_spirit_are_searched_at_any_tier() {
-        let tiered = |generation, tier, trade_id: &str, text: &str| {
-            let mut modifier = affix(generation, stat_with_id(Some(trade_id), text, 1.0));
-            modifier.info.tier = Some(tier);
-            modifier
-        };
-        let amulet = item(
-            ItemRarity::Rare,
-            "accessory.amulet",
-            vec![
-                tiered(Prefix, 5, "explicit.stat_3981240776", "# to Spirit"),
-                tiered(
-                    Suffix,
-                    4,
-                    "explicit.stat_2162097452",
-                    "# to Level of all Minion Skills",
-                ),
-                tiered(
-                    Suffix,
-                    3,
-                    "explicit.stat_448592698|57",
-                    "+# to Level of all Fireball Skills",
-                ),
-                tiered(Suffix, 6, "explicit.stat_1379411836", "# to all Attributes"),
-            ],
-        );
-
-        let filters = build_filters(&amulet, 10, &StatCatalog::default());
-
-        let enabled = |trade_id: &str| {
-            filters
-                .iter()
-                .find(|filter| filter.trade_ids == [trade_id])
-                .map(|filter| filter.enabled)
-        };
-        assert_eq!(enabled("explicit.stat_3981240776"), Some(true));
-        assert_eq!(enabled("explicit.stat_2162097452"), Some(true));
-        assert_eq!(enabled("explicit.stat_448592698|57"), Some(true));
-        // An ordinary low-tier mod still isn't.
-        assert_eq!(enabled("explicit.stat_1379411836"), Some(false));
-    }
-
-    #[test]
     fn a_waystone_searches_its_tier_but_not_its_modifiers() {
         // The live T16 waystone: its T1 map modifiers were searched on top of the tier and the
         // search found nothing -- a map modifier's tier only says how hard the map is.
-        let mut damage = affix(
+        let damage = tiered(
             Prefix,
+            1,
             stat_with_id(
                 Some("explicit.stat_1890519597"),
                 "#% increased Monster Damage",
                 30.0,
             ),
         );
-        damage.info.tier = Some(1);
         let mut waystone = item(ItemRarity::Rare, "map.waystone", vec![damage]);
         waystone.waystone = Some(WaystoneProperties {
             tier: Some(16),
             ..Default::default()
         });
 
-        let filters = build_filters(&waystone, 10, &StatCatalog::default());
+        let filters = quick(&waystone);
 
-        let enabled = |trade_id: &str| {
-            filters
-                .iter()
-                .find(|filter| filter.trade_ids == [trade_id])
-                .map(|filter| filter.enabled)
-        };
-        assert_eq!(enabled("map_filters.map_tier"), Some(true));
-        assert_eq!(enabled("explicit.stat_1890519597"), Some(false));
-    }
-
-    #[test]
-    fn a_rare_without_a_top_tier_affix_searches_its_pseudo_totals() {
-        // The live English ring (EE2's `RareWithImplicit` sample): T3 and T7 affixes only, so the
-        // tier rule alone selected nothing and the search priced any Prismatic Ring.
-        let low_tier = |generation, trade_id: &str, text: &str| {
-            let mut modifier = affix(generation, stat_with_id(Some(trade_id), text, 15.0));
-            modifier.info.tier = Some(7);
-            modifier
-        };
-        let ring = item(
-            ItemRarity::Rare,
-            "accessory.ring",
-            vec![
-                low_tier(Prefix, "explicit.stat_2144192055", "# to Evasion Rating"),
-                low_tier(Suffix, "explicit.stat_4220027924", "+#% to Cold Resistance"),
-            ],
-        );
-
-        let filters = build_filters(&ring, 10, &StatCatalog::default());
-
-        let totals: Vec<_> = filters
-            .iter()
-            .filter(|filter| filter.tag == FilterTag::Pseudo && !filter.hidden)
-            .collect();
-        assert!(!totals.is_empty(), "cold resistance has pseudo totals");
-        assert!(totals.iter().all(|filter| filter.enabled));
-        assert!(
-            filters
-                .iter()
-                .filter(|filter| filter.generation.is_some() && filter.tag != FilterTag::EmptyAffix)
-                .all(|filter| !filter.enabled)
-        );
-    }
-
-    #[test]
-    fn build_filters_produces_a_trade_ready_explicit_filter() {
-        let rarity = stat_with_id(
-            Some("explicit.stat_3917489142"),
-            "#% increased Rarity of Items found",
-            25.0,
-        );
-        let item = ParsedItem {
-            mods: vec![modifier(ModifierType::Explicit, None, vec![rarity])],
-            ..Default::default()
-        };
-
-        let filters = build_filters(&item, 10, &StatCatalog::default());
-
-        let rarity_filter = filters
-            .iter()
-            .find(|f| f.trade_ids == vec!["explicit.stat_3917489142".to_owned()])
-            .expect("explicit rarity filter should be produced");
-        assert_eq!(rarity_filter.tag, FilterTag::Explicit);
-        assert!(rarity_filter.enabled, "explicit filters default to enabled");
-        let roll = rarity_filter.roll.as_ref().expect("roll");
-        assert_eq!(
-            roll.min,
-            Some(roll.default_min),
-            "the lower bound is preset"
-        );
-        assert_eq!(roll.max, None, "the upper bound starts open, like EE2's");
+        let tier = row(&filters, "map_filters.map_tier");
+        let roll = tier.roll.as_ref().expect("tier roll");
+        assert!(tier.enabled);
+        assert_eq!((roll.min, roll.max), (Some(16.0), Some(16.0)));
+        let monster_damage = row(&filters, "explicit.stat_1890519597");
+        assert!(!monster_damage.enabled);
+        assert_eq!(monster_damage.score, None, "a map item ranks nothing");
     }
 
     #[test]
@@ -1190,7 +1477,7 @@ mod tests {
             ..Default::default()
         };
 
-        let filters = build_filters(&item, 10, &catalog);
+        let filters = build_filters(&item, SearchProfile::QuickPrice, &catalog);
 
         let row = filters
             .iter()
@@ -1223,11 +1510,15 @@ mod tests {
         );
         // EE2 has this one better lower in the game's terms; the catalog words it the good way
         // round, where more is better.
-        let flask = stat_with_id(
-            Some("explicit.stat_644456512"),
-            "#% reduced Flask Charges used",
-            20.0,
-        );
+        let flask = ParsedStat {
+            min: 10.0,
+            max: 20.0,
+            ..stat_with_id(
+                Some("explicit.stat_644456512"),
+                "#% reduced Flask Charges used",
+                20.0,
+            )
+        };
         let item = ParsedItem {
             mods: vec![modifier(
                 ModifierType::Explicit,
@@ -1237,20 +1528,37 @@ mod tests {
             ..Default::default()
         };
 
-        let filters = build_filters(&item, 10, &StatCatalog::default());
-        let bounds = |trade_id: &str| {
-            let roll = filters
-                .iter()
-                .find(|filter| filter.trade_ids == [trade_id])
-                .and_then(|filter| filter.roll.as_ref())
-                .expect("the row and its roll");
-            (roll.min, roll.max)
+        let bounds = |profile| {
+            let filters = build_filters(&item, profile, &StatCatalog::default());
+            [
+                "explicit.stat_2267564181",
+                "explicit.stat_3642528642",
+                "explicit.stat_644456512",
+            ]
+            .map(|trade_id| {
+                let roll = row(&filters, trade_id).roll.clone().expect("roll");
+                (roll.min, roll.max)
+            })
         };
 
-        // At most 3 more: a listing at -2 (2 fewer) is worse and stays out.
-        assert_eq!(bounds("explicit.stat_2267564181"), (None, Some(-3.0)));
-        assert_eq!(bounds("explicit.stat_3642528642"), (Some(2.0), Some(2.0)));
-        assert_eq!(bounds("explicit.stat_644456512"), (Some(20.0), None));
+        // At most 4 more (-4); a listing at -2 (2 fewer) is worse and stays out. Broad lets
+        // -4 + 0.4 = -3.6 through, rounding to -4 all the same; 20 - 2 = 18 of flask charges.
+        assert_eq!(
+            bounds(SearchProfile::QuickPrice),
+            [
+                (None, Some(-4.0)),
+                (Some(2.0), Some(2.0)),
+                (Some(20.0), None)
+            ]
+        );
+        assert_eq!(
+            bounds(SearchProfile::Broad),
+            [
+                (None, Some(-4.0)),
+                (Some(2.0), Some(2.0)),
+                (Some(18.0), None)
+            ]
+        );
     }
 
     #[test]
@@ -1272,7 +1580,7 @@ mod tests {
             ..Default::default()
         };
 
-        let filters = build_filters(&item, 10, &StatCatalog::default());
+        let filters = quick(&item);
         let row = &filters[0];
         let roll = row.roll.as_ref().expect("roll");
 
@@ -1281,8 +1589,9 @@ mod tests {
             row.display_text,
             "Для окружения требуется на # врага меньше"
         );
-        // "At most 3 more" in the catalog's words is "at least 3 fewer" in the item's.
-        assert_eq!((roll.value, roll.min, roll.max), (4.0, Some(3.0), None));
+        // "At most 4 more" in the catalog's words is "at least 4 fewer" in the item's.
+        assert_eq!((roll.value, roll.min, roll.max), (4.0, Some(4.0), None));
+        assert_eq!(roll.bound, RollBound::Higher);
     }
 
     #[test]
@@ -1303,7 +1612,7 @@ mod tests {
                 mods,
                 ..Default::default()
             };
-            build_filters(&item, 10, &StatCatalog::default())
+            quick(&item)
                 .into_iter()
                 .find(|filter| filter.trade_ids[0] == "implicit.stat_2933846633")
                 .expect("the daze row")
@@ -1351,7 +1660,7 @@ mod tests {
             ..Default::default()
         };
 
-        let filters = build_filters(&item, 10, &StatCatalog::default());
+        let filters = quick(&item);
 
         let merged = filters
             .iter()
@@ -1364,6 +1673,7 @@ mod tests {
             "tier is the min across contributing sources"
         );
         assert_eq!(merged.roll.as_ref().expect("roll").value, 25.0);
+        assert_eq!(merged.tier_info, None, "two mods, no one tier");
     }
 
     #[test]
@@ -1384,13 +1694,15 @@ mod tests {
             ..Default::default()
         };
 
-        let filters = build_filters(&item, 10, &StatCatalog::default());
+        let filters = quick(&item);
 
         let filter = filters
             .iter()
             .find(|f| f.trade_ids == vec!["explicit.stat_unscalable".to_owned()])
             .expect("unscalable filter should still be produced");
         assert!(filter.roll.is_none());
-        assert!(!filter.enabled, "a flag starts unchecked");
+        // A mod without a tier 1, without a tag or a roll nothing more: under Quick Price's 3.
+        assert_eq!(filter.score, Some(1.0));
+        assert!(!filter.enabled);
     }
 }

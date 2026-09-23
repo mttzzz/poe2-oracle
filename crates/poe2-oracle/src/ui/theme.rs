@@ -48,7 +48,7 @@ pub(crate) const TEXT_WARNING: u32 = 0xe0664f;
 /// The game's colour for rolled values in item tooltips.
 pub(crate) const TEXT_VALUE: u32 = 0x8888ff;
 pub(crate) const TIER_TOP: u32 = 0xecc94b;
-/// poe.ninja's colours for a price that rose / fell over the week.
+/// Colours of a price that rose / fell over the week.
 pub(crate) const PRICE_RISE: u32 = 0x4fc97f;
 pub(crate) const PRICE_FALL: u32 = 0xe06c6c;
 /// The game's name colours for currency and gems, which have no rarity of their own.
@@ -103,8 +103,6 @@ pub(crate) const BADGE_REPEAT_TEXT: u32 = 0x2d3748;
 pub(crate) const STATUS_ONLINE: u32 = 0xf687b3;
 pub(crate) const STATUS_AFK: u32 = 0xed8936;
 pub(crate) const STATUS_OFFLINE: u32 = 0xe53e3e;
-/// The estimate's "high" confidence.
-pub(crate) const CONFIDENCE_HIGH: u32 = 0x68d391;
 /// The player's waystone mod marks: danger, warning, wanted.
 pub(crate) const MARK_DANGER: u32 = 0xe53e3e;
 pub(crate) const MARK_WARNING: u32 = 0xed8936;
@@ -113,3 +111,28 @@ pub(crate) const MARK_WANTED: u32 = 0x48bb78;
 /// Horizontal inset of everything below the panel's nameplate and the settings window's title
 /// bar.
 pub(crate) const CONTENT_PADDING: f32 = 12.;
+
+// The game-styled look `ui::style` draws, first shown by the style mockup (`ui::mockup`).
+/// Gold lifted for text on black: headings, the current section, a hovered control's label.
+pub(crate) const GOLD_LIGHT: u32 = 0xebc27a;
+/// A title bar's gradient, top to bottom: the game's bronze fading into black.
+pub(crate) const TITLE_TOP: u32 = 0x1c160f;
+pub(crate) const TITLE_BOTTOM: u32 = 0x09090a;
+/// The settings window's sidebar, a step below its content.
+pub(crate) const BG_SIDEBAR: u32 = 0x0a0a0c;
+/// A card grouping rows, a step above the window; its edge, and the hairline between its rows.
+pub(crate) const BG_CARD: u32 = 0x141417;
+pub(crate) const BORDER_CARD: u32 = 0x25252b;
+pub(crate) const BORDER_ROW: u32 = 0x1d1d22;
+/// A field, select or segmented choice at rest, and its edge.
+pub(crate) const BG_FIELD: u32 = 0x0b0b0d;
+pub(crate) const BORDER_FIELD: u32 = 0x36363d;
+/// A keycap's top, fading down into `BG_FIELD`.
+pub(crate) const KEY_TOP: u32 = 0x202026;
+/// A menu's or tooltip's fill.
+pub(crate) const BG_MENU: u32 = 0x0c0c0e;
+/// A primary button's bronze plate, top and bottom.
+pub(crate) const PLATE_TOP: u32 = 0x3d2c16;
+pub(crate) const PLATE_BOTTOM: u32 = 0x1f170c;
+/// A destructive button's edge; its label is `TEXT_WARNING`.
+pub(crate) const BORDER_DANGER: u32 = 0x5e2c22;

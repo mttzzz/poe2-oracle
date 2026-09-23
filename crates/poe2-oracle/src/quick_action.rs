@@ -1,8 +1,12 @@
 //! What a quick action types into the game: the text that goes on the clipboard and the keys
 //! around its paste -- EE2's `typeInChat` and `stashSearch` (`main/src/shortcuts/text-box.ts`),
 //! the way PoE2 takes typed text reliably: a paste, not keystrokes per character, so any
-//! language's text arrives whatever the keyboard layout. Plain data, built and tested on every
-//! target; `platform::synth_input::press_keys` plays the keys on Windows.
+//! language's text arrives whatever the keyboard layout. And what it never types -- the chat
+//! commands that destroy something or change it for good ([`denied_command`]) -- and how often:
+//! once per press of its key ([`KEY_PRESSES`]). Plain data, built and tested on every target;
+//! `platform::synth_input::press_keys` plays the keys on Windows.
+
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use crate::settings::{QuickAction, QuickActionKind};
 
@@ -88,6 +92,135 @@ fn pasted(text: &str, before: Vec<Key>, after: Vec<Key>) -> Typing {
     }
 }
 
+/// A chat command no quick action sends: it destroys something or changes it for good, and a
+/// mis-pressed key must not do that. VibeTools fences its chat hotkeys the same way
+/// (`DENY_COMMANDS` in its `main.js`: `/destroy` and `/clear_ignore_list`); the rest come from
+/// the game's command list (poe2wiki.net/wiki/Chat).
+pub struct DeniedCommand {
+    /// As the game's command list writes it; matched ignoring case.
+    pub command: &'static str,
+    /// What the settings window says under an action that would send it.
+    pub warning: &'static str,
+}
+
+static DENIED_COMMANDS: [DeniedCommand; 4] = [
+    // "destroys the item on your cursor (be careful!)" -- the wiki; VibeTools denies it.
+    DeniedCommand {
+        command: "/destroy",
+        warning: "Команда /destroy уничтожает предмет — быстрые действия её не отправляют",
+    },
+    // "removes all accounts from your ignore list" -- the wiki; VibeTools denies it.
+    DeniedCommand {
+        command: "/clear_ignore_list",
+        warning: "Команда /clear_ignore_list очищает весь список игнорируемых — быстрые действия \
+                  её не отправляют",
+    },
+    // Destroys the race reward unique on the cursor for an account-bound skin that "cannot be
+    // traded to other players or turned back into the original item" (poewiki.net/wiki/Chat);
+    // in PoE2 since 0.1.1e.
+    DeniedCommand {
+        command: "/convertracereward",
+        warning: "Команда /convertracereward уничтожает предмет, превращая его в облик — быстрые \
+                  действия её не отправляют",
+    },
+    // Resets the Atlas; the game takes it only when no map is left to run (0.1.1c).
+    DeniedCommand {
+        command: "/ResetAtlas",
+        warning: "Команда /ResetAtlas сбрасывает атлас — быстрые действия её не отправляют",
+    },
+];
+
+/// The denied command `text` would send, if any: a line's first word once a channel's sign and a
+/// whisper's addressee are off its front -- `%/destroy` and `@last /destroy` count too, in any
+/// case and between any spaces. Stash searches are held to it as well: they are pasted and sent
+/// with Enter like a chat line, and with the chat open they would be one.
+pub fn denied_command(text: &str) -> Option<&'static DeniedCommand> {
+    text.lines().find_map(|line| {
+        let word = command_word(line)?;
+        DENIED_COMMANDS
+            .iter()
+            .find(|denied| denied.command.eq_ignore_ascii_case(word))
+    })
+}
+
+/// A line's first word, after any channel signs at its front -- a whisper's with its addressee.
+fn command_word(line: &str) -> Option<&str> {
+    let mut rest = line.trim_start();
+    loop {
+        let mut chars = rest.chars();
+        rest = match chars.next() {
+            // A whisper: the addressee, then the message.
+            Some('@') => chars
+                .as_str()
+                .split_once(char::is_whitespace)
+                .map_or("", |(_, message)| message),
+            Some(sign) if sign != '/' && CHANNEL_PREFIXES.contains(&sign) => chars.as_str(),
+            _ => return rest.split_whitespace().next(),
+        }
+        .trim_start();
+    }
+}
+
+/// The keyboard's presses of each key, so that one press of a quick action's key types once. A
+/// held key fires its hotkey again: typing lifts the hotkey's keys first
+/// (`synth_input::press_keys`), which to the system is the key let go, so the keyboard's
+/// auto-repeat, once it starts, counts as a new press. Only the keyboard knows whether the player
+/// really let go: the low-level keyboard hook (`platform::esc_hook`) reports each key it sees go
+/// down or up, and what programs type -- this one's lift included -- doesn't count.
+pub struct KeyPresses {
+    /// Per virtual-key code: how many times the key went down, times two, plus [`DOWN`] while it
+    /// is down -- a held key's value names its press.
+    presses: [AtomicU32; 256],
+    /// Per virtual-key code: the press that typed last.
+    typed: [AtomicU32; 256],
+}
+
+/// The bit of a [`KeyPresses`] value that is set while the key is down.
+const DOWN: u32 = 1;
+
+/// Every key's presses: the keyboard hook records them, `game_chat` claims them.
+pub static KEY_PRESSES: KeyPresses = KeyPresses::new();
+
+impl KeyPresses {
+    const fn new() -> KeyPresses {
+        KeyPresses {
+            presses: [const { AtomicU32::new(0) }; 256],
+            typed: [const { AtomicU32::new(0) }; 256],
+        }
+    }
+
+    /// A key going down (`down`) or up as the keyboard hook sees it, `injected` when a program
+    /// typed it. Only the hook's thread calls this.
+    pub fn record(&self, vk: u16, down: bool, injected: bool) {
+        if injected {
+            return;
+        }
+        let Some(presses) = self.presses.get(usize::from(vk)) else {
+            return;
+        };
+        let value = presses.load(Ordering::Relaxed);
+        let next = match (down, value & DOWN != 0) {
+            // The auto-repeat of a held key: the same press.
+            (true, true) => return,
+            (true, false) => value.wrapping_add(2) | DOWN,
+            (false, _) => value & !DOWN,
+        };
+        presses.store(next, Ordering::Relaxed);
+    }
+
+    /// Whether the hotkey of `vk` firing may type: the first fire for the press of `vk` that is
+    /// down may, a later one for the same press may not. A key not seen down -- let go by now, or
+    /// pressed by a program -- has no press to repeat, and always may.
+    pub fn claim(&self, vk: u16) -> bool {
+        let index = usize::from(vk);
+        let (Some(presses), Some(typed)) = (self.presses.get(index), self.typed.get(index)) else {
+            return true;
+        };
+        let press = presses.load(Ordering::Relaxed);
+        press & DOWN == 0 || typed.swap(press, Ordering::Relaxed) != press
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -151,5 +284,82 @@ mod tests {
                 vec![CtrlF, CtrlV, Enter]
             )
         );
+    }
+
+    #[test]
+    fn dangerous_commands_are_denied_however_they_are_written() {
+        for (text, command) in [
+            ("/destroy", "/destroy"),
+            ("  /DESTROY  ", "/destroy"),
+            ("/Destroy now", "/destroy"),
+            // Behind a channel's sign, or a whisper's addressee.
+            ("%/destroy", "/destroy"),
+            ("# /destroy", "/destroy"),
+            ("@last /destroy", "/destroy"),
+            ("%@last /destroy", "/destroy"),
+            // On any line of a text with several.
+            ("всем привет\n/destroy", "/destroy"),
+            ("/clear_ignore_list", "/clear_ignore_list"),
+            ("/convertracereward", "/convertracereward"),
+            ("/resetatlas", "/ResetAtlas"),
+        ] {
+            let denied = denied_command(text).map(|denied| denied.command);
+            assert_eq!(denied, Some(command), "{text:?}");
+        }
+    }
+
+    #[test]
+    fn other_texts_are_not_denied() {
+        for text in [
+            "/hideout",
+            "/invite @last",
+            "@last спасибо",
+            "@last",
+            "",
+            // Only the whole command counts, and only as the first word.
+            "/destroyer",
+            "/clear",
+            "не пиши /destroy",
+        ] {
+            let denied = denied_command(text).map(|denied| denied.command);
+            assert_eq!(denied, None, "{text:?}");
+        }
+    }
+
+    /// F5's virtual-key code.
+    const F5: u16 = 0x74;
+
+    #[test]
+    fn a_held_key_types_once_per_press() {
+        let keys = KeyPresses::new();
+        let keyboard = |down| keys.record(F5, down, false);
+        keyboard(true);
+        assert!(keys.claim(F5));
+        // The action lifts the key as far as the system knows, and the auto-repeat of the key the
+        // player still holds fires the hotkey again.
+        keys.record(F5, false, true);
+        keyboard(true);
+        keyboard(true);
+        assert!(!keys.claim(F5));
+        keyboard(true);
+        assert!(!keys.claim(F5));
+        // Let go and pressed again: a new press types.
+        keyboard(false);
+        keyboard(true);
+        assert!(keys.claim(F5));
+    }
+
+    #[test]
+    fn a_key_not_seen_down_always_types() {
+        let keys = KeyPresses::new();
+        // Pressed by a program, not on the keyboard.
+        keys.record(F5, true, true);
+        assert!(keys.claim(F5));
+        assert!(keys.claim(F5));
+        // A tap let go before its hotkey's fire got here.
+        keys.record(F5, true, false);
+        keys.record(F5, false, false);
+        assert!(keys.claim(F5));
+        assert!(keys.claim(F5));
     }
 }

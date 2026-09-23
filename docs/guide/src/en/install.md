@@ -6,7 +6,8 @@
 - Path of Exile 2 with the English or Russian client.
 - The game in **Windowed** or **Windowed Fullscreen** display mode. Over exclusive Fullscreen,
   Windows cannot show other programs' windows, so the panel would stay invisible.
-- An internet connection: prices come from the Path of Exile trade site, poe.ninja and poe2scout.
+- An internet connection: prices come from the Path of Exile trade site, GGG's Currency Exchange
+  data (`web.poecdn.com`) and poe2scout.
 
 ## Download
 

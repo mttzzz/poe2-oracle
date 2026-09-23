@@ -2,12 +2,14 @@
 //! -- from Exiled Exchange 2's generated item database (`assets/data/item-refs.tsv`, built by
 //! `packaging/data/generate_item_refs.py`; EE2 is MIT, see `assets/data/NOTICE`). The English
 //! name is what poe2db and the wiki name their pages by, a Russian item's included; the art is
-//! the trade site's own.
+//! the trade site's own. A base Craft of Exile crafts also carries the game's own ids of the bases
+//! so named and the trade stats of their implicits, from RePoE's export of the game's tables
+//! (`bases`).
 
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
-use poe2_domain::{ItemRarity, ParsedItem};
+use poe2_domain::{ItemRarity, ParsedItem, ParsedModifier};
 
 const DATA: &str = include_str!("../assets/data/item-refs.tsv");
 
@@ -27,6 +29,87 @@ pub enum RefKind {
 pub struct ItemRef {
     pub ref_name: &'static str,
     icon_tail: &'static str,
+    /// The table's fifth field: the bases of the name Craft of Exile crafts (`bases` reads it).
+    bases: &'static str,
+}
+
+/// One of the game's bases: its metadata id and its implicits.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Base {
+    /// The game's own id of the base (`Metadata/Items/Rings/FourRing9`).
+    pub id: &'static str,
+    pub implicits: Vec<Implicit>,
+}
+
+/// One implicit of a base.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Implicit {
+    /// Each of its lines' trade stat hashes (`stat_2901986750`), two where two stats print alike,
+    /// none for a line no trade stat prints.
+    pub lines: Vec<Vec<&'static str>>,
+    /// The line printing each of its stats, in the game's order of them (a line of two numbers
+    /// twice); `None` when the item's text can't give each of them its roll.
+    pub order: Option<Vec<usize>>,
+}
+
+impl Implicit {
+    /// Which of `modifier`'s stats prints each of the implicit's lines: `None` unless each line
+    /// has its own, one of the trade stats the line prints as.
+    pub fn lines_in(&self, modifier: &ParsedModifier) -> Option<Vec<usize>> {
+        if self.lines.len() != modifier.stats.len() {
+            return None;
+        }
+        let mut taken = vec![false; modifier.stats.len()];
+        self.lines
+            .iter()
+            .map(|hashes| {
+                let stat = modifier
+                    .stats
+                    .iter()
+                    .enumerate()
+                    .position(|(index, stat)| {
+                        !taken[index]
+                            && stat.stat_id.as_deref().is_some_and(|stat_id| {
+                                hashes.contains(&stat_filters::stat_hash(stat_id))
+                            })
+                    })?;
+                taken[stat] = true;
+                Some(stat)
+            })
+            .collect()
+    }
+}
+
+/// A base as the table writes it: the metadata id, then `;` and each implicit.
+fn parse_base(field: &'static str) -> Option<Base> {
+    let mut parts = field.split(';');
+    let id = parts.next().filter(|id| !id.is_empty())?;
+    let implicits = parts
+        .map(|implicit| {
+            let (lines, order) = match implicit.split_once('=') {
+                Some((lines, order)) => (lines, Some(order)),
+                None => (implicit, None),
+            };
+            let lines: Vec<Vec<&'static str>> = lines
+                .split(',')
+                .map(|line| match line {
+                    "?" => Vec::new(),
+                    hashes => hashes.split('|').collect(),
+                })
+                .collect();
+            let order = match order {
+                Some(order) => Some(
+                    order
+                        .split(',')
+                        .map(|line| line.parse().ok().filter(|&line| line < lines.len()))
+                        .collect::<Option<_>>()?,
+                ),
+                None => None,
+            };
+            Some(Implicit { lines, order })
+        })
+        .collect::<Option<_>>()?;
+    Some(Base { id, implicits })
 }
 
 impl ItemRef {
@@ -60,6 +143,16 @@ impl ItemRef {
             self.ref_name.replace(' ', "_")
         )
     }
+
+    /// The game's bases of the item's name that Craft of Exile crafts: none for anything else,
+    /// several where bases share a name (`Two-Stone Ring`, one per pair of resistances).
+    pub fn bases(&self) -> Vec<Base> {
+        self.bases
+            .split(' ')
+            .filter(|base| !base.is_empty())
+            .filter_map(parse_base)
+            .collect()
+    }
 }
 
 /// Both languages' names of every item, by kind. Built on first use: ~3,600 table rows.
@@ -81,6 +174,7 @@ static INDEX: LazyLock<HashMap<(RefKind, &'static str), ItemRef>> = LazyLock::ne
         let item = ItemRef {
             ref_name,
             icon_tail,
+            bases: fields.next().unwrap_or(""),
         };
         // A repeated name keeps its first row, the one EE2 lists first.
         index.entry((kind, ref_name)).or_insert(item);
@@ -96,7 +190,8 @@ pub fn lookup(kind: RefKind, name: &str) -> Option<ItemRef> {
 
 /// What a copied item is in the database: a unique by its own name, a gem by its name, anything
 /// else by its base type (a magic or rare item's name is made up) -- an unidentified unique,
-/// whose name is its base, falls back the same way.
+/// whose name is its base, falls back the same way; a magic item's name holds its base
+/// (`magic_base`).
 pub fn refs_for(item: &ParsedItem) -> Option<ItemRef> {
     let base = item.base_type.as_deref().unwrap_or(&item.name);
     let is_gem = item
@@ -111,7 +206,40 @@ pub fn refs_for(item: &ParsedItem) -> Option<ItemRef> {
     if is_gem && let Some(gem) = lookup(RefKind::Gem, &item.name) {
         return Some(gem);
     }
-    lookup(RefKind::Item, base).or_else(|| lookup(RefKind::Item, &item.name))
+    lookup(RefKind::Item, base)
+        .or_else(|| lookup(RefKind::Item, &item.name))
+        .or_else(|| magic_base(item))
+}
+
+/// A magic item's base: its name wraps the base in affixes ("Crackling Temple Maul of the
+/// Brute", "Копьеносный Изумруд пригвождения"), so the base is the longest run of whole words
+/// naming an item, the earliest of the longest -- EE2's `magicBasetype`, which `trade_client`
+/// follows in the trade site's own catalog for the search.
+fn magic_base(item: &ParsedItem) -> Option<ItemRef> {
+    if item.rarity != Some(ItemRarity::Magic) {
+        return None;
+    }
+    let name = item.name.as_str();
+    let mut words = Vec::new();
+    let mut start = 0;
+    for word in name.split(' ') {
+        words.push((start, start + word.len()));
+        start += word.len() + 1;
+    }
+    let mut best: Option<(usize, ItemRef)> = None;
+    for (first, &(start, _)) in words.iter().enumerate() {
+        for &(_, end) in &words[first..] {
+            let run = &name[start..end];
+            let length = run.chars().count();
+            if best.is_some_and(|(best, _)| best >= length) {
+                continue;
+            }
+            if let Some(item) = lookup(RefKind::Item, run) {
+                best = Some((length, item));
+            }
+        }
+    }
+    best.map(|(_, item)| item)
 }
 
 #[cfg(test)]

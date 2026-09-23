@@ -128,7 +128,7 @@ fn stat_key(id: &str) -> &str {
 
 #[cfg(test)]
 mod tests {
-    use stat_filters::SearchFilterRoll;
+    use stat_filters::{RollBound, SearchFilterRoll};
     use trade_client::ModKind;
 
     use super::*;
@@ -144,14 +144,16 @@ mod tests {
                 value: min.unwrap_or_default(),
                 min,
                 max: None,
-                default_min: 0.0,
-                default_max: 0.0,
+                bound: RollBound::Higher,
                 dp: false,
             }),
             enabled,
             hidden: false,
             generation: None,
             inverted: false,
+            score: None,
+            tier_info: None,
+            weighted_sum: false,
         }
     }
 

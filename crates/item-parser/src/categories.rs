@@ -14,9 +14,9 @@
 //!
 //! [`ITEM_CLASSES`] holds every class the game names: all 93 rows of the live client's
 //! `Data/Balance/ItemClasses.datc64` (EN) and `Data/Balance/Russian/ItemClasses.datc64` (RU) with a
-//! non-empty `Name`, extracted 2026-09-22 with this workspace's `data-pipeline` and paired by the
-//! table's language-independent `Id` (`tests/fixtures/itemclasses.tsv` is that dump, and a test
-//! holds this table to it). Rows sharing both names are listed once. The names are the client's,
+//! non-empty `Name`, extracted 2026-09-22 and paired by the table's language-independent `Id`
+//! (`tests/fixtures/itemclasses.tsv` is that dump, and a test holds this table to it). Rows
+//! sharing both names are listed once. The names are the client's,
 //! not the trade site's category labels, which differ (trade `Сапоги`/`Нательная броня` vs game
 //! `Обувь`/`Нательные доспехи`; English `Quarterstaves`, whose `Id` is still `Warstaff`). An
 //! `Item Class:` value missing here is still NOT guessed at -- `nameplate.rs` surfaces

@@ -39,16 +39,14 @@ anyhow = "1"
 # Cache directory for the stat/currency catalog (`price_check.rs`'s bootstrap): same
 # `ProjectDirs::from("", "", "poe2-oracle")` convention already established in `trade-client`'s
 # own `cache.rs` doc comment -- that crate's `load_or_fetch` takes an explicit path rather than
-# constructing one itself, so the one real call site (here) needs this dependency too.
+# constructing one itself, so the one real call site (here) needs this dependency.
 directories = "5"
 # The player's settings file (src/settings.rs): `Settings` round-trips through JSON.
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-# This crate is the shipped app: it only ever reads data-pipeline's JSON output at build/runtime
-# (see crates/data-pipeline), never touches poe-bundle/poe-dat/Oodle directly -- that machinery
-# only runs where the Bundles2 SMB share is reachable. Domain types, clipboard item parsing, and
-# the trade API client are shared with data-pipeline-adjacent tooling, so they live in their own
-# crates instead of being duplicated here.
+# The workspace's own libraries: shared item types, clipboard item parsing, the search filters,
+# the trade API client and the update check. None has Windows-only code, so they build and test
+# on Linux too.
 poe2-domain = { path = "../poe2-domain" }
 item-parser = { path = "../item-parser" }
 trade-client = { path = "../trade-client" }
@@ -106,21 +104,21 @@ zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2
 # src/platform/game_window.rs).
 # `Win32_System_Console` (whether a stderr is attached, src/logging.rs) and
 # `Win32_System_SystemInformation` (the local time the diagnostics report is named by).
-# `Win32_System_Diagnostics_Debug` (`MessageBeep`, the trade overlay's new-request sound,
-# src/ui/trade_overlay.rs).
 # `Win32_Security_Credentials` (the player's pathofexile.com session, kept in the Windows
 # Credential Manager -- src/platform/credentials.rs).
+# `Win32_System_Time` (the hours an exchange price comes from, on the player's clock --
+# src/ui/panel/market.rs).
 windows = { version = "0.62", features = [
     "Win32_Foundation",
     "Win32_Graphics_Dwm",
     "Win32_Graphics_Gdi",
     "Win32_Security_Credentials",
     "Win32_System_Console",
-    "Win32_System_Diagnostics_Debug",
     "Win32_System_LibraryLoader",
     "Win32_System_Registry",
     "Win32_System_SystemInformation",
     "Win32_System_Threading",
+    "Win32_System_Time",
     "Win32_UI_Accessibility",
     "Win32_UI_HiDpi",
     "Win32_UI_WindowsAndMessaging",
@@ -132,6 +130,13 @@ windows = { version = "0.62", features = [
 # `global-hotkey`, driven by the same GPUI main-thread message loop. Default features are
 # Linux-only (libxdo/appindicator), so they're off.
 tray-icon = { version = "0.25", default-features = false }
+# The sign-in window (src/platform/login_window.rs): pathofexile.com's login page in Microsoft Edge
+# WebView2, through Microsoft's WebView2 COM API generated for the same `windows` 0.62. Its
+# completion handlers and events run from GPUI's own message loop, so nothing waits for the
+# browser -- `wry` would: it waits for the browser's start and for each cookie read in a nested
+# message loop of its own. The WebView2 loader is linked statically on MSVC, so the shipped exe
+# needs no WebView2Loader.dll; the windows-gnu type-check build imports that DLL instead.
+webview2-com = "0.39"
 
 [build-dependencies]
 # build.rs embeds the app icon and VERSIONINFO into the exe: rc.exe on MSVC, mingw's windres on the

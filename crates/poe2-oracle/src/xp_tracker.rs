@@ -1,5 +1,6 @@
 //! Experience tracking for the XP overlay: how fast the character levels, how much play is left
-//! until the next level, and how long the current map has taken.
+//! until the next level, how long the current map has taken, and whether the player is playing
+//! at all.
 //!
 //! Pure and not Windows-gated, so the native test pass covers all of it. The Windows side only
 //! feeds it -- `platform::xp_bar` captures the bar's pixels, `platform::client_log` tails the game
@@ -8,11 +9,13 @@
 //! - [`XpBarGeometry`] and [`read_fill`]: where PoE2 draws its experience bar and how the bar's
 //!   pixels read as the fraction of the level already earned.
 //! - [`parse_log_line`]: the `Client.txt` lines that say the character levelled up, entered an
-//!   area instance, or logged out.
+//!   area instance or an ascendancy trial, or logged out.
 //! - [`XpTracker`]: the rate (levels per hour of play, over a window the settings pick), the time
-//!   to the next level, and the current map run ([`MapStatus`]): its time, its experience, and
-//!   the average time of the maps before it.
-//! - [`format_rate`], [`format_eta`], [`format_percent`], [`format_clock`]: the overlay's wording.
+//!   to the next level, whether the player is playing or paused ([`Activity`]), and the current
+//!   or last map run ([`MapStatus`]): its time, its experience, and the average time of the maps
+//!   before it.
+//! - [`format_rate`], [`format_duration`], [`format_percent`], [`format_clock`]: the overlay's
+//!   wording.
 
 use std::ops::{Range, RangeInclusive};
 use std::time::Duration;
@@ -303,6 +306,9 @@ pub enum LogEvent {
     /// 2266921739 at 21:50:20 and again at 21:50:36 after a trip to the hideout -- so the seed
     /// tells a return from a new map.
     AreaEntered { area: String, seed: u64 },
+    /// The area just entered is an ascendancy trial's (`TRIAL_SCENES`): its scene line follows
+    /// the area line, within a second, and comes again whenever the world map is closed there.
+    TrialEntered,
     /// The client went back to the login/character-select screen.
     LoggedOut,
 }
@@ -315,11 +321,13 @@ pub enum LogEvent {
 /// 2026/09/22 18:48:06 4189156 3ef23348 [INFO Client 19772] : mttzzz_merc_next (Легионер каменитов) достигает 38 уровня
 /// 2025/12/12 13:03:36 1004610062 3ef232c2 [INFO Client 1157464] : HolyMolyThisIsCharName (Mercenary) is now level 2
 /// 2026/09/22 18:50:44 4347046 2caa229f [DEBUG Client 19772] Generating level 44 area "G3_town" with seed 1
+/// 2026/09/18 13:48:29 24486437 7fbd1225 [INFO Client 14580] [SCENE] Set Source [Испытание Хаоса]
 /// 2026/09/22 21:35:24 14225828 7fbd1225 [INFO Client 31244] [SCENE] Set Source [(unknown)]
 /// ```
 ///
-/// The area line is the same in every client language; `(unknown)` is the scene at both client
-/// start and every return to character select.
+/// The area line is the same in every client language; a scene line names the area in the
+/// client's language, and `(unknown)` is the scene at both client start and every return to
+/// character select.
 pub fn parse_log_line(line: &str) -> Option<LogEvent> {
     let (_, rest) = line.split_once(" [")?;
     let (header, message) = rest.split_once("] ")?;
@@ -339,8 +347,31 @@ pub fn parse_log_line(line: &str) -> Option<LogEvent> {
             seed: seed.parse().ok()?,
         });
     }
-    (message == "[SCENE] Set Source [(unknown)]").then_some(LogEvent::LoggedOut)
+    let scene = message
+        .strip_prefix("[SCENE] Set Source [")?
+        .strip_suffix(']')?;
+    if scene == "(unknown)" {
+        Some(LogEvent::LoggedOut)
+    } else {
+        TRIAL_SCENES
+            .contains(&scene)
+            .then_some(LogEvent::TrialEntered)
+    }
 }
+
+/// The scene names of the ascendancy trials' areas in the Russian and the English client: the
+/// Trial of the Sekhemas (its altar room `G2_13` and its floors `Sanctum_*`) and the Trial of
+/// Chaos (`G3_10`). The Russian ones name every entry into those areas in the test machine's
+/// 15-month log. The English ones are the areas' names in RePoE's PoE2 `world_areas`, which is
+/// how an English scene line names its area: 94 of the areas in EE2's English
+/// `FullCampaign.txt`, all but the two RePoE doesn't list. The Act 4 campaign area `G4_4_3`,
+/// «Испытание предков» or Trial of the Ancestors, is not a trial.
+const TRIAL_SCENES: [&str; 4] = [
+    "Испытание Сехем",
+    "Испытание Хаоса",
+    "Trial of the Sekhemas",
+    "The Trial of Chaos",
+];
 
 /// `<name> (<class>) достигает <n> уровня` / `<name> (<class>) is now level <n>`.
 fn parse_level_up(message: &str) -> Option<LogEvent> {
@@ -380,8 +411,9 @@ const MAX_SAMPLE_GAP: Duration = Duration::from_secs(6);
 /// changed meanwhile -- it may not even be the same character.
 const REBASE_GAP: Duration = Duration::from_secs(60);
 /// Play time stops counting this long after the last gain, so an idle player in a map doesn't
-/// dilute the rate. Generous: at level 95+ a pixel of the 4K bar takes tens of seconds of
-/// mapping.
+/// dilute the rate; and once the player has gone this long without a gain or a change of area,
+/// the overlay shows a pause. Generous: at level 95+ a pixel of the 4K bar takes tens of seconds
+/// of mapping.
 const IDLE_AFTER: Duration = Duration::from_secs(5 * 60);
 /// The rate window unless the settings pick another: play ten minutes ago weighs half as much as
 /// play now. A few maps, so one lucky pack doesn't swing the rate, and a change of farming
@@ -411,14 +443,17 @@ const HIDE_AFTER: Duration = Duration::from_secs(5);
 pub struct XpStatus {
     /// The fraction of the current level already earned.
     pub fraction: Option<f64>,
-    /// Levels earned per hour of play (0.124 = 12.4 % of a level per hour).
+    /// Levels earned per hour of play (0.124 = 12.4 % of a level per hour). A pause doesn't
+    /// change it: it stays the rate of the play before.
     pub rate_per_hour: Option<f64>,
     /// The character's current level, once the log has named it since the last login.
     pub level: Option<u32>,
     /// Whether the bar is on screen right now.
     pub bar_visible: bool,
+    /// Whether the player is playing, or since when they haven't been.
+    pub activity: Activity,
     /// The current map run, once the character has entered a map since the tracker started or
-    /// the last login.
+    /// the last login -- the last one, once the character is done with it.
     pub map: Option<MapStatus>,
 }
 
@@ -430,23 +465,49 @@ impl XpStatus {
     }
 }
 
-/// The current map run, for the overlay's map line.
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+/// Whether the player is playing, which decides what the overlay shows: in a pause, a rate and a
+/// time to level measured over the play before would pass for current ones.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Activity {
+    /// In a map, a campaign zone or a trial, and gaining experience or changing areas.
+    #[default]
+    Playing,
+    /// In a town or hideout, as the log says, or idle in play for longer than `IDLE_AFTER`.
+    /// `since` is when the pause began, on the clock of [`XpTracker::on_sample`] -- entering the
+    /// town, or the last gain or change of area before idling -- and `elapsed` how long it has
+    /// lasted as of the latest update.
+    Paused { since: Duration, elapsed: Duration },
+}
+
+/// The current or last map run, for the overlay's map part.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MapStatus {
-    /// Time spent in the current map instance and the side areas entered from it (wall time,
-    /// paused while in a town or hideout).
+    /// Time spent in the map instance and the side areas entered from it (wall time, stopped
+    /// while the character is anywhere else).
     pub time: Duration,
     /// Levels earned in it (same unit as [`XpStatus::rate_per_hour`]'s numerator: 0.012 = 1.2 %
     /// of a level).
     pub gained: f64,
-    /// Whether the character is in it right now; false while it's paused -- in the hideout
-    /// between portals, or anywhere entered from a town.
-    pub active: bool,
+    /// Whether the character is in it, left it a moment ago, or is done with it.
+    pub state: RunState,
     /// Maps finished since the tracker started or the last login: every map left for another
     /// one, completed or not -- the log doesn't say.
     pub finished: u32,
     /// The finished maps' average time; `None` before the first finishes.
     pub average: Option<Duration>,
+}
+
+/// Where a map run stands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunState {
+    /// The character is in the map or one of its side areas: the run's clock runs.
+    Running,
+    /// Left no longer than `LAST_MAP_AFTER` ago -- for the hideout between portals, say: the
+    /// clock waits for the character to come back.
+    Waiting,
+    /// Left longer ago: the last map, until the character goes back into its instance (the run
+    /// resumes) or into another map (a new run starts).
+    Last,
 }
 
 /// The rate window: seconds of play after which a gain weighs half as much in the rate.
@@ -477,12 +538,18 @@ impl Default for HalfLife {
 /// says so), and until `IDLE_AFTER` without a gain; it carries over level-ups, deaths and breaks,
 /// and weighs recent play most ([`Self::set_rate_window`]).
 ///
+/// The player is paused ([`Activity`]) in towns and hideouts, since entering the first of them,
+/// and once `IDLE_AFTER` has passed without a gain or a change of area, since the last one. That
+/// only changes what the overlay shows; the rate keeps its own notion of play.
+///
 /// Map runs follow the log's area lines. A map instance is known by its seed: back into it
-/// through its portal, the run resumes; a map with another seed finishes the run and starts the
-/// next. Side areas entered from the map (the Abyss depths) are part of its run, anything else
-/// entered from a town (a campaign zone) is not. A run's time is wall time between calls while
-/// the character is in it; its experience also takes what the bar shows in the town right after
-/// it, since nothing in town gives any.
+/// through its portal, the run resumes -- also once it has become the last map, `LAST_MAP_AFTER`
+/// after the character left it -- and a map with another seed finishes the run and starts the
+/// next. Side areas entered from the map (the Abyss depths) are part of its run; anything else
+/// entered from a town (a campaign zone) is not, and neither is an ascendancy trial's area,
+/// however it was entered: its scene line takes it out of the run. A run's time is wall time
+/// between calls while the character is in it; its experience also takes what the bar shows in
+/// the town right after it, since nothing in town gives any.
 ///
 /// A logout resets everything but the rate window, since the next character may be a different
 /// one.
@@ -498,7 +565,13 @@ pub struct XpTracker {
     best: f64,
     character: Option<String>,
     level: Option<u32>,
-    in_town: bool,
+    /// The latest time the tracker was told, by any call.
+    clock: Option<Duration>,
+    /// When the character went into the town or hideout it is in -- or into the first of the
+    /// towns it has been in since it last left one -- per the log; `None` anywhere else.
+    town_since: Option<Duration>,
+    /// The last gain or change of area, or the first call before any: when idling began.
+    active_at: Option<Duration>,
     /// Counted play since the last gain.
     since_gain: Duration,
     /// Logged level-ups minus wraps seen on the bar, and when it last changed: positive means a
@@ -527,21 +600,25 @@ impl XpTracker {
         self.half_life = HalfLife::minutes(minutes);
     }
 
-    /// Applies what the log said before the tracker started (the tail of `Client.txt`): the
-    /// current area and, if the character levelled up since the last login, its name and level.
-    /// Unlike [`Self::on_log_event`], old level-ups don't make the tracker expect a wrap, and a
-    /// map already underway isn't timed -- when it was entered is unknown -- so it's neither
-    /// shown nor averaged, even after a trip to the hideout and back.
-    pub fn restore(&mut self, history: impl IntoIterator<Item = LogEvent>) {
+    /// Applies what the log said before the tracker started (the tail of `Client.txt`, read at
+    /// `at`): the current area and, if the character levelled up since the last login, its name
+    /// and level. Unlike [`Self::on_log_event`], old level-ups don't make the tracker expect a
+    /// wrap, and a map already underway isn't timed -- when it was entered is unknown -- so it's
+    /// neither shown nor averaged, even after a trip to the hideout and back. For the same reason
+    /// a town the character is in counts as entered at `at`.
+    pub fn restore(&mut self, history: impl IntoIterator<Item = LogEvent>, at: Duration) {
+        self.advance(at);
         for event in history {
             match event {
                 LogEvent::LevelUp { character, level } => {
                     self.note_level(character, level);
                 }
-                LogEvent::AreaEntered { area, seed } => self.enter(area, seed, false),
+                LogEvent::AreaEntered { area, seed } => self.enter(area, seed, false, at),
+                LogEvent::TrialEntered => self.maps.leave_for_trial(at),
                 LogEvent::LoggedOut => {
                     self.character = None;
                     self.level = None;
+                    self.town_since = None;
                     self.maps = MapRuns::default();
                 }
             }
@@ -550,7 +627,7 @@ impl XpTracker {
 
     /// A log line that just appeared; `at` is on the same clock as [`Self::on_sample`]'s.
     pub fn on_log_event(&mut self, event: LogEvent, at: Duration) {
-        self.maps.tick(at);
+        self.advance(at);
         match event {
             LogEvent::LevelUp { character, level } => {
                 if self.note_level(character, level) {
@@ -560,10 +637,12 @@ impl XpTracker {
                 }
             }
             LogEvent::AreaEntered { area, seed } => {
-                self.enter(area, seed, true);
+                self.enter(area, seed, true, at);
                 // Changing areas is play: the idle allowance starts over.
                 self.since_gain = Duration::ZERO;
+                self.active_at = Some(at);
             }
+            LogEvent::TrialEntered => self.maps.leave_for_trial(at),
             LogEvent::LoggedOut => {
                 *self = Self {
                     half_life: self.half_life,
@@ -573,11 +652,28 @@ impl XpTracker {
         }
     }
 
-    /// Follows the character into an area; `timed` is false for areas replayed from before the
-    /// tracker started.
-    fn enter(&mut self, area: String, seed: u64, timed: bool) {
-        self.in_town = is_town(&area);
-        self.maps.enter(area, seed, self.in_town, timed);
+    /// Moves the clock to `at`, counting the time since the previous call toward the map run
+    /// while the character is in it. Log lines arrive with the time they were read, so the time
+    /// before one goes to the area it left.
+    fn advance(&mut self, at: Duration) {
+        let elapsed = self
+            .clock
+            .map_or(Duration::ZERO, |clock| at.saturating_sub(clock));
+        self.clock = Some(at);
+        self.active_at.get_or_insert(at);
+        self.maps.tick(elapsed);
+    }
+
+    /// Follows the character into an area at `at`; `timed` is false for areas replayed from
+    /// before the tracker started.
+    fn enter(&mut self, area: String, seed: u64, timed: bool, at: Duration) {
+        let town = is_town(&area);
+        self.town_since = if town {
+            self.town_since.or(Some(at))
+        } else {
+            None
+        };
+        self.maps.enter(area, seed, town, timed, at);
     }
 
     /// Records a level-up of `character`, unless another character already levelled since the
@@ -604,7 +700,7 @@ impl XpTracker {
     /// One look at the bar: `fraction` from [`read_fill`], `None` when it wasn't readable. `at`
     /// is monotonic time since any fixed origin.
     pub fn on_sample(&mut self, fraction: Option<f64>, at: Duration) {
-        self.maps.tick(at);
+        self.advance(at);
         self.last_sample_at = Some(at);
         let Some(reading) = fraction else {
             return;
@@ -633,6 +729,9 @@ impl XpTracker {
         };
         self.expire_level_up_balance(at);
         let gain = self.gain_to(value, at);
+        if gain > 0.0 {
+            self.active_at = Some(at);
+        }
         self.count(at.saturating_sub(last_at), gain);
         self.maps.credit(gain);
         self.last = Some((at, value));
@@ -661,7 +760,7 @@ impl XpTracker {
     /// Credits `elapsed` as play -- unless in town, across a gap nothing was gained over, or past
     /// `IDLE_AFTER` without a gain -- and folds it and `gain` into the weighted rate.
     fn count(&mut self, elapsed: Duration, gain: f64) {
-        let eligible = if self.in_town {
+        let eligible = if self.town_since.is_some() {
             Duration::ZERO
         } else if elapsed <= MAX_SAMPLE_GAP {
             elapsed
@@ -696,18 +795,42 @@ impl XpTracker {
                 (Some(readable), Some(sampled)) => sampled.saturating_sub(readable) <= HIDE_AFTER,
                 _ => false,
             },
-            map: self.maps.status(),
+            activity: self.activity(),
+            map: self.clock.and_then(|now| self.maps.status(now)),
+        }
+    }
+
+    /// Paused in a town or hideout since entering it, or since the last gain or change of area
+    /// once that is longer ago than `IDLE_AFTER`.
+    fn activity(&self) -> Activity {
+        let Some(now) = self.clock else {
+            return Activity::Playing;
+        };
+        let idle_since = self
+            .active_at
+            .filter(|active| now.saturating_sub(*active) > IDLE_AFTER);
+        match self.town_since.or(idle_since) {
+            Some(since) => Activity::Paused {
+                since,
+                elapsed: now.saturating_sub(since),
+            },
+            None => Activity::Playing,
         }
     }
 }
 
 // --- Map runs -----------------------------------------------------------------------------------
 
+/// A map the character left stays the run they may portal back into this long, and is the last
+/// map after that: 89 % of the 496 returns to a map instance in the test machine's 15-month log
+/// came within five minutes, half of them within 100 s.
+const LAST_MAP_AFTER: Duration = Duration::from_secs(5 * 60);
+
 /// Where the character is, as far as the current map run goes.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 enum Whereabouts {
-    /// Somewhere no run counts: before the first map, or in an area entered from a town that
-    /// isn't one of the run's (a campaign zone through a waypoint).
+    /// Somewhere no run counts: before the first map, in an area entered from a town that isn't
+    /// one of the run's (a campaign zone through a waypoint), or in an ascendancy trial.
     #[default]
     Elsewhere,
     /// In the run's map or one of its side areas: the run's clock runs.
@@ -733,18 +856,19 @@ struct MapRun {
 
 impl MapRun {
     /// Whether a non-map area the character enters is part of the run: any area entered straight
-    /// from the run joins it (the Abyss depths, a trial opened in the map), and one that joined
-    /// is part of it again when a portal opened in it brings the character back from the hideout.
-    fn admits(&mut self, area: String, seed: u64, from_run: bool) -> bool {
+    /// from the run joins it (the Abyss depths, the Vaal ruins of an incursion), and one that
+    /// joined is part of it again when a portal opened in it brings the character back from the
+    /// hideout.
+    fn admits(&mut self, area: &str, seed: u64, from_run: bool) -> bool {
         if self
             .side_areas
             .iter()
-            .any(|(id, known)| *known == seed && *id == area)
+            .any(|(id, known)| *known == seed && id == area)
         {
             return true;
         }
         if from_run {
-            self.side_areas.push((area, seed));
+            self.side_areas.push((area.to_owned(), seed));
         }
         from_run
     }
@@ -755,22 +879,18 @@ impl MapRun {
 struct MapRuns {
     current: Option<MapRun>,
     whereabouts: Whereabouts,
+    /// The area the character is in, by id and seed, as the log last said.
+    here: Option<(String, u64)>,
+    /// When the character last left the run's areas; `None` while in them.
+    left_at: Option<Duration>,
     /// Runs left for another map, and their total time.
     finished: u32,
     finished_time: Duration,
-    /// The latest time the tracker was told: the current run's time is counted up to it.
-    clock: Option<Duration>,
 }
 
 impl MapRuns {
-    /// Counts the time since the previous call toward the run while the character is in it. Log
-    /// lines arrive with the time they were read, so the time before one goes to the area it
-    /// left.
-    fn tick(&mut self, at: Duration) {
-        let elapsed = self
-            .clock
-            .map_or(Duration::ZERO, |clock| at.saturating_sub(clock));
-        self.clock = Some(at);
+    /// Counts `elapsed` toward the run while the character is in it.
+    fn tick(&mut self, elapsed: Duration) {
         if self.whereabouts == Whereabouts::InRun
             && let Some(time) = self.current.as_mut().and_then(|run| run.time.as_mut())
         {
@@ -778,8 +898,9 @@ impl MapRuns {
         }
     }
 
-    /// Follows the character into `area`, instance `seed`; `timed` as for [`XpTracker::enter`].
-    fn enter(&mut self, area: String, seed: u64, town: bool, timed: bool) {
+    /// Follows the character into `area`, instance `seed`, at `at`; `timed` as for
+    /// [`XpTracker::enter`].
+    fn enter(&mut self, area: String, seed: u64, town: bool, timed: bool, at: Duration) {
         let from_run = self.whereabouts == Whereabouts::InRun;
         self.whereabouts = if town {
             match self.whereabouts {
@@ -807,12 +928,32 @@ impl MapRuns {
         } else if self
             .current
             .as_mut()
-            .is_some_and(|run| run.admits(area, seed, from_run))
+            .is_some_and(|run| run.admits(&area, seed, from_run))
         {
             Whereabouts::InRun
         } else {
             Whereabouts::Elsewhere
         };
+        self.here = Some((area, seed));
+        if self.whereabouts == Whereabouts::InRun {
+            self.left_at = None;
+        } else if from_run {
+            self.left_at = Some(at);
+        }
+    }
+
+    /// The area just entered is an ascendancy trial's, as its scene line said at `at`: not part
+    /// of the run, even when entered straight from it.
+    fn leave_for_trial(&mut self, at: Duration) {
+        if self.whereabouts != Whereabouts::InRun {
+            return;
+        }
+        if let (Some(run), Some((area, seed))) = (self.current.as_mut(), self.here.as_ref()) {
+            run.side_areas
+                .retain(|(id, known)| !(known == seed && id == area));
+        }
+        self.whereabouts = Whereabouts::Elsewhere;
+        self.left_at = Some(at);
     }
 
     /// Adds `gain` (levels) to the run if it was earned there.
@@ -824,12 +965,22 @@ impl MapRuns {
         }
     }
 
-    fn status(&self) -> Option<MapStatus> {
+    fn status(&self, now: Duration) -> Option<MapStatus> {
         let run = self.current.as_ref()?;
+        let state = if self.whereabouts == Whereabouts::InRun {
+            RunState::Running
+        } else if self
+            .left_at
+            .is_some_and(|left| now.saturating_sub(left) > LAST_MAP_AFTER)
+        {
+            RunState::Last
+        } else {
+            RunState::Waiting
+        };
         Some(MapStatus {
             time: run.time?,
             gained: run.gained,
-            active: self.whereabouts == Whereabouts::InRun,
+            state,
             finished: self.finished,
             average: self.finished_time.checked_div(self.finished),
         })
@@ -864,9 +1015,10 @@ pub fn format_percent(fraction: f64) -> String {
     trimmed.replace('.', ",")
 }
 
-/// `1 ч 32 мин`, `45 мин`, `2 д 3 ч`, `< 1 мин` -- to the nearest minute.
-pub fn format_eta(eta: Duration) -> String {
-    let minutes = (eta.as_secs_f64() / 60.0).round() as u64;
+/// A time to level or a pause's length: `1 ч 32 мин`, `45 мин`, `2 д 3 ч`, `< 1 мин` -- to the
+/// nearest minute.
+pub fn format_duration(duration: Duration) -> String {
+    let minutes = (duration.as_secs_f64() / 60.0).round() as u64;
     let hours = minutes / 60;
     match minutes {
         0 => "< 1 мин".to_owned(),
@@ -979,13 +1131,14 @@ mod tests {
         );
     }
 
-    /// Live instances from the test machine's log (2026-09-22): a map, and the Abyss depths
-    /// opened in it.
+    /// Live instances from the test machine's log: a map and the Abyss depths opened in it
+    /// (2026-09-22), and a Trial of Chaos (2026-09-18).
     const EPITAPH: u64 = 2_266_921_739;
     const DEPTHS: u64 = 3_193_393_764;
+    const CHAOS: u64 = 137_717_311;
 
     #[test]
-    fn parses_level_ups_areas_and_logouts() {
+    fn parses_level_ups_areas_trials_and_logouts() {
         assert_eq!(
             parse_log_line(
                 "2026/09/22 18:48:06 4189156 3ef23348 [INFO Client 19772] : mttzzz_merc_next (Легионер каменитов) достигает 38 уровня"
@@ -1026,6 +1179,15 @@ mod tests {
             );
             assert_eq!(is_town(area), town, "{area}");
         }
+        // Live Russian trial scenes; the English client names them as RePoE does.
+        for line in [
+            "2026/09/18 13:48:29 24486437 7fbd1225 [INFO Client 14580] [SCENE] Set Source [Испытание Хаоса]",
+            "2026/09/17 16:23:11 15768390 7fbd1225 [INFO Client 24908] [SCENE] Set Source [Испытание Сехем]",
+            "2025/12/12 22:05:56 1037150078 7fbd122f [INFO Client 1196912] [SCENE] Set Source [The Trial of Chaos]",
+            "2025/12/12 22:05:56 1037150078 7fbd122f [INFO Client 1196912] [SCENE] Set Source [Trial of the Sekhemas]",
+        ] {
+            assert_eq!(parse_log_line(line), Some(LogEvent::TrialEntered), "{line}");
+        }
         assert_eq!(
             parse_log_line(
                 "2026/09/22 21:35:24 14225828 7fbd1225 [INFO Client 31244] [SCENE] Set Source [(unknown)]"
@@ -1037,8 +1199,12 @@ mod tests {
     #[test]
     fn ignores_look_alike_lines() {
         for line in [
-            // A different scene, a death, a system message with "уровня" in it, chat.
+            // Other scenes: a hideout, the world map, the Act 4 campaign area named a trial (in
+            // Russian and in English); a death, a system message with "уровня" in it, chat.
             "2026/09/22 21:35:30 14232109 7fbd1225 [INFO Client 31244] [SCENE] Set Source [Убежище в каналах]",
+            "2025/07/31 01:23:22 61952828 775aec31 [INFO Client 6392] [SCENE] Set Source [Акт 3]",
+            "2026/09/15 07:54:37 63070000 7fbd1225 [INFO Client 36512] [SCENE] Set Source [Испытание предков]",
+            "2025/12/12 22:05:56 1037150078 7fbd122f [INFO Client 1196912] [SCENE] Set Source [Trial of the Ancestors]",
             "2026/09/22 18:50:38 4340937 3ef23348 [INFO Client 19772] : mttzzz_merc_next был повержен.",
             "2026/09/22 16:02:11 7311140 3ef23348 [INFO Client 28800] : Не удалось применить предмет: Уровень предмета слишком низкий для этого уровня",
             "2026/09/22 16:02:12 7311141 3ef23348 [INFO Client 28800] #Trader: Fake (Mercenary) is now level 99",
@@ -1180,6 +1346,52 @@ mod tests {
     }
 
     #[test]
+    fn the_hideout_pauses_play_but_not_the_rate() {
+        // The owner's evening: a map, then an hour and a half in the hideout, the bar still.
+        let mut tracker = XpTracker::new();
+        enter(&mut tracker, "MapEpitaph", EPITAPH, 0.0);
+        let (t, parked) = map_for_ten_minutes(&mut tracker, 0.0, 0.2);
+        let mapping = tracker.status();
+        assert_eq!(mapping.activity, Activity::Playing);
+        enter(&mut tracker, "HideoutCanal", 1, t);
+        let t = play(&mut tracker, t, 2700, |_| Some(parked));
+        let hideout = tracker.status();
+        assert_eq!(
+            hideout.activity,
+            Activity::Paused {
+                since: Duration::from_secs(600),
+                elapsed: Duration::from_secs(5398),
+            }
+        );
+        // The rate is still that of the mapping: the pause only changes what the overlay shows.
+        assert_eq!(hideout.rate_per_hour, mapping.rate_per_hour);
+        enter(&mut tracker, "MapBluff", 17, t);
+        assert_eq!(tracker.status().activity, Activity::Playing);
+    }
+
+    #[test]
+    fn idling_over_five_minutes_in_a_map_pauses_play_until_the_next_gain() {
+        let mut tracker = XpTracker::new();
+        enter(&mut tracker, "MapEpitaph", EPITAPH, 0.0);
+        // Five minutes of mapping, then the bar stands still: the last gain is read at 300 s, the
+        // median filter passing the last rise on a reading late.
+        let fill = |t: f64| Some(0.2 + t.min(298.0) / 36_000.0);
+        // Five minutes after it, still play; more than five, a pause since the last gain.
+        let t = play(&mut tracker, 0.0, 301, fill);
+        assert_eq!(tracker.status().activity, Activity::Playing);
+        let t = play(&mut tracker, t, 1, fill);
+        assert_eq!(
+            tracker.status().activity,
+            Activity::Paused {
+                since: Duration::from_secs(300),
+                elapsed: Duration::from_secs(302),
+            }
+        );
+        play(&mut tracker, t, 2, |_| Some(0.21));
+        assert_eq!(tracker.status().activity, Activity::Playing);
+    }
+
+    #[test]
     fn a_logged_level_up_across_a_loading_screen_is_not_a_death() {
         // Campaign pace: a boss kill worth most of a level, landed right before a loading screen.
         let run = |logged: bool| {
@@ -1270,22 +1482,28 @@ mod tests {
     #[test]
     fn logging_out_forgets_the_character() {
         let mut tracker = XpTracker::new();
-        tracker.restore([
-            LogEvent::LevelUp {
-                character: "old".to_owned(),
-                level: 90,
-            },
-            LogEvent::LoggedOut,
-            LogEvent::AreaEntered {
-                area: "HideoutCanal".to_owned(),
-                seed: 1,
-            },
-        ]);
+        tracker.restore(
+            [
+                LogEvent::LevelUp {
+                    character: "old".to_owned(),
+                    level: 90,
+                },
+                LogEvent::LoggedOut,
+                LogEvent::AreaEntered {
+                    area: "HideoutCanal".to_owned(),
+                    seed: 1,
+                },
+            ],
+            Duration::ZERO,
+        );
         assert_eq!(tracker.status().level, None);
-        tracker.restore([LogEvent::LevelUp {
-            character: "new".to_owned(),
-            level: 12,
-        }]);
+        tracker.restore(
+            [LogEvent::LevelUp {
+                character: "new".to_owned(),
+                level: 12,
+            }],
+            Duration::ZERO,
+        );
         assert_eq!(tracker.status().level, Some(12));
 
         let t = play(&mut tracker, 0.0, 200, |t| Some(0.4 + t / 36_000.0));
@@ -1306,8 +1524,8 @@ mod tests {
         play(&mut tracker, t, 3, unread);
         let paused = tracker.status().map.unwrap();
         assert_eq!(
-            (paused.time, paused.active),
-            (Duration::from_secs(10), false)
+            (paused.time, paused.state),
+            (Duration::from_secs(10), RunState::Waiting)
         );
         enter(&mut tracker, "MapEpitaph", EPITAPH, 16.0);
         play(&mut tracker, 16.0, 98, unread);
@@ -1322,7 +1540,7 @@ mod tests {
             Some(MapStatus {
                 time: Duration::from_secs(694),
                 gained: 0.0,
-                active: false,
+                state: RunState::Waiting,
                 finished: 0,
                 average: None,
             })
@@ -1353,8 +1571,50 @@ mod tests {
             Some(MapStatus {
                 time: Duration::from_secs(58),
                 gained: 0.0,
-                active: true,
+                state: RunState::Running,
                 finished: 2,
+                average: Some(Duration::from_secs(360)),
+            })
+        );
+    }
+
+    #[test]
+    fn a_map_left_for_over_five_minutes_is_the_last_until_the_character_maps_again() {
+        let mut tracker = XpTracker::new();
+        let unread = |_: f64| None;
+        let state = |tracker: &XpTracker| tracker.status().map.unwrap().state;
+        enter(&mut tracker, "MapEpitaph", EPITAPH, 0.0);
+        play(&mut tracker, 0.0, 150, unread);
+        enter(&mut tracker, "HideoutCanal", 1, 300.0);
+        // For five minutes the player may still portal back.
+        play(&mut tracker, 300.0, 151, unread);
+        assert_eq!(state(&tracker), RunState::Waiting);
+        play(&mut tracker, 602.0, 1, unread);
+        assert_eq!(state(&tracker), RunState::Last);
+        // Back through its portal after all: the same run goes on from its 5:00.
+        enter(&mut tracker, "MapEpitaph", EPITAPH, 700.0);
+        play(&mut tracker, 700.0, 31, unread);
+        assert_eq!(
+            tracker.status().map,
+            Some(MapStatus {
+                time: Duration::from_secs(360),
+                gained: 0.0,
+                state: RunState::Running,
+                finished: 0,
+                average: None,
+            })
+        );
+        // Left for good this time: the next map starts a new run and finishes the last one.
+        enter(&mut tracker, "HideoutCanal", 1, 760.0);
+        enter(&mut tracker, "MapBluff", 17, 1200.0);
+        play(&mut tracker, 1200.0, 16, unread);
+        assert_eq!(
+            tracker.status().map,
+            Some(MapStatus {
+                time: Duration::from_secs(30),
+                gained: 0.0,
+                state: RunState::Running,
+                finished: 1,
                 average: Some(Duration::from_secs(360)),
             })
         );
@@ -1366,7 +1626,7 @@ mod tests {
         let unread = |_: f64| None;
         let run = |tracker: &XpTracker| {
             let map = tracker.status().map.unwrap();
-            (map.time, map.active)
+            (map.time, map.state)
         };
         enter(&mut tracker, "MapEpitaph", EPITAPH, 0.0);
         enter(&mut tracker, "Abyss_Depths2", DEPTHS, 100.0);
@@ -1374,12 +1634,34 @@ mod tests {
         enter(&mut tracker, "HideoutCanal", 1, 200.0);
         enter(&mut tracker, "G2_3", 42, 220.0);
         play(&mut tracker, 220.0, 40, unread);
-        assert_eq!(run(&tracker), (Duration::from_secs(200), false));
+        assert_eq!(run(&tracker), (Duration::from_secs(200), RunState::Waiting));
         // Back to the hideout and through that portal into the depths: the run again.
         enter(&mut tracker, "HideoutCanal", 1, 300.0);
         enter(&mut tracker, "Abyss_Depths2", DEPTHS, 320.0);
         play(&mut tracker, 320.0, 41, unread);
-        assert_eq!(run(&tracker), (Duration::from_secs(280), true));
+        assert_eq!(run(&tracker), (Duration::from_secs(280), RunState::Running));
+    }
+
+    #[test]
+    fn a_trial_is_play_but_never_part_of_a_map_run() {
+        let mut tracker = XpTracker::new();
+        enter(&mut tracker, "MapEpitaph", EPITAPH, 0.0);
+        let (t, reached) = map_for_ten_minutes(&mut tracker, 0.0, 0.2);
+        let gained = tracker.status().map.unwrap().gained;
+        // Into the Trial of Chaos straight from the map, as into one of its side areas; the scene
+        // line after the area line names it a trial. Then ten minutes of it at the map's pace.
+        enter(&mut tracker, "G3_10", CHAOS, t);
+        tracker.on_log_event(LogEvent::TrialEntered, Duration::from_secs_f64(t));
+        map_for_ten_minutes(&mut tracker, t, reached);
+        let status = tracker.status();
+        let map = status.map.unwrap();
+        assert_eq!(
+            (map.time, map.gained, map.state),
+            (Duration::from_secs(600), gained, RunState::Last)
+        );
+        // The trial's play counts toward the rate just like the map's.
+        assert_eq!(status.activity, Activity::Playing);
+        assert_near(status.rate_per_hour, 0.12, 0.05);
     }
 
     #[test]
@@ -1426,7 +1708,7 @@ mod tests {
             Some(MapStatus {
                 time: Duration::from_secs(30),
                 gained: 0.0,
-                active: true,
+                state: RunState::Running,
                 finished: 0,
                 average: None,
             })
@@ -1437,16 +1719,19 @@ mod tests {
     fn a_map_underway_before_the_tracker_started_is_neither_shown_nor_averaged() {
         let mut tracker = XpTracker::new();
         // Started in the hideout, halfway through a map.
-        tracker.restore([
-            LogEvent::AreaEntered {
-                area: "MapEpitaph".to_owned(),
-                seed: EPITAPH,
-            },
-            LogEvent::AreaEntered {
-                area: "HideoutCanal".to_owned(),
-                seed: 1,
-            },
-        ]);
+        tracker.restore(
+            [
+                LogEvent::AreaEntered {
+                    area: "MapEpitaph".to_owned(),
+                    seed: EPITAPH,
+                },
+                LogEvent::AreaEntered {
+                    area: "HideoutCanal".to_owned(),
+                    seed: 1,
+                },
+            ],
+            Duration::ZERO,
+        );
         enter(&mut tracker, "MapEpitaph", EPITAPH, 0.0);
         play(&mut tracker, 0.0, 60, |_| None);
         assert_eq!(tracker.status().map, None);
@@ -1458,7 +1743,7 @@ mod tests {
             Some(MapStatus {
                 time: Duration::from_secs(60),
                 gained: 0.0,
-                active: true,
+                state: RunState::Running,
                 finished: 0,
                 average: None,
             })
@@ -1471,13 +1756,13 @@ mod tests {
         assert_eq!(format_rate(0.0325), "+3,25 %/ч");
         assert_eq!(format_rate(1.5), "+150 %/ч");
         assert_eq!(format_percent(0.64752), "64,8");
-        assert_eq!(format_eta(Duration::from_secs(20)), "< 1 мин");
-        assert_eq!(format_eta(Duration::from_secs(45 * 60)), "45 мин");
-        assert_eq!(format_eta(Duration::from_secs(92 * 60)), "1 ч 32 мин");
+        assert_eq!(format_duration(Duration::from_secs(20)), "< 1 мин");
+        assert_eq!(format_duration(Duration::from_secs(45 * 60)), "45 мин");
+        assert_eq!(format_duration(Duration::from_secs(92 * 60)), "1 ч 32 мин");
         // 59.8 minutes round up to a whole hour, not "60 мин".
-        assert_eq!(format_eta(Duration::from_secs(3588)), "1 ч");
+        assert_eq!(format_duration(Duration::from_secs(3588)), "1 ч");
         assert_eq!(
-            format_eta(Duration::from_secs(26 * 3600 + 10 * 60)),
+            format_duration(Duration::from_secs(26 * 3600 + 10 * 60)),
             "1 д 2 ч"
         );
     }

@@ -45,6 +45,7 @@ use crate::price_check::{self, BootstrapState, PriceCheckApp};
 use crate::session::{self, SessionHttpClient};
 use crate::settings::{self, Hotkey, Settings};
 use crate::ui::fonts;
+use crate::ui::mockup;
 use crate::ui::settings_view::{Intro, SettingsView};
 use crate::ui::theme::BASE_REM_SIZE;
 use crate::ui::trade_overlay::{self, TradeOverlay, TradeOverlayOptions};
@@ -79,8 +80,7 @@ struct PriceCheckRoot {
     xp_opening: bool,
     /// Last suppression handed to the XP overlay; `None` until the first sync.
     last_xp_suppressed: Option<bool>,
-    /// The trade overlay, opened while the setting allows it or a search is watched (see
-    /// `sync_trade`).
+    /// The trade overlay, opened once a search is watched (see `sync_trade`).
     trade: Option<Entity<TradeOverlay>>,
     trade_opening: bool,
     /// Last suppression handed to the trade overlay; `None` until the first sync.
@@ -251,14 +251,13 @@ impl PriceCheckRoot {
         }
     }
 
-    /// Opens the trade overlay -- at the first sync, or once the setting is turned on or a search
-    /// is watched (live search's cards show in it too) -- and hides it while the price window is
-    /// shown. The player's trade options follow it whenever they change.
+    /// Opens the trade overlay once a search is watched -- live search's cards show in it -- and
+    /// hides it while the price window is shown. The player's options follow it whenever they
+    /// change.
     fn sync_trade(&mut self, cx: &mut Context<Self>) {
-        let (enabled, price_shown, options) = {
+        let (price_shown, options) = {
             let state = self.inner.read(cx);
             (
-                state.settings.trade_requests,
                 state.visible,
                 TradeOverlayOptions::from_settings(&state.settings),
             )
@@ -266,7 +265,7 @@ impl PriceCheckRoot {
         let watching = cx
             .try_global::<LiveSearches>()
             .is_some_and(|live| live.count() > 0);
-        if (enabled || watching) && self.trade.is_none() && !self.trade_opening {
+        if watching && self.trade.is_none() && !self.trade_opening {
             // Spawned: this runs from `render`, where no window may be opened.
             self.trade_opening = true;
             let app = self.inner.downgrade();
@@ -550,6 +549,16 @@ pub fn run() {
     // the monitor's real scale instead of being bitmap-stretched. Fails harmlessly if a manifest
     // already set the process's awareness.
     let _ = unsafe { SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) };
+    // Dev-only: the style mockup (`ui::mockup`) instead of the app. It runs beside a running
+    // copy, so it skips the single-copy check, the log, the tray and the hotkeys.
+    if mockup::requested() {
+        application()
+            .with_http_client(Arc::new(
+                ReqwestClient::user_agent(USER_AGENT).expect("failed to build HTTP client"),
+            ))
+            .run(mockup::open);
+        return;
+    }
     // Before the log: `logging::init` starts a new file, and a second copy must leave the running
     // one's log alone. A second copy started by autostart leaves quietly; one the player started
     // has the running copy open its settings.
@@ -567,16 +576,18 @@ pub fn run() {
     // The player's pathofexile.com session, from the Credential Manager: the HTTP client adds it
     // to the trade sites' requests, and to theirs only (`session`).
     let trade_session = session::load();
+    let inner_client: Arc<dyn HttpClient> =
+        Arc::new(ReqwestClient::user_agent(USER_AGENT).expect("failed to build HTTP client"));
     application()
         .with_http_client(Arc::new(SessionHttpClient::new(
-            Arc::new(ReqwestClient::user_agent(USER_AGENT).expect("failed to build HTTP client")),
+            inner_client.clone(),
             trade_session.clone(),
         )))
         .run(|cx: &mut App| {
             if let Err(err) = fonts::register(cx) {
                 log::warn!("nameplate fonts unavailable: {err:#}");
             }
-            session::init(trade_session, cx);
+            session::init(trade_session, inner_client, cx);
             let http_client: Arc<dyn HttpClient> = cx.http_client();
             // No settings file yet: the first launch. Its defaults are saved at once, so the
             // welcome shows this once only.
