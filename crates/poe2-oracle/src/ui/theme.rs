@@ -81,6 +81,35 @@ pub(crate) const MOD_FRACTURED: u32 = 0xa29162;
 /// panel's own "очернённый" badge makes them.
 pub(crate) const MOD_DESECRATED: u32 = 0x6fae8c;
 
+// EE2's badges and markers (its `tailwind.config.js` palette), which the panel keeps so a player
+// coming from EE2 reads them at a glance.
+/// Text on a filled light badge: the top-tier badge, the fractured badge.
+pub(crate) const BADGE_INK: u32 = 0x000000;
+/// The source badges of rune and crafted mods (`.tag-rune`, `.tag-crafted`).
+pub(crate) const BADGE_RUNE_BG: u32 = 0x3182ce;
+pub(crate) const BADGE_RUNE_TEXT: u32 = 0xebf8ff;
+/// The fractured source badge (`.tag-fractured`).
+pub(crate) const BADGE_FRACTURED_BG: u32 = 0xf6e05e;
+/// The enchant source badge (`.tag-enchant`).
+pub(crate) const BADGE_ENCHANT_BG: u32 = 0x805ad5;
+pub(crate) const BADGE_ENCHANT_TEXT: u32 = 0xfaf5ff;
+/// The desecrated source badge (`.tag-desecrated`).
+pub(crate) const BADGE_DESECRATED_BG: u32 = 0x22543d;
+pub(crate) const BADGE_DESECRATED_TEXT: u32 = 0xf0fff4;
+/// The "× N" repeated-listing badge.
+pub(crate) const BADGE_REPEAT_BG: u32 = 0xcbd5e0;
+pub(crate) const BADGE_REPEAT_TEXT: u32 = 0x2d3748;
+/// A seller's status dot: online, away, offline.
+pub(crate) const STATUS_ONLINE: u32 = 0xf687b3;
+pub(crate) const STATUS_AFK: u32 = 0xed8936;
+pub(crate) const STATUS_OFFLINE: u32 = 0xe53e3e;
+/// The estimate's "high" confidence.
+pub(crate) const CONFIDENCE_HIGH: u32 = 0x68d391;
+/// The player's waystone mod marks: danger, warning, wanted.
+pub(crate) const MARK_DANGER: u32 = 0xe53e3e;
+pub(crate) const MARK_WARNING: u32 = 0xed8936;
+pub(crate) const MARK_WANTED: u32 = 0x48bb78;
+
 /// Horizontal inset of everything below the panel's nameplate and the settings window's title
 /// bar.
 pub(crate) const CONTENT_PADDING: f32 = 12.;

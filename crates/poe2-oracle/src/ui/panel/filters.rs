@@ -17,8 +17,10 @@ use crate::platform::win32::Win32Overlay;
 use crate::price_check::{FilterRowUi, PriceCheckApp};
 use crate::settings::WaystoneMark;
 use crate::ui::theme::{
-    BG_BUTTON_HOVER, BG_CONTROL, BG_PANEL, BORDER, BORDER_GOLD, GOLD, TEXT, TEXT_DIM, TEXT_MUTED,
-    TEXT_VALUE, TIER_TOP, rems_from_px,
+    BADGE_DESECRATED_BG, BADGE_DESECRATED_TEXT, BADGE_ENCHANT_BG, BADGE_ENCHANT_TEXT,
+    BADGE_FRACTURED_BG, BADGE_INK, BADGE_RUNE_BG, BADGE_RUNE_TEXT, BG_BUTTON_HOVER, BG_CONTROL,
+    BG_PANEL, BORDER, BORDER_GOLD, GOLD, TEXT, TEXT_DIM, TEXT_MUTED, TEXT_VALUE, TIER_TOP,
+    rems_from_px,
 };
 
 use super::format::format_value;
@@ -415,11 +417,11 @@ fn render_checkbox(checked: bool) -> impl IntoElement {
 /// section header already names.
 fn source_badge(tag: FilterTag) -> Option<impl IntoElement> {
     let (label, bg, fg) = match tag {
-        FilterTag::Rune => ("усилитель", 0x3182ce, 0xebf8ff),
-        FilterTag::Crafted => ("мастер", 0x3182ce, 0xebf8ff),
-        FilterTag::Fractured => ("расколотый", 0xf6e05e, 0x000000),
-        FilterTag::Enchant => ("зачарование", 0x805ad5, 0xfaf5ff),
-        FilterTag::Desecrated => ("очернённый", 0x22543d, 0xf0fff4),
+        FilterTag::Rune => ("усилитель", BADGE_RUNE_BG, BADGE_RUNE_TEXT),
+        FilterTag::Crafted => ("мастер", BADGE_RUNE_BG, BADGE_RUNE_TEXT),
+        FilterTag::Fractured => ("расколотый", BADGE_FRACTURED_BG, BADGE_INK),
+        FilterTag::Enchant => ("зачарование", BADGE_ENCHANT_BG, BADGE_ENCHANT_TEXT),
+        FilterTag::Desecrated => ("очернённый", BADGE_DESECRATED_BG, BADGE_DESECRATED_TEXT),
         FilterTag::Explicit
         | FilterTag::Implicit
         | FilterTag::Property
@@ -453,7 +455,7 @@ fn render_tier(tier: u32) -> impl IntoElement {
             1 => this
                 .bg(rgb(TIER_TOP))
                 .border_color(rgb(TIER_TOP))
-                .text_color(rgb(0x000000)),
+                .text_color(rgb(BADGE_INK)),
             2 => this.border_color(rgb(TIER_TOP)).text_color(rgb(TIER_TOP)),
             _ => this.border_color(rgb(BORDER)).text_color(rgb(TEXT_DIM)),
         })

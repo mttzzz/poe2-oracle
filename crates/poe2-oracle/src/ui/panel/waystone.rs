@@ -8,7 +8,7 @@ use stat_filters::{FilterTag, SearchFilter};
 
 use crate::price_check::PriceCheckApp;
 use crate::settings::WaystoneMark;
-use crate::ui::theme::{GOLD, TEXT_MUTED, rems_from_px};
+use crate::ui::theme::{GOLD, MARK_DANGER, MARK_WANTED, MARK_WARNING, TEXT_MUTED, rems_from_px};
 
 use super::filters::stat_text;
 
@@ -37,9 +37,9 @@ pub(super) fn waystone_mark_of(
 
 pub(super) fn mark_color(mark: WaystoneMark) -> u32 {
     match mark {
-        WaystoneMark::Danger => 0xe53e3e,
-        WaystoneMark::Warning => 0xed8936,
-        WaystoneMark::Wanted => 0x48bb78,
+        WaystoneMark::Danger => MARK_DANGER,
+        WaystoneMark::Warning => MARK_WARNING,
+        WaystoneMark::Wanted => MARK_WANTED,
     }
 }
 

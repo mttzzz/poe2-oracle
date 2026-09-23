@@ -21,8 +21,9 @@ use crate::relative_time;
 use crate::session::SessionStatus;
 use crate::ui::item_card::{CardPrice, ItemCard, ModMark, render_item_card};
 use crate::ui::theme::{
-    BG_BUTTON, BG_BUTTON_HOVER, BG_CONTROL, BG_NAMEPLATE, BG_ROW_STRIPE, BORDER, BORDER_GOLD,
-    CONTENT_PADDING, GOLD, PRICE_RISE, TEXT, TEXT_DIM, TEXT_MUTED, TEXT_WARNING, TIER_TOP,
+    BADGE_REPEAT_BG, BADGE_REPEAT_TEXT, BG_BUTTON, BG_BUTTON_HOVER, BG_CONTROL, BG_NAMEPLATE,
+    BG_ROW_STRIPE, BORDER, BORDER_GOLD, CONFIDENCE_HIGH, CONTENT_PADDING, GOLD, PRICE_RISE,
+    STATUS_AFK, STATUS_OFFLINE, STATUS_ONLINE, TEXT, TEXT_DIM, TEXT_MUTED, TEXT_WARNING, TIER_TOP,
     rems_from_px,
 };
 
@@ -335,7 +336,7 @@ fn render_estimate(
 ) -> impl IntoElement {
     let unit = estimate.unit.trade_id();
     let (confidence, confidence_color) = match estimate.confidence {
-        Confidence::High => ("высокая", 0x68d391),
+        Confidence::High => ("высокая", CONFIDENCE_HIGH),
         Confidence::Medium => ("средняя", TIER_TOP),
         Confidence::Low => ("низкая", TEXT_WARNING),
     };
@@ -856,9 +857,9 @@ fn render_price(state: &PriceCheckApp, row: &ListingRow) -> impl IntoElement {
                         .flex_none()
                         .px(rems_from_px(4.))
                         .rounded_xs()
-                        .bg(rgb(0xcbd5e0))
+                        .bg(rgb(BADGE_REPEAT_BG))
                         .text_xs()
-                        .text_color(rgb(0x2d3748))
+                        .text_color(rgb(BADGE_REPEAT_TEXT))
                         .child(format!("× {}", row.listed_times)),
                 )
             } else if row.item.note.is_none() {
@@ -887,9 +888,9 @@ fn render_price(state: &PriceCheckApp, row: &ListingRow) -> impl IntoElement {
 fn status_dot(row: &ListingRow) -> impl IntoElement {
     let color = match (row.instant_buyout, row.account_status) {
         (true, _) => None,
-        (false, AccountStatus::Online) => Some(0xf687b3),
-        (false, AccountStatus::Afk) => Some(0xed8936),
-        (false, AccountStatus::Offline) => Some(0xe53e3e),
+        (false, AccountStatus::Online) => Some(STATUS_ONLINE),
+        (false, AccountStatus::Afk) => Some(STATUS_AFK),
+        (false, AccountStatus::Offline) => Some(STATUS_OFFLINE),
     };
     div()
         .w(rems_from_px(6.))
