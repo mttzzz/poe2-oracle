@@ -24,6 +24,7 @@ use crate::ui::theme::{
     RARITY_NORMAL, RARITY_RARE, RARITY_UNIQUE, TEXT, TEXT_VALUE, TEXT_WARNING, blend, rems_from_px,
 };
 
+use super::filters::shows_property;
 use super::results::render_link;
 
 /// Edge of the item art beside the name.
@@ -149,8 +150,10 @@ fn name_color(item: &ParsedItem) -> u32 {
 }
 
 /// Item class (or the base type the search goes by), level, requirement, sockets, quality,
-/// corruption, and how many of the listed searchable stats are selected -- EE2's chip row. A click
-/// on the count checks them all, or all off (`PriceCheckApp::toggle_all_filters`).
+/// corruption, and how many of the listed searchable stats are selected -- EE2's chip row. The
+/// level, sockets and quality stay out where a property row or chip below shows the same value
+/// (`filters::shows_property`). A click on the count checks them all, or all off
+/// (`PriceCheckApp::toggle_all_filters`).
 pub(super) fn render_chips(
     state: &PriceCheckApp,
     item: &ParsedItem,
@@ -163,10 +166,28 @@ pub(super) fn render_chips(
         .fold((0, 0), |(selected, total), filter| {
             (selected + usize::from(filter.enabled), total + 1)
         });
+    // What a property row or chip below already shows at the same value isn't repeated here.
+    let shown = |trade_ids: &[&str], value: u32| {
+        trade_ids
+            .iter()
+            .any(|id| shows_property(state, id, f64::from(value)))
+    };
+    let item_level = item
+        .item_level
+        .filter(|&level| !shown(&["type_filters.ilvl"], level));
     let sockets = item
         .sockets
         .map(|sockets| sockets.current)
-        .or_else(|| item.gem_sockets.map(|sockets| sockets.number));
+        .or_else(|| item.gem_sockets.map(|sockets| sockets.number))
+        .filter(|&count| {
+            !shown(
+                &["equipment_filters.rune_sockets", "misc_filters.gem_sockets"],
+                count,
+            )
+        });
+    let quality = item
+        .quality
+        .filter(|&quality| !shown(&["type_filters.quality"], quality));
     let required_level = item
         .requirements
         .map(|requirements| requirements.level)
@@ -298,21 +319,17 @@ pub(super) fn render_chips(
         .flex()
         .flex_wrap()
         .items_center()
-        .gap(rems_from_px(6.))
-        .pt(rems_from_px(10.))
-        .pb(rems_from_px(6.))
+        .gap_x(rems_from_px(6.))
+        .gap_y(rems_from_px(4.))
+        .pt(rems_from_px(8.))
         .children(item_type)
-        .children(
-            item.item_level
-                .map(|level| chip(Some(tr!("Item Level:")), level.to_string(), TEXT)),
-        )
+        .children(item_level.map(|level| chip(Some(tr!("Item Level:")), level.to_string(), TEXT)))
         .children(
             required_level.map(|level| chip(Some(tr!("Required Level:")), level.to_string(), TEXT)),
         )
         .children(sockets.map(|count| chip(Some(tr!("Sockets:")), count.to_string(), TEXT)))
         .children(
-            item.quality
-                .map(|quality| chip(Some(tr!("Quality:")), format!("+{quality}%"), TEXT_VALUE)),
+            quality.map(|quality| chip(Some(tr!("Quality:")), format!("+{quality}%"), TEXT_VALUE)),
         )
         .children(
             item.is_corrupted

@@ -4,8 +4,8 @@
 //!
 //! The layout takes the best of the two overlays the player compares it with:
 //! - Exiled Exchange 2 (`renderer/src/web/price-check/`): the full-height panel glued to the
-//!   inventory, one compact row per stat filter (checkbox, stat text, min/max inputs, source tag
-//!   and tier underneath), the info chips, and the price/level/listed results table.
+//!   inventory, one compact row per stat filter (checkbox, tier and source tag, stat text,
+//!   min/max inputs), the info chips, and the price/level/listed results table.
 //! - PoE Overlay II: the item name as a header in its rarity colour, rolled values highlighted
 //!   inside the stat text, and a prominent "Search" button.
 //!
@@ -54,9 +54,7 @@ use crate::ui::tour;
 
 use filters::render_sections;
 use nameplate::{render_chips, render_nameplate};
-use results::{
-    render_empty_watch, render_results, render_search_button, render_search_choices, render_toolbar,
-};
+use results::{render_empty_watch, render_results, render_search_row, render_toolbar};
 use title_bar::render_title_bar;
 use waystone::render_waystone_marks;
 
@@ -131,8 +129,8 @@ fn render_ready(state: &PriceCheckApp, window: &Window, cx: &Context<PriceCheckA
 }
 
 /// Nameplate, info chips, then either the market card (Currency Exchange items) or the profile
-/// row, the filter rows, the search plate and the listings -- one scroll area, since a
-/// many-modded rare plus a full results page can outgrow even a full-height panel.
+/// row, the filter rows and property chips, the search row and the listings -- one scroll area,
+/// since a many-modded rare plus a full results page can outgrow even a full-height panel.
 fn render_item(
     state: &PriceCheckApp,
     item: &ParsedItem,
@@ -165,12 +163,11 @@ fn render_item(
                                 render_sections(state, item, window, cx),
                             ))
                             .children(render_waystone_marks(state, item))
-                            .child(tour::spot(Stop::Search, render_search_button(state, cx)))
-                            .child(render_search_choices(state, cx))
+                            .child(render_search_row(state, cx))
                             .when(searched, |this| {
                                 this.child(
                                     div()
-                                        .pt(rems_from_px(14.))
+                                        .pt(rems_from_px(10.))
                                         .child(ornament_rule(BORDER_GOLD)),
                                 )
                             })

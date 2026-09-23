@@ -311,8 +311,15 @@ pub enum LogEvent {
     /// The area just entered is an ascendancy trial's (`TRIAL_SCENES`): its scene line follows
     /// the area line, within a second, and comes again whenever the world map is closed there.
     TrialEntered,
-    /// The client went back to the login/character-select screen.
-    LoggedOut,
+    /// The scene went `(unknown)`: the client is back at character select -- if a freshly
+    /// generated area follows, the next login -- or the scene blanked for a moment and comes back
+    /// named, with no new area. In the test machine's 15-month log 526 of the 653 such lines led
+    /// to a generated area, 86 straight back to a named scene (5 s later, the same hideout, on
+    /// 2026-09-23 18:20), and 41 ended the log (the game closed).
+    SceneLost,
+    /// The scene is named again: whatever [`LogEvent::SceneLost`] said, the character is in the
+    /// world. Any name but `(null)`, the blank between an area line and its scene.
+    SceneNamed,
 }
 
 /// Parses one `Client.txt` line, line ending already removed. The formats, from the test
@@ -328,8 +335,8 @@ pub enum LogEvent {
 /// ```
 ///
 /// The area line is the same in every client language; a scene line names the area in the
-/// client's language, and `(unknown)` is the scene at both client start and every return to
-/// character select.
+/// client's language, and `(unknown)` is the scene at client start and at character select --
+/// and, for a moment, now and then in the world.
 pub fn parse_log_line(line: &str) -> Option<LogEvent> {
     let (_, rest) = line.split_once(" [")?;
     let (header, message) = rest.split_once("] ")?;
@@ -352,12 +359,11 @@ pub fn parse_log_line(line: &str) -> Option<LogEvent> {
     let scene = message
         .strip_prefix("[SCENE] Set Source [")?
         .strip_suffix(']')?;
-    if scene == "(unknown)" {
-        Some(LogEvent::LoggedOut)
-    } else {
-        TRIAL_SCENES
-            .contains(&scene)
-            .then_some(LogEvent::TrialEntered)
+    match scene {
+        "(unknown)" => Some(LogEvent::SceneLost),
+        "(null)" => None,
+        scene if TRIAL_SCENES.contains(&scene) => Some(LogEvent::TrialEntered),
+        _ => Some(LogEvent::SceneNamed),
     }
 }
 
@@ -558,7 +564,8 @@ impl Default for HalfLife {
 /// the town right after it, since nothing in town gives any.
 ///
 /// A logout resets everything but the rate window, since the next character may be a different
-/// one.
+/// one. The log says so in two lines: the scene goes `(unknown)`, and an area line follows -- the
+/// login's -- before the scene is named again; a scene named first was only a moment's blank.
 #[derive(Debug, Default)]
 pub struct XpTracker {
     /// The two readings before the latest, oldest first, for the median filter.
@@ -592,6 +599,9 @@ pub struct XpTracker {
     /// All play counted, unweighted.
     counted: Duration,
     maps: MapRuns,
+    /// The scene went `(unknown)` and hasn't been named since: a logout, if an area line comes
+    /// next ([`LogEvent::SceneLost`]).
+    scene_lost: bool,
 }
 
 impl XpTracker {
@@ -619,20 +629,35 @@ impl XpTracker {
                 LogEvent::LevelUp { character, level } => {
                     self.note_level(character, level);
                 }
-                LogEvent::AreaEntered { area, seed } => self.enter(area, seed, false, at),
-                LogEvent::TrialEntered => self.maps.leave_for_trial(at),
-                LogEvent::LoggedOut => {
-                    self.character = None;
-                    self.level = None;
-                    self.town_since = None;
-                    self.maps = MapRuns::default();
+                LogEvent::AreaEntered { area, seed } => {
+                    // The login after a logout, maybe as another character.
+                    if std::mem::take(&mut self.scene_lost) {
+                        self.character = None;
+                        self.level = None;
+                        self.town_since = None;
+                        self.maps = MapRuns::default();
+                    }
+                    self.enter(area, seed, false, at);
                 }
+                LogEvent::TrialEntered => {
+                    self.scene_lost = false;
+                    self.maps.leave_for_trial(at);
+                }
+                LogEvent::SceneLost => self.scene_lost = true,
+                LogEvent::SceneNamed => self.scene_lost = false,
             }
         }
     }
 
     /// A log line that just appeared; `at` is on the same clock as [`Self::on_sample`]'s.
     pub fn on_log_event(&mut self, event: LogEvent, at: Duration) {
+        // The login after a logout, maybe as another character: everything starts over.
+        if self.scene_lost && matches!(event, LogEvent::AreaEntered { .. }) {
+            *self = Self {
+                half_life: self.half_life,
+                ..Self::default()
+            };
+        }
         self.advance(at);
         match event {
             LogEvent::LevelUp { character, level } => {
@@ -648,13 +673,12 @@ impl XpTracker {
                 self.since_gain = Duration::ZERO;
                 self.active_at = Some(at);
             }
-            LogEvent::TrialEntered => self.maps.leave_for_trial(at),
-            LogEvent::LoggedOut => {
-                *self = Self {
-                    half_life: self.half_life,
-                    ..Self::default()
-                }
+            LogEvent::TrialEntered => {
+                self.scene_lost = false;
+                self.maps.leave_for_trial(at);
             }
+            LogEvent::SceneLost => self.scene_lost = true,
+            LogEvent::SceneNamed => self.scene_lost = false,
         }
     }
 
@@ -1219,7 +1243,7 @@ mod tests {
     const CHAOS: u64 = 137_717_311;
 
     #[test]
-    fn parses_level_ups_areas_trials_and_logouts() {
+    fn parses_level_ups_areas_trials_and_scenes() {
         assert_eq!(
             parse_log_line(
                 "2026/09/22 18:48:06 4189156 3ef23348 [INFO Client 19772] : mttzzz_merc_next (Легионер каменитов) достигает 38 уровня"
@@ -1273,19 +1297,30 @@ mod tests {
             parse_log_line(
                 "2026/09/22 21:35:24 14225828 7fbd1225 [INFO Client 31244] [SCENE] Set Source [(unknown)]"
             ),
-            Some(LogEvent::LoggedOut)
+            Some(LogEvent::SceneLost)
+        );
+        // Every other named scene: a hideout, the world map, the Act 4 campaign area named a
+        // trial (in Russian and in English). `(null)` names nothing.
+        for line in [
+            "2026/09/22 21:35:30 14232109 7fbd1225 [INFO Client 31244] [SCENE] Set Source [Убежище в каналах]",
+            "2025/07/31 01:23:22 61952828 775aec31 [INFO Client 6392] [SCENE] Set Source [Акт 3]",
+            "2026/09/15 07:54:37 63070000 7fbd1225 [INFO Client 36512] [SCENE] Set Source [Испытание предков]",
+            "2025/12/12 22:05:56 1037150078 7fbd122f [INFO Client 1196912] [SCENE] Set Source [Trial of the Ancestors]",
+        ] {
+            assert_eq!(parse_log_line(line), Some(LogEvent::SceneNamed), "{line}");
+        }
+        assert_eq!(
+            parse_log_line(
+                "2026/09/23 17:41:02 86561203 7fbd1225 [INFO Client 31244] [SCENE] Set Source [(null)]"
+            ),
+            None
         );
     }
 
     #[test]
     fn ignores_look_alike_lines() {
         for line in [
-            // Other scenes: a hideout, the world map, the Act 4 campaign area named a trial (in
-            // Russian and in English); a death, a system message with "уровня" in it, chat.
-            "2026/09/22 21:35:30 14232109 7fbd1225 [INFO Client 31244] [SCENE] Set Source [Убежище в каналах]",
-            "2025/07/31 01:23:22 61952828 775aec31 [INFO Client 6392] [SCENE] Set Source [Акт 3]",
-            "2026/09/15 07:54:37 63070000 7fbd1225 [INFO Client 36512] [SCENE] Set Source [Испытание предков]",
-            "2025/12/12 22:05:56 1037150078 7fbd122f [INFO Client 1196912] [SCENE] Set Source [Trial of the Ancestors]",
+            // A death, a system message with "уровня" in it, chat.
             "2026/09/22 18:50:38 4340937 3ef23348 [INFO Client 19772] : mttzzz_merc_next был повержен.",
             "2026/09/22 16:02:11 7311140 3ef23348 [INFO Client 28800] : Не удалось применить предмет: Уровень предмета слишком низкий для этого уровня",
             "2026/09/22 16:02:12 7311141 3ef23348 [INFO Client 28800] #Trader: Fake (Mercenary) is now level 99",
@@ -1550,7 +1585,8 @@ mod tests {
             let mut tracker = XpTracker::new();
             tracker.set_rate_window(minutes);
             if logged_out {
-                tracker.on_log_event(LogEvent::LoggedOut, Duration::ZERO);
+                tracker.on_log_event(LogEvent::SceneLost, Duration::ZERO);
+                enter(&mut tracker, "MapEpitaph", EPITAPH, 0.0);
             }
             rate_after_a_change_of_pace(&mut tracker)
         };
@@ -1569,7 +1605,7 @@ mod tests {
                     character: "old".to_owned(),
                     level: 90,
                 },
-                LogEvent::LoggedOut,
+                LogEvent::SceneLost,
                 LogEvent::AreaEntered {
                     area: "HideoutCanal".to_owned(),
                     seed: 1,
@@ -1588,8 +1624,54 @@ mod tests {
         assert_eq!(tracker.status().level, Some(12));
 
         let t = play(&mut tracker, 0.0, 200, |t| Some(0.4 + t / 36_000.0));
-        tracker.on_log_event(LogEvent::LoggedOut, Duration::from_secs_f64(t));
-        assert_eq!(tracker.status(), XpStatus::default());
+        // Out to character select: nothing forgotten yet.
+        tracker.on_log_event(LogEvent::SceneLost, Duration::from_secs_f64(t));
+        assert_eq!(tracker.status().level, Some(12));
+        // In again: the login's area, maybe another character's.
+        enter(&mut tracker, "G1_1", 7, t + 20.0);
+        let status = tracker.status();
+        assert_eq!(
+            (
+                status.fraction,
+                status.rate_per_hour,
+                status.level,
+                status.map
+            ),
+            (None, None, None, None)
+        );
+    }
+
+    #[test]
+    fn a_moment_of_unknown_scene_in_the_hideout_is_not_a_logout() {
+        // The owner's log, 2026-09-23: in the hideout since 17:41:02, the scene blanked at
+        // 18:20:51 and came back named 5 s later, with no area line between. Taken for a logout,
+        // it forgot the character's level and that it was in the hideout, and the XP line showed
+        // «+0 %/ч · до ур. —» there instead of the pause.
+        let mut tracker = XpTracker::new();
+        tracker.restore(
+            [
+                LogEvent::LevelUp {
+                    character: "hero".to_owned(),
+                    level: 91,
+                },
+                LogEvent::AreaEntered {
+                    area: "HideoutCanal".to_owned(),
+                    seed: 1,
+                },
+            ],
+            Duration::ZERO,
+        );
+        tracker.on_log_event(LogEvent::SceneLost, Duration::from_secs(60));
+        tracker.on_log_event(LogEvent::SceneNamed, Duration::from_secs(65));
+        // Ten idle minutes in the hideout: paused, and not play the rate counts.
+        play(&mut tracker, 66.0, 300, |_| Some(0.58));
+        let status = tracker.status();
+        assert_eq!(status.level, Some(91));
+        assert_eq!(status.rate_per_hour, None, "hideout time isn't play");
+        assert!(matches!(status.activity, Activity::Paused { .. }));
+        // The next map is still this character's: no logout left pending.
+        enter(&mut tracker, "MapPit", 2443463257, 700.0);
+        assert_eq!(tracker.status().level, Some(91));
     }
 
     #[test]
@@ -1778,10 +1860,11 @@ mod tests {
         enter(&mut tracker, "HideoutCanal", 1, 100.0);
         enter(&mut tracker, "MapBluff", 17, 120.0);
         assert_eq!(tracker.status().map.unwrap().finished, 1);
-        tracker.on_log_event(LogEvent::LoggedOut, Duration::from_secs(200));
-        assert_eq!(tracker.status().map, None);
-        // In again and back into the instance left open: a fresh run, nothing finished before it.
+        tracker.on_log_event(LogEvent::SceneLost, Duration::from_secs(200));
+        // In again -- the login's area -- and back into the instance left open: a fresh run,
+        // nothing finished before it.
         enter(&mut tracker, "HideoutCanal", 1, 260.0);
+        assert_eq!(tracker.status().map, None);
         enter(&mut tracker, "MapBluff", 17, 270.0);
         play(&mut tracker, 270.0, 16, |_| None);
         assert_eq!(

@@ -17,9 +17,10 @@ use std::time::{Duration, Instant};
 
 use gpui::{
     Anchor, Animation, AnimationElement, AnimationExt as _, AnyView, App, Background, BorderStyle,
-    Bounds, BoxShadow, Div, ElementId, FontWeight, MouseButton, MouseDownEvent, PathBuilder,
-    Pixels, Point, Rgba, SharedString, Stateful, Window, anchored, canvas, deferred, div, fill,
-    hsla, linear_color_stop, linear_gradient, outline, point, prelude::*, px, rgb, size,
+    Bounds, BoxShadow, Div, ElementId, Font, FontWeight, Hsla, MouseButton, MouseDownEvent,
+    PathBuilder, Pixels, Point, Rgba, SharedString, Stateful, TextRun, Window, anchored, canvas,
+    deferred, div, fill, hsla, linear_color_stop, linear_gradient, outline, point, prelude::*, px,
+    rgb, size,
 };
 
 use crate::ui::fonts::NameFont;
@@ -415,8 +416,8 @@ pub(crate) fn appear<E: Styled + IntoElement + 'static>(
     rise_in(key, APPEAR, APPEAR_RISE, element)
 }
 
-/// `element` switched in -- a settings section -- the same way, quicker and shorter: over
-/// [`TRANSITION`], so switching never jumps.
+/// `element` switched in -- a settings section, a checked row's roll slider -- the same way,
+/// quicker and shorter: over [`TRANSITION`], so switching never jumps.
 pub(crate) fn switch_in<E: Styled + IntoElement + 'static>(
     key: impl Into<ElementId>,
     element: E,
@@ -1277,12 +1278,46 @@ pub(crate) fn toggle_chip(
     on_press: impl Fn(&MouseDownEvent, &mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
     let key = key.into();
-    let element = div()
-        .id(key.clone())
+    let chip = pressable_chip(key.clone(), on_press)
+        .gap(rems_from_px(4.))
+        .children(label.map(|label| div().text_color(rgb(TEXT_DIM)).child(label)))
+        .child(div().text_color(rgb(TEXT)).child(value.into()))
+        .child(div().text_color(rgb(GOLD)).child("↔"));
+    chip_hover(key, chip)
+}
+
+/// A chip a press checks -- a row left out of the search, folded until it's picked: an empty
+/// checkbox before `content`, in [`toggle_chip`]'s edged look.
+pub(crate) fn check_chip(
+    key: impl Into<ElementId>,
+    content: impl IntoElement,
+    on_press: impl Fn(&MouseDownEvent, &mut Window, &mut App) + 'static,
+) -> impl IntoElement {
+    let key = key.into();
+    let chip = pressable_chip(key.clone(), on_press)
+        .gap(rems_from_px(6.))
+        .child(
+            div()
+                .flex_none()
+                .size(rems_from_px(12.))
+                .rounded(rems_from_px(2.))
+                .border_1()
+                .border_color(rgb(TEXT_MUTED)),
+        )
+        .child(content);
+    chip_hover(key, chip)
+}
+
+/// The frame [`toggle_chip`] and [`check_chip`] share: edged, and a press runs `on_press`.
+fn pressable_chip(
+    key: ElementId,
+    on_press: impl Fn(&MouseDownEvent, &mut Window, &mut App) + 'static,
+) -> Stateful<Div> {
+    div()
+        .id(key)
         .flex()
         .flex_none()
         .items_center()
-        .gap(rems_from_px(4.))
         .h(rems_from_px(22.))
         .px(rems_from_px(8.))
         .rounded(rems_from_px(CONTROL_RADIUS))
@@ -1291,12 +1326,12 @@ pub(crate) fn toggle_chip(
         .text_size(rems_from_px(12.))
         .cursor_pointer()
         .on_mouse_down(MouseButton::Left, on_press)
-        .children(label.map(|label| div().text_color(rgb(TEXT_DIM)).child(label)))
-        .child(div().text_color(rgb(TEXT)).child(value.into()))
-        .child(div().text_color(rgb(GOLD)).child("↔"));
-    ease_hover(key, element, |element, hover| {
-        element
-            .border_color(rgb(blend(BORDER_FIELD, GOLD, hover)))
+}
+
+/// A [`pressable_chip`]'s edge warming to gold, with a glow, under the pointer.
+fn chip_hover(key: ElementId, chip: Stateful<Div>) -> impl IntoElement {
+    ease_hover(key, chip, |chip, hover| {
+        chip.border_color(rgb(blend(BORDER_FIELD, GOLD, hover)))
             .shadow(glow(GOLD, 0.6 * hover))
     })
 }
@@ -1333,14 +1368,68 @@ pub(crate) fn game_hint(
     }
 }
 
+/// A tooltip is at most this wide, px at 100 % scale; a longer line wraps.
+const HINT_MAX_WIDTH: f32 = 300.;
+const HINT_PADDING_X: f32 = 12.;
+const HINT_TEXT_SIZE: f32 = 12.;
+const HINT_TITLE_SIZE: f32 = 13.5;
+
 struct GameHint {
     face: &'static NameFont,
     title: Option<&'static str>,
     lines: Vec<(SharedString, u32)>,
 }
 
+impl GameHint {
+    /// The box's width: its widest line's, up to [`HINT_MAX_WIDTH`] -- given outright, not as a
+    /// `max_w`. GPUI lays a tooltip out with no width to fit into (`AvailableSpace::MinContent`),
+    /// where text doesn't wrap: under a mere `max_w` the box kept one line's height while its
+    /// text, wrapped at the capped width when painted, ran on below the frame.
+    fn width(&self, window: &Window) -> Pixels {
+        let rem = window.rem_size();
+        let body = window.text_style().font();
+        let heading = Font {
+            family: self.face.family.into(),
+            weight: self.face.weight,
+            ..body.clone()
+        };
+        let widest = |text: &str, font: &Font, size: f32| {
+            let size = rems_from_px(size).to_pixels(rem);
+            text.split('\n')
+                .map(|line| {
+                    let run = TextRun {
+                        len: line.len(),
+                        font: font.clone(),
+                        color: Hsla::default(),
+                        background_color: None,
+                        underline: None,
+                        strikethrough: None,
+                    };
+                    window
+                        .text_system()
+                        .shape_line(SharedString::from(line.to_owned()), size, &[run], None)
+                        .width
+                })
+                .fold(px(0.), Pixels::max)
+        };
+        let text = self
+            .lines
+            .iter()
+            .map(|(line, _)| widest(line, &body, HINT_TEXT_SIZE))
+            .chain(
+                self.title
+                    .map(|title| widest(title, &heading, HINT_TITLE_SIZE)),
+            )
+            .fold(px(0.), Pixels::max);
+        // A pixel over the measure: a line exactly as wide as its box may still wrap.
+        let padded = text + rems_from_px(2. * HINT_PADDING_X).to_pixels(rem) + px(1.);
+        padded.min(rems_from_px(HINT_MAX_WIDTH).to_pixels(rem))
+    }
+}
+
 impl Render for GameHint {
-    fn render(&mut self, _window: &mut Window, _cx: &mut gpui::Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, _cx: &mut gpui::Context<Self>) -> impl IntoElement {
+        let width = self.width(window);
         switch_in(
             "hint",
             div()
@@ -1348,15 +1437,15 @@ impl Render for GameHint {
                 .flex()
                 .flex_col()
                 .gap(rems_from_px(3.))
-                .max_w(rems_from_px(300.))
-                .px(rems_from_px(12.))
+                .w(width)
+                .px(rems_from_px(HINT_PADDING_X))
                 .py(rems_from_px(9.))
                 .bg(rgb(BG_MENU))
                 .shadow(tooltip_shadow())
-                .text_size(rems_from_px(12.))
+                .text_size(rems_from_px(HINT_TEXT_SIZE))
                 .children(self.title.map(|title| {
                     heading(self.face)
-                        .text_size(rems_from_px(13.5))
+                        .text_size(rems_from_px(HINT_TITLE_SIZE))
                         .text_color(rgb(GOLD_LIGHT))
                         .child(title)
                 }))

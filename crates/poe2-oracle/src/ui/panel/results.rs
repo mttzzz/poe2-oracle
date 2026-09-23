@@ -1,5 +1,5 @@
 //! Searching and what it finds: the profile select and «Минимум тира» above the stats, the
-//! «Поиск» plate with the sellers and price selects under it, the search status -- with the
+//! «Поиск» plate with the sellers and price selects beside it, the search status -- with the
 //! broader searches offered when nothing matched -- and the listings table.
 
 use std::rc::Rc;
@@ -22,6 +22,7 @@ use crate::live_search::LiveSearches;
 use crate::price_check::{ListingRow, PriceCheckApp, SearchFailure, SearchState};
 use crate::relative_time;
 use crate::session::SessionStatus;
+use crate::tour::Stop;
 use crate::tr;
 use crate::ui::fonts;
 use crate::ui::hint as hints;
@@ -34,6 +35,7 @@ use crate::ui::theme::{
     BORDER_GOLD, BORDER_ROW, GOLD, GOLD_LIGHT, PRICE_RISE, STATUS_AFK, STATUS_OFFLINE,
     STATUS_ONLINE, TEXT, TEXT_DIM, TEXT_MUTED, TEXT_WARNING, TIER_TOP, blend, rems_from_px,
 };
+use crate::ui::tour;
 
 use super::format::{amount_in, currency_img, format_value};
 use super::market::render_market_card;
@@ -44,6 +46,9 @@ const LEVEL_COLUMN: f32 = 30.;
 const LISTED_COLUMN: f32 = 100.;
 /// The profile menu is at least this wide, so each profile's note fits on one line.
 const PROFILE_MENU_WIDTH: f32 = 200.;
+/// The «Поиск» plate is at least this wide beside the selects; a narrower row puts the selects
+/// under it.
+const SEARCH_MIN_WIDTH: f32 = 140.;
 
 /// The profiles the select offers, in PoE Overlay II's order.
 const PROFILES: [SearchProfile; 4] = [
@@ -107,7 +112,7 @@ pub(super) fn render_toolbar(
             .flex_wrap()
             .items_center()
             .gap(rems_from_px(8.))
-            .py(rems_from_px(6.))
+            .pt(rems_from_px(6.))
             .children(profile)
             .when(tier_minimums, |this| {
                 this.child(
@@ -187,10 +192,7 @@ fn render_profile_menu(
 
 /// The bronze «Поиск» plate: re-runs the search with the current checkboxes and bounds (Enter in
 /// a bound input does too). Dimmed and deaf while a search runs.
-pub(super) fn render_search_button(
-    state: &PriceCheckApp,
-    cx: &Context<PriceCheckApp>,
-) -> impl IntoElement {
+fn render_search_button(state: &PriceCheckApp, cx: &Context<PriceCheckApp>) -> impl IntoElement {
     let busy = matches!(
         state.search,
         SearchState::Searching | SearchState::RateLimiting { .. }
@@ -201,7 +203,6 @@ pub(super) fn render_search_button(
         .flex()
         .items_center()
         .justify_center()
-        .mt(rems_from_px(12.))
         .h(rems_from_px(36.))
         .rounded(rems_from_px(CONTROL_RADIUS))
         .border_1()
@@ -238,70 +239,83 @@ pub(super) fn render_search_button(
     })
 }
 
-/// Under the plate: which sellers the search covers (EE2's Online toggle / PoE Overlay II's
-/// "Instant Buyout" dropdown) and what currency their prices must be in (EE2's price filter). A
-/// press steps each to its next choice and searches again.
-pub(super) fn render_search_choices(
+/// The search row: the «Поиск» plate -- the tour's Search stop -- taking the width the selects
+/// leave, and on its right which sellers the search covers (EE2's Online toggle / PoE Overlay
+/// II's "Instant Buyout" dropdown) and what currency their prices must be in (EE2's price
+/// filter). The choices name themselves, the tooltips name the selects; a press steps a select to
+/// its next choice and searches again. On a narrow panel the selects wrap under the plate.
+pub(super) fn render_search_row(
     state: &PriceCheckApp,
     cx: &Context<PriceCheckApp>,
 ) -> impl IntoElement {
     let sellers = match state.listing_status {
-        ListingStatus::Available => tr!("Instant Buyout or In Person"),
-        ListingStatus::Securable => tr!("Instant Buyout only"),
-        ListingStatus::Online => tr!("In Person, online only"),
+        ListingStatus::Securable => tr!("Instant Buyout"),
+        ListingStatus::Available => tr!("Buyout or In Person"),
+        ListingStatus::Online => tr!("In Person"),
         ListingStatus::OnlineLeague => tr!("In Person (Online in League)"),
-        ListingStatus::Any => tr!("Any, offline included"),
+        ListingStatus::Any => tr!("Any"),
     };
     // Currencies by their icons, as everywhere in the panel.
     let icon = |id: &str| currency_img(state.currency_icon(id), 14.);
     let currency = div().flex().items_center().gap(rems_from_px(3.));
     let currency = match state.price_currency {
-        PriceCurrency::Any => currency.child(tr!("any currency")),
+        PriceCurrency::Any => currency.child(tr!("Any currency")),
         PriceCurrency::ExaltedOrDivine => currency
             .children(icon("exalted"))
             .child(tr!("or"))
             .children(icon("divine")),
-        PriceCurrency::Exalted => currency.child(tr!("only")).children(icon("exalted")),
-        PriceCurrency::Divine => currency.child(tr!("only")).children(icon("divine")),
-        PriceCurrency::Chaos => currency.child(tr!("only")).children(icon("chaos")),
+        PriceCurrency::Exalted => currency.child(tr!("Only")).children(icon("exalted")),
+        PriceCurrency::Divine => currency.child(tr!("Only")).children(icon("divine")),
+        PriceCurrency::Chaos => currency.child(tr!("Only")).children(icon("chaos")),
     };
-    // Each label stays with its select: on a narrow panel the row wraps between the two.
     div()
         .flex()
         .flex_wrap()
         .items_center()
-        .gap_x(rems_from_px(12.))
-        .gap_y(rems_from_px(6.))
-        .mt(rems_from_px(8.))
-        .text_size(rems_from_px(12.))
-        .child(stepping_select(
-            "sellers",
-            tr!("Sellers:"),
-            sellers.into_any_element(),
-            tr!(
-                "Which sellers to search: Instant Buyout — buy at once, In Person — agree on the \
-                 trade in the game. Click to change; the search runs again."
-            ),
-            PriceCheckApp::cycle_listing_status,
-            cx,
-        ))
-        .child(stepping_select(
-            "currency",
-            tr!("Price:"),
-            currency.into_any_element(),
-            tr!(
-                "The currency a listing's price must be in. Click to change; the search runs again."
-            ),
-            PriceCheckApp::cycle_price_currency,
-            cx,
-        ))
+        .gap(rems_from_px(8.))
+        .mt(rems_from_px(10.))
+        .child(
+            div()
+                .flex_1()
+                .min_w(rems_from_px(SEARCH_MIN_WIDTH))
+                .child(tour::spot(Stop::Search, render_search_button(state, cx))),
+        )
+        // The two selects keep together when the row wraps.
+        .child(
+            div()
+                .flex()
+                .flex_wrap()
+                .items_center()
+                .gap(rems_from_px(8.))
+                .min_w_0()
+                .child(stepping_select(
+                    "sellers",
+                    sellers.into_any_element(),
+                    tr!(
+                        "Sellers: Instant Buyout — buy at once, In Person — agree on the trade in \
+                         the game, Any — offline sellers too. Click to change; the search runs \
+                         again."
+                    ),
+                    PriceCheckApp::cycle_listing_status,
+                    cx,
+                ))
+                .child(stepping_select(
+                    "currency",
+                    currency.into_any_element(),
+                    tr!(
+                        "Price: the currency a listing's price must be in. Click to change; the \
+                         search runs again."
+                    ),
+                    PriceCheckApp::cycle_price_currency,
+                    cx,
+                )),
+        )
 }
 
-/// `label` and a select showing `value` that a press steps to its next choice (`step`), saying on
-/// hover what it does.
+/// A select showing `value` that a press steps to its next choice (`step`), saying on hover what
+/// it is and does.
 fn stepping_select(
     key: &'static str,
-    label: &'static str,
     value: AnyElement,
     hint: &'static str,
     step: fn(&mut PriceCheckApp, &mut Context<PriceCheckApp>),
@@ -310,11 +324,8 @@ fn stepping_select(
     div()
         .id(key)
         .flex()
-        .items_center()
-        .gap(rems_from_px(6.))
         .min_w_0()
         .tooltip(hints::hint(hint))
-        .child(div().flex_none().text_color(rgb(TEXT_DIM)).child(label))
         .child(select(
             "select",
             value,

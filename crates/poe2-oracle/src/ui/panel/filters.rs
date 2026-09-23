@@ -1,7 +1,8 @@
 //! The stat filter rows, in the game tooltip's own sections under their diamond headings: each
-//! row's text (the stat with its rolled value, tier and source badge), controls (checkbox, min/max
-//! inputs) and, for a mod the tier table knows, its roll slider; and the toggle that unfolds the
-//! rows kept out of sight.
+//! row's first line (checkbox, tier and source badge, the stat with its rolled value, min/max
+//! inputs) and, for a checked mod the tier table knows, its roll slider; an unchecked property
+//! folded into a chip under its section's rows; and the toggle that unfolds the rows kept out of
+//! sight.
 
 use std::ops::Range;
 
@@ -23,7 +24,8 @@ use crate::tr;
 use crate::ui::fonts;
 use crate::ui::hint as hints;
 use crate::ui::style::{
-    alpha, checkbox, ease_hover, ease_state, ease_value, game_hint, glow, link, section_heading,
+    alpha, check_chip, checkbox, ease_hover, ease_state, ease_value, game_hint, glow, link,
+    section_heading, switch_in,
 };
 use crate::ui::theme::{
     BADGE_DESECRATED_BG, BADGE_DESECRATED_TEXT, BADGE_ENCHANT_BG, BADGE_ENCHANT_TEXT,
@@ -40,6 +42,16 @@ const CHECK_COLUMN: f32 = CHECKBOX + ROW_GAP;
 /// The checkbox's edge (`style::checkbox`).
 const CHECKBOX: f32 = 15.;
 const ROW_GAP: f32 = 8.;
+/// A row's padding above and below its lines, and the gap between them -- the first line, the
+/// roll slider, the note: a one-line row with bounds is 28 px tall, a slider adds 14.
+const ROW_PADDING_Y: f32 = 2.;
+const LINE_GAP: f32 = 2.;
+/// The gap between a section's heading and rows, and the room above its heading.
+const ROWS_GAP: f32 = 2.;
+const HEADING_ABOVE: f32 = 8.;
+/// The gaps between a section's property chips: across, and between their lines.
+const CHIP_GAP_X: f32 = 6.;
+const CHIP_GAP_Y: f32 = 4.;
 const BOUND_INPUT_WIDTH: f32 = 52.;
 const BOUND_INPUT_HEIGHT: f32 = 24.;
 /// A roll slider: its height, its track's thickness, the thumb's edge and the height of the notch
@@ -81,6 +93,24 @@ fn is_folded(filter: &SearchFilter) -> bool {
         Section::Properties => filter.hidden,
         _ => false,
     }
+}
+
+/// Whether a row waits as a chip under its section's rows rather than as a row: an unchecked
+/// property the search can use. Checked, it's a row again.
+fn is_chip(filter: &SearchFilter) -> bool {
+    filter.tag == FilterTag::Property && filter.searchable() && !filter.enabled
+}
+
+/// Whether the sections show `trade_id`'s property -- as a row or a chip -- at `value`: the info
+/// chip above that would say the same is left out (`nameplate::render_chips`).
+pub(super) fn shows_property(state: &PriceCheckApp, trade_id: &str, value: f64) -> bool {
+    !state.priced_by_market
+        && state.filters.iter().any(|filter| {
+            filter.tag == FilterTag::Property
+                && (state.show_hidden || !is_folded(filter))
+                && filter.trade_ids.first().is_some_and(|id| id == trade_id)
+                && filter.roll.as_ref().is_some_and(|roll| roll.value == value)
+        })
 }
 
 pub(super) fn render_sections(
@@ -137,29 +167,45 @@ pub(super) fn render_sections(
     div()
         .flex()
         .flex_col()
-        .gap(rems_from_px(4.))
         .children(sections.into_iter().filter_map(|(section, title)| {
-            let rows: Vec<AnyElement> = state
+            let (chips, rows): (Vec<usize>, Vec<usize>) = state
                 .filters
                 .iter()
                 .enumerate()
                 .filter(|(_, filter)| {
                     section_of(filter) == section && (state.show_hidden || !is_folded(filter))
                 })
-                .map(|(row, _)| render_filter_row(state, row, waystone, window, cx))
-                .collect();
-            (!rows.is_empty()).then(|| {
+                .map(|(row, _)| row)
+                .partition(|&row| is_chip(&state.filters[row]));
+            (!rows.is_empty() || !chips.is_empty()).then(|| {
                 div()
                     .flex()
                     .flex_col()
-                    .gap(rems_from_px(4.))
+                    .gap(rems_from_px(ROWS_GAP))
                     .child(
                         div()
-                            .pt(rems_from_px(10.))
-                            .pb(rems_from_px(2.))
+                            .pt(rems_from_px(HEADING_ABOVE))
                             .child(section_heading(fonts::interface_font(), &title)),
                     )
-                    .children(rows)
+                    .children(
+                        rows.into_iter()
+                            .map(|row| render_filter_row(state, row, waystone, window, cx)),
+                    )
+                    .when(!chips.is_empty(), |this| {
+                        this.child(
+                            div()
+                                .flex()
+                                .flex_wrap()
+                                .gap_x(rems_from_px(CHIP_GAP_X))
+                                .gap_y(rems_from_px(CHIP_GAP_Y))
+                                .pt(rems_from_px(2.))
+                                .children(
+                                    chips
+                                        .into_iter()
+                                        .map(|row| render_property_chip(state, row, cx)),
+                                ),
+                        )
+                    })
             })
         }))
         .when(folded > 0, |this| {
@@ -182,7 +228,7 @@ fn render_hidden_toggle(
     div()
         .flex()
         .justify_center()
-        .py(rems_from_px(5.))
+        .py(rems_from_px(4.))
         .child(link(
             "hidden-rows",
             label,
@@ -192,14 +238,15 @@ fn render_hidden_toggle(
         ))
 }
 
-/// Row `row` of the panel's filters: checkbox, tier and text, min/max inputs on the right -- a
-/// press anywhere else on the row toggles it, as in EE2, and the row lights up under the pointer
-/// -- and -- only for the kinds worth flagging (fractured, desecrated, crafted, rune, enchant, a
-/// weighted sum) -- a badge underneath; the section already says prefix/suffix/implicit. The text
-/// dims while the row is out of the search. The tier badge says on hover where the tier sits
-/// among its family's (`tier_hint`), and a mod the tier table knows gets its roll slider under the
-/// text (`render_roll_slider`). A `waystone`'s own modifiers also carry the player's mark, in the
-/// mark's colour.
+/// Row `row` of the panel's filters, its first line the checkbox, the tier and -- only for the
+/// kinds worth flagging (fractured, desecrated, crafted, rune, enchant, a weighted sum; the
+/// section already says prefix/suffix/implicit) -- a badge beside it, then the text and the
+/// min/max inputs on the right. The badges stay on the first line however the text wraps. A press
+/// anywhere else on the row toggles it, as in EE2, and the row lights up under the pointer. The
+/// text dims while the row is out of the search. The tier badge says on hover where the tier sits
+/// among its family's (`tier_hint`), and a checked mod the tier table knows gets its roll slider
+/// under the text (`render_roll_slider`). A `waystone`'s own modifiers also carry the player's
+/// mark, in the mark's colour.
 fn render_filter_row(
     state: &PriceCheckApp,
     row: usize,
@@ -237,8 +284,31 @@ fn render_filter_row(
         )
         .into_any_element()
     };
+    let tier = filter.tier.map(|tier| {
+        div()
+            .id("tier")
+            .flex_none()
+            .when_some(filter.tier_info.as_ref(), |this, info| {
+                this.tooltip(game_hint(fonts::interface_font(), None, tier_hint(info)))
+            })
+            .child(render_tier(tier))
+    });
     let badge = source_badge(filter.tag);
-    let slider = searchable.then(|| Slider::of(filter)).flatten();
+    let badges = (tier.is_some() || badge.is_some() || filter.weighted_sum).then(|| {
+        div()
+            .flex()
+            .flex_none()
+            .items_center()
+            .gap(rems_from_px(4.))
+            .pt(rems_from_px(2.))
+            .children(tier)
+            .children(badge)
+            .when(filter.weighted_sum, |this| this.child(weighted_sum_badge()))
+    });
+    // Only a checked row has one: an unchecked row keeps no room for it.
+    let slider = (searchable && filter.enabled)
+        .then(|| Slider::of(filter))
+        .flatten();
 
     let line = div()
         .flex()
@@ -253,16 +323,7 @@ fn render_filter_row(
                     this.child(checkbox("check", filter.enabled))
                 }),
         )
-        .children(filter.tier.map(|tier| {
-            div()
-                .id("tier")
-                .flex_none()
-                .pt(rems_from_px(2.))
-                .when_some(filter.tier_info.as_ref(), |this, info| {
-                    this.tooltip(game_hint(fonts::interface_font(), None, tier_hint(info)))
-                })
-                .child(render_tier(tier))
-        }))
+        .children(badges)
         .child(text)
         .children(mark.map(|(key, mark)| render_mark_button(key, mark, cx)))
         .when(searchable && filter.roll.is_some(), |this| {
@@ -273,9 +334,9 @@ fn render_filter_row(
         .id(("filter", row))
         .flex()
         .flex_col()
-        .gap(rems_from_px(6.))
+        .gap(rems_from_px(LINE_GAP))
         .px(rems_from_px(6.))
-        .py(rems_from_px(7.))
+        .py(rems_from_px(ROW_PADDING_Y))
         .rounded(rems_from_px(4.))
         .when(searchable, |this| {
             this.cursor_pointer().on_mouse_down(
@@ -290,28 +351,15 @@ fn render_filter_row(
             let dragging = state.roll_drag == Some(row);
             render_roll_slider(row, filter, ui, slider, dragging, cx)
         }))
-        .when(
-            badge.is_some() || filter.weighted_sum || !searchable,
-            |this| {
-                this.child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(rems_from_px(6.))
-                        .pl(rems_from_px(CHECK_COLUMN))
-                        .children(badge)
-                        .when(filter.weighted_sum, |this| this.child(weighted_sum_badge()))
-                        .when(!searchable, |this| {
-                            this.child(
-                                div()
-                                    .text_size(rems_from_px(12.))
-                                    .text_color(rgb(TEXT_MUTED))
-                                    .child(tr!("not part of the search")),
-                            )
-                        }),
-                )
-            },
-        );
+        .when(!searchable, |this| {
+            this.child(
+                div()
+                    .pl(rems_from_px(CHECK_COLUMN))
+                    .text_size(rems_from_px(12.))
+                    .text_color(rgb(TEXT_MUTED))
+                    .child(tr!("not part of the search")),
+            )
+        });
     if searchable {
         ease_hover(("filter", row), element, |element, hover| {
             element.bg(alpha(GOLD, 0.04 * hover))
@@ -320,6 +368,33 @@ fn render_filter_row(
     } else {
         element.into_any_element()
     }
+}
+
+/// Row `row`, an unchecked property, folded into a chip under its section's rows: an empty
+/// checkbox, then the row's own label and value. A click checks it (`PriceCheckApp::toggle_filter`,
+/// as a press on its row would) and it opens as its row, the bounds the profile set from the
+/// item's value in its boxes; unchecking the row folds it back.
+fn render_property_chip(
+    state: &PriceCheckApp,
+    row: usize,
+    cx: &Context<PriceCheckApp>,
+) -> impl IntoElement {
+    div()
+        .id(("property", row))
+        .flex_none()
+        .tooltip(hints::hint(tr!(
+            "Not in the search. Click to add it: its row appears, with bounds from this item's \
+             value."
+        )))
+        .child(check_chip(
+            "chip",
+            div()
+                .text_color(rgb(TEXT_DIM))
+                .child(stat_line(&state.filters[row], state.trade_site())),
+            cx.listener(move |view, _event: &MouseDownEvent, _window, cx| {
+                view.toggle_filter(row, cx);
+            }),
+        ))
 }
 
 /// The tier badge's hint, from the tier table: «Тир 3 из 9» (`Tier 3 of 9`), the bottom of the
@@ -388,13 +463,12 @@ fn weighted_sum_badge() -> impl IntoElement {
         .child(tr!("sum"))
 }
 
-/// A mod row's roll slider (`roll_slider::Slider`): a track from the
-/// lowest roll of the row's family on this kind of item to the highest, a bright notch at the
-/// item's own roll, and a round thumb at the row's search bound -- its minimum box, or its
-/// maximum where a lower roll is better -- with the part of the track the search admits lit in
-/// gold. The tier table gives only the family's range and the item's own tier's floor, not every
-/// tier's, so the track isn't cut into tiers. An unchecked row's slider dims, its lit part and the
-/// thumb's glow fade out, and the thumb stays faint: the bound can still be set there.
+/// A checked mod row's roll slider (`roll_slider::Slider`): a track from the lowest roll of the
+/// row's family on this kind of item to the highest, a bright notch at the item's own roll, and a
+/// round thumb at the row's search bound -- its minimum box, or its maximum where a lower roll is
+/// better -- with the part of the track the search admits lit in gold. The tier table gives only
+/// the family's range and the item's own tier's floor, not every tier's, so the track isn't cut
+/// into tiers. It eases in as its row is checked (`style::switch_in`); an unchecked row has none.
 /// Pressing the track puts the thumb there and dragging moves it
 /// (`PriceCheckApp::begin_roll_drag`); the bound box follows, and typing in the box -- or a
 /// profile, «Минимум тира» -- slides it there. Like a typed bound, it takes effect with the next
@@ -433,44 +507,31 @@ fn render_roll_slider(
             high = high
         ),
     };
-    div()
-        .id(("roll-slider", row))
-        .pl(rems_from_px(CHECK_COLUMN))
-        .tooltip(hints::hint(hint))
-        .child(ease_state(
-            "checked",
-            filter.enabled,
-            div(),
-            move |holder, on| {
-                let view = view.clone();
-                holder.opacity(0.45 + 0.55 * on).child(ease_value(
-                    "thumb",
-                    thumb,
-                    dragging,
-                    div(),
-                    move |holder, thumb| {
-                        holder.child(slider_track(
-                            row,
-                            slider.handle,
-                            thumb,
-                            notch,
-                            on,
-                            view.clone(),
-                        ))
-                    },
-                ))
-            },
-        ))
+    switch_in(
+        "slider-in",
+        div()
+            .id(("roll-slider", row))
+            .pl(rems_from_px(CHECK_COLUMN))
+            .tooltip(hints::hint(hint))
+            .child(ease_value(
+                "thumb",
+                thumb,
+                dragging,
+                div(),
+                move |holder, thumb| {
+                    holder.child(slider_track(row, slider.handle, thumb, notch, view.clone()))
+                },
+            )),
+    )
 }
 
 /// The slider's painted track and its mouse handling: `thumb` and `notch` are fractions of the
-/// track, `on` how checked the row is, 0 to 1: the lit part and the thumb's glow fade with it.
+/// track.
 fn slider_track(
     row: usize,
     handle: Handle,
     thumb: f32,
     notch: Option<f32>,
-    on: f32,
     view: gpui::Entity<PriceCheckApp>,
 ) -> impl IntoElement {
     canvas(
@@ -496,12 +557,9 @@ fn slider_track(
                 Handle::Min => (thumb, 1.),
                 Handle::Max => (0., thumb),
             };
-            if on > 0. {
-                window.paint_quad(
-                    fill(bar(admitted.0, admitted.1), alpha(GOLD, 0.55 * on))
-                        .corner_radii(track / 2.),
-                );
-            }
+            window.paint_quad(
+                fill(bar(admitted.0, admitted.1), alpha(GOLD, 0.55)).corner_radii(track / 2.),
+            );
             if let Some(notch) = notch {
                 let height = rems_from_px(SLIDER_NOTCH).to_pixels(rem_size);
                 window.paint_quad(
@@ -519,13 +577,13 @@ fn slider_track(
                 point(x_at(thumb) - thumb_size / 2., middle - thumb_size / 2.),
                 size(thumb_size, thumb_size),
             );
-            window.paint_drop_shadows(at, (thumb_size / 2.).into(), &glow(GOLD, 0.7 * on));
+            window.paint_drop_shadows(at, (thumb_size / 2.).into(), &glow(GOLD, 0.7));
             window.paint_quad(quad(
                 at,
                 thumb_size / 2.,
                 rgb(BG_PANEL),
                 px(1.),
-                alpha(GOLD_LIGHT, 0.4 + 0.6 * on),
+                rgb(GOLD_LIGHT),
                 BorderStyle::Solid,
             ));
 
@@ -676,16 +734,51 @@ fn display_template(filter: &SearchFilter, site: TradeSite) -> &str {
 }
 
 /// EE2's coloured source badges (`FilterModifier.vue`'s `.tag-*` classes; the trade site's names
-/// of the stat groups) for the kinds that change what an item is worth; `None` for the plain ones
-/// the section header already names.
+/// of the stat groups) for the kinds that change what an item is worth, saying on hover what the
+/// kind is and that the search counts the stat only as that kind: the row's trade ids are the
+/// kind's own (`rune.`, `fractured.`, `enchant.`, `desecrated.`, `crafted.`). `None` for the plain
+/// ones the section header already names.
 fn source_badge(tag: FilterTag) -> Option<impl IntoElement> {
-    let (label, bg, fg) = match tag {
-        FilterTag::Rune => (tr!("augment"), BADGE_RUNE_BG, BADGE_RUNE_TEXT),
-        FilterTag::Crafted => (tr!("crafted"), BADGE_RUNE_BG, BADGE_RUNE_TEXT),
-        FilterTag::Fractured => (tr!("fractured"), BADGE_FRACTURED_BG, BADGE_INK),
-        FilterTag::Enchant => (tr!("enchant"), BADGE_ENCHANT_BG, BADGE_ENCHANT_TEXT),
+    let (label, hint, bg, fg) = match tag {
+        FilterTag::Rune => (
+            tr!("augment"),
+            tr!(
+                "Augment: granted by what's socketed in the item — the search counts it only from \
+                 listings' augments."
+            ),
+            BADGE_RUNE_BG,
+            BADGE_RUNE_TEXT,
+        ),
+        FilterTag::Crafted => (
+            tr!("crafted"),
+            tr!("Crafted: added by crafting — the search counts it only as a crafted modifier."),
+            BADGE_RUNE_BG,
+            BADGE_RUNE_TEXT,
+        ),
+        FilterTag::Fractured => (
+            tr!("fractured"),
+            tr!(
+                "Fractured: locked in, it can't be changed or removed — the search counts it only \
+                 as a fractured modifier."
+            ),
+            BADGE_FRACTURED_BG,
+            BADGE_INK,
+        ),
+        FilterTag::Enchant => (
+            tr!("enchant"),
+            tr!(
+                "Enchantment: set on the item apart from its modifiers — the search counts it \
+                 only as an enchantment."
+            ),
+            BADGE_ENCHANT_BG,
+            BADGE_ENCHANT_TEXT,
+        ),
         FilterTag::Desecrated => (
             tr!("desecrated"),
+            tr!(
+                "Desecrated: added by desecration — the search counts it only as a desecrated \
+                 modifier."
+            ),
             BADGE_DESECRATED_BG,
             BADGE_DESECRATED_TEXT,
         ),
@@ -697,6 +790,7 @@ fn source_badge(tag: FilterTag) -> Option<impl IntoElement> {
     };
     Some(
         div()
+            .id("source")
             .flex_none()
             .px(rems_from_px(4.))
             .rounded(rems_from_px(3.))
@@ -704,6 +798,7 @@ fn source_badge(tag: FilterTag) -> Option<impl IntoElement> {
             .text_size(rems_from_px(11.))
             .line_height(rems_from_px(15.))
             .text_color(rgb(fg))
+            .tooltip(hints::hint(hint))
             .child(label),
     )
 }
