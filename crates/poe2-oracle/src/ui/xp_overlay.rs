@@ -14,8 +14,9 @@
 //!
 //! A plate says as much as fits its rail, measured in its own typeface: the full wording, else the
 //! shorter one (`xp_tracker::Wording`), else -- the level plate -- the shorter one without the
-//! percent. The words are the interface language's: `64.8% ◆ +12.4%/h · level 75 in 2h 50m` in
-//! English.
+//! percent; once shortened, it stays so while its state lasts, not flipping as a number gains or
+//! loses a digit. The words are the interface language's: `64.8% ◆ +12.4%/h · level 75 in 2h
+//! 50m` in English.
 //!
 //! A task samples every two seconds, off the UI thread: the game log's new lines
 //! (`platform::client_log`), then the bar's pixels (`platform::xp_bar`) -- in that order, so a
@@ -41,6 +42,7 @@ use gpui::{
     size,
 };
 
+use crate::i18n::{self, Lang};
 use crate::overlay_layout::{PhysicalRect, hud_rails};
 use crate::platform::client_log::{self, ClientLog};
 use crate::platform::win32::Win32Overlay;
@@ -173,12 +175,58 @@ pub struct XpOverlay {
     app: WeakEntity<PriceCheckApp>,
     level: PlateWindow,
     map: PlateWindow,
+    /// The level plate's wording: paused, rated, with the percent, in what language and room.
+    level_fit: Fit<(bool, bool, bool, Lang, Pixels)>,
 }
 
 /// The map plate's window's root view: it shows what the [`XpOverlay`] knows.
 pub struct MapPlate {
     xp: Entity<XpOverlay>,
     attached: bool,
+    /// The plate's wording: for which state of the run, with or without the average, in what
+    /// language and room.
+    fit: Fit<(RunState, bool, Lang, Pixels)>,
+}
+
+/// Which of a plate's wordings -- longest first -- it shows, and in what state. The choice sticks
+/// while the plate says the same kind of thing: once it had to shorten its words it keeps the
+/// shorter ones until the state changes, rather than flipping back and forth as a number gains
+/// or loses a digit.
+struct Fit<K> {
+    key: Option<K>,
+    index: usize,
+}
+
+impl<K> Default for Fit<K> {
+    fn default() -> Self {
+        Fit {
+            key: None,
+            index: 0,
+        }
+    }
+}
+
+impl<K: PartialEq> Fit<K> {
+    /// The wording for a plate in state `key`: the longest of `wordings` that fits `room` in
+    /// `font`, but no longer than the one it showed in the same state; the last if none fits.
+    fn choose(
+        &mut self,
+        key: K,
+        mut wordings: Vec<Vec<Vec<Word>>>,
+        room: Pixels,
+        font: &Font,
+        window: &Window,
+    ) -> Vec<Vec<Word>> {
+        if self.key.as_ref() != Some(&key) {
+            self.key = Some(key);
+            self.index = 0;
+        }
+        let last = wordings.len() - 1;
+        self.index = (self.index.min(last)..last)
+            .find(|&index| laid_width(&wordings[index], font, window) <= room)
+            .unwrap_or(last);
+        wordings.swap_remove(self.index)
+    }
 }
 
 /// Opens the plates' windows -- hidden until the bar is on screen -- and starts sampling. The
@@ -203,6 +251,7 @@ pub fn open(
                 app,
                 level: PlateWindow::default(),
                 map: PlateWindow::default(),
+                level_fit: Fit::default(),
             }
         })
     })?;
@@ -215,6 +264,7 @@ pub fn open(
             MapPlate {
                 xp,
                 attached: false,
+                fit: Fit::default(),
             }
         })
     })?;
@@ -428,7 +478,16 @@ impl Render for XpOverlay {
             2. * PADDING_X + PART_GAP + GEAR_WIDTH,
             window,
         );
-        let parts = fitting(self.level_wordings(), room, &font, window);
+        let status = self.status;
+        let key = (
+            self.paused(),
+            status.rate_per_hour.is_some(),
+            self.options.show_percent && status.fraction.is_some(),
+            i18n::lang(),
+            room,
+        );
+        let wordings = self.level_wordings();
+        let parts = self.level_fit.choose(key, wordings, room, &font, window);
         let app = self.app.clone();
         ease_state("playing", !self.paused(), slot(), move |slot, lit| {
             slot.child(words(parts.clone(), &font, Tones::at(lit)))
@@ -462,7 +521,15 @@ impl Render for MapPlate {
             2. * PADDING_X,
             window,
         );
-        let parts = fitting(xp.map_wordings(&map), room, &font, window);
+        let key = (
+            map.state,
+            map.average.is_some() && !xp.paused(),
+            i18n::lang(),
+            room,
+        );
+        let parts = self
+            .fit
+            .choose(key, xp.map_wordings(&map), room, &font, window);
         // Dimmed once the character has left the run.
         let running = map.state == RunState::Running;
         ease_state("running", running, slot(), move |slot, lit| {
@@ -495,20 +562,6 @@ fn plate_font(window: &Window) -> Font {
         weight: face.weight,
         ..window.text_style().font()
     }
-}
-
-/// The first of `wordings` whose parts fit `room` in `font`, else the last.
-fn fitting(
-    mut wordings: Vec<Vec<Vec<Word>>>,
-    room: Pixels,
-    font: &Font,
-    window: &Window,
-) -> Vec<Vec<Word>> {
-    let fits = wordings
-        .iter()
-        .position(|parts| laid_width(parts, font, window) <= room);
-    let last = wordings.len() - 1;
-    wordings.swap_remove(fits.unwrap_or(last))
 }
 
 /// How wide [`words`] lays `parts` out.
