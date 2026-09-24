@@ -215,8 +215,10 @@ node packaging/render-ui.mjs
 
 Flags after it go to Chrome: on Ubuntu 23.10 or newer, which restricts the sandbox Chrome needs,
 add `--no-sandbox`. It writes `docs/guide/src/images/<en|ru>/*.webp` and the social previews
-`og.jpg` from `site/ui/shots.html`. The XP overlay's pictures lie on two crops of the game's HUD,
-`site/ui/img/hud-flask.webp` and `hud-skill.webp`.
+`og.jpg` from `site/ui/shots.html`. The app's text face is Segoe UI, which comes with Windows and
+may not be shared: render on Windows or with Segoe UI installed, or the script warns and the
+pictures' text comes out in another face. The XP overlay's pictures lie on two crops of the game's
+HUD, `site/ui/img/hud-flask.webp` and `hud-skill.webp`.
 
 ## Dependencies and licenses
 

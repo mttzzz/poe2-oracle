@@ -9,6 +9,9 @@
 // Chrome or Chromium: $CHROME, else the first of the usual names on PATH. No npm packages. Flags
 // after the script go to Chrome -- `--no-sandbox` where it has no usable sandbox (Ubuntu 23.10+
 // restricts the user namespaces it needs); it only ever opens this repository's pages.
+//
+// The app's text face is Segoe UI, which comes with Windows and may not be shared: render on
+// Windows or with it installed, else the pictures' text comes out in a fallback face (it warns).
 
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -157,6 +160,12 @@ try {
         return result.value;
     };
     await evaluate("window.oracleUiReady.then(() => document.fonts.ready).then(() => true)");
+    const segoe = await evaluate(`(() => {
+        const context = document.createElement("canvas").getContext("2d");
+        const width = (font) => ((context.font = font), context.measureText("Price check 1,234 Проверка").width);
+        return ["monospace", "serif"].every((fallback) => width('16px "Segoe UI", ' + fallback) !== width("16px " + fallback));
+    })()`);
+    if (!segoe) console.warn("warning: Segoe UI isn't installed, so the text is drawn in a fallback face, not the app's");
     const shots = await evaluate(`[...document.querySelectorAll("[data-shot]")].map((element) => {
         const box = element.getBoundingClientRect();
         return {
