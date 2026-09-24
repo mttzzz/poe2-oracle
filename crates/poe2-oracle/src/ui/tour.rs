@@ -316,7 +316,7 @@ impl Guide {
         cx.defer(move |cx| {
             if let Some(screen) = screen {
                 screen
-                    .update(cx, |_, window, _| window.remove_window())
+                    .update(cx, |_, window, cx| crate::app::close_window(window, cx))
                     .ok();
             }
             // Unless a tour started over since, from «Помощь».

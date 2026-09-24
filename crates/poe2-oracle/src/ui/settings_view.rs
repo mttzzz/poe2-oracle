@@ -440,26 +440,11 @@ impl SettingsView {
     }
 
     /// Closes the window: ×, Esc and `WM_CLOSE` all come here. What a field holds, typed but not
-    /// left, applies first -- the window is gone before the field could report it.
-    ///
-    /// Hidden first, removed after: GPUI hides a removed window only as it drops it
-    /// (`ShowWindowAsync`), so Windows reports the window deactivated and left by the mouse after
-    /// GPUI has let go of it, and GPUI logs each report as «window not found». Hidden while it's
-    /// still GPUI's, it has nothing left to report. Both outside this update: `ShowWindow` sends
-    /// its messages into GPUI's window synchronously.
+    /// left, applies first -- the window is gone before the field could report it. Hidden at once,
+    /// then let go of by GPUI once what the hiding reported has run (`app::close_window`).
     pub fn close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.apply_typed(cx);
-        let handle = window.window_handle();
-        let overlay = self.overlay;
-        cx.spawn(async move |_, cx| {
-            if let Some(overlay) = overlay {
-                overlay.set_shown(false);
-            }
-            handle
-                .update(cx, |_, window, _| window.remove_window())
-                .ok();
-        })
-        .detach();
+        crate::app::close_window(window, cx);
     }
 
     /// Applies what the fields hold, typed but not yet left: the private league's name and the
@@ -1329,7 +1314,10 @@ impl SettingsView {
                 TEXT_DIM,
             ),
             LeagueChoice::Auto | LeagueChoice::Named(_) => (
-                tr!("Where prices are searched. Auto is the trade site's current league"),
+                tr!(
+                    "Where prices are searched. Auto is the trade site's current league; a \
+                     private one is set in “Account”"
+                ),
                 TEXT_DIM,
             ),
         };
@@ -1681,7 +1669,8 @@ impl SettingsView {
     }
 
     /// The pathofexile.com session: what the site says of it (`session`'s check), «Войти» (the
-    /// sign-in window, `crate::login`) or «Выйти»; the watched searches; the private league.
+    /// sign-in window, `crate::login`) or «Выйти»; the watched searches; the private league, and
+    /// the public league its exchange prices come from.
     fn render_account(
         &self,
         settings: &Settings,
@@ -1746,6 +1735,15 @@ impl SettingsView {
                 .into_any_element()
         };
         let private = matches!(settings.league, LeagueChoice::Custom(_));
+        let reference = match &settings.league {
+            LeagueChoice::Custom(name) => {
+                let app = self.app.read(cx);
+                let market = league_chip::market_league(name, app.leagues());
+                (market != name.as_str())
+                    .then(|| league_chip::league_name(market, app.league_names()).to_owned())
+            }
+            LeagueChoice::Auto | LeagueChoice::Named(_) => None,
+        };
         div()
             .flex()
             .flex_col()
@@ -1789,6 +1787,16 @@ impl SettingsView {
                             ),
                             TEXT_DIM,
                         )),
+                        reference.map(|league| {
+                            note(
+                                tr!(
+                                    "Exchange and poe2scout prices come from {league}: a private \
+                                     league trades too little on the exchange",
+                                    league = league
+                                ),
+                                TEXT_DIM,
+                            )
+                        }),
                         (private && !signed_in).then(|| {
                             note(
                                 tr!("Without a sign-in the site won't answer searches in a \

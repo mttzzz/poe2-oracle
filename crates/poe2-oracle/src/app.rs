@@ -553,6 +553,37 @@ pub fn open_settings(app: &Entity<PriceCheckApp>, cx: &mut App) {
     }
 }
 
+/// Closes one of the app's own windows -- the settings window, the tour's. `Window::remove_window`
+/// alone lets go of the window at once while `gpui_windows` hides and destroys it only later
+/// (`Drop for WindowsWindow`: `ShowWindowAsync`, then `DestroyWindow` from a task), so what Windows
+/// reports in between reaches a window GPUI no longer has, and GPUI logs each report as
+/// «window not found» at error level. The one every close of an active window sets off is its
+/// deactivation: `WM_ACTIVATE` comes synchronously with the hiding, but GPUI passes it on from a
+/// task of its own (`events.rs`'s `handle_activate_msg`). So the window is hidden first, while
+/// it's still GPUI's, and removed in a task spawned after that: GPUI runs foreground tasks in the
+/// order they're spawned (`executor.rs`: "they run in order on the main thread"), so the
+/// deactivation's report and the visibility's run first. Hidden and inactive, the window gets no
+/// paint and no input until GPUI destroys it. Both outside the update this is called from:
+/// `ShowWindow` sends its messages into GPUI's window procedure synchronously.
+pub fn close_window(window: &Window, cx: &mut App) {
+    let handle = window.window_handle();
+    let overlay = Win32Overlay::from_window(window)
+        .inspect_err(|err| log::warn!("closing a window without hiding it first: {err:#}"))
+        .ok();
+    cx.spawn(async move |cx| {
+        if let Some(overlay) = overlay {
+            overlay.set_shown(false);
+        }
+        cx.spawn(async move |cx| {
+            handle
+                .update(cx, |_, window, _| window.remove_window())
+                .ok();
+        })
+        .detach();
+    })
+    .detach();
+}
+
 /// Starts the tour (`ui::tour`) once the catalogs are in (or failed): its first stop is the
 /// settings window's league select, whose list comes with them.
 fn tour_when_ready(app: &Entity<PriceCheckApp>, cx: &mut App) {
