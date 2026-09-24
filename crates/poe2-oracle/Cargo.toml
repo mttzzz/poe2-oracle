@@ -72,6 +72,9 @@ parking_lot = "0.12"
 # reqwest's read timeout can start its timer while GPUI's executors read. Already in the tree
 # through http_client.
 futures = "0.3"
+# The XP overlay's plates are drawn pixel by pixel (src/plate_art.rs) into the image buffer
+# GPUI's `RenderImage` takes. Already in the tree through GPUI; none of its codecs.
+image = { version = "0.25", default-features = false }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 # The diagnostics report is one zip the player attaches to a bug report (src/diagnostics.rs).
@@ -148,3 +151,7 @@ webview2-com = "0.39"
 # Linux lane's windows-gnu cross builds, nothing for other targets. The crate and major version
 # gpui's own build script already uses for its manifest resource, so nothing new gets built.
 embed-resource = "3.0"
+
+[dev-dependencies]
+# examples/plate_art.rs writes the site's plate pictures as PNG; the app itself encodes none.
+image = { version = "0.25", default-features = false, features = ["png"] }

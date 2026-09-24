@@ -31,27 +31,30 @@
 //! Each plate is its own opaque window (a transparent `PopUp` background still tints the game
 //! behind it, see `Win32Overlay::set_shown`) that lets clicks through to the game -- the plates
 //! stand over the game's world. The gear is a window of its own at the level plate's right end,
-//! the one place that takes a click, and never the keyboard. At its globe a plate runs on over
-//! the world between its rail's end and the globe's frame: its window reaches that far and is
-//! shaped, row by row, to that gap alone (`overlay_layout::meet_globe`, a window region), so the
-//! plate meets the frame with nothing of the world between and nothing of the frame covered. All
-//! three wear one frame (`plate_frame`): the rails' cap molding along the top, a dark face, a post
-//! where a plate stops on its rail and a thin seam where they sit on it; the values in the HUD's
-//! cream, the words saying what they are muted, the rate in its gold, a small diamond between the
-//! parts.
+//! the one place that takes a click, and never the keyboard. The plates are drawn pixel by pixel
+//! in the HUD's own materials (`crate::plate_art`): the rails' cap molding along the top, a dark
+//! face, a thin seam where they sit on the rail; at its globe a plate runs on over the world to
+//! the globe's frame, and at its other end it curls down onto the tip of the game's volute. Each
+//! window shows its part of that art and is shaped to exactly its pixels (a window region), so
+//! nothing of the world shows between a plate and the HUD, and nothing of the HUD is covered.
+//! The values are in the HUD's cream, the words saying what they are muted, the rate in its
+//! gold, a small diamond between the parts.
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use gpui::{
-    App, AsyncApp, Bounds, Context, Div, Entity, Font, Global, Hsla, IntoElement, MouseButton,
-    MouseDownEvent, Pixels, Render, SharedString, TextRun, WeakEntity, Window, WindowBounds,
-    WindowKind, WindowOptions, div, linear_color_stop, linear_gradient, point, prelude::*, px, rgb,
-    size,
+    App, AsyncApp, Bounds, Context, Div, Entity, Font, Global, Hsla, ImageSource, IntoElement,
+    MouseButton, MouseDownEvent, ObjectFit, Pixels, Render, RenderImage, SharedString, TextRun,
+    WeakEntity, Window, WindowBounds, WindowKind, WindowOptions, div, img, point, prelude::*, px,
+    rgb, size,
 };
+use image::Frame;
 use windows::Win32::System::SystemInformation::GetTickCount64;
 
 use crate::i18n::{self, Lang};
-use crate::overlay_layout::{Globe, PhysicalRect, PlateShape, hud_rails, meet_globe};
+use crate::overlay_layout::{PhysicalRect, hud_rails};
+use crate::plate_art::{self, ArtSlice, PlateArt};
 use crate::platform::client_log::{self, ClientLog};
 use crate::platform::win32::Win32Overlay;
 use crate::platform::xp_bar::{self, BarSample, RailsSeen};
@@ -60,8 +63,7 @@ use crate::settings::Settings;
 use crate::ui::fonts;
 use crate::ui::style::{diamond, ease_hover, ease_state};
 use crate::ui::theme::{
-    BASE_REM_SIZE, HUD_CAP, HUD_FACE_BOTTOM, HUD_FACE_TOP, HUD_GOLD, HUD_LABEL, HUD_POST_LIGHT,
-    HUD_POST_SHADE, HUD_SEAM, HUD_TEXT, blend, rems_from_px,
+    BASE_REM_SIZE, HUD_DIVIDER, HUD_GOLD, HUD_LABEL, HUD_TEXT, blend, rems_from_px,
 };
 use crate::xp_tracker::{
     Activity, MapStatus, RunState, Word, Wording, XpStatus, XpTracker, log_time, map_words,
@@ -84,11 +86,10 @@ const PART_GAP: f32 = 5.;
 const SEPARATOR_DIAMOND: f32 = 4.;
 /// The gear glyph's size: Segoe UI Symbol draws its gear thin, so a size up on the words.
 const GEAR_SIZE: f32 = 14.;
-/// The frame: a band of the cap molding (`HUD_CAP`), the posts at the ends, the seam on the rail,
-/// and the line between the level plate's words and its gear.
-const CAP_BAND: f32 = 1.;
-const POST: f32 = 1.;
-const SEAM: f32 = 0.5;
+/// The cap molding's height: the art's rows of it (`plate_art::CAP`, a 2160-row game's) halved.
+/// The words sit on the face under it.
+const CAP_HEIGHT: f32 = plate_art::CAP.len() as f32 / 2.;
+/// The line between the level plate's words and its gear.
 const DIVIDER: f32 = 0.5;
 
 /// What the plates show, from the player's settings.
@@ -142,45 +143,22 @@ struct PlateWindow {
     last_shown: Option<bool>,
 }
 
-/// Where a plate's window goes: its rect and, for a plate run on to its globe, the parts of it
-/// that show (`overlay_layout::meet_globe`).
-struct Placement {
-    bounds: PhysicalRect,
-    shown: Option<Vec<PhysicalRect>>,
-}
-
-impl Placement {
-    fn rect(bounds: PhysicalRect) -> Placement {
-        Placement {
-            bounds,
-            shown: None,
-        }
-    }
-
-    fn shaped(shape: PlateShape) -> Placement {
-        Placement {
-            bounds: shape.window,
-            shown: Some(shape.shown),
-        }
-    }
-}
-
 impl PlateWindow {
-    /// Moves the window to its place, shaped, and shows it, or hides it for `None`; returns
-    /// whether anything changed. Deferred: `SetWindowRgn`/`SetWindowPos`/`ShowWindow` send
-    /// `WM_WINDOWPOSCHANGED`/`WM_SIZE`/`WM_SHOWWINDOW` synchronously into GPUI's own window
-    /// state. The shape goes first, so a window never shows unshaped where its globe is.
-    fn sync<T: 'static>(&mut self, placed: Option<Placement>, cx: &mut Context<T>) -> bool {
+    /// Moves the window to its part of the art, shaped to it, and shows it, or hides it for
+    /// `None`; returns whether anything changed. Deferred: `SetWindowRgn`/`SetWindowPos`/
+    /// `ShowWindow` send `WM_WINDOWPOSCHANGED`/`WM_SIZE`/`WM_SHOWWINDOW` synchronously into
+    /// GPUI's own window state. The shape goes first, so a window never shows unshaped.
+    fn sync<T: 'static>(&mut self, slice: Option<&Slice>, cx: &mut Context<T>) -> bool {
         let Some(overlay) = self.overlay else {
             return false;
         };
-        let visible = placed.is_some();
-        let (bounds, region) = match placed {
-            Some(placed) => (
-                Some(placed.bounds).filter(|rect| self.last_bounds != Some(*rect)),
-                placed
-                    .shown
-                    .filter(|shown| self.last_region.as_ref() != Some(shown)),
+        let visible = slice.is_some();
+        let (bounds, region) = match slice {
+            Some(slice) => (
+                Some(slice.rect).filter(|rect| self.last_bounds != Some(*rect)),
+                Some(&slice.shown)
+                    .filter(|shown| self.last_region.as_ref() != Some(*shown))
+                    .cloned(),
             ),
             None => (None, None),
         };
@@ -215,6 +193,70 @@ impl PlateWindow {
     }
 }
 
+/// The plates' pixels (`plate_art`), drawn for one place and size of the game and cut into their
+/// windows' parts: the level plate's from the life globe's frame to its gear, the gear's with the
+/// flask plate's inner end, and the map plate's whole.
+struct Arts {
+    game: PhysicalRect,
+    level: Slice,
+    gear: Slice,
+    map: Slice,
+    /// The flask plate's whole art, gear and ends included: what the tour spotlights.
+    line: PhysicalRect,
+}
+
+/// A plate window's part of the art: where the window goes, what of it shows, and its pixels.
+struct Slice {
+    rect: PhysicalRect,
+    shown: Vec<PhysicalRect>,
+    image: Arc<RenderImage>,
+}
+
+impl Slice {
+    fn cut(art: &PlateArt, rect: PhysicalRect) -> Slice {
+        let ArtSlice { image, shown } = art.slice(rect);
+        Slice {
+            rect,
+            shown,
+            image: Arc::new(RenderImage::new([Frame::new(image)])),
+        }
+    }
+}
+
+impl Arts {
+    fn draw(game: PhysicalRect) -> Arts {
+        let rails = hud_rails(game);
+        let flask = PlateArt::flask(&rails, game.height);
+        let skill = PlateArt::skill(&rails, game.height);
+        let (_, gear) = split_gear(rails.flask);
+        let line = flask.bounds;
+        let level = PhysicalRect {
+            width: gear.x - line.x,
+            height: rails.flask.height,
+            ..line
+        };
+        let gear = PhysicalRect {
+            x: gear.x,
+            width: line.x + line.width - gear.x,
+            ..line
+        };
+        Arts {
+            game,
+            level: Slice::cut(&flask, level),
+            gear: Slice::cut(&flask, gear),
+            map: Slice::cut(&skill, skill.bounds),
+            line,
+        }
+    }
+
+    /// Takes the pixels out of every window's sprite atlas, once they are drawn no more.
+    fn drop_images(self, cx: &mut App) {
+        for slice in [self.level, self.gear, self.map] {
+            cx.drop_image(slice.image, None);
+        }
+    }
+}
+
 /// The level plate's window's root view, and the overlay's state: the tracker, what it says, and
 /// the plates' platform windows.
 pub struct XpOverlay {
@@ -229,6 +271,8 @@ pub struct XpOverlay {
     level: PlateWindow,
     gear: PlateWindow,
     map: PlateWindow,
+    /// The plates' pixels, for the place and size of the game they were drawn for.
+    art: Option<Arts>,
     /// The level plate's wording: paused, rated, with the percent, in what language and room.
     level_fit: Fit<(bool, bool, bool, Lang, Pixels)>,
     rails: RailPresence,
@@ -314,6 +358,7 @@ pub fn open(
                 level: PlateWindow::default(),
                 gear: PlateWindow::default(),
                 map: PlateWindow::default(),
+                art: None,
                 level_fit: Fit::default(),
                 rails: RailPresence::new(),
             }
@@ -528,9 +573,14 @@ impl XpOverlay {
     /// GPUI window is never redrawn (see `app::PriceCheckRoot::sync_window`), so a render-only
     /// sync could never show it again.
     fn sync_windows(&mut self, cx: &mut Context<Self>) {
+        // Drawn again only when the game moves or resizes.
         let game = self.sample.as_ref().map(|sample| sample.client);
-        let rails = game.map(hud_rails);
-        let height = game.map_or(0, |game| game.height);
+        if self.art.as_ref().map(|art| art.game) != game {
+            if let Some(old) = self.art.take() {
+                old.drop_images(cx);
+            }
+            self.art = game.map(Arts::draw);
+        }
         let cover = self.cover;
         let clear = |rect: &PhysicalRect| {
             !cover.off && cover.panel.is_none_or(|panel| !panel.intersects(rect))
@@ -538,26 +588,17 @@ impl XpOverlay {
         // The level plate also shows while the tour spotlights it: the tour's dim covers the lip
         // until its hole is cut around the plate.
         let flask = self.rails.flask() || crate::ui::tour::holds_xp_line(cx);
-        let line = rails
-            .map(|rails| rails.flask)
-            .filter(|rect| flask && clear(rect));
-        let (level, gear) = line.map(split_gear).unzip();
-        let level = level.map(|level| meet_globe(level, height, Globe::Life));
-        // What the tour spotlights: the plate from the life globe's frame to the gear's end.
-        let on_screen = line.zip(level.as_ref()).map(|(line, level)| PhysicalRect {
-            x: level.window.x,
-            width: line.x + line.width - level.window.x,
-            ..line
-        });
-        let map = rails
-            .map(|rails| rails.skill)
-            .filter(|rect| self.rails.skill() && self.map_status().is_some() && clear(rect))
-            .map(|map| meet_globe(map, height, Globe::Mana));
-        if self.level.sync(level.map(Placement::shaped), cx) {
-            cx.set_global(XpLineOnScreen(on_screen));
+        let skill = self.rails.skill() && self.map_status().is_some();
+        let art = self.art.as_ref();
+        let line = art.filter(|art| flask && clear(&art.line));
+        let map = art
+            .filter(|art| skill && clear(&art.map.rect))
+            .map(|art| &art.map);
+        if self.level.sync(line.map(|art| &art.level), cx) {
+            cx.set_global(XpLineOnScreen(line.map(|art| art.line)));
         }
-        self.gear.sync(gear.map(Placement::rect), cx);
-        self.map.sync(map.map(Placement::shaped), cx);
+        self.gear.sync(line.map(|art| &art.gear), cx);
+        self.map.sync(map, cx);
     }
 }
 
@@ -621,13 +662,13 @@ impl Render for XpOverlay {
                 Err(err) => log::warn!("Win32Overlay::from_window failed: {err:?}"),
             }
         }
-        let Some(sample) = self.sample.clone() else {
+        let (Some(sample), Some(art)) = (self.sample.clone(), self.art.as_ref()) else {
             return div().into_any_element();
         };
+        let (rect, image) = (art.level.rect, art.level.image.clone());
         window.set_rem_size(hud_rem_size(&sample));
         let font = plate_font(window);
         let (level, _) = split_gear(hud_rails(sample.client).flask);
-        let shape = meet_globe(level, sample.client.height, Globe::Life);
         let room = room(level, &sample, 2. * PADDING_X, window);
         let status = self.status;
         let key = (
@@ -639,12 +680,16 @@ impl Render for XpOverlay {
         );
         let wordings = self.level_wordings();
         let parts = self.level_fit.choose(key, wordings, room, &font, window);
-        // The frame runs on over the gap to the life globe; the words keep to the plate's run.
-        let frame = plate_frame(Ends::None).pl(end_padding(shape.plate_x, &sample, window));
-        ease_state("playing", !self.paused(), frame, move |frame, lit| {
-            frame.child(words(parts.clone(), &font, Tones::at(lit)))
-        })
-        .into_any_element()
+        // The art runs on over the gap to the life globe; the words keep to the plate's run.
+        let run = run_box(level, rect, window);
+        plate(image, rect, window)
+            .child(ease_state(
+                "playing",
+                !self.paused(),
+                run,
+                move |run, lit| run.child(words(parts.clone(), &font, Tones::at(lit))),
+            ))
+            .into_any_element()
     }
 }
 
@@ -661,24 +706,29 @@ impl Render for GearPlate {
             }
         }
         let xp = self.xp.read(cx);
-        let Some(sample) = xp.sample.clone() else {
+        let (Some(sample), Some(art)) = (xp.sample.clone(), xp.art.as_ref()) else {
             return div().into_any_element();
         };
+        let (rect, image) = (art.gear.rect, art.gear.image.clone());
         window.set_rem_size(hud_rem_size(&sample));
         let app = xp.app.clone();
+        let (_, square) = split_gear(hud_rails(sample.client).flask);
         // The line between the words and the gear, on the face only.
         let divider = div()
             .absolute()
             .left_0()
-            .top(rems_from_px(CAP_BAND * HUD_CAP.len() as f32 + 3.))
+            .top(rems_from_px(CAP_HEIGHT + 3.))
             .bottom(rems_from_px(3.))
             .w(rems_from_px(DIVIDER))
-            .bg(rgb(HUD_POST_SHADE));
-        plate_frame(Ends::Right)
-            .justify_center()
-            .px_0()
-            .child(divider)
-            .child(gear(app))
+            .bg(rgb(HUD_DIVIDER));
+        plate(image, rect, window)
+            .child(
+                run_box(square, rect, window)
+                    .justify_center()
+                    .px_0()
+                    .child(divider)
+                    .child(gear(app)),
+            )
             .into_any_element()
     }
 }
@@ -696,13 +746,15 @@ impl Render for MapPlate {
             }
         }
         let xp = self.xp.read(cx);
-        let (Some(sample), Some(map)) = (xp.sample.clone(), xp.map_status()) else {
+        let (Some(sample), Some(map), Some(art)) =
+            (xp.sample.clone(), xp.map_status(), xp.art.as_ref())
+        else {
             return div().into_any_element();
         };
+        let (rect, image) = (art.map.rect, art.map.image.clone());
         window.set_rem_size(hud_rem_size(&sample));
         let font = plate_font(window);
         let skill = hud_rails(sample.client).skill;
-        let shape = meet_globe(skill, sample.client.height, Globe::Mana);
         let room = room(skill, &sample, 2. * PADDING_X, window);
         let key = (
             map.state,
@@ -713,15 +765,15 @@ impl Render for MapPlate {
         let parts = self
             .fit
             .choose(key, xp.map_wordings(&map), room, &font, window);
-        // Dimmed once the character has left the run. The frame runs on over the gap to the mana
-        // globe; the words keep to the plate's run.
+        // Dimmed once the character has left the run. The art runs on past the rail's end and
+        // over the gap to the mana globe; the words keep to the plate's run.
         let running = map.state == RunState::Running;
-        let reach = shape.window.width - skill.width;
-        let frame = plate_frame(Ends::Left).pr(end_padding(reach, &sample, window));
-        ease_state("running", running, frame, move |frame, lit| {
-            frame.child(words(parts.clone(), &font, Tones::at(lit)))
-        })
-        .into_any_element()
+        let run = run_box(skill, rect, window);
+        plate(image, rect, window)
+            .child(ease_state("running", running, run, move |run, lit| {
+                run.child(words(parts.clone(), &font, Tones::at(lit)))
+            }))
+            .into_any_element()
     }
 }
 
@@ -737,13 +789,6 @@ fn hud_rem_size(sample: &BarSample) -> Pixels {
 fn room(rect: PhysicalRect, sample: &BarSample, reserved: f32, window: &Window) -> Pixels {
     px((f64::from(rect.width) / sample.dpi_scale) as f32)
         - rems_from_px(reserved).to_pixels(window.rem_size())
-}
-
-/// The padding at a plate's end that runs on to its globe: the ends' own, plus the `reach`
-/// physical pixels over the gap, so the words keep to the plate's run.
-fn end_padding(reach: i32, sample: &BarSample, window: &Window) -> Pixels {
-    rems_from_px(PADDING_X).to_pixels(window.rem_size())
-        + px((f64::from(reach) / sample.dpi_scale) as f32)
 }
 
 /// The plates' typeface: the game-styled one of the interface language, as the HUD's own words
@@ -802,7 +847,7 @@ struct Tones {
 
 impl Tones {
     fn at(lit: f32) -> Tones {
-        let dim = |color: u32| blend(HUD_FACE_BOTTOM, color, 0.65);
+        let dim = |color: u32| blend(plate_art::FACE_BOTTOM, color, 0.65);
         Tones {
             value: blend(HUD_LABEL, HUD_TEXT, lit),
             label: blend(dim(HUD_LABEL), HUD_LABEL, lit),
@@ -812,67 +857,36 @@ impl Tones {
     }
 }
 
-/// Which posts a window's frame draws: one at each end that stops on its rail. The level plate
-/// and its gear share one frame whose left end runs on to the life globe, so only the gear has a
-/// post, on the right; the map plate runs on to the mana globe and has its post on the left.
-#[derive(Clone, Copy)]
-enum Ends {
-    None,
-    Left,
-    Right,
+/// A plate window's root: its part of the plates' art (`Arts`), pixel for pixel -- `rect` is
+/// where the window is, in physical pixels, and the image as many pixels.
+fn plate(image: Arc<RenderImage>, rect: PhysicalRect, window: &Window) -> Div {
+    let logical = |length: i32| px(length as f32 / window.scale_factor());
+    div().relative().size_full().child(
+        img(ImageSource::Render(image))
+            .absolute()
+            .top_0()
+            .left_0()
+            .w(logical(rect.width))
+            .h(logical(rect.height))
+            .object_fit(ObjectFit::Fill),
+    )
 }
 
-/// A plate's frame, built as the rail it stands on: the rail's cap molding along its top, band by
-/// band, a dark face under it, a post at an end that stops on the rail -- lit on the left, in
-/// shade on the right, as the rails' end caps are -- and a thin seam where it sits on the rail's
-/// highlight. Its contents go in a row on the face.
-fn plate_frame(ends: Ends) -> Div {
-    let cap = div()
+/// The box a plate window's contents go in, in a row: over `run` -- the part of a rail the plate
+/// stands on, in physical pixels on screen -- of the window at `rect`, on the face below the cap
+/// molding, with room at its ends.
+fn run_box(run: PhysicalRect, rect: PhysicalRect, window: &Window) -> Div {
+    let logical = |length: i32| px(length as f32 / window.scale_factor());
+    div()
         .absolute()
-        .top_0()
-        .left_0()
-        .right_0()
-        .flex()
-        .flex_col()
-        .children(
-            HUD_CAP
-                .iter()
-                .map(|&color| div().h(rems_from_px(CAP_BAND)).bg(rgb(color))),
-        );
-    let post = |edge: Div, color: u32| {
-        edge.absolute()
-            .top_0()
-            .bottom_0()
-            .w(rems_from_px(POST))
-            .bg(rgb(color))
-    };
-    let frame = div()
-        .relative()
-        .size_full()
+        .left(logical(run.x - rect.x))
+        .top(logical(run.y - rect.y))
+        .w(logical(run.width))
+        .h(logical(run.height))
         .flex()
         .items_center()
-        .pt(rems_from_px(CAP_BAND * HUD_CAP.len() as f32))
+        .pt(rems_from_px(CAP_HEIGHT))
         .px(rems_from_px(PADDING_X))
-        .bg(linear_gradient(
-            180.,
-            linear_color_stop(rgb(HUD_FACE_TOP), 0.),
-            linear_color_stop(rgb(HUD_FACE_BOTTOM), 1.),
-        ))
-        .child(cap)
-        .child(
-            div()
-                .absolute()
-                .bottom_0()
-                .left_0()
-                .right_0()
-                .h(rems_from_px(SEAM))
-                .bg(rgb(HUD_SEAM)),
-        );
-    match ends {
-        Ends::None => frame,
-        Ends::Left => frame.child(post(div().left_0(), HUD_POST_LIGHT)),
-        Ends::Right => frame.child(post(div().right_0(), HUD_POST_SHADE)),
-    }
 }
 
 /// `parts` centred in the room left of anything after them, a diamond between them, each word in

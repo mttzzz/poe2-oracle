@@ -77,16 +77,7 @@
     --plate-top: #3d2c16;
     --plate-bottom: #1f170c;
     --border-danger: #5e2c22;
-    --hud-cap-1: #7c7574;
-    --hud-cap-2: #4b484b;
-    --hud-cap-3: #25252c;
-    --hud-cap-4: #85807d;
-    --hud-cap-5: #3a373b;
-    --hud-face-top: #1b1a1d;
-    --hud-face-bottom: #0e0e0f;
-    --hud-seam: #08080a;
-    --hud-post-light: #85807d;
-    --hud-post-shade: #393634;
+    --hud-divider: #393634;
     --hud-text: #e4dab8;
     --hud-label: #8f8772;
     --hud-gold: #c4aa57;

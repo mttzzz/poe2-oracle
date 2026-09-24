@@ -12,8 +12,6 @@
 //! What would name the player is masked in all a report carries ([`Masker`]): the diagnostics
 //! report is meant for a public issue, and a Windows user name is often a real name.
 
-use std::cmp::Reverse;
-
 use item_parser::ItemLanguage;
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 
@@ -148,10 +146,14 @@ fn fit_item_text(text: &str, room: usize) -> String {
     format!("{}{cut_note}", kept.trim_end())
 }
 
+// The masker serves the diagnostics report, which only the Windows app writes; its tests run
+// everywhere.
 /// Either slash: Windows takes both in a path.
+#[cfg(any(target_os = "windows", test))]
 const SEPARATORS: [char; 2] = ['\\', '/'];
 
 /// A user name shorter than this is part of too many other words to mask on its own.
+#[cfg(any(target_os = "windows", test))]
 const MIN_MASKED_NAME: usize = 3;
 
 /// Replaces what would name the player in a text: their user folder with `%USERPROFILE%`; their
@@ -160,11 +162,13 @@ const MIN_MASKED_NAME: usize = 3;
 /// `%LOCALAPPDATA%`; and their user name, wherever else it stands, with `%USERNAME%`. In any
 /// letter case and with either slash, as Windows reads a path. A match counts only as a whole
 /// word: the user name "anna" leaves "Hanna" alone.
+#[cfg(any(target_os = "windows", test))]
 pub(crate) struct Masker {
     /// Each text with its stand-in, longest first: at one place, the most specific one masks.
     masks: Vec<(String, &'static str)>,
 }
 
+#[cfg(any(target_os = "windows", test))]
 impl Masker {
     /// This Windows user's own folders and names.
     #[cfg(target_os = "windows")]
@@ -229,7 +233,7 @@ impl Masker {
             (name.chars().count() >= MIN_MASKED_NAME).then(|| (name.to_owned(), "%USERNAME%"))
         });
         let mut masks: Vec<_> = folders.chain(names).collect();
-        masks.sort_by_key(|(text, _)| Reverse(text.chars().count()));
+        masks.sort_by_key(|(text, _)| std::cmp::Reverse(text.chars().count()));
         Masker { masks }
     }
 
@@ -260,6 +264,7 @@ impl Masker {
 
 /// The length of the start of `text` that reads as `mask`, in any letter case and with either
 /// slash for a separator.
+#[cfg(any(target_os = "windows", test))]
 fn match_len(text: &str, mask: &str) -> Option<usize> {
     let mut chars = text.char_indices();
     for expected in mask.chars() {

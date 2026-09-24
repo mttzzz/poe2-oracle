@@ -1,9 +1,10 @@
 /*
  * The XP overlay's plates (crates/poe2-oracle/src/ui/xp_overlay.rs) on the game's HUD: the level
  * plate and its gear on the flask panel's rail, the map plate on the skill panel's. A figure is a
- * capture of the HUD at 2x (a 2160-row game's pixels halved) with a plate where the app puts it
- * (overlay_layout.rs hud_rails). A plate's lengths are HUD pixels -- a 1080-row game's -- so at
- * scale 1 a CSS px is a HUD px.
+ * capture of the HUD at 2x (a 2160-row game's pixels halved) with the app's own pixels of its
+ * plate laid over it (xp.js) and the plate's words where the app puts them (overlay_layout.rs
+ * hud_rails). The words' lengths are HUD pixels -- a 1080-row game's -- so at scale 1 a CSS px is
+ * a HUD px.
  */
 
 .oui-xp {
@@ -26,16 +27,25 @@
     height: 100%;
 }
 
+/* The plate's pixels over the figure's part of the game, transparent where the plate isn't. */
+.oui-xp-art {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+}
+
 /*
- * A plate, built as the rail it stands on: the rail's cap molding along its top, one HUD pixel a
- * band (theme.rs HUD_CAP), a dark face under it, a thin seam where it sits on the rail's highlight;
- * its words in a row on the face, 7 px in from its ends.
+ * A plate's words, in a row on its face: over its rail's run, below the cap molding, 7 px in
+ * from its ends (xp_overlay.rs run_box).
  */
 .oui-xp-plate {
     --xp-value: var(--hud-text);
     --xp-label: var(--hud-label);
     --xp-rate: var(--hud-gold);
     --xp-separator: var(--hud-gold);
+    /* The face's dark, which dimmed words blend towards (plate_art.rs FACE_BOTTOM). */
+    --xp-face: #1b1a19;
 
     position: absolute;
     /* RAIL_TOP and PLATE_HEIGHT: the rail's top row 301 rows above the game's bottom edge, the
@@ -46,51 +56,21 @@
     height: calc(20 * var(--u));
     padding: calc(5 * var(--u)) calc(7 * var(--u)) 0;
     overflow: hidden;
-    background: linear-gradient(180deg, var(--hud-face-top), var(--hud-face-bottom));
-}
-
-.oui-xp-plate::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    right: 0;
-    left: 0;
-    height: calc(5 * var(--u));
-    background: linear-gradient(
-        180deg,
-        var(--hud-cap-1) 20%,
-        var(--hud-cap-2) 20% 40%,
-        var(--hud-cap-3) 40% 60%,
-        var(--hud-cap-4) 60% 80%,
-        var(--hud-cap-5) 80%
-    );
-}
-
-.oui-xp-plate::after {
-    content: "";
-    position: absolute;
-    right: 0;
-    bottom: 0;
-    left: 0;
-    height: calc(0.5 * var(--u));
-    background: var(--hud-seam);
 }
 
 /* A pause, or a run that is over: the words dim (xp_overlay.rs Tones::at). */
 .oui-xp-plate--dim {
     --xp-value: var(--hud-label);
-    --xp-label: color-mix(in srgb, var(--hud-face-bottom) 35%, var(--hud-label));
+    --xp-label: color-mix(in srgb, var(--xp-face) 35%, var(--hud-label));
     --xp-rate: var(--hud-label);
-    --xp-separator: color-mix(in srgb, var(--hud-face-bottom) 35%, var(--hud-gold));
+    --xp-separator: color-mix(in srgb, var(--xp-face) 35%, var(--hud-gold));
 }
 
 /* FLASK_RAIL_RUN: x 467-927 of the game, here from its column 300 -- the words, then the gear's
-   square at the right end -- run on 24.5 px to the left over the gap to the life globe (xp.js
-   globeClip shapes it), the words kept to the rail's run. */
+   square at the right end. */
 .oui-xp-plate--level {
-    left: calc(59 * var(--u));
-    width: calc(234.5 * var(--u));
-    padding-left: calc(31.5 * var(--u));
+    left: calc(83.5 * var(--u));
+    width: calc(210 * var(--u));
 }
 
 .oui-xp-plate--gear {
@@ -99,31 +79,10 @@
     padding: 0;
 }
 
-/* SKILL_RAIL_RUN: x 2905-3374 of the game, here from its column 2740 -- run on 24.5 px to the
-   right over the gap to the mana globe. */
+/* SKILL_RAIL_RUN: x 2905-3374 of the game, here from its column 2740. */
 .oui-xp-plate--map {
     left: calc(82.5 * var(--u));
-    width: calc(259 * var(--u));
-    padding-right: calc(31.5 * var(--u));
-}
-
-/* The plate's end posts: lit on its left end, in shade on its right, as the rails' end caps are. */
-.oui-xp-post {
-    position: absolute;
-    z-index: 1;
-    top: 0;
-    bottom: 0;
-    width: calc(1 * var(--u));
-}
-
-.oui-xp-post--left {
-    left: 0;
-    background: var(--hud-post-light);
-}
-
-.oui-xp-post--right {
-    right: 0;
-    background: var(--hud-post-shade);
+    width: calc(234.5 * var(--u));
 }
 
 /* The line between the level plate's words and its gear, on the face only. */
@@ -133,7 +92,7 @@
     bottom: calc(3 * var(--u));
     left: 0;
     width: calc(0.5 * var(--u));
-    background: var(--hud-post-shade);
+    background: var(--hud-divider);
 }
 
 /* Segoe UI Symbol's flat gear, in the words' muted tone, a size up on them. */

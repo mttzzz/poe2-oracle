@@ -66,11 +66,12 @@ The first public release.
   one, or its "HC" twin for a hardcore league), and the market card says so.
 - **XP overlay** on top of the game's HUD, on the rails along the top of its flask and skill
   panels -- never over them: the rails are the game's rage and stun gauges -- each plate running on
-  to its life or mana globe's frame, the gap there filled to the pixel. Above the flask panel
-  the levelling rate (percent of a level per hour, averaged over 5 to 30 minutes), the time to the
-  next level, optionally the level percentage, and a ⚙ that opens the settings; above the skill
-  panel a map timer with the map's experience and the session's average map time. The plates are
-  built of the rails' own molding, take the HUD's size, let clicks through to the game but for the
+  to its life or mana globe's frame, the gap there filled to the pixel, and curling down onto the
+  tip of the game's scrollwork at its other end. Above the flask panel the levelling rate (percent
+  of a level per hour, averaged over 5 to 30 minutes), the time to the next level, optionally the
+  level percentage, and a ⚙ that opens the settings; above the skill panel a map timer with the
+  map's experience and the session's average map time. The plates are drawn pixel by pixel in the
+  HUD's own molding and colours, take the HUD's size, let clicks through to the game but for the
   ⚙, and say as much as they have room for.
 - **Quick actions:** up to 12 hotkeys that type a chat command (`/hideout` is preset, `@last thanks`
   answers whoever whispered last) or paste a stash search string.

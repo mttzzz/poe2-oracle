@@ -4447,6 +4447,7 @@ dependencies = [
  "gpui",
  "gpui_platform",
  "http_client",
+ "image",
  "item-parser",
  "log",
  "parking_lot",

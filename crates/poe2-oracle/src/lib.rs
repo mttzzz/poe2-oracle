@@ -10,6 +10,7 @@ pub mod league_chip;
 pub mod listing_match;
 pub mod overlay_layout;
 pub mod paths;
+pub mod plate_art;
 pub mod platform;
 pub mod quick_action;
 pub mod relative_time;

@@ -131,19 +131,10 @@ pub(crate) const PLATE_BOTTOM: u32 = 0x1f170c;
 /// A destructive button's edge; its label is `TEXT_WARNING`.
 pub(crate) const BORDER_DANGER: u32 = 0x5e2c22;
 
-// The game's own HUD, sampled live 2026-09-23 on the test machine's 4K game, for the plates the
-// XP overlay sets on its rails (`ui::xp_overlay`): they wear the rails' own materials.
-/// A rail's cap molding, top down, one band per HUD pixel (two rows of the 4K game): the
-/// highlight, its shade, the groove, the second highlight, and the edge of the face below.
-pub(crate) const HUD_CAP: [u32; 5] = [0x7c7574, 0x4b484b, 0x25252c, 0x85807d, 0x3a373b];
-/// A plate's face under its cap, top and bottom.
-pub(crate) const HUD_FACE_TOP: u32 = 0x1b1a1d;
-pub(crate) const HUD_FACE_BOTTOM: u32 = 0x0e0e0f;
-/// The seam where a plate sits on its rail's highlight.
-pub(crate) const HUD_SEAM: u32 = 0x08080a;
-/// A plate's end posts: lit on its left end, in shade on its right, as the rails' end caps are.
-pub(crate) const HUD_POST_LIGHT: u32 = 0x85807d;
-pub(crate) const HUD_POST_SHADE: u32 = 0x393634;
+// The game's own HUD, for what the XP overlay (`ui::xp_overlay`) puts on its plates; the plates'
+// own materials -- cap, face, seam -- are `plate_art`'s, which draws them.
+/// The line between the level plate's words and its gear.
+pub(crate) const HUD_DIVIDER: u32 = 0x393634;
 /// The HUD's text: the charm counts' cream, a muted step of it for words, and the stash's gold.
 pub(crate) const HUD_TEXT: u32 = 0xe4dab8;
 pub(crate) const HUD_LABEL: u32 = 0x8f8772;
