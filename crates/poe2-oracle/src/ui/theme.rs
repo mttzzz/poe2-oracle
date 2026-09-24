@@ -127,8 +127,6 @@ pub(crate) const BG_MENU: u32 = 0x0c0c0e;
 /// A primary button's bronze plate, top and bottom.
 pub(crate) const PLATE_TOP: u32 = 0x3d2c16;
 pub(crate) const PLATE_BOTTOM: u32 = 0x1f170c;
-/// A destructive button's edge; its label is `TEXT_WARNING`.
-pub(crate) const BORDER_DANGER: u32 = 0x5e2c22;
 
 // The game's own HUD, for what the XP overlay (`ui::xp_overlay`) puts on its plates; the plates'
 // own materials -- cap, face, seam -- are `plate_art`'s, which draws them.

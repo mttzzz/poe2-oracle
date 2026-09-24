@@ -26,9 +26,8 @@ use gpui::{
 use crate::ui::fonts::NameFont;
 use crate::ui::theme::{
     BASE_REM_SIZE, BG_BUTTON_HOVER, BG_CARD, BG_FIELD, BG_MENU, BG_TITLE, BORDER_CARD,
-    BORDER_DANGER, BORDER_FIELD, BORDER_GOLD, BORDER_ROW, GOLD, GOLD_LIGHT, KEY_TOP, PLATE_BOTTOM,
-    PLATE_TOP, TEXT, TEXT_DIM, TEXT_MUTED, TEXT_WARNING, TITLE_BOTTOM, TITLE_TOP, blend,
-    rems_from_px,
+    BORDER_FIELD, BORDER_GOLD, BORDER_ROW, GOLD, GOLD_LIGHT, KEY_TOP, PLATE_BOTTOM, PLATE_TOP,
+    TEXT, TEXT_DIM, TEXT_MUTED, TEXT_WARNING, TITLE_BOTTOM, TITLE_TOP, blend, rems_from_px,
 };
 
 /// Every hover and state change: VibeTools' one timing, `0.12s ease`, used everywhere.
@@ -663,8 +662,6 @@ pub(crate) enum ButtonKind {
     Primary,
     /// Any other action: dark, gold only under the pointer.
     Secondary,
-    /// An action that erases something: a red label, red edge and glow under the pointer.
-    Danger,
 }
 
 /// A button's size, px: its height, the space either side of its label, and the label's size --
@@ -737,7 +734,7 @@ fn sized_button(
                 .font_family(face.family)
                 .font_weight(face.weight)
                 .text_size(rems_from_px(size.text + 1.)),
-            ButtonKind::Secondary | ButtonKind::Danger => this.text_size(rems_from_px(size.text)),
+            ButtonKind::Secondary => this.text_size(rems_from_px(size.text)),
         })
         .on_mouse_down(MouseButton::Left, on_press)
         .child(label.into());
@@ -752,11 +749,6 @@ fn sized_button(
             .border_color(rgb(blend(BORDER_FIELD, GOLD, hover)))
             .text_color(rgb(blend(TEXT, GOLD_LIGHT, hover)))
             .shadow(glow(GOLD, 0.7 * hover)),
-        ButtonKind::Danger => element
-            .bg(rgb(blend(BG_FIELD, TEXT_WARNING, 0.1 * hover)))
-            .border_color(rgb(blend(BORDER_DANGER, TEXT_WARNING, hover)))
-            .text_color(rgb(TEXT_WARNING))
-            .shadow(glow(TEXT_WARNING, 0.6 * hover)),
     })
 }
 

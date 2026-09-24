@@ -125,13 +125,6 @@ Group **Search**.
   default, buyout or in person, move to Instant Buyout once; after that, your choice stays.
 - **Seller column**, on by default: the seller's account name in the results table.
 
-### Waystones
-
-Group **Waystones**, row **Modifier marks**: how many Waystone modifiers you have marked on the price
-panel (see [Waystones](price-check.md#waystones)). The **Reset…** button deletes every mark, but asks
-first: **Reset the marks?** **Reset** deletes them; **Cancel**, <kbd>Esc</kbd> or a click outside the
-dialog keeps them.
-
 ## Quick actions
 
 Section **Quick actions**: hotkeys that type chat commands or stash searches into the game. Each

@@ -11,14 +11,13 @@
 //! hotkey recorder as soon as it takes a combination -- refused, with the reason under it and the
 //! old hotkey kept, when another program holds that one. A quick action whose text is a denied
 //! command (`quick_action::denied_command`) says so under its field and isn't saved: the file
-//! keeps its last allowed text (`quick_action::kept_actions`). Resetting the waystone marks, the
-//! one erasing action, asks first in a dialog over the window.
+//! keeps its last allowed text (`quick_action::kept_actions`).
 //!
 //! Signing in and out of pathofexile.com (`crate::login`, `crate::session`) keeps its secret out
 //! of the settings; Помощь's buttons write reports and open folders and pages.
 //!
 //! The window stays above the game (topmost), stepping down while the sign-in window -- which
-//! isn't topmost -- is open over it. × and Esc (with no menu or dialog open) close it, and so does
+//! isn't topmost -- is open over it. × and Esc (with no menu open) close it, and so does
 //! anything that sends it `WM_CLOSE` -- Alt+F4, the taskbar -- routed through the same close
 //! ([`SettingsView::close`]).
 //!
@@ -57,10 +56,9 @@ use crate::tour::{Host, Stop};
 use crate::tr;
 use crate::ui::fonts::{self, NameFont};
 use crate::ui::style::{
-    ButtonKind, CARD_RADIUS, SCRIM_OPACITY, TRANSITION, alpha, appear, button, card, diamond, ease,
-    ease_hover, ease_state, game_frame, heading, icon_button, keycaps, link, menu, modal_shadow,
-    ornament_rule, recorder, section_heading, segmented, select, stepper, switch, switch_in,
-    title_button, title_gradient,
+    ButtonKind, CARD_RADIUS, TRANSITION, alpha, appear, button, card, diamond, ease, ease_hover,
+    ease_state, game_frame, heading, icon_button, keycaps, link, menu, ornament_rule, recorder,
+    section_heading, segmented, select, stepper, switch, switch_in, title_button, title_gradient,
 };
 use crate::ui::text_field::{Committed, TextField};
 use crate::ui::theme::{
@@ -161,7 +159,7 @@ impl Section {
     fn summary(self) -> &'static str {
         match self {
             Section::General => tr!("League, languages, scale, starting with Windows and updates"),
-            Section::PriceCheck => tr!("Hotkey, sellers, results table and Waystones"),
+            Section::PriceCheck => tr!("Hotkey, sellers and the results table"),
             Section::QuickActions => tr!("Keys that type chat commands and searches into the game"),
             Section::XpOverlay => tr!("Experience rate and map timer, on top of the game's panels"),
             Section::Account => {
@@ -248,7 +246,6 @@ pub struct SettingsView {
     marker_moved: Option<Instant>,
     marker_slides: usize,
     league_menu: bool,
-    confirming_reset: bool,
     /// Focused while the price-check hotkey recorder captures.
     recorder_focus: FocusHandle,
     /// The modifiers held during a capture, shown until the key comes.
@@ -370,7 +367,6 @@ impl SettingsView {
             marker_moved: None,
             marker_slides: 0,
             league_menu: false,
-            confirming_reset: false,
             recorder_focus: cx.focus_handle(),
             held: Modifiers::default(),
             capture_error: None,
@@ -703,27 +699,12 @@ impl SettingsView {
         if event.keystroke.key != "escape" {
             return;
         }
-        if self.confirming_reset {
-            self.confirming_reset = false;
-        } else if self.league_menu {
+        if self.league_menu {
             self.league_menu = false;
+            cx.notify();
         } else {
             self.close(window, cx);
-            return;
         }
-        cx.notify();
-    }
-
-    /// The reset dialog closes, the marks kept.
-    fn keep_marks(&mut self, cx: &mut Context<Self>) {
-        self.confirming_reset = false;
-        cx.notify();
-    }
-
-    fn reset_waystone_marks(&mut self, cx: &mut Context<Self>) {
-        self.confirming_reset = false;
-        self.change(cx, |settings| settings.waystone_marks.clear());
-        cx.notify();
     }
 
     /// «Сообщить ↗»: the tray's «Сообщить об ошибке» (`bug_report::report_bug`).
@@ -1532,16 +1513,6 @@ impl SettingsView {
             .iter()
             .position(|&(sellers, _)| sellers == settings.listing_status)
             .unwrap_or(0);
-        let marks = settings.waystone_marks.len();
-        let marks_note: SharedString = if marks == 0 {
-            tr!("No marks. They're set on the price panel, next to a Waystone's modifiers").into()
-        } else {
-            tr!(
-                "Marks: {count}. Danger, caution, wanted — set on the price panel",
-                count = marks
-            )
-            .into()
-        };
         div()
             .flex()
             .flex_col()
@@ -1604,26 +1575,6 @@ impl SettingsView {
                         cx,
                     ),
                 ],
-            ))
-            .child(group(
-                face,
-                tr!("Waystones"),
-                [setting_row(
-                    tr!("Modifier marks"),
-                    [note(marks_note, TEXT_DIM)],
-                    div().when(marks > 0, |this| {
-                        this.child(button(
-                            "reset-marks",
-                            tr!("Reset…"),
-                            ButtonKind::Danger,
-                            face,
-                            cx.listener(|view, _: &MouseDownEvent, _, cx| {
-                                view.confirming_reset = true;
-                                cx.notify();
-                            }),
-                        ))
-                    }),
-                )],
             ))
     }
 
@@ -2117,84 +2068,6 @@ impl SettingsView {
             ],
         )
     }
-
-    /// Resetting the waystone marks asks first: a dialog over the dimmed window.
-    fn render_confirm(
-        &self,
-        marks: usize,
-        face: &'static NameFont,
-        cx: &Context<Self>,
-    ) -> impl IntoElement {
-        div()
-            .id("scrim")
-            .absolute()
-            .inset_0()
-            .flex()
-            .items_center()
-            .justify_center()
-            .bg(alpha(0x000000, SCRIM_OPACITY))
-            .occlude()
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(|view, _: &MouseDownEvent, _, cx| view.keep_marks(cx)),
-            )
-            .child(appear(
-                "confirm",
-                div()
-                    .id("confirm")
-                    .relative()
-                    .flex()
-                    .flex_col()
-                    .gap(rems_from_px(10.))
-                    .w(rems_from_px(420.))
-                    .px(rems_from_px(24.))
-                    .pt(rems_from_px(22.))
-                    .pb(rems_from_px(20.))
-                    .bg(rgb(BG_CARD))
-                    .shadow(modal_shadow())
-                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                    .child(
-                        heading(face)
-                            .text_size(rems_from_px(18.))
-                            .text_color(rgb(GOLD_LIGHT))
-                            .child(tr!("Reset the marks?")),
-                    )
-                    .child(
-                        div()
-                            .text_size(rems_from_px(13.))
-                            .text_color(rgb(TEXT_DIM))
-                            .child(tr!(
-                                "All Waystone modifier marks ({count}) will be deleted. This \
-                                 can't be undone.",
-                                count = marks
-                            )),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .justify_end()
-                            .gap(rems_from_px(8.))
-                            .pt(rems_from_px(10.))
-                            .child(button(
-                                "keep",
-                                tr!("Cancel"),
-                                ButtonKind::Secondary,
-                                face,
-                                cx.listener(|view, _: &MouseDownEvent, _, cx| view.keep_marks(cx)),
-                            ))
-                            .child(button(
-                                "reset",
-                                tr!("Reset"),
-                                ButtonKind::Danger,
-                                face,
-                                cx.listener(|view, _: &MouseDownEvent, _, cx| {
-                                    view.reset_waystone_marks(cx);
-                                }),
-                            )),
-                    )
-                    .child(game_frame()),
-            ))
-    }
 }
 
 impl Focusable for SettingsView {
@@ -2233,9 +2106,6 @@ impl Render for SettingsView {
                     .child(self.render_sidebar(face, cx))
                     .child(self.render_content(settings, face, window, cx)),
             ))
-            .when(self.confirming_reset, |this| {
-                this.child(self.render_confirm(settings.waystone_marks.len(), face, cx))
-            })
             .child(game_frame())
             .children(tour::layer(Host::Settings, window, cx))
     }
