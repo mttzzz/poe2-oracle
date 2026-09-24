@@ -7,8 +7,7 @@
 //!   how much play is left to the next level (`crate::xp_tracker`) -- `64,8 % ◆ +12,4 %/ч · до
 //!   75 ур. 2 ч 50 мин` -- and, at its right end, the gear that opens the settings. In a pause (a
 //!   town or hideout, or five minutes without a gain) the rate and the time to level would pass
-//!   for current ones, so the plate dims and says how long the pause has lasted instead:
-//!   `64,8 % ◆ пауза · 12 мин`;
+//!   for current ones, so the plate dims and says only how much of the level is earned: `64,8 %`;
 //! - over the skill panel, while the player keeps the map timer on and there is a run to show:
 //!   the map's time and experience next to the average map time -- `карта 4:07 +1,2 % · ср.
 //!   6:30`, and `последняя карта 9:00 +3,66 %`, dimmed, once the run is over.
@@ -72,8 +71,8 @@ use crate::ui::theme::{
     BASE_REM_SIZE, HUD_DIVIDER, HUD_GOLD, HUD_LABEL, HUD_TEXT, blend, rems_from_px,
 };
 use crate::xp_tracker::{
-    Activity, MapStatus, RunState, Word, Wording, XpStatus, XpTracker, log_time, map_words,
-    parse_log_line, parse_timed_log_line, pause_words, percent_words, rate_words,
+    Activity, MapStatus, RunState, Word, Wording, XpStatus, XpTracker, level_parts, log_time,
+    map_words, parse_log_line, parse_timed_log_line,
 };
 
 const SAMPLE_INTERVAL: Duration = Duration::from_secs(2);
@@ -594,24 +593,17 @@ impl XpOverlay {
     }
 
     /// The level plate's wordings, longest first: in full, short, then short without the
-    /// percent.
+    /// percent -- in a pause, the percent alone (`xp_tracker::level_parts`).
     fn level_wordings(&self) -> Vec<Vec<Vec<Word>>> {
-        let status = self.status;
-        let percent = self
-            .options
-            .show_percent
-            .then_some(status.fraction)
-            .flatten()
-            .map(percent_words);
-        let rate = |wording| match status.activity {
-            Activity::Playing => rate_words(&status, wording),
-            Activity::Paused { elapsed, .. } => pause_words(elapsed),
-        };
-        let with_percent = |rate: Vec<Word>| percent.iter().cloned().chain([rate]).collect();
+        let status = &self.status;
+        if self.paused() {
+            return vec![level_parts(status, true, Wording::Full)];
+        }
+        let show_percent = self.options.show_percent;
         vec![
-            with_percent(rate(Wording::Full)),
-            with_percent(rate(Wording::Short)),
-            vec![rate(Wording::Short)],
+            level_parts(status, show_percent, Wording::Full),
+            level_parts(status, show_percent, Wording::Short),
+            level_parts(status, false, Wording::Short),
         ]
     }
 

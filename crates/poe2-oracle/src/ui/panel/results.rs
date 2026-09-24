@@ -779,7 +779,8 @@ fn render_results_table(
                     )
                 });
             ease_hover(("listing", index), element, |row, hover| {
-                row.bg(alpha(GOLD, 0.07 * hover)).shadow(inner_glow(hover))
+                row.bg(alpha(GOLD, 0.07 * hover))
+                    .shadow(inner_glow(GOLD, hover))
             })
         }))
 }

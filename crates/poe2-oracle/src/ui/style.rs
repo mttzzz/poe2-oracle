@@ -25,10 +25,10 @@ use gpui::{
 
 use crate::ui::fonts::NameFont;
 use crate::ui::theme::{
-    BASE_REM_SIZE, BG_BUTTON_HOVER, BG_CARD, BG_CLOSE_HOVER, BG_FIELD, BG_MENU, BG_TITLE,
-    BORDER_CARD, BORDER_DANGER, BORDER_FIELD, BORDER_GOLD, BORDER_ROW, GOLD, GOLD_LIGHT, KEY_TOP,
-    PLATE_BOTTOM, PLATE_TOP, TEXT, TEXT_DIM, TEXT_MUTED, TEXT_WARNING, TITLE_BOTTOM, TITLE_TOP,
-    blend, rems_from_px,
+    BASE_REM_SIZE, BG_BUTTON_HOVER, BG_CARD, BG_FIELD, BG_MENU, BG_TITLE, BORDER_CARD,
+    BORDER_DANGER, BORDER_FIELD, BORDER_GOLD, BORDER_ROW, GOLD, GOLD_LIGHT, KEY_TOP, PLATE_BOTTOM,
+    PLATE_TOP, TEXT, TEXT_DIM, TEXT_MUTED, TEXT_WARNING, TITLE_BOTTOM, TITLE_TOP, blend,
+    rems_from_px,
 };
 
 /// Every hover and state change: VibeTools' one timing, `0.12s ease`, used everywhere.
@@ -151,14 +151,14 @@ pub(crate) fn glow(color: u32, amount: f32) -> Vec<BoxShadow> {
     ]
 }
 
-/// The gold glow cast inward, for rows that sit edge to edge, where an outer glow would spill
-/// onto the neighbours.
-pub(crate) fn inner_glow(amount: f32) -> Vec<BoxShadow> {
+/// A glow cast inward -- gold, or red for a destructive control -- for controls that sit edge to
+/// edge, where an outer glow would spill onto the neighbours: listing rows, a title bar's buttons.
+pub(crate) fn inner_glow(color: u32, amount: f32) -> Vec<BoxShadow> {
     if amount <= 0. {
         return Vec::new();
     }
     vec![
-        BoxShadow::new(px(0.), px(0.), alpha(GOLD, 0.22 * amount).into())
+        BoxShadow::new(px(0.), px(0.), alpha(color, 0.22 * amount).into())
             .blur_radius(px(14.))
             .inset(),
     ]
@@ -600,8 +600,9 @@ pub(crate) fn title_gradient() -> Background {
     )
 }
 
-/// A title bar's button -- `⚙`, `×` -- as tall as the bar, lighting up under the pointer: red for
-/// `close`, bronze otherwise.
+/// A title bar's button -- `⚙`, `×` -- as tall as the bar. Under the pointer it lights up the way
+/// the rest of the app does, not with a system window's solid block: a faint wash and a glow cast
+/// inward, the glyph brightening -- gold, and for `close` the destructive red of a danger button.
 pub(crate) fn title_button(
     key: impl Into<ElementId>,
     glyph: &'static str,
@@ -622,15 +623,16 @@ pub(crate) fn title_button(
         .on_mouse_down(MouseButton::Left, on_press)
         .text_size(rems_from_px(16.))
         .child(glyph);
-    let lit = if close {
-        BG_CLOSE_HOVER
+    let (lit, glyph_lit) = if close {
+        (TEXT_WARNING, TEXT_WARNING)
     } else {
-        BG_BUTTON_HOVER
+        (GOLD, GOLD_LIGHT)
     };
     ease_hover(key, element, move |element, hover| {
         element
-            .bg(alpha(lit, hover))
-            .text_color(rgb(blend(TEXT_DIM, TEXT, hover)))
+            .bg(alpha(lit, 0.1 * hover))
+            .shadow(inner_glow(lit, hover))
+            .text_color(rgb(blend(TEXT_DIM, glyph_lit, hover)))
     })
 }
 
@@ -1176,8 +1178,9 @@ pub(crate) fn stepper(
         .child(step_button(true, can_increase))
 }
 
-/// A small square button with a glyph -- `×` removing a row: red under the pointer when it
-/// erases, bronze otherwise.
+/// A small square button with a glyph -- `×` removing a row. Under the pointer: a faint wash, a
+/// soft glow and the glyph brightening, red when it erases, gold otherwise -- a danger button's
+/// look, not a solid block.
 pub(crate) fn icon_button(
     key: impl Into<ElementId>,
     glyph: &'static str,
@@ -1197,15 +1200,16 @@ pub(crate) fn icon_button(
         .cursor_pointer()
         .on_mouse_down(MouseButton::Left, on_press)
         .child(glyph);
-    let lit = if erases {
-        BG_CLOSE_HOVER
+    let (lit, glyph_lit) = if erases {
+        (TEXT_WARNING, TEXT_WARNING)
     } else {
-        BG_BUTTON_HOVER
+        (GOLD, GOLD_LIGHT)
     };
     ease_hover(key, element, move |element, hover| {
         element
-            .bg(alpha(lit, hover))
-            .text_color(rgb(blend(TEXT_MUTED, TEXT, hover)))
+            .bg(alpha(lit, 0.1 * hover))
+            .shadow(glow(lit, 0.5 * hover))
+            .text_color(rgb(blend(TEXT_MUTED, glyph_lit, hover)))
     })
 }
 

@@ -27,7 +27,7 @@ map 4:07 +1.2% · avg 6:30
 
 | Part | Meaning |
 |---|---|
-| `64.8%` | How much of the current level is done. Shown with **Level percentage**, off by default. |
+| `64.8%` | How much of the current level is done. Shown with **Level percentage**, off by default, and always in a pause. |
 | `+12.4%/h` | Experience per hour (`h`) of play, in percent of the current level. |
 | `level 75 in 2h 50m` | Playing time to level 75 at this rate: 2 hours 50 minutes. `next level in` when your level is not known yet; `—` when there is no estimate. |
 | `map 4:07 +1.2%` | Time in the current map and the experience it gave. Shown with **Map timer**, on by default. Dimmed once you leave the map; five minutes later it reads `last map`. |
@@ -40,15 +40,16 @@ the line reads `measuring rate…`. Times use `m` for minutes, `h` for hours and
 the Russian [interface language](settings.md#interface-language), the lines are in Russian:
 `64,8 % ◆ +12,4 %/ч · до 75 ур. 2 ч 50 мин`.
 
-In a town or hideout, and after five minutes of play without experience, the line dims and shows
-a pause instead of the rate and the time to level, which would still be those of the play before:
+In a town or hideout, and after five minutes of play without experience, the line dims and says
+only how much of the level is done, with **Level percentage** off too: the rate and the time to
+level would still be those of the play before.
 
 ```text
-64.8% ◆ paused · 12m
+64.8%
 ```
 
-`paused · 12m` is how long the pause has lasted. The map line keeps the map you left, dimmed and
-without the average. The pause does not change the rate: it is back as it was when you play again.
+The map line keeps the map you left, dimmed and without the average. The pause does not change the
+rate: it is back as it was when you play again.
 
 ## How it works
 

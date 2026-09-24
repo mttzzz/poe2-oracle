@@ -65,7 +65,7 @@
   "Show the XP overlay": "Показывать оверлей опыта",
   "Experience rate and time to the next level, above the flask panel": "Скорость набора опыта и время до следующего уровня — над панелью флаконов",
   "Level percentage": "Процент уровня",
-  "How much of the level is done": "Сколько уровня уже набрано",
+  "How much of the level is done; a pause always shows it": "Сколько уровня уже набрано; на паузе видно всегда",
   "Map timer": "Таймер карты",
   "Time in the current map, the experience it gave and the session's average map time, above the skill panel": "Время в текущей карте, опыт за неё и среднее время карты за сессию — над панелью умений",
   "Rate smoothing": "Сглаживание скорости",

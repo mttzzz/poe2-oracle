@@ -1740,7 +1740,9 @@ impl SettingsView {
                 toggle_row(
                     "xp-percent",
                     tr!("Level percentage"),
-                    Some(tr!("How much of the level is done")),
+                    Some(tr!(
+                        "How much of the level is done; a pause always shows it"
+                    )),
                     settings.xp_show_percent,
                     |settings| &mut settings.xp_show_percent,
                     cx,

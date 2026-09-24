@@ -35,7 +35,6 @@ pub(crate) const BG_PANEL: u32 = 0x0e0e10;
 pub(crate) const BG_TITLE: u32 = 0x060607;
 pub(crate) const BG_NAMEPLATE: u32 = 0x17130d;
 pub(crate) const BG_BUTTON_HOVER: u32 = 0x33261a;
-pub(crate) const BG_CLOSE_HOVER: u32 = 0x8b2a1e;
 pub(crate) const BORDER_GOLD: u32 = 0x6b5022;
 pub(crate) const GOLD: u32 = 0xd0913b;
 pub(crate) const TEXT: u32 = 0xdcdcdc;

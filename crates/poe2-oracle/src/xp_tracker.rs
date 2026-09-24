@@ -14,7 +14,7 @@
 //!   to the next level, whether the player is playing or paused ([`Activity`]), and the current
 //!   or last map run ([`MapStatus`]): its time, its experience, and the average time of the maps
 //!   before it.
-//! - [`Word`] and [`percent_words`], [`rate_words`], [`pause_words`], [`map_words`]: what the
+//! - [`Word`] and [`percent_words`], [`rate_words`], [`level_parts`], [`map_words`]: what the
 //!   overlay's plates say, word by word, in the interface language (`crate::i18n`), in full or in
 //!   the shorter [`Wording`] a rail too narrow for the full one gets.
 
@@ -1106,13 +1106,20 @@ pub fn rate_words(status: &XpStatus, wording: Wording) -> Vec<Word> {
     words
 }
 
-/// How long the player has been out of play, in the rate's place: `пауза · 12 мин`.
-pub fn pause_words(elapsed: Duration) -> Vec<Word> {
-    vec![
-        Word::Value(tr!("paused").into()),
-        Word::Dot,
-        Word::Value(i18n::duration(elapsed).into()),
-    ]
+/// The level plate's parts in `wording`: the percent when `show_percent`, then the rate
+/// ([`rate_words`]). In a pause the percent alone, switched on or not -- the rate and the time
+/// to the level would still be those of the play before the pause, and how long it has lasted is
+/// not worth the room (the owner's call, 2026-09-24) -- or nothing while the bar can't be read.
+pub fn level_parts(status: &XpStatus, show_percent: bool, wording: Wording) -> Vec<Vec<Word>> {
+    let percent = status.fraction.map(percent_words);
+    match status.activity {
+        Activity::Paused { .. } => percent.into_iter().collect(),
+        Activity::Playing => percent
+            .filter(|_| show_percent)
+            .into_iter()
+            .chain([rate_words(status, wording)])
+            .collect(),
+    }
 }
 
 /// The map run: `карта 4:07 +1,2 % · ср. 6:30`, and `последняя карта 9:00 +3,66 %` once it is
@@ -2081,17 +2088,15 @@ mod tests {
         words.iter().map(Word::text).collect::<Vec<_>>().join(" ")
     }
 
-    /// What the plates read for `status` in `wording`, the parts as `ui::xp_overlay` puts them
-    /// together -- a diamond apart there, `◆` here: the level plate (the percent, then the rate or
-    /// the pause) and, `|` after it, the map plate when there is a run to show.
+    /// What the plates read for `status` in `wording`, the percent switched on, the parts a
+    /// diamond apart as `ui::xp_overlay` draws them -- `◆` here: the level plate ([`level_parts`])
+    /// and, `|` after it, the map plate when there is a run to show.
     fn plates(status: &XpStatus, wording: Wording) -> String {
         let paused = matches!(status.activity, Activity::Paused { .. });
-        let mut level: Vec<Vec<Word>> = status.fraction.map(percent_words).into_iter().collect();
-        level.push(match status.activity {
-            Activity::Playing => rate_words(status, wording),
-            Activity::Paused { elapsed, .. } => pause_words(elapsed),
-        });
-        let level: Vec<String> = level.iter().map(|words| read(words)).collect();
+        let level: Vec<String> = level_parts(status, true, wording)
+            .iter()
+            .map(|words| read(words))
+            .collect();
         let level = level.join(" ◆ ");
         match status.map {
             Some(map) => format!("{level} | {}", read(&map_words(&map, paused, wording))),
@@ -2166,7 +2171,7 @@ mod tests {
             [
                 "64,8 % ◆ +12,4 %/ч · до 75 ур. 2 ч 50 мин | карта 4:07 +1,2 % · ср. 6:30",
                 "64,8 % ◆ +12,4 %/ч · до 75 ур. 2 ч 50 мин | последняя карта 4:07 +1,2 % · ср. 6:30",
-                "64,8 % ◆ пауза · 12 мин | последняя карта 9:00 +3,66 %",
+                "64,8 % | последняя карта 9:00 +3,66 %",
                 "64,8 % ◆ замер скорости…",
                 "64,8 % ◆ +12,4 %/ч · до ур. 2 ч 50 мин",
                 "64,8 % ◆ +0 %/ч · до 75 ур. —",
@@ -2177,7 +2182,7 @@ mod tests {
             [
                 "64.8% ◆ +12.4%/h · level 75 in 2h 50m | map 4:07 +1.2% · avg 6:30",
                 "64.8% ◆ +12.4%/h · level 75 in 2h 50m | last map 4:07 +1.2% · avg 6:30",
-                "64.8% ◆ paused · 12m | last map 9:00 +3.66%",
+                "64.8% | last map 9:00 +3.66%",
                 "64.8% ◆ measuring rate…",
                 "64.8% ◆ +12.4%/h · next level in 2h 50m",
                 "64.8% ◆ +0%/h · level 75 in —",
@@ -2191,7 +2196,7 @@ mod tests {
             [
                 "64,8 % ◆ +12,4 %/ч · 2 ч 50 мин | карта 4:07 +1,2 %",
                 "64,8 % ◆ +12,4 %/ч · 2 ч 50 мин | карта 4:07 +1,2 %",
-                "64,8 % ◆ пауза · 12 мин | карта 9:00 +3,66 %",
+                "64,8 % | карта 9:00 +3,66 %",
                 "64,8 % ◆ +0 %/ч · —",
             ]
         );
