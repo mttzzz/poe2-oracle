@@ -9,7 +9,7 @@
 //! an offline unit test), but real trade-API *shape* (`{mod_type}.{opaque id}` id strings,
 //! sign-less `#`-templated text).
 
-use item_parser::{ItemLanguage, ParseError, parse_clipboard};
+use item_parser::{IndexedCatalog, ItemLanguage, ParseError, parse_clipboard};
 use poe2_domain::{
     BlightedKind, ElementKind, ItemRarity, ModGeneration, ModifierType, StatCatalog, TradeStat,
 };
@@ -22,8 +22,8 @@ fn stat(mod_type: &str, text: &str, id: &str) -> TradeStat {
     }
 }
 
-fn test_catalog() -> StatCatalog {
-    StatCatalog {
+fn test_catalog() -> IndexedCatalog {
+    IndexedCatalog::new(StatCatalog {
         stats: vec![
             // MagicItem / RareItem / RareWithImplicit / ArmourHighValueRareItem / TwoImplicitItem
             stat(
@@ -116,7 +116,7 @@ fn test_catalog() -> StatCatalog {
             stat("explicit", "#% to Fire Resistance", "stat_fire_res"),
             stat("explicit", "# to Stun Threshold", "stat_stun_threshold"),
         ],
-    }
+    })
 }
 
 fn parse(fixture: &str, language: ItemLanguage) -> poe2_domain::ParsedItem {
@@ -487,13 +487,13 @@ fn armour_high_value_rare_item_price_note() {
 fn a_line_worded_against_the_catalog_is_negated_and_keeps_its_own_wording() {
     // The live catalog words bleed duration only as `increased` (2026-09-23); the fixture's
     // "of Allaying" suffix prints `48(50-46)% reduced Duration of Bleeding on You`.
-    let catalog = StatCatalog {
+    let catalog = IndexedCatalog::new(StatCatalog {
         stats: vec![stat(
             "explicit",
             "#% increased Duration of Bleeding on You",
             "stat_1692879867",
         )],
-    };
+    });
     let text = std::fs::read_to_string(format!(
         "{}/tests/fixtures/armour_high_value_rare_item_en.txt",
         env!("CARGO_MANIFEST_DIR")
@@ -1298,13 +1298,13 @@ fn classes_without_a_trade_category_parse_without_one() {
 /// a text written `\n`. Against that whole catalog (8298 entries) every line of every one of
 /// these items resolved; this is the slice those lines used, plus the global stats behind the
 /// local ones a weapon resolves to.
-fn ru_live_catalog() -> StatCatalog {
+fn ru_live_catalog() -> IndexedCatalog {
     let rows = std::fs::read_to_string(format!(
         "{}/tests/fixtures/ru_live_stats.tsv",
         env!("CARGO_MANIFEST_DIR")
     ))
     .expect("ru_live_stats.tsv");
-    StatCatalog {
+    IndexedCatalog::new(StatCatalog {
         stats: rows
             .lines()
             .map(|row| {
@@ -1317,7 +1317,7 @@ fn ru_live_catalog() -> StatCatalog {
                 }
             })
             .collect(),
-    }
+    })
 }
 
 fn parse_ru_live(fixture: &str) -> poe2_domain::ParsedItem {
@@ -1832,7 +1832,7 @@ fn printed_forms_the_catalog_lacks_resolve_to_their_stats() {
             .clone()
     };
 
-    let ru = StatCatalog {
+    let ru = IndexedCatalog::new(StatCatalog {
         stats: vec![
             stat(
                 "explicit",
@@ -1850,7 +1850,7 @@ fn printed_forms_the_catalog_lacks_resolve_to_their_stats() {
                 "stat_448592698|44",
             ),
         ],
-    };
+    });
     let talisman = "Класс предмета: Талисманы\nРедкость: Редкий\nТест\nЖестокий талисман\n\
         --------\nУровень предмета: 65\n--------\n\
         { Суффикс \"умения\" (Уровень: 2) }\n30% снижение требований к характеристикам\n\
@@ -1872,7 +1872,7 @@ fn printed_forms_the_catalog_lacks_resolve_to_their_stats() {
     // A signed catalog text.
     assert_eq!(found(&item, "explicit.stat_448592698|44").value, 1.0);
 
-    let en = StatCatalog {
+    let en = IndexedCatalog::new(StatCatalog {
         stats: vec![
             stat(
                 "explicit",
@@ -1884,7 +1884,7 @@ fn printed_forms_the_catalog_lacks_resolve_to_their_stats() {
             stat("explicit", "Blood Magic", "stat_2801937280"),
             stat("explicit", "Blood Magic", "stat_3831171903|5"),
         ],
-    };
+    });
     let ring = "Item Class: Rings\nRarity: Rare\nTest Loop\nRuby Ring\n--------\n\
         Item Level: 80\n--------\n\
         { Prefix Modifier \"Blinding\" (Tier: 1) }\nBlind Enemies on Hit\n\

@@ -338,7 +338,7 @@ fn json_number(value: f64) -> Option<Number> {
 
 #[cfg(test)]
 mod tests {
-    use item_parser::{ItemLanguage, parse_clipboard};
+    use item_parser::{IndexedCatalog, ItemLanguage, parse_clipboard};
     use poe2_domain::{StatCatalog, TradeStat};
     use serde_json::{Value, json};
 
@@ -347,10 +347,10 @@ mod tests {
     /// A slice of a live trade stat catalog, `id\ttype\ttext` per line, a text's line breaks
     /// written `\n`: the Russian one of `item-parser`'s live fixtures, and the English stats the
     /// English fixtures here resolve to (2026-09-23, with every entry sharing their texts).
-    fn catalog(path: &str) -> StatCatalog {
+    fn catalog(path: &str) -> IndexedCatalog {
         let rows = std::fs::read_to_string(format!("{}/{path}", env!("CARGO_MANIFEST_DIR")))
             .expect("the catalog slice");
-        StatCatalog {
+        IndexedCatalog::new(StatCatalog {
             stats: rows
                 .lines()
                 .map(|row| {
@@ -363,7 +363,7 @@ mod tests {
                     }
                 })
                 .collect(),
-        }
+        })
     }
 
     /// `item-parser`'s fixture `name`, parsed in its client's language -- which its name tells.

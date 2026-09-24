@@ -7,7 +7,7 @@
 //! Russian names are the live RU client's own (`ru_live_*` fixtures); their ids are the English
 //! entries' (ids are the same on every site), matched through EE2's `ru/items.ndjson` name pairs.
 
-use item_parser::{ItemLanguage, parse_clipboard};
+use item_parser::{IndexedCatalog, ItemLanguage, parse_clipboard};
 use poe2_domain::{ItemRarity, ParsedItem, StatCatalog};
 use stat_filters::SearchProfile;
 use trade_client::catalog::StaticCurrency;
@@ -124,7 +124,7 @@ fn parse_fixture(name: &str) -> ParsedItem {
     } else {
         ItemLanguage::English
     };
-    parse_clipboard(&text, language, &StatCatalog::default())
+    parse_clipboard(&text, language, &IndexedCatalog::default())
         .unwrap_or_else(|e| panic!("{name}: {e}"))
 }
 
@@ -400,7 +400,7 @@ fn exchange_kinds_without_a_fixture_route_to_the_market() {
     ] {
         let text =
             format!("Item Class: {class}\nRarity: Currency\n{name}\n--------\nStack Size: 1/10\n");
-        let item = parse_clipboard(&text, ItemLanguage::English, &StatCatalog::default())
+        let item = parse_clipboard(&text, ItemLanguage::English, &IndexedCatalog::default())
             .unwrap_or_else(|e| panic!("{name}: {e}"));
         match route_search(&item, &catalog, &[]) {
             SearchRoute::Market { trade_id } => assert_eq!(trade_id, id),
@@ -415,7 +415,7 @@ fn currency_missing_from_the_exchange_is_searched_by_its_type() {
     // no exchange entry.
     let text = "Item Class: Inscribed Ultimatum\nRarity: Currency\nInscribed Ultimatum\n--------\nArea Level: 75\nNumber of Trials: 4\nVictorious\n";
     let item =
-        parse_clipboard(text, ItemLanguage::English, &StatCatalog::default()).expect("parses");
+        parse_clipboard(text, ItemLanguage::English, &IndexedCatalog::default()).expect("parses");
     assert_eq!(item.area_level, Some(75));
     match route_search(&item, &exchange_catalog(), &[]) {
         SearchRoute::Exact { exact_type } => assert_eq!(exact_type, "Inscribed Ultimatum"),
@@ -473,7 +473,7 @@ fn gems_waystones_and_tablets_carry_ee2s_property_rows() {
 
     // A rare tablet: at least its 10 uses, every mod at exactly its roll, the implicit left out.
     // Ids and texts as the live EN catalog has them (2026-09-22).
-    let catalog = StatCatalog {
+    let catalog = IndexedCatalog::new(StatCatalog {
         stats: vec![
             poe2_domain::TradeStat {
                 id: "implicit.stat_4041853756".to_owned(),
@@ -486,7 +486,7 @@ fn gems_waystones_and_tablets_carry_ee2s_property_rows() {
                 mod_type: "explicit".to_owned(),
             },
         ],
-    };
+    });
     let text = std::fs::read_to_string(format!(
         "{}/tests/fixtures/sidekick_irradiated_tablet_en.txt",
         env!("CARGO_MANIFEST_DIR")

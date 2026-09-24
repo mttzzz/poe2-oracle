@@ -32,30 +32,33 @@
 //! names -- not its `type` field: rune stats are `rune.stat_*` ids typed `"augment"`.
 
 use std::borrow::Cow;
-use std::cell::OnceCell;
 use std::collections::HashMap;
+use std::ops::Deref;
+use std::sync::OnceLock;
 
-use poe2_domain::{ModifierType, ParsedStat, TradeStat};
+use poe2_domain::{ModifierType, ParsedStat, StatCatalog, TradeStat};
 
 use crate::client_strings::ClientStrings;
 use crate::roll::{NumericRun, find_numeric_runs, template_candidates};
 
-/// The catalog, indexed for one `parse_clipboard` call.
-pub struct CatalogIndex<'a> {
-    stats: &'a [TradeStat],
-    /// Single-line texts by `(mod type, text)`, `unsigned`.
-    single_line: HashMap<(&'a str, Cow<'a, str>), &'a TradeStat>,
-    /// Multi-line texts by `(mod type, text without the spaces around its line breaks)`,
-    /// `unsigned`.
-    multi_line: HashMap<(&'a str, String), &'a TradeStat>,
+/// A trade site's stat catalog, indexed for matching printed stat lines: build it when the
+/// catalog is loaded and parse every item against it. `parse_clipboard` used to index the
+/// catalog for each item it parsed, which was nearly all of a parse's time (0.80 ms of 0.85,
+/// measured 2026-09-24 over the 110 fixture items). Derefs to the catalog it holds.
+pub struct IndexedCatalog {
+    catalog: StatCatalog,
+    /// Single-line texts by mod type, then text (`unsigned`): their stats' positions in
+    /// `catalog.stats`.
+    single_line: HashMap<String, HashMap<String, usize>>,
+    /// Multi-line texts by mod type, then text without the spaces around its line breaks
+    /// (`unsigned`).
+    multi_line: HashMap<String, HashMap<String, usize>>,
     /// The most lines any catalog text spans.
     max_lines: usize,
-    /// Every stat and its words by `(mod type, word count)`, for the grammatical-number
-    /// fallback; built by the first line that falls through to it, which most items never have.
-    by_word_count: OnceCell<WordCountIndex<'a>>,
+    /// Every stat by mod type, then word count, for the grammatical-number fallback; built by
+    /// the first line that falls through to it, which most items never have.
+    by_word_count: OnceLock<HashMap<String, HashMap<usize, Vec<usize>>>>,
 }
-
-type WordCountIndex<'a> = HashMap<(&'a str, usize), Vec<(&'a TradeStat, Vec<&'a str>)>>;
 
 /// A catalog entry's mod type: its id's `rune`/`explicit`/... prefix.
 fn mod_type_of(stat: &TradeStat) -> &str {
@@ -94,67 +97,66 @@ fn words(text: &str) -> Vec<&str> {
     words
 }
 
-impl<'a> CatalogIndex<'a> {
-    pub fn build(stats: &'a [TradeStat]) -> Self {
-        let mut single_line = HashMap::with_capacity(stats.len());
-        let mut multi_line = HashMap::new();
+impl IndexedCatalog {
+    pub fn new(catalog: StatCatalog) -> Self {
+        let mut single_line: HashMap<String, HashMap<String, usize>> = HashMap::new();
+        let mut multi_line: HashMap<String, HashMap<String, usize>> = HashMap::new();
         let mut max_lines = 1;
-        for stat in stats {
+        for (position, stat) in catalog.stats.iter().enumerate() {
             let mod_type = mod_type_of(stat);
             if stat.text.contains('\n') {
                 max_lines = max_lines.max(stat.text.split('\n').count());
-                multi_line.insert(
-                    (
-                        mod_type,
-                        unsigned(&without_break_spaces(&stat.text)).into_owned(),
-                    ),
-                    stat,
+                multi_line.entry(mod_type.to_owned()).or_default().insert(
+                    unsigned(&without_break_spaces(&stat.text)).into_owned(),
+                    position,
                 );
             } else {
-                let key = (mod_type, unsigned(&stat.text));
+                let texts = single_line.entry(mod_type.to_owned()).or_default();
+                let text = unsigned(&stat.text).into_owned();
                 // A text that is both a stat's own and another stat's option (`Blood Magic`, a
                 // keystone and an option of `#(Ancestral Bond-Zealot's Oath)` in the live EN
                 // catalog, 2026-09-23) means the stat itself, as EE2 reads it.
                 let option_over_stat = stat.id.contains('|')
-                    && single_line
-                        .get(&key)
-                        .is_some_and(|kept: &&TradeStat| !kept.id.contains('|'));
+                    && texts
+                        .get(&text)
+                        .is_some_and(|&kept| !catalog.stats[kept].id.contains('|'));
                 if !option_over_stat {
-                    single_line.insert(key, stat);
+                    texts.insert(text, position);
                 }
             }
         }
         Self {
-            stats,
+            catalog,
             single_line,
             multi_line,
             max_lines,
-            by_word_count: OnceCell::new(),
+            by_word_count: OnceLock::new(),
         }
     }
 
     /// The stat printed exactly as `text` (line-break spacing aside) under `mod_type`.
-    fn exact(&self, mod_type: &str, text: &str) -> Option<&'a TradeStat> {
-        if text.contains('\n') {
-            self.multi_line
-                .get(&(mod_type, without_break_spaces(text)))
-                .copied()
+    fn exact(&self, mod_type: &str, text: &str) -> Option<&TradeStat> {
+        let position = if text.contains('\n') {
+            *self
+                .multi_line
+                .get(mod_type)?
+                .get(without_break_spaces(text).as_str())?
         } else {
-            self.single_line
-                .get(&(mod_type, Cow::Borrowed(text)))
-                .copied()
-        }
+            *self.single_line.get(mod_type)?.get(text)?
+        };
+        Some(&self.catalog.stats[position])
     }
 
-    fn by_word_count(&self) -> &WordCountIndex<'a> {
+    fn by_word_count(&self) -> &HashMap<String, HashMap<usize, Vec<usize>>> {
         self.by_word_count.get_or_init(|| {
-            let mut buckets: WordCountIndex = HashMap::new();
-            for stat in self.stats {
-                let words = words(&stat.text);
+            let mut buckets: HashMap<String, HashMap<usize, Vec<usize>>> = HashMap::new();
+            for (position, stat) in self.catalog.stats.iter().enumerate() {
                 buckets
-                    .entry((mod_type_of(stat), words.len()))
+                    .entry(mod_type_of(stat).to_owned())
                     .or_default()
-                    .push((stat, words));
+                    .entry(words(&stat.text).len())
+                    .or_default()
+                    .push(position);
             }
             buckets
         })
@@ -168,12 +170,13 @@ impl<'a> CatalogIndex<'a> {
         mod_type: &str,
         text: &str,
         cs: &ClientStrings,
-    ) -> Option<(&'a TradeStat, Option<f64>)> {
+    ) -> Option<(&TradeStat, Option<f64>)> {
         let text_words = words(text);
-        let bucket = self.by_word_count().get(&(mod_type, text_words.len()))?;
+        let bucket = self.by_word_count().get(mod_type)?.get(&text_words.len())?;
         let mut found: Option<(&TradeStat, Option<f64>)> = None;
-        for (stat, stat_words) in bucket {
-            let Some(implied) = same_but_number(&text_words, stat_words, cs) else {
+        for &position in bucket {
+            let stat = &self.catalog.stats[position];
+            let Some(implied) = same_but_number(&text_words, &words(&stat.text), cs) else {
                 continue;
             };
             match found {
@@ -185,8 +188,22 @@ impl<'a> CatalogIndex<'a> {
         found
     }
 
-    fn by_id(&self, id: &str) -> Option<&'a TradeStat> {
-        self.stats.iter().find(|stat| stat.id == id)
+    fn by_id(&self, id: &str) -> Option<&TradeStat> {
+        self.catalog.stats.iter().find(|stat| stat.id == id)
+    }
+}
+
+impl Deref for IndexedCatalog {
+    type Target = StatCatalog;
+
+    fn deref(&self) -> &StatCatalog {
+        &self.catalog
+    }
+}
+
+impl Default for IndexedCatalog {
+    fn default() -> Self {
+        Self::new(StatCatalog::default())
     }
 }
 
@@ -269,7 +286,7 @@ const LOCAL_STATS: [(&str, &str, LocalOn); 8] = [
 fn localized<'a>(
     stat: &'a TradeStat,
     category: Option<&str>,
-    index: &CatalogIndex<'a>,
+    index: &'a IndexedCatalog,
 ) -> &'a TradeStat {
     let Some(category) = category else {
         return stat;
@@ -309,7 +326,7 @@ fn resolve_text<'a>(
     text: &str,
     mod_type: &str,
     cs: &ClientStrings,
-    index: &CatalogIndex<'a>,
+    index: &'a IndexedCatalog,
 ) -> Option<Resolved<'a>> {
     if let Some(stat) = index.exact(mod_type, text) {
         return Some(Resolved {
@@ -350,7 +367,7 @@ fn by_printed_form<'a>(
     text: &str,
     mod_type: &str,
     cs: &ClientStrings,
-    index: &CatalogIndex<'a>,
+    index: &'a IndexedCatalog,
 ) -> Option<Resolved<'a>> {
     let forms = if text.contains('\n') {
         cs.stat_forms.get(&without_break_spaces(text))
@@ -392,7 +409,7 @@ pub fn resolve_stat_lines(
     modifier_type: ModifierType,
     category: Option<&str>,
     cs: &ClientStrings,
-    index: &CatalogIndex,
+    index: &IndexedCatalog,
 ) -> Vec<ParsedStat> {
     let mut stats = Vec::new();
     let mut start = 0;
@@ -440,7 +457,7 @@ fn resolve_span(
     modifier_type: ModifierType,
     category: Option<&str>,
     cs: &ClientStrings,
-    index: &CatalogIndex,
+    index: &IndexedCatalog,
 ) -> Option<ParsedStat> {
     // The client prints `()` where a stat lacks an advanced description (a Megalomaniac's
     // `Allocates Incendiary()`); EE2's `_statPlaceholderGenerator` drops it before matching.
@@ -475,7 +492,7 @@ fn stat_from<'a>(
     category: Option<&str>,
     runs: &[NumericRun],
     unscalable: bool,
-    index: &CatalogIndex<'a>,
+    index: &'a IndexedCatalog,
 ) -> ParsedStat {
     let stat = localized(resolved.stat, category, index);
     let mut parsed = rolled(Some(stat.id.clone()), stat.text.clone(), runs);

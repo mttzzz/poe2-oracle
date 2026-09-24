@@ -23,7 +23,7 @@
 
 use poe2_domain::{ModGeneration, ModifierInfo, ModifierType, ParsedItem, ParsedModifier};
 
-use crate::catalog_match::{self, CatalogIndex};
+use crate::catalog_match::{self, IndexedCatalog};
 use crate::client_strings::ClientStrings;
 
 const SCOURGE_SUFFIX: &str = " (scourge)";
@@ -96,7 +96,7 @@ fn resolve_and_push(
     info: ModifierInfo,
     stat_lines: &[String],
     cs: &ClientStrings,
-    index: &CatalogIndex,
+    index: &IndexedCatalog,
 ) {
     // An unrevealed desecrated affix prints a placeholder line in place of its stats (EE2's
     // `parseModType` `VEILED_PREFIX`/`VEILED_SUFFIX`): nothing to resolve, and nothing unknown.
@@ -128,7 +128,7 @@ fn parse_bracket_form(
     section: &[String],
     item: &mut ParsedItem,
     cs: &ClientStrings,
-    index: &CatalogIndex,
+    index: &IndexedCatalog,
 ) {
     // Group lines into (bracket_line, stat_lines) blocks; blank lines between blocks are
     // tolerated and dropped entirely (never treated as stat lines) -- confirmed real behavior,
@@ -254,7 +254,7 @@ fn parse_flat_form(
     section: &[String],
     item: &mut ParsedItem,
     cs: &ClientStrings,
-    index: &CatalogIndex,
+    index: &IndexedCatalog,
 ) {
     let refs: Vec<&str> = section
         .iter()
@@ -279,7 +279,7 @@ pub fn parse_modifier_section(
     section: &[String],
     item: &mut ParsedItem,
     cs: &ClientStrings,
-    index: &CatalogIndex,
+    index: &IndexedCatalog,
 ) {
     if section.iter().any(|line| is_mod_info_line(line)) {
         parse_bracket_form(section, item, cs, index);

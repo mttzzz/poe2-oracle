@@ -16,13 +16,15 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::ExitCode;
 
-use item_parser::{ItemLanguage, ParseError, detect_item_language, parse_clipboard};
-use poe2_domain::{ParsedItem, StatCatalog};
+use item_parser::{
+    IndexedCatalog, ItemLanguage, ParseError, detect_item_language, parse_clipboard,
+};
+use poe2_domain::ParsedItem;
 use trade_client::catalog::{ItemTypeEntry, StaticCurrency};
 use trade_client::{SearchRoute, route_search};
 
 struct Catalogs {
-    stats: StatCatalog,
+    stats: IndexedCatalog,
     currencies: Vec<StaticCurrency>,
     item_types: Vec<ItemTypeEntry>,
 }
@@ -42,7 +44,7 @@ macro_rules! cached {
 
 fn catalogs(dir: &Path, suffix: &str) -> Catalogs {
     Catalogs {
-        stats: cached!(dir, format!("stat-catalog{suffix}.json")),
+        stats: IndexedCatalog::new(cached!(dir, format!("stat-catalog{suffix}.json"))),
         currencies: cached!(dir, format!("static-items{suffix}.json")),
         item_types: cached!(dir, format!("item-types{suffix}.json")),
     }

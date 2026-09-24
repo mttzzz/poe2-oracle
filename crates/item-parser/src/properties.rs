@@ -16,7 +16,7 @@
 //! section and moves to the *next parser* rather than looping the same parser over every
 //! remaining section).
 //!
-//! `SectionParser`'s signature includes `&CatalogIndex` (the plan's own prose omits it) because
+//! `SectionParser`'s signature includes `&IndexedCatalog` (the plan's own prose omits it) because
 //! `parse_grants_skill` needs catalog access to resolve its skill-grant stat like any other mod
 //! -- Rust's `fn` pointers stored in one array must share an identical signature, so every
 //! parser takes it even though most ignore it.
@@ -26,7 +26,7 @@ use poe2_domain::{
     ParsedModifier, Requirements, TrialsInfo, UltimatumHint,
 };
 
-use crate::catalog_match::{self, CatalogIndex};
+use crate::catalog_match::{self, IndexedCatalog};
 use crate::client_strings::ClientStrings;
 use crate::roll::find_numeric_runs;
 
@@ -37,7 +37,7 @@ pub enum SectionResult {
 }
 
 pub type SectionParser =
-    fn(&[String], &mut ParsedItem, &ClientStrings, &CatalogIndex) -> SectionResult;
+    fn(&[String], &mut ParsedItem, &ClientStrings, &IndexedCatalog) -> SectionResult;
 
 pub const PARSERS: &[SectionParser] = &[
     parse_properties_block,
@@ -171,7 +171,7 @@ fn parse_properties_block(
     section: &[String],
     item: &mut ParsedItem,
     cs: &ClientStrings,
-    _index: &CatalogIndex,
+    _index: &IndexedCatalog,
 ) -> SectionResult {
     let recognized = section.iter().any(|line| {
         line.starts_with(cs.quality)
@@ -253,7 +253,7 @@ fn parse_requires(
     section: &[String],
     item: &mut ParsedItem,
     cs: &ClientStrings,
-    _index: &CatalogIndex,
+    _index: &IndexedCatalog,
 ) -> SectionResult {
     // Gems can carry a SECOND, differently-shaped `Requires:` line (allowed weapon types, e.g.
     // `Requires: Spear, Bow, Crossbow`) that would otherwise silently overwrite good level/attr
@@ -284,7 +284,7 @@ fn parse_item_level(
     section: &[String],
     item: &mut ParsedItem,
     cs: &ClientStrings,
-    _index: &CatalogIndex,
+    _index: &IndexedCatalog,
 ) -> SectionResult {
     let Some(v) = section.iter().find_map(|l| u32_after(l, cs.item_level)) else {
         return SectionResult::Skipped;
@@ -317,7 +317,7 @@ fn parse_sockets(
     section: &[String],
     item: &mut ParsedItem,
     cs: &ClientStrings,
-    _index: &CatalogIndex,
+    _index: &IndexedCatalog,
 ) -> SectionResult {
     let Some(line) = section.iter().find(|l| l.starts_with(cs.sockets)) else {
         return SectionResult::Skipped;
@@ -367,7 +367,7 @@ fn parse_waystone_block(
     section: &[String],
     item: &mut ParsedItem,
     cs: &ClientStrings,
-    _index: &CatalogIndex,
+    _index: &IndexedCatalog,
 ) -> SectionResult {
     let pack_size = |line: &str| {
         cs.pack_size
@@ -456,7 +456,7 @@ fn parse_area_level(
     section: &[String],
     item: &mut ParsedItem,
     cs: &ClientStrings,
-    _index: &CatalogIndex,
+    _index: &IndexedCatalog,
 ) -> SectionResult {
     let Some(area_level) = section.iter().find_map(|l| u32_after(l, cs.area_level)) else {
         return SectionResult::Skipped;
@@ -486,7 +486,7 @@ fn parse_grants_skill(
     section: &[String],
     item: &mut ParsedItem,
     cs: &ClientStrings,
-    index: &CatalogIndex,
+    index: &IndexedCatalog,
 ) -> SectionResult {
     if !section.iter().any(|l| l.starts_with(cs.grants_skill)) {
         return SectionResult::Skipped;
@@ -533,7 +533,7 @@ fn parse_unidentified(
     section: &[String],
     item: &mut ParsedItem,
     cs: &ClientStrings,
-    _index: &CatalogIndex,
+    _index: &IndexedCatalog,
 ) -> SectionResult {
     let Some(caps) = section.iter().find_map(|l| cs.unidentified.captures(l)) else {
         return SectionResult::Skipped;
@@ -553,7 +553,7 @@ fn parse_corrupted(
     section: &[String],
     item: &mut ParsedItem,
     cs: &ClientStrings,
-    _index: &CatalogIndex,
+    _index: &IndexedCatalog,
 ) -> SectionResult {
     if !single_line_flag(section, cs.corrupted) {
         return SectionResult::Skipped;
@@ -566,7 +566,7 @@ fn parse_double_corrupted(
     section: &[String],
     item: &mut ParsedItem,
     cs: &ClientStrings,
-    _index: &CatalogIndex,
+    _index: &IndexedCatalog,
 ) -> SectionResult {
     if !single_line_flag(section, cs.double_corrupted) {
         return SectionResult::Skipped;
@@ -579,7 +579,7 @@ fn parse_mirrored(
     section: &[String],
     item: &mut ParsedItem,
     cs: &ClientStrings,
-    _index: &CatalogIndex,
+    _index: &IndexedCatalog,
 ) -> SectionResult {
     if !single_line_flag(section, cs.mirrored) {
         return SectionResult::Skipped;
@@ -592,7 +592,7 @@ fn parse_sanctified(
     section: &[String],
     item: &mut ParsedItem,
     cs: &ClientStrings,
-    _index: &CatalogIndex,
+    _index: &IndexedCatalog,
 ) -> SectionResult {
     if !single_line_flag(section, cs.sanctified) {
         return SectionResult::Skipped;
@@ -605,7 +605,7 @@ fn parse_fractured_item(
     section: &[String],
     _item: &mut ParsedItem,
     cs: &ClientStrings,
-    _index: &CatalogIndex,
+    _index: &IndexedCatalog,
 ) -> SectionResult {
     if !single_line_flag(section, cs.fractured_item) {
         return SectionResult::Skipped;
@@ -622,7 +622,7 @@ fn parse_unmodifiable(
     section: &[String],
     item: &mut ParsedItem,
     cs: &ClientStrings,
-    _index: &CatalogIndex,
+    _index: &IndexedCatalog,
 ) -> SectionResult {
     if !single_line_flag(section, cs.unmodifiable) {
         return SectionResult::Skipped;
@@ -635,7 +635,7 @@ fn parse_price_note(
     section: &[String],
     item: &mut ParsedItem,
     cs: &ClientStrings,
-    _index: &CatalogIndex,
+    _index: &IndexedCatalog,
 ) -> SectionResult {
     let Some(line) = section.iter().find(|l| l.starts_with(cs.price_note)) else {
         return SectionResult::Skipped;

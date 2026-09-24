@@ -27,8 +27,8 @@ use gpui::{
     KeyDownEvent,
 };
 use http_client::HttpClient;
-use item_parser::{ItemLanguage, ParseError};
-use poe2_domain::{ItemRarity, ParsedItem, StatCatalog};
+use item_parser::{IndexedCatalog, ItemLanguage, ParseError};
+use poe2_domain::{ItemRarity, ParsedItem};
 use trade_client::catalog::{ItemTypeEntry, StaticCurrency};
 use trade_client::cx::{Market, MarketPrice};
 use trade_client::private_leagues::{self, PrivateLeague};
@@ -57,12 +57,6 @@ use crate::roll_slider::{self, Handle, Slider};
 use crate::session::SessionStatus;
 use crate::settings::{self, Hotkey, LeagueChoice, QuickAction, Settings, WaystoneMark};
 use crate::tr;
-
-/// Defaults matching `HostClipboard.ts`'s real, working constants (see `clipboard_poll`'s own
-/// doc comment): 48ms initial delay and poll interval, 500ms total budget.
-const CLIPBOARD_INITIAL_DELAY: Duration = Duration::from_millis(48);
-const CLIPBOARD_POLL_INTERVAL: Duration = Duration::from_millis(48);
-const CLIPBOARD_TIMEOUT: Duration = Duration::from_millis(500);
 
 /// How long after a burst of foreground changes the hotkey re-checks where the foreground settled.
 const FOREGROUND_SETTLE: Duration = Duration::from_millis(250);
@@ -368,12 +362,12 @@ struct PanelDrag {
 }
 
 /// One trade site's localized catalogs: the stat templates `item-parser` matches mod lines
-/// against, the exchange-tradable static items `route_search` matches currency-like items
+/// against (indexed once, as they load), the exchange-tradable static items `route_search` matches currency-like items
 /// against, the base types it recognizes a magic item's base in, and the leagues by their names
 /// there. All are in the site's language, so a Russian item needs the Russian site's set.
 #[derive(Default)]
 struct SiteCatalog {
-    stats: StatCatalog,
+    stats: IndexedCatalog,
     currencies: Vec<StaticCurrency>,
     item_types: Vec<ItemTypeEntry>,
     leagues: Vec<League>,
@@ -1723,7 +1717,7 @@ async fn load_site_catalog(
     .await
     .with_context(|| format!("loading {site_name} league list"))?;
     Ok(SiteCatalog {
-        stats,
+        stats: IndexedCatalog::new(stats),
         currencies,
         item_types,
         leagues,
@@ -2066,13 +2060,9 @@ async fn run_price_check(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
     if hotkey.shift {
         release.push(VK_SHIFT);
     }
-    let clipboard_text = clipboard_poll::poll_item_clipboard(
-        cx,
-        move || synth_input::send_copy_item_combo(mod_key, keep_mod_keys, &release),
-        CLIPBOARD_INITIAL_DELAY,
-        CLIPBOARD_POLL_INTERVAL,
-        CLIPBOARD_TIMEOUT,
-    )
+    let clipboard_text = clipboard_poll::poll_item_clipboard(cx, move || {
+        synth_input::send_copy_item_combo(mod_key, keep_mod_keys, &release)
+    })
     .await;
 
     let Some(text) = clipboard_text else {

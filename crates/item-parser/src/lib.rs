@@ -19,7 +19,9 @@ pub mod roll;
 pub mod sections;
 pub mod stat_forms;
 
-use poe2_domain::{ModifierType, ParsedItem, StatCatalog};
+use poe2_domain::{ModifierType, ParsedItem};
+
+pub use catalog_match::IndexedCatalog;
 
 /// A display/parse language for clipboard item text: the two game client languages this project
 /// supports. The trade API knows more, but nothing here needs them yet.
@@ -131,13 +133,14 @@ pub fn looks_like_item_text(text: &str) -> bool {
 }
 
 /// Parses real PoE2 Ctrl+C clipboard text into a `ParsedItem`. `catalog` is the live trade-API
-/// stat catalog (`trade_client::catalog::fetch_stat_catalog`) -- every numeric mod stat is
-/// resolved against it; a stat with no catalog match still parses (kept with `stat_id: None`,
-/// surfaced via `ParsedItem::unknown_mods`), it just never fails the whole parse.
+/// stat catalog (`trade_client::catalog::fetch_stat_catalog`), indexed once when it loads
+/// ([`IndexedCatalog::new`]) -- every numeric mod stat is resolved against it; a stat with no
+/// catalog match still parses (kept with `stat_id: None`, surfaced via
+/// `ParsedItem::unknown_mods`), it just never fails the whole parse.
 pub fn parse_clipboard(
     text: &str,
     language: ItemLanguage,
-    catalog: &StatCatalog,
+    catalog: &IndexedCatalog,
 ) -> Result<ParsedItem, ParseError> {
     if text.trim().is_empty() {
         return Err(ParseError::Empty);
@@ -165,13 +168,11 @@ pub fn parse_clipboard(
     let mut item = nameplate::parse_nameplate(&nameplate_section, cs, language)?;
     item.raw_text = text.to_string();
 
-    let index = catalog_match::CatalogIndex::build(&catalog.stats);
-
     // Ordered property parsers: each call claims at most one remaining section, in the order
     // given by `properties::PARSERS` -- later parsers only ever see whatever earlier ones left.
     for parser in properties::PARSERS {
         if let Some(pos) = sections.iter().position(|section| {
-            parser(section, &mut item, cs, &index) == properties::SectionResult::Parsed
+            parser(section, &mut item, cs, catalog) == properties::SectionResult::Parsed
         }) {
             sections.remove(pos);
         }
@@ -186,7 +187,7 @@ pub fn parse_clipboard(
     while i < sections.len() {
         if modifiers::section_is_modifier_block(&sections[i]) {
             let section = sections.remove(i);
-            modifiers::parse_modifier_section(&section, &mut item, cs, &index);
+            modifiers::parse_modifier_section(&section, &mut item, cs, catalog);
         } else {
             i += 1;
         }

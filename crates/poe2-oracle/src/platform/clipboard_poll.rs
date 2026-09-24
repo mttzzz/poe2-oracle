@@ -7,11 +7,9 @@
 //! on: the privacy marks of what the player copied ([`holds_private_content`]) and of a quick
 //! action's text ([`write_private_text`]).
 //!
-//! Sequence and default timing (`initial_delay`/`poll_interval` = 48ms, `timeout` = 500ms) are
-//! ported from `exiled-exchange-2/main/src/shortcuts/HostClipboard.ts`'s real, working
-//! `POLL_DELAY`/`POLL_LIMIT` constants: `POLL_DELAY` is used both as the delay before the first
-//! read attempt and as the interval between subsequent attempts, and `POLL_LIMIT` is a budget
-//! compared against an accumulated poll-interval count each iteration, not a single fixed wait.
+//! The sequence is ported from `exiled-exchange-2/main/src/shortcuts/HostClipboard.ts`, its
+//! budget too (`POLL_LIMIT`, 500 ms: [`ANSWER_TIMEOUT`]); its 48 ms between reads is 5 ms between
+//! looks at the clipboard's change count here ([`POLL_INTERVAL`], see [`poll_item_clipboard`]).
 //! A timeout returns `None` silently -- no error -- matching the reference's own empty `.catch`.
 //!
 //! The restore is the same file's `readItemText` with EE2's `restoreClipboard` setting on: opt-in
@@ -36,14 +34,15 @@
 //! player's clipboard back after EE2's `RESTORE_AFTER`.
 
 use std::sync::LazyLock;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use gpui::{AsyncApp, ClipboardEntry, ClipboardItem};
 use item_parser::looks_like_item_text;
 use windows::Win32::Foundation::{HANDLE, HGLOBAL};
+use windows::Win32::Media::{timeBeginPeriod, timeEndPeriod};
 use windows::Win32::System::DataExchange::{
-    CloseClipboard, EmptyClipboard, GetClipboardData, IsClipboardFormatAvailable, OpenClipboard,
-    RegisterClipboardFormatW, SetClipboardData,
+    CloseClipboard, EmptyClipboard, GetClipboardData, GetClipboardSequenceNumber,
+    IsClipboardFormatAvailable, OpenClipboard, RegisterClipboardFormatW, SetClipboardData,
 };
 use windows::Win32::System::Memory::{
     GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock,
@@ -54,6 +53,15 @@ use windows::core::{Owned, PCWSTR, w};
 /// How long the game has to read what a paste put on the clipboard before the player's own
 /// content goes back -- EE2's `RESTORE_AFTER`. A game lagging past it pastes the restored text.
 const RESTORE_AFTER: Duration = Duration::from_millis(120);
+
+/// How often a check looks for the game's answer to the copy combo: at the clipboard's change
+/// count, which doesn't open the clipboard, reading the clipboard itself only once the count
+/// moves. EE2 reads the clipboard every 48 ms, so its answer waited 24 ms on average past the
+/// game's copy, 48 ms at worst.
+const POLL_INTERVAL: Duration = Duration::from_millis(5);
+/// How long the game has to answer the copy combo: EE2's `POLL_LIMIT`. No item under the cursor
+/// runs this out.
+const ANSWER_TIMEOUT: Duration = Duration::from_millis(500);
 
 /// The marks a program puts on content it copied that nobody should keep -- a password manager
 /// on a password. This one, present at all, asks every program watching the clipboard to leave
@@ -214,8 +222,8 @@ fn item_text(item: &ClipboardItem) -> Option<&str> {
 
 /// Invokes `send_copy` (expected to synthesize the game's item-copy combo, e.g. via
 /// `synth_input::send_copy_item_combo` -- taken as a parameter so this module stays decoupled from
-/// the synth-input mechanism), polls the clipboard until item text appears or `timeout` elapses,
-/// and restores what the clipboard held before the call.
+/// the synth-input mechanism), waits for item text to appear on the clipboard, for up to
+/// `ANSWER_TIMEOUT`, and restores what the clipboard held before the call.
 ///
 /// Mirrors EE2's `HostClipboard.readItemText` step for step: the clipboard is captured first and,
 /// only if it already holds item text (a leftover from an earlier copy, which would otherwise be
@@ -223,6 +231,12 @@ fn item_text(item: &ClipboardItem) -> Option<&str> {
 /// like EE2's `textBefore = ""`. "Item text" is [`looks_like_item_text`] -- every game client
 /// language, not just English: a Russian client's `Класс предмета:` answer used to be rejected
 /// here, so the poll timed out on every check and the hotkey appeared to do nothing.
+///
+/// The wait is EE2's but finer (`POLL_INTERVAL`): every 5 ms the clipboard's change count, and
+/// the clipboard itself once the count has moved -- again while it can't be read (the game still
+/// has it open, or it was emptied before the answer is written). Windows' timer ticks every
+/// 15.6 ms unless a process asks for finer, so the wait asks for 1 ms ticks while it lasts. The
+/// log says how long the game took to answer.
 ///
 /// The capture goes back as far as GPUI can write it: text, and images as PNG, GIF, JPEG or SVG --
 /// never as a bitmap, so an app that pastes only bitmaps won't see a restored screenshot.
@@ -232,16 +246,7 @@ fn item_text(item: &ClipboardItem) -> Option<&str> {
 /// when the clipboard no longer reads as the check left it. If the game copied nothing (no item
 /// under the cursor), the player's clipboard is still intact, and rewriting it would only strip
 /// the formats GPUI can't write back. A clipboard GPUI reads as nothing counts as untouched.
-///
-/// Callers should pass `initial_delay`/`poll_interval` = 48ms and `timeout` = 500ms, matching
-/// the reference's own `POLL_DELAY`/`POLL_LIMIT`.
-pub async fn poll_item_clipboard(
-    cx: &mut AsyncApp,
-    send_copy: impl FnOnce(),
-    initial_delay: Duration,
-    poll_interval: Duration,
-    timeout: Duration,
-) -> Option<String> {
+pub async fn poll_item_clipboard(cx: &mut AsyncApp, send_copy: impl FnOnce()) -> Option<String> {
     let saved = match Saved::capture(cx) {
         Saved::Content(Some(item)) if item_text(&item).is_some() => {
             set_clipboard(cx, None);
@@ -250,21 +255,34 @@ pub async fn poll_item_clipboard(
         other => other,
     };
 
+    let _fine_ticks = FineTimerTicks::new();
+    // The count as this check left the clipboard. 0: the count can't be read here (no clipboard
+    // access for this window station), and the clipboard is read at every look instead.
+    let mut seen = unsafe { GetClipboardSequenceNumber() };
     send_copy();
+    let sent = Instant::now();
 
-    cx.background_executor().timer(initial_delay).await;
-
-    let mut elapsed = Duration::ZERO;
     loop {
-        let current = read_clipboard(cx);
-        if let Some(text) = current.as_ref().and_then(item_text) {
-            saved.restore(cx);
-            return Some(text.to_owned());
+        cx.background_executor().timer(POLL_INTERVAL).await;
+        let count = unsafe { GetClipboardSequenceNumber() };
+        if count == 0 || count != seen {
+            let current = read_clipboard(cx);
+            if let Some(text) = current.as_ref().and_then(item_text) {
+                log::info!(
+                    "item text from the game in {} ms",
+                    sent.elapsed().as_millis()
+                );
+                saved.restore(cx);
+                return Some(text.to_owned());
+            }
+            // Something else, readable: the next change is the one to read.
+            if current.is_some() {
+                seen = count;
+            }
         }
-
-        elapsed += poll_interval;
-        if elapsed >= timeout {
+        if sent.elapsed() >= ANSWER_TIMEOUT {
             // Private content the game didn't replace is still there as it was.
+            let current = read_clipboard(cx);
             if let Saved::Content(saved) = saved
                 && current.is_some()
                 && current != saved
@@ -273,7 +291,24 @@ pub async fn poll_item_clipboard(
             }
             return None;
         }
-        cx.background_executor().timer(poll_interval).await;
+    }
+}
+
+/// Windows' timer at 1 ms ticks while this lives (`timeBeginPeriod`): a 5 ms timer otherwise
+/// fires on the default 15.6 ms tick. Since Windows 10 2004 the finer ticks are this process's
+/// only, not the whole system's.
+struct FineTimerTicks;
+
+impl FineTimerTicks {
+    fn new() -> Self {
+        unsafe { timeBeginPeriod(1) };
+        FineTimerTicks
+    }
+}
+
+impl Drop for FineTimerTicks {
+    fn drop(&mut self) {
+        unsafe { timeEndPeriod(1) };
     }
 }
 
