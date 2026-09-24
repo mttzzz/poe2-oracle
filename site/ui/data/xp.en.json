@@ -1,0 +1,33 @@
+{
+    "plates": [
+        {
+            "rail": "flask",
+            "words": [
+                { "value": "64.8%" },
+                "diamond",
+                { "rate": "+12.4%/h" },
+                "dot",
+                { "label": "level 75 in" },
+                { "value": "2h 50m" }
+            ],
+            "shorter": [
+                [{ "value": "64.8%" }, "diamond", { "rate": "+12.4%/h" }, "dot", { "value": "2h 50m" }],
+                [{ "rate": "+12.4%/h" }, "dot", { "value": "2h 50m" }]
+            ]
+        },
+        {
+            "rail": "skill",
+            "words": [
+                { "label": "map" },
+                { "value": "4:07" },
+                { "value": "+1.2%" },
+                "dot",
+                { "label": "avg" },
+                { "label": "6:30" }
+            ],
+            "shorter": [
+                [{ "label": "map" }, { "value": "4:07" }, { "value": "+1.2%" }]
+            ]
+        }
+    ]
+}

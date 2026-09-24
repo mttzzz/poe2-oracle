@@ -1,0 +1,87 @@
+{
+    "icons": {
+        "divine": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvQ3VycmVuY3kvQ3VycmVuY3lNb2RWYWx1ZXMiLCJzY2FsZSI6MSwicmVhbG0iOiJwb2UyIn1d/2986e220b3/CurrencyModValues.png",
+        "exalted": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvQ3VycmVuY3kvQ3VycmVuY3lBZGRNb2RUb1JhcmUiLCJzY2FsZSI6MSwicmVhbG0iOiJwb2UyIn1d/ad7c366789/CurrencyAddModToRare.png",
+        "chaos": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvQ3VycmVuY3kvQ3VycmVuY3lSZXJvbGxSYXJlIiwic2NhbGUiOjEsInJlYWxtIjoicG9lMiJ9XQ/c0ca392a78/CurrencyRerollRare.png"
+    },
+    "league": "Forbidden Rites",
+    "rate": "492",
+    "item": {
+        "art": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvQXJtb3Vycy9IZWxtZXRzL0Jhc2V0eXBlcy9IZWxtZXREZXgwNSIsInciOjIsImgiOjIsInNjYWxlIjoxLCJyZWFsbSI6InBvZTIifV0/367615d8a8/HelmetDex05.png",
+        "name": "Dusk Guise",
+        "base": "Deerstalker Hood",
+        "rarity": "rare",
+        "lang": "en"
+    },
+    "links": ["poe2db ↗", "wiki ↗", "Craft of Exile ↗", "report a problem ↗"],
+    "chips": [
+        { "label": "Class:", "value": "Helmets", "toggle": true },
+        { "label": "Required Level:", "value": "59" },
+        { "label": "Quality:", "value": "+20%", "color": "value" },
+        { "label": "Rarity:", "value": "Rare", "toggle": true },
+        { "value": "Modifiable", "toggle": true },
+        { "label": "Stats:", "value": "3 of 8", "toggle": true }
+    ],
+    "profile": { "label": "Profile:", "choice": "Quick price" },
+    "bounds": { "min": "min", "max": "max" },
+    "sections": [
+        {
+            "title": "Item properties",
+            "rows": [{ "checked": true, "text": "Evasion Rating: #", "value": "1317", "min": "1317" }],
+            "chips": [
+                { "text": "Item Level: #", "value": "63" },
+                { "text": "Sockets: #", "value": "1" }
+            ]
+        },
+        {
+            "title": "Prefixes · 3",
+            "rows": [
+                {
+                    "tier": 2,
+                    "source": { "kind": "desecrated", "label": "desecrated" },
+                    "text": "+# to maximum Life",
+                    "value": "39",
+                    "min": "39"
+                }
+            ]
+        },
+        {
+            "title": "Suffixes · 3",
+            "rows": [
+                { "tier": 3, "text": "+#% to Cold Resistance", "value": "34", "min": "34" },
+                { "tier": 1, "text": "+# to Accuracy Rating", "value": "48", "min": "48" },
+                { "tier": 1, "text": "#% increased Light Radius", "value": "15", "min": "15" },
+                { "tier": 5, "text": "#% reduced Attribute Requirements", "value": "15", "min": "15" }
+            ]
+        },
+        {
+            "title": "Totals (pseudo)",
+            "rows": [
+                { "checked": true, "text": "+#% total Elemental Resistance", "value": "34", "min": "34" },
+                { "checked": true, "text": "+# total maximum Life", "value": "39", "min": "39" }
+            ]
+        }
+    ],
+    "folded": "▾ Totals and minor rows: 1 more",
+    "search": {
+        "button": "Search",
+        "sellers": "Instant Buyout",
+        "currency": "Any currency"
+    },
+    "found": { "label": "Found:", "count": "489" },
+    "live": { "label": "Live search", "on": false, "inUse": "0 of 20 in use", "watching": 0 },
+    "trade": "www.pathofexile.com/trade ↗",
+    "table": { "price": "Price", "level": "iLvl", "listed": "Listed" },
+    "listings": [
+        { "amount": "1", "currency": "chaos", "about": "61.3", "unit": "exalted", "level": "82", "listed": "1 day ago" },
+        { "amount": "1", "currency": "chaos", "about": "61.3", "unit": "exalted", "level": "82", "listed": "1 day ago" },
+        { "amount": "2", "currency": "chaos", "about": "123", "unit": "exalted", "level": "80", "listed": "4 hr ago" },
+        { "amount": "2", "currency": "chaos", "about": "123", "unit": "exalted", "level": "82", "listed": "5 days ago" },
+        { "amount": "2", "currency": "chaos", "about": "123", "unit": "exalted", "level": "82", "listed": "3 days ago" },
+        { "amount": "2", "currency": "chaos", "about": "123", "unit": "exalted", "level": "81", "listed": "2 days ago" },
+        { "amount": "2", "currency": "chaos", "about": "123", "unit": "exalted", "level": "82", "listed": "3 days ago" },
+        { "amount": "3", "currency": "chaos", "about": "184", "unit": "exalted", "level": "82", "listed": "1 day ago" },
+        { "amount": "3", "currency": "chaos", "about": "184", "unit": "exalted", "level": "81", "listed": "11 days ago" },
+        { "amount": "3", "currency": "chaos", "about": "184", "unit": "exalted", "level": "80", "listed": "1 day ago" }
+    ]
+}

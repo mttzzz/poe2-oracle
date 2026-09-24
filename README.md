@@ -21,7 +21,7 @@ The app's interface is in English and Russian: by default it follows the game cl
 and the settings can switch it. The game client can be English or Russian. A short tour shows the
 basics on the first launch.
 
-![The price panel open next to the game inventory](docs/guide/src/images/en/hero.webp)
+<img src="docs/guide/src/images/en/hero.webp" width="952" alt="The PoE2 Oracle price panel, a currency's market card and the XP overlay's line">
 
 ## Features
 

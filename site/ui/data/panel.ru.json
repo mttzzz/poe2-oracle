@@ -1,0 +1,87 @@
+{
+    "icons": {
+        "divine": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvQ3VycmVuY3kvQ3VycmVuY3lNb2RWYWx1ZXMiLCJzY2FsZSI6MSwicmVhbG0iOiJwb2UyIn1d/2986e220b3/CurrencyModValues.png",
+        "exalted": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvQ3VycmVuY3kvQ3VycmVuY3lBZGRNb2RUb1JhcmUiLCJzY2FsZSI6MSwicmVhbG0iOiJwb2UyIn1d/ad7c366789/CurrencyAddModToRare.png",
+        "chaos": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvQ3VycmVuY3kvQ3VycmVuY3lSZXJvbGxSYXJlIiwic2NhbGUiOjEsInJlYWxtIjoicG9lMiJ9XQ/c0ca392a78/CurrencyRerollRare.png"
+    },
+    "league": "Запретные ритуалы",
+    "rate": "492",
+    "item": {
+        "art": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvQXJtb3Vycy9IZWxtZXRzL0Jhc2V0eXBlcy9IZWxtZXREZXgwNSIsInciOjIsImgiOjIsInNjYWxlIjoxLCJyZWFsbSI6InBvZTIifV0/367615d8a8/HelmetDex05.png",
+        "name": "Благой облик",
+        "base": "Капюшон зверолова",
+        "rarity": "rare",
+        "lang": "ru"
+    },
+    "links": ["poe2db ↗", "вики ↗", "Craft of Exile ↗", "сообщить о проблеме ↗"],
+    "chips": [
+        { "label": "Класс:", "value": "Шлемы", "toggle": true },
+        { "label": "Требуется ур.:", "value": "59" },
+        { "label": "Качество:", "value": "+20%", "color": "value" },
+        { "label": "Редкость:", "value": "редкие", "toggle": true },
+        { "value": "Можно изменить", "toggle": true },
+        { "label": "Св-ва:", "value": "3 из 8", "toggle": true }
+    ],
+    "profile": { "label": "Профиль:", "choice": "Быстрая цена" },
+    "bounds": { "min": "мин", "max": "макс" },
+    "sections": [
+        {
+            "title": "Свойства предмета",
+            "rows": [{ "checked": true, "text": "Уклонение: #", "value": "1317", "min": "1317" }],
+            "chips": [
+                { "text": "Уровень предмета: #", "value": "63" },
+                { "text": "Гнёзда: #", "value": "1" }
+            ]
+        },
+        {
+            "title": "Префиксы · 3",
+            "rows": [
+                {
+                    "tier": 2,
+                    "source": { "kind": "desecrated", "label": "очернённый" },
+                    "text": "+# к максимуму здоровья",
+                    "value": "39",
+                    "min": "39"
+                }
+            ]
+        },
+        {
+            "title": "Суффиксы · 3",
+            "rows": [
+                { "tier": 3, "text": "+#% к сопротивлению холоду", "value": "34", "min": "34" },
+                { "tier": 1, "text": "+# к меткости", "value": "48", "min": "48" },
+                { "tier": 1, "text": "#% увеличение радиуса обзора", "value": "15", "min": "15" },
+                { "tier": 5, "text": "#% снижение требований к характеристикам", "value": "15", "min": "15" }
+            ]
+        },
+        {
+            "title": "Суммарные (псевдо)",
+            "rows": [
+                { "checked": true, "text": "Всего +#% сопротивления стихиям", "value": "34", "min": "34" },
+                { "checked": true, "text": "Всего +# к максимуму здоровья", "value": "39", "min": "39" }
+            ]
+        }
+    ],
+    "folded": "▾ Суммарные и второстепенные: ещё 1",
+    "search": {
+        "button": "Поиск",
+        "sellers": "Мгновенный выкуп",
+        "currency": "Любая валюта"
+    },
+    "found": { "label": "Найдено:", "count": "489" },
+    "live": { "label": "Следить", "on": false, "inUse": "поисков: 0 из 20", "watching": 0 },
+    "trade": "ru.pathofexile.com/trade ↗",
+    "table": { "price": "Цена", "level": "Ур.", "listed": "Выставлен" },
+    "listings": [
+        { "amount": "1", "currency": "chaos", "about": "61,3", "unit": "exalted", "level": "82", "listed": "1 дн. назад" },
+        { "amount": "1", "currency": "chaos", "about": "61,3", "unit": "exalted", "level": "82", "listed": "1 дн. назад" },
+        { "amount": "2", "currency": "chaos", "about": "123", "unit": "exalted", "level": "80", "listed": "4 ч. назад" },
+        { "amount": "2", "currency": "chaos", "about": "123", "unit": "exalted", "level": "82", "listed": "5 дн. назад" },
+        { "amount": "2", "currency": "chaos", "about": "123", "unit": "exalted", "level": "82", "listed": "3 дн. назад" },
+        { "amount": "2", "currency": "chaos", "about": "123", "unit": "exalted", "level": "81", "listed": "2 дн. назад" },
+        { "amount": "2", "currency": "chaos", "about": "123", "unit": "exalted", "level": "82", "listed": "3 дн. назад" },
+        { "amount": "3", "currency": "chaos", "about": "184", "unit": "exalted", "level": "82", "listed": "1 дн. назад" },
+        { "amount": "3", "currency": "chaos", "about": "184", "unit": "exalted", "level": "81", "listed": "11 дн. назад" },
+        { "amount": "3", "currency": "chaos", "about": "184", "unit": "exalted", "level": "80", "listed": "1 дн. назад" }
+    ]
+}

@@ -1,0 +1,319 @@
+/*
+ * The price panel as it shows a Currency Exchange item (crates/poe2-oracle/src/ui/panel/): the
+ * title bar (title_bar.rs), the item's nameplate and chips (nameplate.rs), and the market card
+ * (market.rs), cut off at the card's end and the panel's padding under it.
+ *
+ * GPUI lays every length out on whole device pixels (gpui/src/taffy.rs): each authored length,
+ * and each text's line height, is rounded to one before layout. The lengths here are the app's px
+ * rounded the same way, to the 2x pixels of the captures they are held against (--mk-dp).
+ */
+
+.oui-market {
+    --mk-dp: 0.5px;
+    --mk2: round(calc(2 * var(--u)), var(--mk-dp));
+    --mk3: round(calc(3 * var(--u)), var(--mk-dp));
+    --mk4: round(calc(4 * var(--u)), var(--mk-dp));
+    --mk6: round(calc(6 * var(--u)), var(--mk-dp));
+    --mk7: round(calc(7 * var(--u)), var(--mk-dp));
+    --mk8: round(calc(8 * var(--u)), var(--mk-dp));
+    --mk10: round(calc(10 * var(--u)), var(--mk-dp));
+    --mk12: round(calc(12 * var(--u)), var(--mk-dp));
+    --mk14: round(calc(14 * var(--u)), var(--mk-dp));
+    --mk16: round(calc(16 * var(--u)), var(--mk-dp));
+    --mk22: round(calc(22 * var(--u)), var(--mk-dp));
+    --mk24: round(calc(24 * var(--u)), var(--mk-dp));
+    --mk32: round(calc(32 * var(--u)), var(--mk-dp));
+    --mk34: round(calc(34 * var(--u)), var(--mk-dp));
+    --mk48: round(calc(48 * var(--u)), var(--mk-dp));
+    /* A line of text is its size times the panel's 1.35, on whole device pixels. */
+    --mk-lh12: round(calc(12 * var(--u) * 1.35), var(--mk-dp));
+    --mk-lh16: round(calc(16 * var(--u) * 1.35), var(--mk-dp));
+    --mk-lh21: round(calc(21 * var(--u) * 1.35), var(--mk-dp));
+    --mk-lh24: round(calc(24 * var(--u) * 1.35), var(--mk-dp));
+
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    /* The panel's width: EE2's 32 rem of 16 px (overlay_layout.rs), at the UI scale. */
+    width: round(calc(512 * var(--u)), var(--mk-dp));
+    background: var(--bg-panel);
+    color: var(--text);
+    /* Segoe UI lacks ▾ and ⇆: Windows' font fallback finds them in Segoe UI Symbol. */
+    font-family: "Segoe UI", "Segoe UI Symbol", var(--body);
+    font-size: calc(14 * var(--u));
+    line-height: 1.35;
+}
+
+/* The shared widgets, on the same device-pixel grid. */
+.oui-market .oui-icon {
+    width: round(calc(var(--i, 14) * var(--u)), var(--mk-dp));
+    height: round(calc(var(--i, 14) * var(--u)), var(--mk-dp));
+}
+
+.oui-market .oui-chip {
+    gap: var(--mk4);
+    height: var(--mk22);
+    padding: 0 var(--mk8);
+    border-radius: var(--mk4);
+    line-height: var(--mk-lh12);
+}
+
+.oui-market .oui-link {
+    line-height: var(--mk-lh12);
+}
+
+/* --- The title bar: the league, the divine rate, the gear and the × --------------------------- */
+
+.oui-market-title {
+    display: flex;
+    flex: none;
+    align-items: center;
+    height: var(--mk32);
+    padding-left: var(--mk8);
+    border-bottom: 1px solid var(--border-gold);
+}
+
+.oui-market-title .oui-select--compact {
+    gap: var(--mk8);
+    height: var(--mk22);
+    padding: 0 var(--mk8);
+    border-radius: var(--mk4);
+    line-height: var(--mk-lh12);
+}
+
+.oui-market-drag {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    justify-content: flex-end;
+    min-width: var(--mk24);
+    height: 100%;
+}
+
+.oui-market-rate {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: var(--mk3);
+    padding-right: var(--mk6);
+    color: var(--text-dim);
+    font-size: calc(12 * var(--u));
+    line-height: var(--mk-lh12);
+    white-space: nowrap;
+}
+
+.oui-market-button {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: var(--mk34);
+    height: 100%;
+    color: var(--text-dim);
+    font-size: calc(16 * var(--u));
+    line-height: var(--mk-lh16);
+}
+
+/* Segoe UI Emoji's grey gear, which GPUI's font fallback finds for the bar's ⚙. */
+.oui-market-gear {
+    width: calc(16 * var(--u));
+    height: calc(16 * var(--u));
+    overflow: visible;
+}
+
+/* --- The nameplate: art, name, links, the rule ------------------------------------------------ */
+
+.oui-market-nameplate {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    /* Tinted with the name's colour at the top (theme.rs BANNER_TINT), fading to none. */
+    background: linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--bg-nameplate) 84%, var(--mk-name)),
+        var(--bg-nameplate)
+    );
+}
+
+.oui-market-head {
+    display: flex;
+    align-items: center;
+    gap: var(--mk10);
+    padding: var(--mk12) var(--mk12) var(--mk4);
+}
+
+.oui-market-art {
+    flex: none;
+    width: var(--mk48);
+    height: var(--mk48);
+    object-fit: contain;
+}
+
+.oui-market-names {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    align-items: center;
+    min-width: 0;
+    color: var(--mk-name);
+    text-align: center;
+}
+
+.oui-market-name {
+    font-size: calc(21 * var(--u));
+    line-height: var(--mk-lh21);
+}
+
+.oui-market-links {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: var(--mk2) var(--mk14);
+    padding: 0 var(--mk12) var(--mk8);
+}
+
+.oui-market-rule {
+    padding: 0 var(--mk16) var(--mk2);
+}
+
+.oui-market-rule .oui-rule {
+    gap: var(--mk6);
+}
+
+.oui-market-rule .oui-diamond {
+    width: calc(var(--mk7) * 0.7071);
+    height: calc(var(--mk7) * 0.7071);
+    margin: calc(var(--mk7) * 0.1464);
+}
+
+/* --- Under the nameplate: the chips, then the card --------------------------------------------- */
+
+.oui-market-body {
+    display: flex;
+    flex-direction: column;
+    padding: 0 var(--mk12) var(--mk14);
+}
+
+.oui-market-chips {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--mk4) var(--mk6);
+    padding-top: var(--mk8);
+}
+
+.oui-market-card {
+    display: flex;
+    flex-direction: column;
+    margin-top: var(--mk12);
+    border: 1px solid var(--border-card);
+    border-radius: var(--mk8);
+    background: var(--bg-card);
+    font-size: calc(12 * var(--u));
+    line-height: var(--mk-lh12);
+}
+
+.oui-market-card > * + * {
+    border-top: 1px solid var(--border-row);
+}
+
+.oui-market-price {
+    display: flex;
+    align-items: center;
+    gap: var(--mk12);
+    padding: var(--mk12);
+}
+
+.oui-market-values {
+    display: flex;
+    flex-direction: column;
+    gap: var(--mk2);
+    min-width: 0;
+}
+
+.oui-market-value {
+    display: flex;
+    align-items: center;
+    gap: var(--mk6);
+    font-size: calc(24 * var(--u));
+    font-weight: 600;
+    line-height: var(--mk-lh24);
+}
+
+.oui-market-equivalents,
+.oui-market-per-divine {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--mk4);
+    color: var(--text-dim);
+}
+
+/* An amount and its currency's icon. */
+.oui-market-amount {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: var(--mk3);
+}
+
+.oui-market-week,
+.oui-market-lines {
+    display: flex;
+    flex-direction: column;
+    gap: var(--mk4);
+    padding: var(--mk8) var(--mk12);
+}
+
+.oui-market-week-head,
+.oui-market-line {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.oui-market-week-head > :first-child,
+.oui-market-line > :first-child {
+    color: var(--text-dim);
+}
+
+.oui-market-change {
+    font-weight: 600;
+}
+
+.oui-market-change--fall {
+    color: var(--price-fall);
+}
+
+.oui-market-change--rise {
+    color: var(--price-rise);
+}
+
+.oui-market-sparkline {
+    display: block;
+    width: 100%;
+    height: var(--mk48);
+    overflow: visible;
+}
+
+.oui-market-pair,
+.oui-market-volume {
+    display: flex;
+    align-items: center;
+    gap: var(--mk3);
+}
+
+.oui-market-stack {
+    display: flex;
+    align-items: center;
+    gap: var(--mk4);
+}
+
+.oui-market-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--mk6) var(--mk12);
+    color: var(--text-muted);
+}

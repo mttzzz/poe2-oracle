@@ -1,0 +1,33 @@
+{
+    "plates": [
+        {
+            "rail": "flask",
+            "words": [
+                { "value": "64,8 %" },
+                "diamond",
+                { "rate": "+12,4 %/ч" },
+                "dot",
+                { "label": "до 75 ур." },
+                { "value": "2 ч 50 мин" }
+            ],
+            "shorter": [
+                [{ "value": "64,8 %" }, "diamond", { "rate": "+12,4 %/ч" }, "dot", { "value": "2 ч 50 мин" }],
+                [{ "rate": "+12,4 %/ч" }, "dot", { "value": "2 ч 50 мин" }]
+            ]
+        },
+        {
+            "rail": "skill",
+            "words": [
+                { "label": "карта" },
+                { "value": "4:07" },
+                { "value": "+1,2 %" },
+                "dot",
+                { "label": "ср." },
+                { "label": "6:30" }
+            ],
+            "shorter": [
+                [{ "label": "карта" }, { "value": "4:07" }, { "value": "+1,2 %" }]
+            ]
+        }
+    ]
+}

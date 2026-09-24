@@ -300,6 +300,19 @@ kbd {
     margin: 0 auto;
 }
 
+/* The app's interface drawn from data (ui/oracle-ui.js), centred in its figure. The drawing keeps
+   its own width; data-fit scales it down to the figure's. */
+.shot > .oui,
+.feature-media > .oui {
+    display: flex;
+    justify-content: center;
+}
+
+.shot > .oui > *,
+.feature-media > .oui > * {
+    flex: none;
+}
+
 /* Sections */
 
 .section {

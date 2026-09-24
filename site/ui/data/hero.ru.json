@@ -1,0 +1,21 @@
+{
+    "columns": [
+        [
+            {
+                "part": "panel",
+                "scale": 0.8,
+                "listings": 6
+            }
+        ],
+        [
+            {
+                "part": "market",
+                "scale": 0.8
+            },
+            {
+                "part": "xp",
+                "plates": 1
+            }
+        ]
+    ]
+}

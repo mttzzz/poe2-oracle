@@ -1,0 +1,25 @@
+{
+    "width": 1200,
+    "height": 630,
+    "title": "PoE2 Oracle",
+    "tagline": "Price check for Path of Exile 2 on a hotkey",
+    "columns": [
+        [
+            {
+                "heading": true
+            },
+            {
+                "part": "xp",
+                "scale": 0.9,
+                "plates": 1
+            }
+        ],
+        [
+            {
+                "part": "panel",
+                "scale": 0.56,
+                "listings": 4
+            }
+        ]
+    ]
+}

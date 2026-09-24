@@ -1,0 +1,830 @@
+/*
+ * The price-check panel (crates/poe2-oracle/src/ui/panel/), with the sizes its Rust code lays it
+ * out with. GPUI rounds every length to a whole device pixel before it lays a window out, and
+ * snaps text line heights the same way (gpui/src/taffy.rs, Window::pixel_snap): at UI scale 0.9
+ * on a 200 % screen a row's 2 px padding is 4 device pixels, not 3.6. The lengths here round the
+ * same way -- --pN is the app's N px so rounded, --dp one device pixel (panel.js sets it) -- or
+ * the rows would drift off the app's by a pixel each.
+ */
+
+.oui-panel {
+    --dp: 0.5px;
+    --p1: round(calc(1 * var(--u)), var(--dp));
+    --p2: round(calc(2 * var(--u)), var(--dp));
+    --p3: round(calc(3 * var(--u)), var(--dp));
+    --p4: round(calc(4 * var(--u)), var(--dp));
+    --p5: round(calc(5 * var(--u)), var(--dp));
+    --p6: round(calc(6 * var(--u)), var(--dp));
+    --p7: round(calc(7 * var(--u)), var(--dp));
+    --p8: round(calc(8 * var(--u)), var(--dp));
+    --p10: round(calc(10 * var(--u)), var(--dp));
+    --p12: round(calc(12 * var(--u)), var(--dp));
+    --p13: round(calc(13 * var(--u)), var(--dp));
+    --p14: round(calc(14 * var(--u)), var(--dp));
+    --p15: round(calc(15 * var(--u)), var(--dp));
+    --p16: round(calc(16 * var(--u)), var(--dp));
+    --p18: round(calc(18 * var(--u)), var(--dp));
+    --p22: round(calc(22 * var(--u)), var(--dp));
+    --p23: round(calc(23 * var(--u)), var(--dp));
+    --p24: round(calc(24 * var(--u)), var(--dp));
+    --p30: round(calc(30 * var(--u)), var(--dp));
+    --p32: round(calc(32 * var(--u)), var(--dp));
+    --p34: round(calc(34 * var(--u)), var(--dp));
+    --p36: round(calc(36 * var(--u)), var(--dp));
+    --p48: round(calc(48 * var(--u)), var(--dp));
+    --p52: round(calc(52 * var(--u)), var(--dp));
+    --p100: round(calc(100 * var(--u)), var(--dp));
+    --p140: round(calc(140 * var(--u)), var(--dp));
+    --p150: round(calc(150 * var(--u)), var(--dp));
+
+    position: relative;
+    /* GPUI rounds an edge halfway between two device pixels up the screen, the browser down it:
+       a hair's lift makes a control centred on a half pixel -- the selects beside «Поиск» --
+       land where the app puts it. */
+    top: calc(-1px / 64);
+    display: flex;
+    flex-direction: column;
+    /* overlay_layout.rs: 32 rem of 16 px at the UI scale, in whole logical pixels. */
+    width: round(calc(512 * var(--u)), 1px);
+    min-height: round(calc(var(--panel-height, 0) * var(--u)), 1px);
+    overflow: hidden;
+    background: var(--bg-panel);
+    color: var(--text);
+    /* Segoe UI, and Segoe UI Symbol for the ▾ and ✓ it lacks, as DirectWrite falls back. */
+    font-family: "Segoe UI", "Segoe UI Symbol", var(--body);
+    font-size: calc(14 * var(--u));
+}
+
+/* The panel's `line_height(relative(1.35))`, each text's own, snapped to a device pixel. */
+.oui-panel,
+.oui-panel * {
+    line-height: round(1.35em, var(--dp));
+}
+
+/* The shared widgets, at the panel's rounded sizes. */
+.oui-panel .oui-select--compact {
+    height: var(--p22);
+    padding: 0 var(--p8);
+    gap: var(--p8);
+}
+
+.oui-panel .oui-chip {
+    height: var(--p22);
+    padding: 0 var(--p8);
+    gap: var(--p4);
+}
+
+.oui-panel .oui-chip--check {
+    gap: var(--p6);
+}
+
+.oui-panel .oui-chip--check::before {
+    width: var(--p12);
+    height: var(--p12);
+}
+
+.oui-panel .oui-check {
+    width: var(--p15);
+    height: var(--p15);
+    line-height: var(--p13);
+}
+
+.oui-panel .oui-switch {
+    width: var(--p34);
+    height: var(--p18);
+}
+
+.oui-panel .oui-switch::after {
+    top: var(--p2);
+    left: var(--p2);
+    width: var(--p12);
+    height: var(--p12);
+}
+
+.oui-panel .oui-switch--on::after {
+    left: var(--p18);
+}
+
+.oui-panel .oui-heading {
+    gap: var(--p7);
+}
+
+/* A heading's diamond, centred on its line where GPUI puts it: half a pixel up, snapped. */
+.oui-panel .oui-heading > .oui-diamond {
+    align-self: flex-start;
+    margin-top: round(
+        down,
+        calc((round(calc(12.5 * 1.35 * var(--u)), var(--dp)) - var(--dd)) / 2),
+        var(--dp)
+    );
+}
+
+/* A diamond filling its rounded box, as GPUI paints one: a box of 0.7071 of it turned 45° would
+   not sit on the device-pixel grid. */
+.oui-panel .oui-diamond {
+    --dd: round(calc(var(--d, 7) * var(--u)), var(--dp));
+    width: var(--dd);
+    height: var(--dd);
+    margin: 0;
+    clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+    transform: none;
+}
+
+.oui-panel .oui-rule {
+    gap: var(--p6);
+}
+
+.oui-panel .oui-icon {
+    width: round(calc(var(--i, 14) * var(--u)), var(--dp));
+    height: round(calc(var(--i, 14) * var(--u)), var(--dp));
+}
+
+/* GPUI measures a run of text to the device pixel above its glyphs' width: the runs side by side
+   in a chip, a select or a row take that much room here too. */
+.oui-panel .oui-chip > span,
+.oui-panel .oui-chip--toggle::after,
+.oui-panel .oui-select > :first-child,
+.oui-panel .oui-select::after,
+.oui-panel .oui-link,
+.oui-panel .oui-heading > span:last-child,
+.oui-panel-rate > span,
+.oui-panel-profile-label,
+.oui-panel-tier,
+.oui-panel-source,
+.oui-panel-sum,
+.oui-panel-count > span,
+.oui-panel-watch-toggle > span:last-child,
+.oui-panel-in-use,
+.oui-panel-amount,
+.oui-panel-amount-in > span,
+.oui-panel-times,
+.oui-panel-unsure {
+    width: calc-size(max-content, round(up, size, var(--dp)));
+}
+
+.oui-panel .oui-select > :first-child {
+    flex: 0 1 auto;
+}
+
+/* The title bar: the league select, the divine rate, the ⚙ and the ×. */
+.oui-panel-title {
+    display: flex;
+    flex: none;
+    align-items: center;
+    height: var(--p32);
+    padding-left: var(--p8);
+    border-bottom: 1px solid var(--border-gold);
+}
+
+.oui-panel-league {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.oui-panel-drag {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    height: 100%;
+}
+
+.oui-panel-spacer {
+    flex: 1;
+    min-width: var(--p24);
+}
+
+.oui-panel-rate {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: var(--p3);
+    padding-right: var(--p6);
+    color: var(--text-dim);
+    font-size: calc(12 * var(--u));
+}
+
+.oui-panel-title-button {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: var(--p34);
+    height: 100%;
+    color: var(--text-dim);
+    font-size: calc(16 * var(--u));
+}
+
+/* The emoji's em box, which sits a hair below the middle of Segoe UI's line: its centre is 0.4 em
+   over the baseline. */
+.oui-panel-gear {
+    position: relative;
+    top: calc(0.55 * var(--u));
+    display: block;
+    width: calc(16 * var(--u));
+    height: calc(16 * var(--u));
+}
+
+.oui-panel-scroll {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+}
+
+/* The nameplate: a banner tinted with the name's colour, fading to the plate's bronze-black. */
+.oui-panel-nameplate {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    background: linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--name) 16%, var(--bg-nameplate)),
+        var(--bg-nameplate)
+    );
+}
+
+.oui-panel-head {
+    display: flex;
+    align-items: center;
+    gap: var(--p10);
+    padding: var(--p12) var(--p12) var(--p4);
+}
+
+.oui-panel-art {
+    flex: none;
+    width: var(--p48);
+    height: var(--p48);
+    object-fit: contain;
+}
+
+.oui-panel-names {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    align-items: center;
+    min-width: 0;
+    color: var(--name);
+    text-align: center;
+}
+
+.oui-panel-name {
+    font-size: calc(21 * var(--u));
+}
+
+.oui-panel-base {
+    font-size: calc(16 * var(--u));
+}
+
+.oui-panel-links {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: var(--p2) var(--p14);
+    padding: 0 var(--p12) var(--p8);
+}
+
+.oui-panel-plate-rule {
+    padding: 0 var(--p16) var(--p2);
+}
+
+/* Everything under the nameplate. */
+.oui-panel-body {
+    display: flex;
+    flex-direction: column;
+    padding: 0 var(--p12) var(--p14);
+}
+
+.oui-panel-chips {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--p4) var(--p6);
+    padding-top: var(--p8);
+}
+
+.oui-panel-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--p8);
+    padding-top: var(--p6);
+}
+
+.oui-panel-profile {
+    display: flex;
+    align-items: center;
+    gap: var(--p6);
+    min-width: 0;
+}
+
+.oui-panel-profile-label {
+    flex: none;
+    color: var(--text-dim);
+    font-size: calc(12 * var(--u));
+}
+
+.oui-panel-profile-select {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+/* The filter sections: a heading, rows, and the unchecked properties as chips. */
+.oui-panel-sections {
+    display: flex;
+    flex-direction: column;
+}
+
+.oui-panel-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--p2);
+}
+
+.oui-panel-heading {
+    padding-top: var(--p8);
+}
+
+.oui-panel-row {
+    display: flex;
+    flex-direction: column;
+    gap: var(--p2);
+    padding: var(--p2) var(--p6);
+    border-radius: var(--control-radius);
+}
+
+.oui-panel-line {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--p8);
+}
+
+.oui-panel-check {
+    flex: none;
+    width: var(--p15);
+    padding-top: var(--p2);
+}
+
+.oui-panel-badges {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: var(--p4);
+    padding-top: var(--p2);
+}
+
+.oui-panel-text {
+    flex: 1;
+    min-width: 0;
+    color: var(--text-dim);
+}
+
+.oui-panel-row--on .oui-panel-text {
+    color: var(--text);
+}
+
+/* A free affix slot: dim and slanted, checked or not. */
+.oui-panel-row .oui-panel-text--free {
+    color: var(--text-dim);
+    font-style: italic;
+}
+
+.oui-panel-roll {
+    color: var(--text-value);
+    font-weight: 700;
+}
+
+/* EE2's tier badge: filled for the top tier, edged in gold for the second, neutral below. */
+.oui-panel-tier {
+    flex: none;
+    padding: 0 var(--p4);
+    border: 1px solid var(--border-field);
+    border-radius: calc(3 * var(--u));
+    color: var(--text-dim);
+    font-size: calc(11 * var(--u));
+    font-weight: 600;
+    line-height: var(--p14);
+}
+
+.oui-panel-tier--1 {
+    border-color: var(--tier-top);
+    background: var(--tier-top);
+    color: var(--badge-ink);
+}
+
+.oui-panel-tier--2 {
+    border-color: var(--tier-top);
+    color: var(--tier-top);
+}
+
+/* EE2's source badges, for the kinds of mod that change what an item is worth. */
+.oui-panel-source {
+    flex: none;
+    padding: 0 var(--p4);
+    border-radius: calc(3 * var(--u));
+    font-size: calc(11 * var(--u));
+    line-height: var(--p15);
+}
+
+.oui-panel-source--desecrated {
+    background: var(--badge-desecrated-bg);
+    color: var(--badge-desecrated-text);
+}
+
+.oui-panel-source--fractured {
+    background: var(--badge-fractured-bg);
+    color: var(--badge-ink);
+}
+
+.oui-panel-source--enchant {
+    background: var(--badge-enchant-bg);
+    color: var(--badge-enchant-text);
+}
+
+.oui-panel-source--crafted,
+.oui-panel-source--augment {
+    background: var(--badge-rune-bg);
+    color: var(--badge-rune-text);
+}
+
+.oui-panel-sum {
+    flex: none;
+    padding: 0 var(--p4);
+    border: 1px solid var(--border-gold);
+    border-radius: calc(3 * var(--u));
+    color: var(--gold);
+    font-size: calc(11 * var(--u));
+    line-height: var(--p14);
+}
+
+/* The min and max boxes, joined. */
+.oui-panel-bounds {
+    display: flex;
+    flex: none;
+    gap: 1px;
+}
+
+.oui-panel-bound {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: var(--p52);
+    height: var(--p24);
+    border: 1px solid var(--border-field);
+    background: var(--bg-field);
+    color: var(--text);
+    font-size: calc(13 * var(--u));
+}
+
+.oui-panel-bound:first-child {
+    border-radius: var(--control-radius) 0 0 var(--control-radius);
+}
+
+.oui-panel-bound:last-child {
+    border-radius: 0 var(--control-radius) var(--control-radius) 0;
+}
+
+.oui-panel-bound > span {
+    padding: 0 var(--p1);
+}
+
+.oui-panel-bound--empty {
+    color: var(--text-muted);
+    font-size: calc(12 * var(--u));
+}
+
+.oui-panel-note {
+    padding-left: var(--p23);
+    color: var(--text-muted);
+    font-size: calc(12 * var(--u));
+}
+
+/* A checked mod's roll slider: the thumb's centre travels between the track's ends. */
+.oui-panel-slider {
+    padding-left: var(--p23);
+}
+
+.oui-panel-track {
+    position: relative;
+    height: var(--p12);
+    margin: 0 calc(5 * var(--u));
+}
+
+.oui-panel-track::before,
+.oui-panel-admitted {
+    content: "";
+    position: absolute;
+    top: 50%;
+    height: calc(3 * var(--u));
+    border-radius: 999px;
+    transform: translateY(-50%);
+}
+
+.oui-panel-track::before {
+    left: 0;
+    right: 0;
+    background: var(--border-field);
+}
+
+.oui-panel-admitted {
+    background: rgb(208 145 59 / 0.55);
+}
+
+.oui-panel-notch {
+    position: absolute;
+    top: 50%;
+    width: 2px;
+    height: calc(9 * var(--u));
+    border-radius: 1px;
+    background: var(--gold-light);
+    transform: translate(-50%, -50%);
+}
+
+.oui-panel-thumb {
+    position: absolute;
+    top: 50%;
+    width: calc(10 * var(--u));
+    height: calc(10 * var(--u));
+    border: 1px solid var(--gold-light);
+    border-radius: 50%;
+    background: var(--bg-panel);
+    box-shadow: 0 0 12px rgb(208 145 59 / 0.245);
+    transform: translate(-50%, -50%);
+}
+
+.oui-panel-property-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--p4) var(--p6);
+    padding-top: var(--p2);
+}
+
+.oui-panel-chip-text {
+    color: var(--text-dim);
+}
+
+.oui-panel-folded {
+    display: flex;
+    justify-content: center;
+    padding: var(--p4) 0;
+}
+
+/* The «Поиск» plate and the two selects beside it. */
+.oui-panel-search-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--p8);
+    margin-top: var(--p10);
+}
+
+.oui-panel-search-cell {
+    flex: 1;
+    min-width: var(--p140);
+}
+
+.oui-panel-search {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: var(--p36);
+    border: 1px solid var(--gold);
+    border-radius: var(--control-radius);
+    background: linear-gradient(180deg, var(--plate-top), var(--plate-bottom));
+    color: var(--gold-light);
+    font-size: calc(16 * var(--u));
+}
+
+.oui-panel-selects {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--p8);
+    min-width: 0;
+}
+
+.oui-panel-stepping {
+    display: flex;
+    min-width: 0;
+}
+
+.oui-panel-currency {
+    display: flex;
+    align-items: center;
+    gap: var(--p3);
+}
+
+.oui-panel-ornament {
+    padding-top: var(--p10);
+}
+
+/* The Found line and the listings. */
+.oui-panel-results {
+    display: flex;
+    flex-direction: column;
+    padding-top: var(--p12);
+}
+
+.oui-panel-matched {
+    display: flex;
+    flex-direction: column;
+    gap: var(--p4);
+    padding-bottom: var(--p6);
+}
+
+.oui-panel-found {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--p8);
+}
+
+.oui-panel-count {
+    display: flex;
+    gap: var(--p4);
+}
+
+.oui-panel-dim {
+    color: var(--text-dim);
+}
+
+.oui-panel-found-side {
+    display: flex;
+    align-items: center;
+    gap: var(--p14);
+}
+
+.oui-panel-watch {
+    display: flex;
+    align-items: center;
+    gap: var(--p8);
+}
+
+.oui-panel-watch-toggle {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: var(--p6);
+    font-size: calc(12 * var(--u));
+}
+
+.oui-panel-in-use {
+    color: var(--text-dim);
+    font-size: calc(12 * var(--u));
+}
+
+.oui-panel-table {
+    display: flex;
+    flex-direction: column;
+}
+
+.oui-panel-table-row {
+    display: flex;
+    align-items: center;
+    gap: var(--p8);
+    padding: 0 var(--p8);
+}
+
+.oui-panel-table-head {
+    height: var(--p22);
+    border-bottom: 1px solid var(--border-gold);
+    color: var(--text-muted);
+    font-size: calc(11 * var(--u));
+}
+
+.oui-panel-listing {
+    height: var(--p30);
+}
+
+.oui-panel-listing:not(:last-child) {
+    border-bottom: 1px solid var(--border-row);
+}
+
+.oui-panel-price,
+.oui-panel-seller,
+.oui-panel-listed {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.oui-panel-price {
+    flex: none;
+    width: var(--p150);
+}
+
+.oui-panel-level {
+    flex: none;
+    width: var(--p30);
+    text-align: right;
+}
+
+.oui-panel-seller {
+    flex: 1;
+    min-width: 0;
+}
+
+.oui-panel-listed {
+    flex: none;
+    width: var(--p100);
+    text-align: right;
+}
+
+.oui-panel-listing .oui-panel-price {
+    display: flex;
+    align-items: center;
+    gap: var(--p4);
+}
+
+.oui-panel-listing .oui-panel-level {
+    color: var(--text-dim);
+}
+
+.oui-panel-listing .oui-panel-seller,
+.oui-panel-listing .oui-panel-listed {
+    display: flex;
+    color: var(--text-dim);
+    font-size: calc(12 * var(--u));
+}
+
+.oui-panel-listing .oui-panel-seller {
+    gap: var(--p6);
+}
+
+.oui-panel-seller > div {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.oui-panel-listing .oui-panel-listed {
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--p5);
+}
+
+.oui-panel-amount {
+    flex: none;
+    font-weight: 600;
+}
+
+.oui-panel-currency-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text-dim);
+    font-size: calc(12 * var(--u));
+}
+
+/* EE2's price markers: listed several times at this price, or priced by the tab's name. */
+.oui-panel-times {
+    flex: none;
+    padding: 0 var(--p4);
+    border-radius: calc(3 * var(--u));
+    background: rgb(208 145 59 / 0.18);
+    color: var(--gold-light);
+    font-size: calc(11 * var(--u));
+}
+
+.oui-panel-unsure {
+    flex: none;
+    color: var(--text-muted);
+    font-weight: 700;
+}
+
+.oui-panel-about {
+    min-width: 0;
+    color: var(--text-muted);
+    font-size: calc(12 * var(--u));
+}
+
+.oui-panel-amount-in {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: var(--p3);
+}
+
+/* EE2's seller dot; an instant buyout keeps the slot empty so the times stay aligned. */
+.oui-panel-status {
+    flex: none;
+    width: var(--p6);
+    height: var(--p6);
+    border-radius: 50%;
+}
+
+.oui-panel-status--online {
+    background: var(--status-online);
+}
+
+.oui-panel-status--afk {
+    background: var(--status-afk);
+}
+
+.oui-panel-status--offline {
+    background: var(--status-offline);
+}

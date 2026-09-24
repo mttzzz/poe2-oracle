@@ -196,6 +196,28 @@ Given a saved hour of the exchange data
 (`https://web.poecdn.com/api/currency-exchange/poe2/<unix hour>`) as a third argument,
 `generate_cx_ids.py` also lists the items that hour trades without a trade id.
 
+## Pictures of the app
+
+The landing pages draw the app's interface from data instead of showing screenshots. `site/ui/`
+holds a component per part of the app: `panel`, `market`, `xp`, `settings`, and `hero`, which puts
+three of them together. Each is drawn in HTML and CSS after the app's own widgets
+(`crates/poe2-oracle/src/ui/style.rs`) and palette (`ui/theme.rs`), from
+`site/ui/data/<part>.<en|ru>.json`. To show another item or other numbers, edit the JSON; when the
+app's look changes, change its drawing in the same pull request.
+
+The README and the guide show the same drawings as images. After changing a drawing or its data,
+save them again (Node 22 or newer, and Chrome or Chromium; `CHROME` points to it if it's not on
+`PATH`):
+
+```sh
+node packaging/render-ui.mjs
+```
+
+Flags after it go to Chrome: on Ubuntu 23.10 or newer, which restricts the sandbox Chrome needs,
+add `--no-sandbox`. It writes `docs/guide/src/images/<en|ru>/*.webp` and the social previews
+`og.jpg` from `site/ui/shots.html`. The XP overlay's pictures lie on two crops of the game's HUD,
+`site/ui/img/hud-flask.webp` and `hud-skill.webp`.
+
 ## Dependencies and licenses
 
 Every dependency must be under a license listed in `about.toml`: cargo-about fails, and with it the
@@ -216,7 +238,7 @@ spend time on it. Then:
 - [ ] `cargo fmt`, clippy and the tests pass as in [Checks](#checks-what-ci-runs).
 - [ ] New behaviour is covered by a test where a plausible bug would fail it.
 - [ ] Changes to the panel or the overlays were tried in the game on Windows; visible changes come
-      with a screenshot.
+      with a screenshot, and the drawings in `site/ui` follow them.
 - [ ] Data tables were regenerated with the scripts, not edited by hand.
 - [ ] A new dependency's license is accepted by `about.toml`.
 - [ ] `CHANGELOG.md` and `CHANGELOG.ru.md` have a line under `Unreleased` for a change players will

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PoE2 Oracle: the drawn interface</title>
+<meta name="robots" content="noindex">
+<!--
+  Every drawing the README and the guide show as an image, in both languages. packaging/render-ui.mjs
+  saves each [data-shot] element as docs/guide/src/images/<lang>/<data-shot>.<data-format, webp>
+  at twice its size (data-shot-scale scales that).
+-->
+<style>
+  body { margin: 0; padding: 24px; background: #060607; display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
+  [data-shot] { flex: none; }
+</style>
+</head>
+<body>
+  <div data-shot="hero" data-lang="en" data-oracle="hero"></div>
+  <div data-shot="hero" data-lang="ru" data-oracle="hero"></div>
+  <div data-shot="og" data-lang="en" data-oracle="hero" data-set="og" data-format="jpg" data-shot-scale="0.5"></div>
+  <div data-shot="og" data-lang="ru" data-oracle="hero" data-set="og" data-format="jpg" data-shot-scale="0.5"></div>
+  <div data-shot="price-check" data-lang="en" data-oracle="panel"></div>
+  <div data-shot="price-check" data-lang="ru" data-oracle="panel"></div>
+  <div data-shot="market" data-lang="en" data-oracle="market"></div>
+  <div data-shot="market" data-lang="ru" data-oracle="market"></div>
+  <div data-shot="xp-overlay" data-lang="en" data-oracle="xp"></div>
+  <div data-shot="xp-overlay" data-lang="ru" data-oracle="xp"></div>
+  <div data-shot="settings" data-lang="en" data-oracle="settings"></div>
+  <div data-shot="settings" data-lang="ru" data-oracle="settings"></div>
+  <script type="module" src="oracle-ui.js"></script>
+</body>
+</html>

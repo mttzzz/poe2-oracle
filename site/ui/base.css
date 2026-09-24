@@ -1,0 +1,555 @@
+/*
+ * PoE2 Oracle's interface drawn from data, for the landing pages and the guide: the app's own
+ * palette (crates/poe2-oracle/src/ui/theme.rs) and widgets (ui/style.rs), under the same names.
+ * Every size is the app's px at 100 % UI scale, times --oui-scale (--u is one such px), so a
+ * drawing can be set to the scale of a screenshot it is compared with.
+ */
+
+@font-face {
+    font-family: "Alegreya SC";
+    font-style: normal;
+    font-weight: 500;
+    font-display: swap;
+    src: url("../fonts/AlegreyaSC-Medium.ttf") format("truetype");
+}
+
+@font-face {
+    font-family: "Philosopher";
+    font-style: normal;
+    font-weight: 700;
+    font-display: swap;
+    src: url("../fonts/Philosopher-Bold.ttf") format("truetype");
+}
+
+.oui {
+    --u: calc(1px * var(--oui-scale, 1));
+
+    --bg-panel: #0e0e10;
+    --bg-title: #060607;
+    --bg-nameplate: #17130d;
+    --bg-button-hover: #33261a;
+    --bg-close-hover: #8b2a1e;
+    --border-gold: #6b5022;
+    --gold: #d0913b;
+    --gold-light: #ebc27a;
+    --text: #dcdcdc;
+    --text-dim: #9d9da3;
+    --text-muted: #66666c;
+    --text-warning: #e0664f;
+    --text-value: #8888ff;
+    --tier-top: #ecc94b;
+    --price-rise: #4fc97f;
+    --price-fall: #e06c6c;
+    --currency-name: #aa9e82;
+    --gem-name: #1ba29b;
+    --rarity-normal: #c8c8c8;
+    --rarity-magic: #8888ff;
+    --rarity-rare: #ffff77;
+    --rarity-unique: #af6025;
+    --game-red: #d20000;
+    --mod-enchanted: #b4b4ff;
+    --mod-fractured: #a29162;
+    --mod-desecrated: #6fae8c;
+    --badge-ink: #000000;
+    --badge-rune-bg: #3182ce;
+    --badge-rune-text: #ebf8ff;
+    --badge-fractured-bg: #f6e05e;
+    --badge-enchant-bg: #805ad5;
+    --badge-enchant-text: #faf5ff;
+    --badge-desecrated-bg: #22543d;
+    --badge-desecrated-text: #f0fff4;
+    --status-online: #f687b3;
+    --status-afk: #ed8936;
+    --status-offline: #e53e3e;
+    --mark-danger: #e53e3e;
+    --mark-warning: #ed8936;
+    --mark-wanted: #48bb78;
+    --title-top: #1c160f;
+    --title-bottom: #09090a;
+    --bg-sidebar: #0a0a0c;
+    --bg-card: #141417;
+    --border-card: #25252b;
+    --border-row: #1d1d22;
+    --bg-field: #0b0b0d;
+    --border-field: #36363d;
+    --key-top: #202026;
+    --bg-menu: #0c0c0e;
+    --plate-top: #3d2c16;
+    --plate-bottom: #1f170c;
+    --border-danger: #5e2c22;
+    --hud-cap-1: #7c7574;
+    --hud-cap-2: #4b484b;
+    --hud-cap-3: #25252c;
+    --hud-cap-4: #85807d;
+    --hud-cap-5: #3a373b;
+    --hud-face-top: #1b1a1d;
+    --hud-face-bottom: #0e0e0f;
+    --hud-seam: #08080a;
+    --hud-post-light: #85807d;
+    --hud-post-shade: #393634;
+    --hud-text: #e4dab8;
+    --hud-label: #8f8772;
+    --hud-gold: #c4aa57;
+
+    /* The heading face of the interface language: the game client's name face (ui/fonts.rs). */
+    --display: "Alegreya SC", Georgia, "Times New Roman", serif;
+    --display-weight: 500;
+    /* GPUI draws everything else in Segoe UI on Windows, which takes ▾, ⇆ and ⚙ from Segoe UI
+       Symbol. */
+    --body: "Segoe UI", "Segoe UI Symbol", system-ui, -apple-system, "Noto Sans", Roboto, Arial,
+        sans-serif;
+
+    --content-padding: calc(12 * var(--u));
+    --card-radius: calc(8 * var(--u));
+    --control-radius: calc(4 * var(--u));
+    --control-height: calc(30 * var(--u));
+    --glow: 0 0 calc(12 * var(--u)) rgb(208 145 59 / 0.35);
+
+    display: block;
+    color: var(--text);
+    font-family: var(--body);
+    font-size: calc(13 * var(--u));
+    font-weight: 400;
+    line-height: 1.35;
+    text-align: left;
+    -webkit-font-smoothing: antialiased;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.oui:lang(ru) {
+    --display: "Philosopher", Georgia, "Times New Roman", serif;
+    --display-weight: 700;
+}
+
+.oui *,
+.oui *::before,
+.oui *::after {
+    box-sizing: border-box;
+}
+
+.oui img {
+    display: block;
+    max-width: none;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+}
+
+/* A face for names and headings: the interface language's, or an item's own (`data-face`). */
+.oui-display {
+    font-family: var(--display);
+    font-weight: var(--display-weight);
+}
+
+.oui [data-face="en"] {
+    font-family: "Alegreya SC", Georgia, serif;
+    font-weight: 500;
+}
+
+.oui [data-face="ru"] {
+    font-family: "Philosopher", Georgia, serif;
+    font-weight: 700;
+}
+
+/* A diamond --d px across its diagonal: the heart of rules and frame corners. */
+.oui-diamond {
+    flex: none;
+    width: calc(var(--d, 7) * var(--u) * 0.7071);
+    height: calc(var(--d, 7) * var(--u) * 0.7071);
+    margin: calc(var(--d, 7) * var(--u) * 0.1464);
+    background: var(--gold);
+    transform: rotate(45deg);
+}
+
+/* A rule with a diamond at its centre, fading out towards the ends. */
+.oui-rule {
+    display: flex;
+    align-items: center;
+    gap: calc(6 * var(--u));
+}
+
+.oui-rule::before,
+.oui-rule::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--rule, var(--border-gold)));
+}
+
+.oui-rule::after {
+    background: linear-gradient(270deg, transparent, var(--rule, var(--border-gold)));
+}
+
+/* A group's heading: a small diamond, the name in capitals, a rule fading to the right. */
+.oui-heading {
+    display: flex;
+    align-items: center;
+    gap: calc(7 * var(--u));
+}
+
+.oui-heading > span {
+    flex: none;
+    color: var(--gold);
+    font-family: var(--display);
+    font-weight: var(--display-weight);
+    font-size: calc(12.5 * var(--u));
+    text-transform: uppercase;
+}
+
+.oui-heading::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, var(--border-gold), transparent);
+}
+
+/*
+ * The game's double gold frame: a line on the edge, a fainter one 3 px inside, and at each corner
+ * a gold diamond with arms fading along the edges. Laid last, over the whole surface.
+ */
+.oui-frame {
+    position: absolute;
+    inset: 0;
+    border: 1px solid var(--border-gold);
+    pointer-events: none;
+}
+
+.oui-frame::before {
+    content: "";
+    position: absolute;
+    inset: calc(3 * var(--u) - 1px);
+    border: 1px solid rgb(208 145 59 / 0.3);
+}
+
+.oui-corner {
+    position: absolute;
+    width: calc(26 * var(--u));
+    height: calc(26 * var(--u));
+    background:
+        linear-gradient(90deg, var(--gold), transparent) no-repeat
+            calc(8 * var(--u)) 0 / calc(18 * var(--u)) 1px,
+        linear-gradient(180deg, var(--gold), transparent) no-repeat
+            0 calc(8 * var(--u)) / 1px calc(18 * var(--u));
+}
+
+.oui-corner::before,
+.oui-corner::after {
+    content: "";
+    position: absolute;
+    transform: rotate(45deg);
+}
+
+.oui-corner::before {
+    left: calc(4 * var(--u) - 2.83 * var(--u));
+    top: calc(4 * var(--u) - 2.83 * var(--u));
+    width: calc(5.66 * var(--u));
+    height: calc(5.66 * var(--u));
+    background: var(--gold);
+}
+
+.oui-corner::after {
+    left: calc(4 * var(--u) - 1.13 * var(--u));
+    top: calc(4 * var(--u) - 1.13 * var(--u));
+    width: calc(2.26 * var(--u));
+    height: calc(2.26 * var(--u));
+    background: var(--bg-title);
+}
+
+.oui-corner--tl { left: -1px; top: -1px; }
+.oui-corner--tr { right: -1px; top: -1px; transform: scaleX(-1); }
+.oui-corner--bl { left: -1px; bottom: -1px; transform: scaleY(-1); }
+.oui-corner--br { right: -1px; bottom: -1px; transform: scale(-1, -1); }
+
+/* A title bar: the game's bronze fading into black. */
+.oui-titlebar {
+    background: linear-gradient(180deg, var(--title-top), var(--title-bottom));
+}
+
+/* A card grouping rows, a hairline between them. */
+.oui-card {
+    display: flex;
+    flex-direction: column;
+    padding: calc(4 * var(--u));
+    border: 1px solid var(--border-card);
+    border-radius: var(--card-radius);
+    background: var(--bg-card);
+}
+
+.oui-card > * + * {
+    border-top: 1px solid var(--border-row);
+}
+
+/* Buttons: primary (a bronze plate in a gold edge, its label in the heading face), secondary
+   (dark, gold only under the pointer) and danger. `--small` for a card's tight rows. */
+.oui-btn {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    height: var(--control-height);
+    padding: 0 calc(16 * var(--u));
+    border: 1px solid var(--border-field);
+    border-radius: var(--control-radius);
+    background: var(--bg-field);
+    color: var(--text);
+    font-size: calc(13 * var(--u));
+    white-space: nowrap;
+}
+
+.oui-btn--primary {
+    border-color: var(--gold);
+    background: linear-gradient(180deg, var(--plate-top), var(--plate-bottom));
+    color: var(--gold-light);
+    font-family: var(--display);
+    font-weight: var(--display-weight);
+    font-size: calc(14 * var(--u));
+}
+
+.oui-btn--danger {
+    border-color: var(--border-danger);
+    color: var(--text-warning);
+}
+
+.oui-btn--small {
+    height: calc(24 * var(--u));
+    padding: 0 calc(10 * var(--u));
+    font-size: calc(12 * var(--u));
+}
+
+.oui-btn--small.oui-btn--primary {
+    font-size: calc(13 * var(--u));
+}
+
+/* A select: the current choice in a field with a gold ▾. `--compact` is the panel's. */
+.oui-select {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: calc(8 * var(--u));
+    min-width: calc(240 * var(--u));
+    height: var(--control-height);
+    padding: 0 calc(12 * var(--u));
+    border: 1px solid var(--border-field);
+    border-radius: var(--control-radius);
+    background: var(--bg-field);
+    color: var(--text);
+    font-size: calc(13 * var(--u));
+}
+
+.oui-select > :first-child {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.oui-select::after {
+    content: "▾";
+    flex: none;
+    color: var(--gold);
+}
+
+.oui-select--compact {
+    min-width: 0;
+    height: calc(22 * var(--u));
+    padding: 0 calc(8 * var(--u));
+    font-size: calc(12 * var(--u));
+}
+
+/* A switch, gold when on. */
+.oui-switch {
+    position: relative;
+    flex: none;
+    width: calc(34 * var(--u));
+    height: calc(18 * var(--u));
+    border: 1px solid var(--border-field);
+    border-radius: 999px;
+    background: var(--bg-field);
+}
+
+.oui-switch::after {
+    content: "";
+    position: absolute;
+    top: calc(2 * var(--u));
+    left: calc(2 * var(--u));
+    width: calc(12 * var(--u));
+    height: calc(12 * var(--u));
+    border-radius: 50%;
+    background: var(--text-dim);
+}
+
+.oui-switch--on {
+    border-color: var(--gold);
+    background: color-mix(in srgb, var(--bg-field) 70%, var(--gold));
+}
+
+.oui-switch--on::after {
+    left: calc(18 * var(--u));
+    background: var(--gold-light);
+}
+
+/* A checkbox: a gold square with a dark tick when checked. */
+.oui-check {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: calc(15 * var(--u));
+    height: calc(15 * var(--u));
+    border: 1px solid var(--text-muted);
+    border-radius: calc(3 * var(--u));
+    color: transparent;
+    font-size: calc(11 * var(--u));
+    font-weight: 700;
+    line-height: calc(13 * var(--u));
+}
+
+.oui-check--on {
+    border-color: var(--gold);
+    background: var(--gold);
+    color: var(--bg-title);
+}
+
+/* Choices side by side in one frame, the picked one lit gold. */
+.oui-segmented {
+    display: flex;
+    flex: none;
+    gap: calc(2 * var(--u));
+    padding: calc(2 * var(--u));
+    border: 1px solid var(--border-field);
+    border-radius: var(--control-radius);
+    background: var(--bg-field);
+}
+
+.oui-segmented > span {
+    display: flex;
+    align-items: center;
+    height: calc(24 * var(--u));
+    padding: 0 calc(12 * var(--u));
+    border: 1px solid transparent;
+    border-radius: calc(3 * var(--u));
+    color: var(--text-dim);
+    font-size: calc(13 * var(--u));
+    white-space: nowrap;
+}
+
+.oui-segmented > .oui-picked {
+    border-color: rgb(208 145 59 / 0.6);
+    background: rgb(208 145 59 / 0.16);
+    color: var(--gold-light);
+}
+
+/* Chips: a fact (label dimmed, then the value in its colour); a toggle (edged, gold ↔); a check
+   (an empty box before the content). */
+.oui-chip {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: calc(4 * var(--u));
+    height: calc(22 * var(--u));
+    padding: 0 calc(8 * var(--u));
+    border-radius: var(--control-radius);
+    background: var(--bg-card);
+    font-size: calc(12 * var(--u));
+    white-space: nowrap;
+}
+
+.oui-chip .oui-label {
+    color: var(--text-dim);
+}
+
+.oui-chip--toggle,
+.oui-chip--check {
+    border: 1px solid var(--border-field);
+    background: var(--bg-field);
+}
+
+.oui-chip--toggle::after {
+    content: "↔";
+    color: var(--gold);
+}
+
+.oui-chip--check {
+    gap: calc(6 * var(--u));
+}
+
+.oui-chip--check::before {
+    content: "";
+    flex: none;
+    width: calc(12 * var(--u));
+    height: calc(12 * var(--u));
+    border: 1px solid var(--text-muted);
+    border-radius: calc(2 * var(--u));
+}
+
+/* A key as a keycap, and a hotkey as keycaps joined by +. */
+.oui-keys {
+    display: flex;
+    align-items: center;
+    gap: calc(4 * var(--u));
+    color: var(--text-muted);
+}
+
+.oui-keycap {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    min-width: calc(24 * var(--u));
+    height: calc(22 * var(--u));
+    padding: 0 calc(7 * var(--u));
+    border: 1px solid var(--border-field);
+    border-bottom-width: 2px;
+    border-radius: var(--control-radius);
+    background: linear-gradient(180deg, var(--key-top), var(--bg-field));
+    color: var(--text);
+    font-size: calc(12 * var(--u));
+    font-weight: 600;
+}
+
+/* A number with − and + either side. */
+.oui-stepper {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: calc(4 * var(--u));
+}
+
+.oui-stepper > b {
+    width: calc(56 * var(--u));
+    font-size: calc(14 * var(--u));
+    font-weight: 400;
+    text-align: center;
+}
+
+.oui-stepper > span {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: calc(26 * var(--u));
+    height: calc(26 * var(--u));
+    border: 1px solid var(--border-field);
+    border-radius: var(--control-radius);
+    background: var(--bg-field);
+    color: var(--gold);
+    font-size: calc(15 * var(--u));
+}
+
+/* A text link. */
+.oui-link {
+    flex: none;
+    color: var(--text-dim);
+    font-size: calc(12 * var(--u));
+    white-space: nowrap;
+}
+
+/* A game icon from GGG's CDN, --i px square. */
+.oui-icon {
+    flex: none;
+    width: calc(var(--i, 14) * var(--u));
+    height: calc(var(--i, 14) * var(--u));
+    object-fit: contain;
+}

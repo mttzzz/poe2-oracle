@@ -1,0 +1,331 @@
+/*
+ * The settings window (crates/poe2-oracle/src/ui/settings_view.rs): 1100 × 720 px, a 40 px title
+ * bar, a 216 px sidebar and a section's page. Its text is 14 px.
+ */
+
+.oui-settings {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    width: calc(1100 * var(--u));
+    height: calc(720 * var(--u));
+    overflow: hidden;
+    background: var(--bg-panel);
+    color: var(--text);
+    font-size: calc(14 * var(--u));
+}
+
+/* The window sets its lines 1.4 times their text's size, and GPUI snaps a line's height to device
+   pixels: half a px on the 2x screens the references come from. */
+.oui-settings,
+.oui-settings * {
+    line-height: 1.4;
+    line-height: round(nearest, 1.4em, 0.5px);
+}
+
+/* GPUI measures a text's width up to a whole px, which widens what is laid out around a text: the
+   title bar's words, a heading, a select's ▾, a choice, a button, a keycap. */
+.oui-settings-app,
+.oui-settings-dot,
+.oui-settings-word,
+.oui-settings .oui-heading > span:last-child,
+.oui-settings .oui-select::after,
+.oui-settings .oui-segmented > span,
+.oui-settings .oui-btn,
+.oui-settings .oui-keycap {
+    width: calc-size(fit-content, round(up, size, var(--u)));
+}
+
+/* The title bar: ◆ PoE2 Oracle · Settings, and × as tall as the bar. */
+.oui-settings-titlebar {
+    display: flex;
+    flex: none;
+    align-items: center;
+    height: calc(40 * var(--u));
+    border-bottom: 1px solid var(--border-gold);
+}
+
+.oui-settings-title {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: calc(10 * var(--u));
+    min-width: 0;
+    height: 100%;
+    padding-left: calc(20 * var(--u));
+}
+
+.oui-settings-app,
+.oui-settings-word {
+    font-size: calc(15 * var(--u));
+    white-space: nowrap;
+}
+
+.oui-settings-app {
+    color: var(--gold-light);
+}
+
+.oui-settings-dot {
+    color: var(--text-muted);
+}
+
+.oui-settings-close {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: calc(46 * var(--u));
+    height: 100%;
+    color: var(--text-dim);
+    font-size: calc(16 * var(--u));
+}
+
+.oui-settings-body {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+}
+
+/* The sidebar: the sections, the current one marked by a gold-lit plate with a bar at its left,
+   and the app's name and version at the bottom. */
+.oui-settings-sidebar {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    width: calc(216 * var(--u));
+    height: 100%;
+    border-right: 1px solid var(--border-card);
+    background: var(--bg-sidebar);
+}
+
+.oui-settings-nav {
+    position: relative;
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    gap: calc(2 * var(--u));
+    padding: calc(18 * var(--u)) calc(10 * var(--u)) 0;
+}
+
+.oui-settings-marker {
+    position: absolute;
+    top: calc((18 + 40 * var(--at, 0)) * var(--u));
+    right: calc(10 * var(--u));
+    left: calc(10 * var(--u));
+    height: calc(38 * var(--u));
+    border-radius: calc(6 * var(--u));
+    background: linear-gradient(90deg, rgb(208 145 59 / 0.16), rgb(208 145 59 / 0.02));
+}
+
+.oui-settings-marker::before {
+    content: "";
+    position: absolute;
+    top: calc(10 * var(--u));
+    bottom: calc(10 * var(--u));
+    left: 0;
+    width: calc(2 * var(--u));
+    border-radius: 999px;
+    background: var(--gold);
+}
+
+/* Positioned, so it lies over the marker. */
+.oui-settings-section {
+    position: relative;
+    display: flex;
+    align-items: center;
+    height: calc(38 * var(--u));
+    padding: 0 calc(18 * var(--u));
+    border-radius: calc(6 * var(--u));
+    color: var(--text-dim);
+    font-size: calc(15 * var(--u));
+    white-space: nowrap;
+}
+
+.oui-settings-current {
+    color: var(--gold-light);
+}
+
+.oui-settings-about {
+    display: flex;
+    flex-direction: column;
+    gap: calc(2 * var(--u));
+    margin-top: auto;
+    padding: 0 calc(26 * var(--u)) calc(18 * var(--u));
+}
+
+.oui-settings-brand {
+    color: var(--gold);
+    font-size: calc(13 * var(--u));
+}
+
+.oui-settings-version {
+    color: var(--text-muted);
+    font-size: calc(11 * var(--u));
+}
+
+/* A section's page, warmed under the title bar as if lit from it: 3.5 % gold at the top, gone a
+   third of the way down. */
+.oui-settings-content {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+    height: 100%;
+    background: linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--bg-panel) 96.5%, var(--gold)),
+        var(--bg-panel) 30%
+    );
+}
+
+.oui-settings-header {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    gap: calc(4 * var(--u));
+    padding: calc(26 * var(--u)) calc(36 * var(--u)) calc(16 * var(--u));
+}
+
+.oui-settings-heading {
+    color: var(--gold-light);
+    font-size: calc(24 * var(--u));
+}
+
+.oui-settings-summary {
+    color: var(--text-dim);
+    font-size: calc(13 * var(--u));
+}
+
+.oui-settings-rule {
+    padding-top: calc(12 * var(--u));
+}
+
+/* As tall as its diamond, 7 px. */
+.oui-settings-rule > .oui-rule {
+    height: calc(7 * var(--u));
+}
+
+/* The section's groups. The app scrolls them; a drawing shows what fits. */
+.oui-settings-page {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: calc(22 * var(--u));
+    min-height: 0;
+    overflow: hidden;
+    padding: calc(4 * var(--u)) calc(36 * var(--u)) calc(28 * var(--u));
+}
+
+.oui-settings-group {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    gap: calc(10 * var(--u));
+}
+
+/* A card's rows sit apart by a hairline inset from its sides. */
+.oui-settings .oui-card > * + * {
+    border-top: 0;
+}
+
+.oui-settings-hairline {
+    flex: none;
+    height: 1px;
+    margin: 0 calc(14 * var(--u));
+    background: var(--border-row);
+}
+
+/* A setting: its name and what it does on the left, its control on the right. */
+.oui-settings-row {
+    display: flex;
+    align-items: center;
+    gap: calc(24 * var(--u));
+    padding: calc(12 * var(--u)) calc(14 * var(--u));
+}
+
+.oui-settings-label {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: calc(2 * var(--u));
+    min-width: 0;
+}
+
+.oui-settings-note {
+    color: var(--text-dim);
+    font-size: calc(12 * var(--u));
+}
+
+.oui-settings-note--text {
+    color: var(--text);
+}
+
+.oui-settings-note--warning {
+    color: var(--text-warning);
+}
+
+.oui-settings-control {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: calc(8 * var(--u));
+}
+
+/* The ▾ Segoe UI lacks, from the face Windows draws it in. */
+.oui-settings .oui-select::after {
+    font-family: "Segoe UI Symbol", var(--body);
+}
+
+/* A choice's gold light is laid inside it (style.rs's `segmented`), so a choice is only its label
+   and padding wide, with no edge of its own. */
+.oui-settings .oui-segmented > span {
+    border: 0;
+}
+
+.oui-settings .oui-segmented > .oui-picked {
+    box-shadow: inset 0 0 0 1px rgb(208 145 59 / 0.6);
+}
+
+/* A stepper's button at its end of the range. */
+.oui-settings .oui-stepper > .oui-settings-end {
+    color: var(--text-muted);
+}
+
+/* A hotkey recorder: the hotkey as keycaps in a field. */
+.oui-settings-recorder {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    min-width: calc(150 * var(--u));
+    height: var(--control-height);
+    padding: 0 calc(8 * var(--u));
+    border: 1px solid var(--border-field);
+    border-radius: var(--control-radius);
+    background: var(--bg-field);
+    font-size: calc(13 * var(--u));
+}
+
+/* A one-line text field, --w px wide: its text, or its placeholder muted. */
+.oui-settings-field {
+    display: flex;
+    align-items: center;
+    width: calc(var(--w, 250) * var(--u));
+    height: var(--control-height);
+    padding: 0 calc(10 * var(--u));
+    border: 1px solid var(--border-field);
+    border-radius: var(--control-radius);
+    background: var(--bg-field);
+    font-size: calc(13 * var(--u));
+}
+
+.oui-settings-field > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.oui-settings-muted {
+    color: var(--text-muted);
+}

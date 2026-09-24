@@ -1,0 +1,57 @@
+/* The hero: parts of the app in columns (hero.js), on the game's dark. */
+
+@import url("panel.css");
+@import url("market.css");
+@import url("xp.css");
+@import url("settings.css");
+
+.oui-hero {
+    --hero-u: var(--u);
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: calc(40 * var(--u));
+    padding: calc(32 * var(--u)) calc(40 * var(--u));
+    overflow: hidden;
+    border: 1px solid var(--border-gold);
+    border-radius: calc(6 * var(--u));
+    background:
+        radial-gradient(ellipse 70% 60% at 30% 25%, rgb(208 145 59 / 0.12), transparent 70%),
+        radial-gradient(ellipse 60% 50% at 80% 90%, rgb(107 80 34 / 0.18), transparent 70%),
+        linear-gradient(180deg, #15120f, #060607);
+}
+
+.oui-hero-column {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    align-items: center;
+    gap: calc(32 * var(--u));
+}
+
+/* Each part at its own UI scale, within the hero's. */
+.oui-hero-part {
+    --u: calc(var(--hero-u) * var(--part, 1));
+    flex: none;
+    box-shadow: 0 calc(12 * var(--hero-u)) calc(40 * var(--hero-u)) rgb(0 0 0 / 0.6);
+}
+
+.oui-hero-heading {
+    display: flex;
+    flex-direction: column;
+    gap: calc(14 * var(--u));
+    width: calc(430 * var(--u));
+}
+
+.oui-hero-title {
+    color: var(--gold-light);
+    font-size: calc(64 * var(--u));
+    line-height: 1.05;
+}
+
+.oui-hero-tagline {
+    color: var(--text);
+    font-size: calc(26 * var(--u));
+    line-height: 1.3;
+}

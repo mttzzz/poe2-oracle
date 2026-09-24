@@ -1,6 +1,6 @@
 # XP overlay
 
-![The XP overlay above the game's flask panel](../images/en/xp-overlay.webp)
+![The XP overlay's lines above the game's flask and skill panels](../images/en/xp-overlay.webp)
 
 PoE2 Oracle sets its experience readout on top of the game's own HUD. On the rail along the top
 of the flask panel, left of the experience bar, stands a plate that tells how fast you gain

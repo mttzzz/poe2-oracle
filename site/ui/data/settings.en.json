@@ -1,0 +1,57 @@
+{
+    "window": "Settings",
+    "sections": ["General", "Price check", "Quick actions", "XP overlay", "Account", "Help"],
+    "section": 0,
+    "summary": "League, languages, scale, starting with Windows and updates",
+    "version": "version 0.1.0",
+    "groups": [
+        {
+            "title": "League and language",
+            "rows": [
+                {
+                    "label": "League",
+                    "note": "Where prices are searched. Auto is the trade site's current league",
+                    "control": { "type": "select", "value": "Forbidden Rites" }
+                },
+                {
+                    "label": "Game client language",
+                    "note": "The language the game copies items in. Auto tells it from the item's text",
+                    "control": { "type": "segmented", "options": ["Auto", "Русский", "English"], "picked": 0 }
+                },
+                {
+                    "label": "Interface language",
+                    "note": "The app's own words; items and the trade site stay as they are. Auto follows the game client, or Windows until the game has run",
+                    "control": {
+                        "type": "segmented",
+                        "options": ["Auto · English", "Русский", "English"],
+                        "picked": 0
+                    }
+                }
+            ]
+        },
+        {
+            "title": "Window",
+            "rows": [
+                {
+                    "label": "Interface scale",
+                    "note": "Size of the text and controls on the price panel and live search cards",
+                    "control": { "type": "stepper", "value": "100%" }
+                }
+            ]
+        },
+        {
+            "title": "System",
+            "rows": [
+                {
+                    "label": "Start with Windows",
+                    "control": { "type": "switch", "on": true }
+                },
+                {
+                    "label": "Check for updates automatically",
+                    "note": "Half a minute after launch; a new version shows up in the menu of the icon by the clock",
+                    "control": { "type": "switch", "on": true }
+                }
+            ]
+        }
+    ]
+}

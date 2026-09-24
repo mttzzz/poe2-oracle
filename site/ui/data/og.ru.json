@@ -1,0 +1,25 @@
+{
+    "width": 1200,
+    "height": 630,
+    "title": "PoE2 Oracle",
+    "tagline": "Проверка цены в Path of Exile 2 по горячей клавише",
+    "columns": [
+        [
+            {
+                "heading": true
+            },
+            {
+                "part": "xp",
+                "scale": 0.9,
+                "plates": 1
+            }
+        ],
+        [
+            {
+                "part": "panel",
+                "scale": 0.56,
+                "listings": 4
+            }
+        ]
+    ]
+}
