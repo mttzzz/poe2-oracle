@@ -170,7 +170,8 @@ searches and for the **sum** rows among the [filters](price-check.md#filters).
   `My League (PL12345)`. When you press <kbd>Enter</kbd> or leave the box, searches move to that
   league, and **General** lists it as **Private league · *name***. An empty box brings back **Auto**.
   The site does not answer searches in a private league without a sign-in, and the row warns about
-  it.
+  it. Exchange prices come from the public league yours is made from: see
+  [In a private league](price-check.md#in-a-private-league).
 
 ## Help
 

@@ -17,6 +17,7 @@ use trade_client::rates::PriceUnit;
 use trade_client::{AccountStatus, ListedItem, ListedMod, ListingStatus, PriceCurrency};
 
 use crate::i18n;
+use crate::league_chip;
 use crate::listing_match::{self, Asked, WantedStat};
 use crate::live_search::LiveSearches;
 use crate::price_check::{ListingRow, PriceCheckApp, SearchFailure, SearchState};
@@ -376,7 +377,8 @@ pub(super) fn render_results(
 }
 
 /// poe2scout's price of a unique, averaged over the trade site's listings: a second opinion
-/// beside this item's own search, and the only one when the search fails or finds nothing.
+/// beside this item's own search, and the only one when the search fails or finds nothing. A
+/// private league's is its public league's, which it names.
 fn render_scout_line(state: &PriceCheckApp, (value, unit): (f64, PriceUnit)) -> impl IntoElement {
     div()
         .mt(rems_from_px(12.))
@@ -385,7 +387,10 @@ fn render_scout_line(state: &PriceCheckApp, (value, unit): (f64, PriceUnit)) -> 
         .justify_center()
         .gap(rems_from_px(5.))
         .text_color(rgb(TEXT_DIM))
-        .child(tr!("poe2scout price:"))
+        .child(match state.reference_league_name() {
+            Some(league) => tr!("poe2scout price in {league}:", league = league),
+            None => tr!("poe2scout price:").to_owned(),
+        })
         .child(
             div()
                 .text_color(rgb(TEXT))
@@ -402,7 +407,7 @@ fn render_market_gap(state: &PriceCheckApp) -> impl IntoElement {
     let text = match state.market().and_then(|market| market.hours) {
         Some(_) => tr!(
             "Nobody traded this item on the Currency Exchange in {league} in the last hours.",
-            league = state.league()
+            league = league_chip::league_name(state.market_league(), state.league_names())
         ),
         None => tr!("GGG's Currency Exchange data is unavailable right now.").to_owned(),
     };

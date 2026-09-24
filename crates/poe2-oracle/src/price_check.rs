@@ -47,6 +47,7 @@ use crate::bug_report;
 use crate::game_chat;
 use crate::i18n;
 use crate::item_refs::{self, RefKind};
+use crate::league_chip;
 use crate::live_search::{self, WatchedSearch};
 use crate::overlay_layout::{self, PanelSide, PhysicalRect};
 use crate::paths;
@@ -546,10 +547,12 @@ pub struct PriceCheckApp {
     site: TradeSite,
     /// The league's exchange market -- GGG's prices of exchange items and poe2scout's of the rest,
     /// and the rates listing prices are normalized with -- and when it was loaded
-    /// (reloaded after `MARKET_MAX_AGE`).
+    /// (reloaded after `MARKET_MAX_AGE`). A private league's is its reference league's
+    /// (`market_league`).
     market: Option<(Market, Instant)>,
     /// The league's poe2scout prices of uniques, which the exchange doesn't trade, and when they
-    /// were loaded (reloaded after `MARKET_MAX_AGE`, like the market).
+    /// were loaded (reloaded after `MARKET_MAX_AGE`, like the market); a private league's, its
+    /// reference league's.
     scout: Option<(ScoutPrices, Instant)>,
 }
 
@@ -620,6 +623,19 @@ impl PriceCheckApp {
     /// site's list for a Russian interface, the international one's otherwise.
     pub fn league_names(&self) -> &[League] {
         &self.catalog(i18n::lang().trade_site()).leagues
+    }
+
+    /// The league whose exchange market and poe2scout prices stand for the current one's: itself,
+    /// or for a private league the public one it's made from (`league_chip::market_league`).
+    pub fn market_league(&self) -> &str {
+        league_chip::market_league(&self.league, &self.leagues)
+    }
+
+    /// The public league a private one's prices come from, named in the interface language;
+    /// `None` while the league prices by its own market.
+    pub fn reference_league_name(&self) -> Option<&str> {
+        let market = self.market_league();
+        (market != self.league).then(|| league_chip::league_name(market, self.league_names()))
     }
 
     /// The open settings window, if any.
@@ -782,6 +798,10 @@ impl PriceCheckApp {
         }
         if !self.league.is_empty() {
             log::info!("league {} -> {league}", self.league);
+        }
+        let market = league_chip::market_league(league, &self.leagues);
+        if market != league {
+            log::info!("{league} is private: its exchange items are priced by {market}");
         }
         self.league = league.to_owned();
         self.market = None;
@@ -1665,17 +1685,19 @@ async fn current_market(
     client: &Arc<dyn HttpClient>,
     league: &str,
 ) -> Result<Market> {
-    let cached = view.read_with(cx, |state, _| {
-        state
+    let (cached, market_league) = view.read_with(cx, |state, _| {
+        let cached = state
             .market
             .as_ref()
             .filter(|(_, loaded_at)| loaded_at.elapsed() < MARKET_MAX_AGE)
-            .map(|(market, _)| market.clone())
+            .map(|(market, _)| market.clone());
+        let market_league = league_chip::market_league(league, &state.leagues).to_owned();
+        (cached, market_league)
     });
     if let Some(market) = cached {
         return Ok(market);
     }
-    let market = trade_client::cx::fetch_market(client, league, &paths::cache_dir())
+    let market = trade_client::cx::fetch_market(client, &market_league, &paths::cache_dir())
         .await
         .context("loading the exchange market")?;
     // A market that arrives after the player switched leagues is not this league's.
@@ -1696,16 +1718,18 @@ async fn current_scout(
     client: &Arc<dyn HttpClient>,
     league: &str,
 ) -> Result<()> {
-    let fresh = view.read_with(cx, |state, _| {
-        state
+    let (fresh, market_league) = view.read_with(cx, |state, _| {
+        let fresh = state
             .scout
             .as_ref()
-            .is_some_and(|(_, loaded_at)| loaded_at.elapsed() < MARKET_MAX_AGE)
+            .is_some_and(|(_, loaded_at)| loaded_at.elapsed() < MARKET_MAX_AGE);
+        let market_league = league_chip::market_league(league, &state.leagues).to_owned();
+        (fresh, market_league)
     });
     if fresh {
         return Ok(());
     }
-    let prices = trade_client::scout::fetch_prices(client, league, &paths::cache_dir())
+    let prices = trade_client::scout::fetch_prices(client, &market_league, &paths::cache_dir())
         .await
         .context("loading poe2scout's prices")?;
     // Prices that arrive after the player switched leagues are not this league's.

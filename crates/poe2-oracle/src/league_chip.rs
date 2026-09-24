@@ -1,7 +1,7 @@
 //! The price panel's league chip (`ui::panel::title_bar`): what it says, and the choices its menu
 //! offers -- the ones the settings window's league chips offer -- each league named the way the
-//! trade site in the interface language names it. Pure and not Windows-gated, so the native CI
-//! test pass covers it.
+//! trade site in the interface language names it; and the public league whose market prices a
+//! private one. Pure and not Windows-gated, so the native CI test pass covers it.
 
 use trade_client::League;
 
@@ -58,6 +58,39 @@ pub fn menu(
         }))
         .chain(unlisted)
         .collect()
+}
+
+/// Whether `league` is a private league: GGG names one "<name> (PL<number>)", which is how EE2
+/// tells them apart (`Leagues.ts`, `isPrivateLeague`).
+pub fn is_private(league: &str) -> bool {
+    league
+        .strip_suffix(')')
+        .and_then(|rest| rest.rsplit_once("(PL"))
+        .is_some_and(|(_, number)| !number.is_empty() && number.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// The league whose exchange market and poe2scout prices stand for `league`'s: itself, unless
+/// it's private. A private league's own exchange is too thin to price (GGG's record, 2026-09-24:
+/// the busiest private league, "HC FRites League by Cardiff (PL86503)", had 74 exchange markets
+/// in 12 hours against Forbidden Rites' 21 290, and never Divine Orbs for Exalted Orbs), and
+/// poe2scout lists none, so it takes the prices of the public league it's most likely made from:
+/// the current one, or its hardcore twin ("HC <league>") for a league named hardcore ("HC" or
+/// "Hardcore" as a word). `listed`: the trade site's league ids, current first; without them a
+/// private league stands for itself too.
+pub fn market_league<'a>(league: &'a str, listed: &'a [String]) -> &'a str {
+    let Some(current) = listed.first().filter(|_| is_private(league)) else {
+        return league;
+    };
+    let hardcore = league
+        .split(|c: char| !c.is_alphanumeric())
+        .any(|word| word.eq_ignore_ascii_case("hc") || word.eq_ignore_ascii_case("hardcore"));
+    if !hardcore {
+        return current;
+    }
+    listed
+        .iter()
+        .find(|id| id.strip_prefix("HC ") == Some(current.as_str()))
+        .map_or(current, String::as_str)
 }
 
 #[cfg(test)]
@@ -228,5 +261,48 @@ mod tests {
             );
             assert_eq!(menu(&typed, &[], &[])[0].1, "Auto");
         });
+    }
+
+    #[test]
+    fn a_private_league_is_priced_by_the_public_league_it_is_made_from() {
+        let listed = listed();
+        // The owner's league, live 2026-09-24, and GGG's record's other private leagues then.
+        assert_eq!(
+            market_league("HC FRites League by Cardiff (PL86503)", &listed),
+            "HC Forbidden Rites"
+        );
+        assert_eq!(
+            market_league("The Forbidden Rites of Conflux (PL86619)", &listed),
+            "Forbidden Rites"
+        );
+        assert_eq!(
+            market_league("hardcore-only friends (PL1)", &listed),
+            "HC Forbidden Rites"
+        );
+        // "hc" inside a word says nothing.
+        assert_eq!(market_league("Chcoolers (PL2)", &listed), "Forbidden Rites");
+        // A hardcore one whose current league has no twin listed takes the current league.
+        let without_twin = vec!["Forbidden Rites".to_owned(), "Standard".to_owned()];
+        assert_eq!(
+            market_league("HC mates (PL3)", &without_twin),
+            "Forbidden Rites"
+        );
+        // Public leagues, and typed names that aren't private, stand for themselves; so does a
+        // private one before the list loads.
+        for league in [
+            "HC Forbidden Rites",
+            "Runes of Aldur",
+            "Standard",
+            "My League",
+            "My League (PL)",
+            "My League (PL12a)",
+            "My League (PL12345) x",
+        ] {
+            assert_eq!(market_league(league, &listed), league);
+        }
+        assert_eq!(
+            market_league("My League (PL12345)", &[]),
+            "My League (PL12345)"
+        );
     }
 }

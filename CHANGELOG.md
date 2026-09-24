@@ -61,7 +61,9 @@ The first public release.
   read or keep the password; the site's session is kept in Windows Credential Manager, sent only
   to pathofexile.com, and removed by **Sign out** or uninstalling. Signed in, the app searches
   private leagues (Settings → Account → **League name**) and the trade site's “sum” rows, and
-  watches searches.
+  watches searches. A private league trades too little on the Currency Exchange to price by, so
+  its exchange prices, Divine Orb rate and poe2scout prices come from the public league it's made
+  from (the current one, or its "HC" twin for a hardcore league), and the market card says so.
 - **Live search:** the panel's **Live search** switch watches a search on the trade site, up to 20
   at once as the site allows; each new listing arrives as a card over the game.
 - **XP overlay** on top of the game's HUD, on the rails along the top of its flask and skill

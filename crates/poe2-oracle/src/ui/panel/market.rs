@@ -19,7 +19,7 @@ use crate::tr;
 use crate::ui::style::CARD_RADIUS;
 use crate::ui::theme::{
     BG_CARD, BORDER_CARD, BORDER_ROW, CONTENT_PADDING, PRICE_FALL, PRICE_RISE, TEXT_DIM,
-    TEXT_MUTED, rems_from_px,
+    TEXT_MUTED, TEXT_WARNING, rems_from_px,
 };
 
 use super::format::{amount_in, currency_img};
@@ -28,7 +28,7 @@ use super::results::render_link;
 /// A Currency Exchange item's market: the value in the unit that reads best with its icon, the
 /// other units, how many a divine buys when it's cheap, poe2scout's week of prices and change,
 /// the hourly volume, the most traded pair, what the copied stack is worth, and the hours the
-/// value comes from.
+/// value comes from. In a private league, whose public league's market it is, first.
 pub(super) fn render_market_card(
     state: &PriceCheckApp,
     item: &ParsedItem,
@@ -124,6 +124,19 @@ pub(super) fn render_market_card(
                         }),
                 ),
         )
+        .children(state.reference_league_name().map(|league| {
+            div()
+                .px(rems_from_px(CONTENT_PADDING))
+                .py(rems_from_px(6.))
+                .border_t_1()
+                .border_color(rgb(BORDER_ROW))
+                .text_xs()
+                .text_color(rgb(TEXT_WARNING))
+                .child(tr!(
+                    "Prices from {league}: a private league trades too little on the exchange.",
+                    league = league
+                ))
+        }))
         .child(
             div()
                 .flex()

@@ -331,10 +331,22 @@ Exchange data is unavailable right now." and prices the item from poe2scout the 
 poe2scout cannot be reached either, it shows the trade site's listings. "No listings on the trade
 site" means the trade site has no listings of the item.
 
+### In a private league
+
+A private league trades too little on the Currency Exchange to price anything by: even a busy one
+makes a few dozen trades in half a day, and poe2scout does not list private leagues. So the market
+card, the Divine Orb rate in the title bar and the **poe2scout price** of uniques come from the
+public league yours is made from: the current league, or its hardcore twin for a league with "HC"
+or "Hardcore" in its name (**Forbidden Rites** and **HC Forbidden Rites** this season). The card
+says so in its first line, "Prices from *league*: a private league trades too little on the
+exchange.", and so does the rate's tooltip. Take them as a guide: a small league's own rates can be
+far from the public league's. Trade site searches, listings included, stay in your league.
+
 ## Unique items
 
 An identified unique is searched by its name. Above the results, **poe2scout price:** shows its
-price on poe2scout, with the currency's icon.
+price on poe2scout, with the currency's icon; in a private league, the public league's price, which
+the line names ([In a private league](#in-a-private-league)).
 
 An unidentified unique is compared with unidentified uniques of the same base. It has no poe2scout
 line, since its name is not known yet.

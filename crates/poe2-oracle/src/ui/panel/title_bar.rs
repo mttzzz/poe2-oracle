@@ -136,10 +136,12 @@ fn render_league_select(
 /// The title bar's empty part and the divine rate in it, once the market is loaded (EE2's ⇄ rate):
 /// pressing it and moving drags the panel sideways (`PriceCheckApp::begin_panel_drag`), a
 /// double-click puts it back in its own place (`PriceCheckApp::reset_panel_position`). The rate
-/// and a little of the empty part stay however narrow the panel.
+/// and a little of the empty part stay however narrow the panel. A private league's rate is its
+/// public league's, which the rate's own tooltip names.
 fn render_drag_area(state: &PriceCheckApp, cx: &Context<PriceCheckApp>) -> impl IntoElement {
     let rate = state.market().map(|market| {
         div()
+            .id("rate")
             .flex()
             .flex_none()
             .items_center()
@@ -151,6 +153,12 @@ fn render_drag_area(state: &PriceCheckApp, cx: &Context<PriceCheckApp>) -> impl 
             .children(currency_img(state.currency_icon("divine"), 16.))
             .child(format!("= {}", i18n::compact(market.exalted_per_divine)))
             .children(currency_img(state.currency_icon("exalted"), 16.))
+            .when_some(state.reference_league_name(), |this, league| {
+                this.tooltip(hints::hint(tr!(
+                    "The rate in {league}: a private league trades too little on the exchange.",
+                    league = league
+                )))
+            })
     });
     div()
         .id("drag")
