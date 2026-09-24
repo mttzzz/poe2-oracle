@@ -54,7 +54,6 @@ pub(super) fn render_title_bar(
             "settings",
             "⚙",
             BUTTON_WIDTH,
-            false,
             cx.listener(|_view, _event: &MouseDownEvent, _window, cx| {
                 // Deferred: opening the window updates this very entity, which is mid-update
                 // while its own listener runs.
@@ -66,7 +65,6 @@ pub(super) fn render_title_bar(
             "close",
             "×",
             BUTTON_WIDTH,
-            true,
             cx.listener(|view, _event: &MouseDownEvent, _window, cx| {
                 view.visible = false;
                 cx.notify();

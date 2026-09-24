@@ -1064,7 +1064,6 @@ impl SettingsView {
                 "close",
                 "×",
                 46.,
-                true,
                 cx.listener(|view, _: &MouseDownEvent, window, cx| view.close(window, cx)),
             ))
     }

@@ -600,14 +600,13 @@ pub(crate) fn title_gradient() -> Background {
     )
 }
 
-/// A title bar's button -- `⚙`, `×` -- as tall as the bar. Under the pointer it lights up the way
-/// the rest of the app does, not with a system window's solid block: a faint wash and a glow cast
-/// inward, the glyph brightening -- gold, and for `close` the destructive red of a danger button.
+/// A title bar's button -- `⚙`, `×` -- as tall as the bar. Under the pointer nothing fills it --
+/// a fill would run into the window's frame -- only its glyph lights up gold, a soft gold light
+/// behind it.
 pub(crate) fn title_button(
     key: impl Into<ElementId>,
     glyph: &'static str,
     width: f32,
-    close: bool,
     on_press: impl Fn(&MouseDownEvent, &mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
     let key = key.into();
@@ -621,18 +620,19 @@ pub(crate) fn title_button(
         .h_full()
         .cursor_pointer()
         .on_mouse_down(MouseButton::Left, on_press)
-        .text_size(rems_from_px(16.))
-        .child(glyph);
-    let (lit, glyph_lit) = if close {
-        (TEXT_WARNING, TEXT_WARNING)
-    } else {
-        (GOLD, GOLD_LIGHT)
-    };
+        .text_size(rems_from_px(16.));
     ease_hover(key, element, move |element, hover| {
-        element
-            .bg(alpha(lit, 0.1 * hover))
-            .shadow(inner_glow(lit, hover))
-            .text_color(rgb(blend(TEXT_DIM, glyph_lit, hover)))
+        element.child(
+            div()
+                .flex()
+                .items_center()
+                .justify_center()
+                .size(rems_from_px(24.))
+                .rounded_full()
+                .shadow(glow(GOLD, hover))
+                .text_color(rgb(blend(TEXT_DIM, GOLD_LIGHT, hover)))
+                .child(glyph),
+        )
     })
 }
 
