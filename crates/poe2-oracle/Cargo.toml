@@ -112,10 +112,17 @@ zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2
 # `Win32_System_DataExchange`, `Win32_System_Memory` and `Win32_System_Ole` (the clipboard formats
 # GPUI doesn't write or read: the privacy marks on a quick action's text, and those of what the
 # player copied -- src/platform/clipboard_poll.rs).
+# `Win32_Graphics_Direct3D`, `Win32_Graphics_Direct3D11`, `Win32_Graphics_Dxgi` and
+# `Win32_Graphics_Dxgi_Common` (desktop duplication, which reads the HUD rails' lips frame by frame
+# for the XP overlay -- src/platform/lip_watch.rs; gpui_windows' renderer builds them already).
 windows = { version = "0.62", features = [
     "Win32_Foundation",
     "Win32_Globalization",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
     "Win32_Graphics_Dwm",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
     "Win32_Graphics_Gdi",
     "Win32_Security_Credentials",
     "Win32_System_Console",

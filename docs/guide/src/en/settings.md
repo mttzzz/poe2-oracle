@@ -39,7 +39,8 @@ Row **League**: a list of where prices are searched.
 - Any league the trade site lists, named the way the site names it in the interface language
   (www.pathofexile.com's names in English, ru.pathofexile.com's in Russian), as on the price panel's
   league chip.
-- **Private league · *name***: a private league, once its name is set in [Account](#account).
+- **Private league · *name***: a private league -- each of your account's own while you are signed
+  in, and one whose name is set in [Account](#account).
 
 Notes under the row's name: "Loading the league list from the trade site" or "The league list from
 the trade site didn't load"; "The trade site no longer lists this league — searches go to the
@@ -162,13 +163,17 @@ Section **Account**. Signing in to pathofexile.com is needed to search private l
   only. **Sign out** makes PoE2 Oracle forget the session; you stay signed in on the site. The
   sign-in window needs the Microsoft Edge WebView2 Runtime; without it, the row shows a link
   **Download from Microsoft**.
-- **Private league.** Row **League name**: the name as the trade site writes it, brackets included:
-  `My League (PL12345)`. When you press <kbd>Enter</kbd> or leave the box, searches move to that
-  league, and from then on the league menus, in **General** and on the price panel, list it as
-  **Private league · *name***, even while you search another league: switching back is one click.
-  An empty box forgets it, and brings back **Auto** if it was the league searched.
-  The site does not answer searches in a private league without a sign-in, and the row warns about
-  it. Exchange prices come from the public league yours is made from: see
+- **Private league.** Signed in, you need not type anything: the league menus, in **General** and
+  on the price panel, list your account's private leagues as pathofexile.com shows them on its
+  **Private Leagues** page, and the row names them. For any other league, row **League name**:
+  its name as on pathofexile.com, `My League`. When you press <kbd>Enter</kbd> or leave the box,
+  the app looks the league up on the site and takes the name as the site writes it, number
+  included -- `My League (PL12345)`; searches move to that league, and from then on the league
+  menus list it as **Private league · *name***, even while you search another league: switching
+  back is one click. A name the site doesn't know changes nothing, and the row says so. An empty
+  box forgets it, and brings back **Auto** if it was the league searched. The site does not answer
+  searches in a private league without a sign-in, and the row warns about it. Exchange prices come
+  from the public league yours is made from: see
   [In a private league](price-check.md#in-a-private-league).
 
 ## Help

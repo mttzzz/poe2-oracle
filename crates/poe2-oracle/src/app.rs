@@ -439,7 +439,8 @@ const SETTINGS_MIN_SIZE: (f32, f32) = (900., 600.);
 /// head it.
 ///
 /// Autostart is read from the registry first: that is where it lives -- the installer and Task
-/// Manager change it too -- so the window shows what Windows will do.
+/// Manager change it too -- so the window shows what Windows will do; and the account's private
+/// leagues are loaded again.
 pub fn open_settings(app: &Entity<PriceCheckApp>, cx: &mut App) {
     if let Some(handle) = app.read(cx).settings_window()
         && handle
@@ -449,8 +450,11 @@ pub fn open_settings(app: &Entity<PriceCheckApp>, cx: &mut App) {
         log::info!("settings window brought forward");
         return;
     }
-    app.update(cx, |state, _| {
+    // The player may have joined a private league since they last loaded: the league menus offer
+    // the account's own.
+    app.update(cx, |state, cx| {
         state.settings.autostart = autostart::autostart_enabled();
+        state.refresh_private_leagues(cx);
     });
     let intro = Intro {
         problems: diagnostics::setup_problems(&game_config::read()),

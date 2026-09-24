@@ -22,6 +22,7 @@ pub mod account;
 pub mod cache;
 pub mod catalog;
 pub mod cx;
+pub mod private_leagues;
 pub mod rate_limit;
 pub mod rates;
 pub mod scout;

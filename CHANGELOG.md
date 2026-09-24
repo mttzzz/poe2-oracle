@@ -60,10 +60,13 @@ The first public release.
   sign-in page in a window of the app (Microsoft Edge WebView2), Steam included. The app doesn't
   read or keep the password; the site's session is kept in Windows Credential Manager, sent only
   to pathofexile.com, and removed by **Sign out** or uninstalling. Signed in, the app searches
-  private leagues (Settings → Account → **League name**) and the trade site's “sum” rows. A
-  private league trades too little on the Currency Exchange to price by, so its exchange prices,
-  Divine Orb rate and poe2scout prices come from the public league it's made from (the current
-  one, or its "HC" twin for a hardcore league), and the market card says so.
+  private leagues and the trade site's “sum” rows: the league menus offer the account's own
+  private leagues, as the site's **Private Leagues** page lists them, and a name typed in
+  (Settings → Account → **League name**) is looked up on the site, its number filled in, and
+  refused if the site doesn't know it. A private league trades too little on the Currency
+  Exchange to price by, so its exchange prices, Divine Orb rate and poe2scout prices come from the
+  public league it's made from (the one its page names; for a league typed in, the current one or
+  its "HC" twin for a hardcore league), and the market card says so.
 - **XP overlay** on top of the game's HUD, on the rails along the top of its flask and skill
   panels -- never over them: the rails are the game's rage and stun gauges -- each plate running on
   to its life or mana globe's frame, the gap there filled to the pixel, and curling down onto the
@@ -72,7 +75,8 @@ The first public release.
   level percentage, and a ⚙ that opens the settings; above the skill panel a map timer with the
   map's experience and the session's average map time. The plates are drawn pixel by pixel in the
   HUD's own molding and colours, take the HUD's size, let clicks through to the game but for the
-  ⚙, and say as much as they have room for.
+  ⚙, step aside the moment a game tooltip covers their rail, and say as much as they have room
+  for.
 - **Quick actions:** up to 12 hotkeys that type a chat command (`/hideout` is preset, `@last thanks`
   answers whoever whispered last) or paste a stash search string.
 - **Settings window:** league, client language, hotkeys, quick actions, default sellers, seller

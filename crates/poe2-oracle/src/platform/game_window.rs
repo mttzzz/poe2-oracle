@@ -23,9 +23,9 @@ use windows::Win32::UI::Accessibility::{HWINEVENTHOOK, SetWinEventHook};
 use windows::Win32::UI::HiDpi::{GetDpiForMonitor, GetDpiForWindow, MDT_EFFECTIVE_DPI};
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON};
 use windows::Win32::UI::WindowsAndMessaging::{
-    EVENT_SYSTEM_FOREGROUND, FindWindowW, GetClientRect, GetCursorPos, GetForegroundWindow,
-    GetSystemMetrics, GetWindowThreadProcessId, SM_SWAPBUTTON, SetForegroundWindow,
-    WINEVENT_OUTOFCONTEXT,
+    EVENT_SYSTEM_FOREGROUND, FindWindowW, GA_ROOT, GetAncestor, GetClientRect, GetCursorPos,
+    GetForegroundWindow, GetSystemMetrics, GetWindowThreadProcessId, SM_SWAPBUTTON,
+    SetForegroundWindow, WINEVENT_OUTOFCONTEXT, WindowFromPoint,
 };
 use windows::core::{PCWSTR, w};
 
@@ -47,6 +47,20 @@ fn cursor_pos() -> Option<(i32, i32)> {
 /// The cursor's x on the screen, physical pixels.
 pub fn cursor_x() -> Option<i32> {
     cursor_pos().map(|(x, _)| x)
+}
+
+/// Whether the player is at the game `game`: it's in front, or the cursor is over it -- the game
+/// shows its tooltips under the cursor even while another window has the keyboard (seen live
+/// 2026-09-24). Click-through windows over it, the XP overlay's plates, are passed over, as by the
+/// mouse.
+pub fn attended(game: HWND) -> bool {
+    if unsafe { GetForegroundWindow() } == game {
+        return true;
+    }
+    cursor_pos().is_some_and(|(x, y)| {
+        let under = unsafe { WindowFromPoint(POINT { x, y }) };
+        !under.is_invalid() && unsafe { GetAncestor(under, GA_ROOT) } == game
+    })
 }
 
 /// Whether the primary mouse button is held: the left one, or the right one for a player who

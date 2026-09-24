@@ -82,4 +82,5 @@ without the average. The pause does not change the rate: it is back as it was wh
   it.
 - The plates are the size of the game's HUD at the game's resolution; the **Interface scale**
   setting does not change them. They let clicks through to the game, all but the ⚙, and the price
-  panel hides one only when you drag the panel over it.
+  panel hides one only when you drag the panel over it. A plate steps aside the moment a tooltip,
+  the chat or another part of the game's interface covers its rail, and is back the moment it goes.

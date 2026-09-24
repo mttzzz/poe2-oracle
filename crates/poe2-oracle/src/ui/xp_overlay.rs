@@ -22,11 +22,15 @@
 //! A task samples every two seconds, off the UI thread: the game log's new lines
 //! (`platform::client_log`), then the bar's pixels and the rails' lips (`platform::xp_bar`) -- in
 //! that order, so a level-up line is in before the wrap on the bar it explains. A plate shows
-//! while its rail is seen where it goes (`overlay_layout::rail_seen`; a single miss is let pass):
-//! not over a loading screen, a full-screen panel, another program, or a HUD laid out otherwise.
-//! The price-check panel hides only a plate it covers, and the setting both
-//! ([`XpOverlay::set_cover`]). Their size is the game's, not the app's interface scale: at any
-//! game height a plate is its rail's width, and its words the HUD's.
+//! while its rail is seen where it goes (`overlay_layout::rail_seen`): not over a tooltip, a
+//! loading screen, a full-screen panel, another program, or a HUD laid out otherwise. While the
+//! player is at the game -- it's in front, or the cursor is over it -- the lips are watched frame
+//! by frame (`platform::lip_watch`), so a plate steps aside the moment a tooltip covers its rail
+//! and comes back the moment it goes; otherwise the sampler's look decides, a single miss let
+//! pass. The price-check panel hides only a plate it
+//! covers, and the setting both ([`XpOverlay::set_cover`]). Their size is the game's, not the
+//! app's interface scale: at any game height a plate is its rail's width, and its words the
+//! HUD's.
 //!
 //! Each plate is its own opaque window (a transparent `PopUp` background still tints the game
 //! behind it, see `Win32Overlay::set_shown`) that lets clicks through to the game -- the plates
@@ -56,6 +60,7 @@ use crate::i18n::{self, Lang};
 use crate::overlay_layout::{PhysicalRect, hud_rails};
 use crate::plate_art::{self, ArtSlice, PlateArt};
 use crate::platform::client_log::{self, ClientLog};
+use crate::platform::lip_watch::{LipReport, LipWatch};
 use crate::platform::win32::Win32Overlay;
 use crate::platform::xp_bar::{self, BarSample, RailsSeen};
 use crate::price_check::PriceCheckApp;
@@ -275,7 +280,14 @@ pub struct XpOverlay {
     art: Option<Arts>,
     /// The level plate's wording: paused, rated, with the percent, in what language and room.
     level_fit: Fit<(bool, bool, bool, Lang, Pixels)>,
+    /// The sampler's look at the rails, every two seconds.
     rails: RailPresence,
+    /// The frame-by-frame look at the rails while the player is at the game
+    /// (`platform::lip_watch`): its handle, `None` if its thread couldn't start; the game it was
+    /// last given; and what it saw last, `None` while it isn't watching.
+    lip_watch: Option<LipWatch>,
+    watched: Option<PhysicalRect>,
+    lips: Option<RailsSeen>,
 }
 
 /// The gear's window, at the level plate's right end: what the [`XpOverlay`] knows decides where
@@ -343,6 +355,13 @@ pub fn open(
     app: WeakEntity<PriceCheckApp>,
     cx: &mut App,
 ) -> anyhow::Result<Entity<XpOverlay>> {
+    let (lip_watch, lip_reports) = match LipWatch::start() {
+        Ok((watch, reports)) => (Some(watch), Some(reports)),
+        Err(err) => {
+            log::warn!("{err:#}");
+            (None, None)
+        }
+    };
     let window = cx.open_window(window_options(), |window, cx| {
         window.set_window_title("PoE2 Oracle — XP");
         cx.new(|_| {
@@ -361,6 +380,9 @@ pub fn open(
                 art: None,
                 level_fit: Fit::default(),
                 rails: RailPresence::new(),
+                lip_watch,
+                watched: None,
+                lips: None,
             }
         })
     })?;
@@ -391,6 +413,18 @@ pub fn open(
     let weak = view.downgrade();
     cx.spawn(async move |cx| sample_forever(weak, cx).await)
         .detach();
+    if let Some(reports) = lip_reports {
+        let weak = view.downgrade();
+        cx.spawn(async move |cx| {
+            while let Ok(report) = reports.recv().await {
+                let Some(view) = weak.upgrade() else {
+                    return;
+                };
+                view.update(cx, |view, cx| view.on_lips(report, cx));
+            }
+        })
+        .detach();
+    }
     Ok(view)
 }
 
@@ -568,10 +602,26 @@ impl XpOverlay {
         self.sync_windows(cx);
     }
 
-    /// Brings the plates' windows in line with the latest sample. Called from the sampling task,
-    /// `set_cover`, `set_options` and a window's first render, not from `render` alone: a hidden
-    /// GPUI window is never redrawn (see `app::PriceCheckRoot::sync_window`), so a render-only
-    /// sync could never show it again.
+    /// Takes the lip watcher's word on the rails and puts the plates in line with it at once:
+    /// a tooltip over a rail takes its plate down in the frame it appears, and back when it goes.
+    fn on_lips(&mut self, report: LipReport, cx: &mut Context<Self>) {
+        log::debug!("lip watch: {report:?}");
+        match report {
+            LipReport::Seen(seen) => self.lips = Some(seen),
+            // The sampler takes over from the watcher's last look, not from its own older ones.
+            LipReport::Idle => {
+                if let Some(seen) = self.lips.take() {
+                    self.rails.seed(seen);
+                }
+            }
+        }
+        self.sync_windows(cx);
+    }
+
+    /// Brings the plates' windows in line with the latest looks at the game. Called from the
+    /// sampling task, the lip watcher's reports, `set_cover`, `set_options` and a window's first
+    /// render, not from `render` alone: a hidden GPUI window is never redrawn (see
+    /// `app::PriceCheckRoot::sync_window`), so a render-only sync could never show it again.
     fn sync_windows(&mut self, cx: &mut Context<Self>) {
         // Drawn again only when the game moves or resizes.
         let game = self.sample.as_ref().map(|sample| sample.client);
@@ -581,14 +631,27 @@ impl XpOverlay {
             }
             self.art = game.map(Arts::draw);
         }
+        // The lip watcher follows the game while the overlay is on.
+        let target = game.filter(|_| !self.cover.off);
+        if target != self.watched {
+            self.watched = target;
+            if let Some(watch) = &self.lip_watch {
+                watch.watch(target);
+            }
+        }
         let cover = self.cover;
         let clear = |rect: &PhysicalRect| {
             !cover.off && cover.panel.is_none_or(|panel| !panel.intersects(rect))
         };
-        // The level plate also shows while the tour spotlights it: the tour's dim covers the lip
-        // until its hole is cut around the plate.
-        let flask = self.rails.flask() || crate::ui::tour::holds_xp_line(cx);
-        let skill = self.rails.skill() && self.map_status().is_some();
+        // While the player is at the game the watcher's frame-by-frame look decides; otherwise
+        // the sampler's. The level plate also shows while the tour spotlights it: the tour's dim
+        // covers the lip until its hole is cut around the plate.
+        let seen = self.lips.unwrap_or(RailsSeen {
+            flask: self.rails.flask(),
+            skill: self.rails.skill(),
+        });
+        let flask = seen.flask || crate::ui::tour::holds_xp_line(cx);
+        let skill = seen.skill && self.map_status().is_some();
         let art = self.art.as_ref();
         let line = art.filter(|art| flask && clear(&art.line));
         let map = art
@@ -619,9 +682,9 @@ fn split_gear(line: PhysicalRect) -> (PhysicalRect, PhysicalRect) {
     )
 }
 
-/// Whether each rail is taken for on screen: seen in the latest sample, or missed only once since
-/// -- a moment's cover over its lip, a tooltip passing, doesn't blink its plate. Taken for off
-/// screen until first seen.
+/// Whether each rail is taken for on screen by the sampler's look, every two seconds: seen in the
+/// latest sample, or missed only once since -- a moment's cover over its lip, a tooltip passing,
+/// doesn't blink its plate. Taken for off screen until first seen.
 struct RailPresence {
     /// Samples in a row that missed each rail.
     flask_misses: u8,
@@ -643,6 +706,14 @@ impl RailPresence {
         let next = |misses: u8, seen: bool| if seen { 0 } else { misses.saturating_add(1) };
         self.flask_misses = next(self.flask_misses, seen.flask);
         self.skill_misses = next(self.skill_misses, seen.skill);
+    }
+
+    /// Starts again from `seen`, the lip watcher's last look: each rail on screen or off it for
+    /// good, till the samples say otherwise.
+    fn seed(&mut self, seen: RailsSeen) {
+        let misses = |seen: bool| if seen { 0 } else { Self::MISSES_TO_HIDE };
+        self.flask_misses = misses(seen.flask);
+        self.skill_misses = misses(seen.skill);
     }
 
     fn flask(&self) -> bool {
