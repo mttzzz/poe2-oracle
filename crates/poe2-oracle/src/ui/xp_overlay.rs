@@ -40,7 +40,7 @@
 //! cream, the words saying what they are muted, the rate in its gold, a small diamond between the
 //! parts.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use gpui::{
     App, AsyncApp, Bounds, Context, Div, Entity, Font, Global, Hsla, IntoElement, MouseButton,
@@ -48,6 +48,7 @@ use gpui::{
     WindowKind, WindowOptions, div, linear_color_stop, linear_gradient, point, prelude::*, px, rgb,
     size,
 };
+use windows::Win32::System::SystemInformation::GetTickCount64;
 
 use crate::i18n::{self, Lang};
 use crate::overlay_layout::{Globe, PhysicalRect, PlateShape, hud_rails, meet_globe};
@@ -63,8 +64,8 @@ use crate::ui::theme::{
     HUD_POST_SHADE, HUD_SEAM, HUD_TEXT, blend, rems_from_px,
 };
 use crate::xp_tracker::{
-    Activity, MapStatus, RunState, Word, Wording, XpStatus, XpTracker, map_words, parse_log_line,
-    pause_words, percent_words, rate_words,
+    Activity, MapStatus, RunState, Word, Wording, XpStatus, XpTracker, log_time, map_words,
+    parse_log_line, parse_timed_log_line, pause_words, percent_words, rate_words,
 };
 
 const SAMPLE_INTERVAL: Duration = Duration::from_secs(2);
@@ -364,9 +365,15 @@ fn window_options() -> WindowOptions {
     }
 }
 
+/// The overlay's clock: time since Windows started (`GetTickCount64`), the clock the game's log
+/// stamps its lines with -- so the log's tail read at start falls into place on it
+/// (`xp_tracker::log_time`).
+fn uptime() -> Duration {
+    Duration::from_millis(unsafe { GetTickCount64() })
+}
+
 /// Feeds the tracker until the window closes.
 async fn sample_forever(view: WeakEntity<XpOverlay>, cx: &mut AsyncApp) {
-    let start = Instant::now();
     let mut log: Option<ClientLog> = None;
     loop {
         cx.background_executor().timer(SAMPLE_INTERVAL).await;
@@ -378,7 +385,7 @@ async fn sample_forever(view: WeakEntity<XpOverlay>, cx: &mut AsyncApp) {
                 // Retried every sample until the game runs: the log is found through its process.
                 if log.is_none()
                     && let Some((opened, replayed)) =
-                        ClientLog::open(client_log::HISTORY_BYTES, parse_log_line)
+                        ClientLog::open(client_log::HISTORY_BYTES, parse_timed_log_line)
                 {
                     log = Some(opened);
                     history = replayed;
@@ -391,11 +398,14 @@ async fn sample_forever(view: WeakEntity<XpOverlay>, cx: &mut AsyncApp) {
             })
             .await;
         log = still_open;
-        let at = start.elapsed();
+        let at = uptime();
         let Some(view) = view.upgrade() else {
             return;
         };
         view.update(cx, |view, cx| {
+            let history = history
+                .into_iter()
+                .map(|(tick, event)| (log_time(tick, at), event));
             view.tracker.restore(history, at);
             for event in events {
                 view.tracker.on_log_event(event, at);

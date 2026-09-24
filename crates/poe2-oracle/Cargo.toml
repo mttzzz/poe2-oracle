@@ -98,7 +98,8 @@ zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2
 # `Win32_UI_Accessibility` (the WinEvent hook that reports foreground-window changes,
 # src/platform/game_window.rs).
 # `Win32_System_Console` (whether a stderr is attached, src/logging.rs) and
-# `Win32_System_SystemInformation` (the local time the diagnostics report is named by).
+# `Win32_System_SystemInformation` (the local time the diagnostics report is named by, and the XP
+# overlay's clock, time since Windows started as the game's log counts it -- src/ui/xp_overlay.rs).
 # `Win32_Security_Credentials` (the player's pathofexile.com session, kept in the Windows
 # Credential Manager -- src/platform/credentials.rs).
 # `Win32_System_Time` (the hours an exchange price comes from, on the player's clock --

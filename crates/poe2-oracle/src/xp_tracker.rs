@@ -350,6 +350,32 @@ pub fn parse_log_line(line: &str) -> Option<LogEvent> {
     }
 }
 
+/// [`parse_log_line`], with when the line was written: its third field, the client's
+/// millisecond tick -- `GetTickCount`, milliseconds since Windows started, which wraps every
+/// 49.7 days. Verified 2026-09-24 on the test machine: the line at 09:39:52 said 144087359, and
+/// `GetTickCount` read 145499812 at 10:03:24.71, 23:32.45 later by both. `None` for a line whose
+/// third field isn't a tick.
+pub fn parse_timed_log_line(line: &str) -> Option<(Option<u32>, LogEvent)> {
+    let event = parse_log_line(line)?;
+    let tick = line.split(' ').nth(2).and_then(|field| field.parse().ok());
+    Some((tick, event))
+}
+
+/// When a line with client tick `tick` ([`parse_timed_log_line`]) was written, on a clock of time
+/// since Windows started that reads `now` -- `GetTickCount64`, the overlay's clock. The tick has
+/// 32 bits, so its age is taken modulo 2^32 ms; a line from before a reboot comes out anywhere
+/// before `now`, but a login always follows it, and the tracker forgets the past at a login. A
+/// line without a tick counts as written `now`.
+pub fn log_time(tick: Option<u32>, now: Duration) -> Duration {
+    let Some(tick) = tick else {
+        return now;
+    };
+    let now_ms = u64::try_from(now.as_millis()).unwrap_or(u64::MAX);
+    // Truncating to the tick's 32 bits is the point: both count the same milliseconds.
+    let age = u64::from((now_ms as u32).wrapping_sub(tick));
+    Duration::from_millis(now_ms.saturating_sub(age))
+}
+
 /// The scene names of the ascendancy trials' areas in the Russian and the English client: the
 /// Trial of the Sekhemas (its altar room `G2_13` and its floors `Sanctum_*`) and the Trial of
 /// Chaos (`G3_10`). The Russian ones name every entry into those areas in the test machine's
@@ -442,8 +468,9 @@ pub struct XpStatus {
     pub level: Option<u32>,
     /// Whether the player is playing, or since when they haven't been.
     pub activity: Activity,
-    /// The current map run, once the character has entered a map since the tracker started or
-    /// the last login -- the last one, once the character is done with it.
+    /// The current map run, once the character has entered a map since the last login, as far
+    /// back as the log's tail read at start goes -- the last one, once the character is done with
+    /// it.
     pub map: Option<MapStatus>,
 }
 
@@ -480,8 +507,8 @@ pub struct MapStatus {
     pub gained: f64,
     /// Whether the character is in it, left it a moment ago, or is done with it.
     pub state: RunState,
-    /// Maps finished since the tracker started or the last login: every map left for another
-    /// one, completed or not -- the log doesn't say.
+    /// Maps finished since the last login, as far back as the log's tail read at start goes:
+    /// every map left for another one, completed or not -- the log doesn't say.
     pub finished: u32,
     /// The finished maps' average time; `None` before the first finishes.
     pub average: Option<Duration>,
@@ -594,14 +621,29 @@ impl XpTracker {
     }
 
     /// Applies what the log said before the tracker started (the tail of `Client.txt`, read at
-    /// `at`): the current area and, if the character levelled up since the last login, its name
-    /// and level. Unlike [`Self::on_log_event`], old level-ups don't make the tracker expect a
-    /// wrap, and a map already underway isn't timed -- when it was entered is unknown -- so it's
-    /// neither shown nor averaged, even after a trip to the hideout and back. For the same reason
-    /// a town the character is in counts as entered at `at`.
-    pub fn restore(&mut self, history: impl IntoIterator<Item = LogEvent>, at: Duration) {
+    /// `at`), each event at the time its line was written, on the tracker's clock
+    /// ([`log_time`]): the current area -- a town or hideout the character is in counts from when
+    /// it was entered -- and, if the character levelled up since the last login, its name and
+    /// level. Unlike [`Self::on_log_event`], old level-ups don't make the tracker expect a wrap,
+    /// and the idle allowance starts at `at`. Map runs are timed from when they were entered, but
+    /// for the first map the tail shows before any login: it may have started before the tail
+    /// begins, so it's neither shown nor averaged, even after a trip to the hideout and back.
+    pub fn restore(
+        &mut self,
+        history: impl IntoIterator<Item = (Duration, LogEvent)>,
+        at: Duration,
+    ) {
         self.advance(at);
-        for event in history {
+        // Whether a map run the tail shows starting started there: after a login, or once an
+        // earlier map was seen -- a map opened after another is a new instance.
+        let mut covered = false;
+        let mut cursor: Option<Duration> = None;
+        for (when, event) in history {
+            let when = when.min(at);
+            if let Some(previous) = cursor {
+                self.maps.tick(when.saturating_sub(previous));
+            }
+            cursor = Some(when);
             match event {
                 LogEvent::LevelUp { character, level } => {
                     self.note_level(character, level);
@@ -613,16 +655,21 @@ impl XpTracker {
                         self.level = None;
                         self.town_since = None;
                         self.maps = MapRuns::default();
+                        covered = true;
                     }
-                    self.enter(area, seed, false, at);
+                    let timed = covered || self.maps.current.is_some();
+                    self.enter(area, seed, timed, when);
                 }
                 LogEvent::TrialEntered => {
                     self.scene_lost = false;
-                    self.maps.leave_for_trial(at);
+                    self.maps.leave_for_trial(when);
                 }
                 LogEvent::SceneLost => self.scene_lost = true,
                 LogEvent::SceneNamed => self.scene_lost = false,
             }
+        }
+        if let Some(previous) = cursor {
+            self.maps.tick(at.saturating_sub(previous));
         }
     }
 
@@ -671,8 +718,8 @@ impl XpTracker {
         self.maps.tick(elapsed);
     }
 
-    /// Follows the character into an area at `at`; `timed` is false for areas replayed from
-    /// before the tracker started.
+    /// Follows the character into an area at `at`; `timed` is false for a map replayed from the
+    /// log's tail that may have started before it ([`Self::restore`]).
     fn enter(&mut self, area: String, seed: u64, timed: bool, at: Duration) {
         let town = is_town(&area);
         self.town_since = if town {
@@ -858,8 +905,9 @@ struct MapRun {
     seed: u64,
     /// The side areas that joined the run, by area id and seed.
     side_areas: Vec<(String, u64)>,
-    /// `None` for the map the character was already in when the tracker started: how long it had
-    /// been there is unknown, so the run is neither shown nor averaged.
+    /// `None` for a run whose start the log's tail read at start doesn't show
+    /// ([`XpTracker::restore`]): how long it had lasted is unknown, so the run is neither shown
+    /// nor averaged.
     time: Option<Duration>,
     /// Levels earned in it.
     gained: f64,
@@ -885,7 +933,7 @@ impl MapRun {
     }
 }
 
-/// The map runs since the tracker started or the last login.
+/// The map runs since the last login, as far back as the log's tail read at start goes.
 #[derive(Debug, Default)]
 struct MapRuns {
     current: Option<MapRun>,
@@ -1352,15 +1400,25 @@ mod tests {
         t
     }
 
-    /// The log saying the character entered `area`, instance `seed`, at `t` seconds.
-    fn enter(tracker: &mut XpTracker, area: &str, seed: u64, t: f64) {
-        tracker.on_log_event(
-            LogEvent::AreaEntered {
-                area: area.to_owned(),
-                seed,
-            },
-            Duration::from_secs_f64(t),
-        );
+    /// The log's line for entering `name`, instance `seed`.
+    fn area(name: &str, seed: u64) -> LogEvent {
+        LogEvent::AreaEntered {
+            area: name.to_owned(),
+            seed,
+        }
+    }
+
+    /// The log saying the character entered `name`, instance `seed`, at `t` seconds.
+    fn enter(tracker: &mut XpTracker, name: &str, seed: u64, t: f64) {
+        tracker.on_log_event(area(name, seed), Duration::from_secs_f64(t));
+    }
+
+    /// `events` as the log's tail at start replays them, every line as old as the start itself.
+    fn at_start(events: impl IntoIterator<Item = LogEvent>) -> Vec<(Duration, LogEvent)> {
+        events
+            .into_iter()
+            .map(|event| (Duration::ZERO, event))
+            .collect()
     }
 
     /// The 4K bar's pixel steps plus a deterministic +-1 px wobble held for two readings at a
@@ -1605,7 +1663,7 @@ mod tests {
     fn logging_out_forgets_the_character() {
         let mut tracker = XpTracker::new();
         tracker.restore(
-            [
+            at_start([
                 LogEvent::LevelUp {
                     character: "old".to_owned(),
                     level: 90,
@@ -1615,15 +1673,15 @@ mod tests {
                     area: "HideoutCanal".to_owned(),
                     seed: 1,
                 },
-            ],
+            ]),
             Duration::ZERO,
         );
         assert_eq!(tracker.status().level, None);
         tracker.restore(
-            [LogEvent::LevelUp {
+            at_start([LogEvent::LevelUp {
                 character: "new".to_owned(),
                 level: 12,
-            }],
+            }]),
             Duration::ZERO,
         );
         assert_eq!(tracker.status().level, Some(12));
@@ -1654,7 +1712,7 @@ mod tests {
         // «+0 %/ч · до ур. —» there instead of the pause.
         let mut tracker = XpTracker::new();
         tracker.restore(
-            [
+            at_start([
                 LogEvent::LevelUp {
                     character: "hero".to_owned(),
                     level: 91,
@@ -1663,7 +1721,7 @@ mod tests {
                     area: "HideoutCanal".to_owned(),
                     seed: 1,
                 },
-            ],
+            ]),
             Duration::ZERO,
         );
         tracker.on_log_event(LogEvent::SceneLost, Duration::from_secs(60));
@@ -1885,38 +1943,121 @@ mod tests {
     }
 
     #[test]
-    fn a_map_underway_before_the_tracker_started_is_neither_shown_nor_averaged() {
+    fn the_first_map_the_logs_tail_shows_is_neither_shown_nor_averaged() {
+        let s = Duration::from_secs;
         let mut tracker = XpTracker::new();
-        // Started in the hideout, halfway through a map.
+        // Started in the hideout, with a map in the log's tail that may have begun before it.
         tracker.restore(
             [
-                LogEvent::AreaEntered {
-                    area: "MapEpitaph".to_owned(),
-                    seed: EPITAPH,
-                },
-                LogEvent::AreaEntered {
-                    area: "HideoutCanal".to_owned(),
-                    seed: 1,
-                },
+                (s(100), area("MapEpitaph", EPITAPH)),
+                (s(400), area("HideoutCanal", 1)),
             ],
-            Duration::ZERO,
+            s(600),
         );
-        enter(&mut tracker, "MapEpitaph", EPITAPH, 0.0);
-        play(&mut tracker, 0.0, 60, |_| None);
+        enter(&mut tracker, "MapEpitaph", EPITAPH, 600.0);
+        play(&mut tracker, 600.0, 60, |_| None);
         assert_eq!(tracker.status().map, None);
-        enter(&mut tracker, "HideoutCanal", 1, 120.0);
-        enter(&mut tracker, "MapBluff", 17, 130.0);
-        play(&mut tracker, 130.0, 31, |_| None);
+        enter(&mut tracker, "HideoutCanal", 1, 720.0);
+        enter(&mut tracker, "MapBluff", 17, 730.0);
+        play(&mut tracker, 730.0, 31, |_| None);
         assert_eq!(
             tracker.status().map,
             Some(MapStatus {
-                time: Duration::from_secs(60),
+                time: s(60),
                 gained: 0.0,
                 state: RunState::Running,
                 finished: 0,
                 average: None,
             })
         );
+    }
+
+    #[test]
+    fn the_logs_tail_times_the_runs_and_the_pause_it_shows_from_their_start() {
+        // The owner's morning, 2026-09-24, in seconds: a map, then MapPort 1681640215 entered at
+        // 08:29:57 and left for the hideout 3:27 later; the app restarted in the hideout about 45
+        // minutes on, and the character then went back into the same map (09:24:50). Replayed at
+        // the restart, the map was untimed and its plate never came back; the pause read «< 1 мин»
+        // after 45 minutes.
+        let s = Duration::from_secs;
+        let mut tracker = XpTracker::new();
+        tracker.restore(
+            [
+                (s(100), area("MapPort", 3753768427)),
+                (s(400), area("HideoutCanal", 1)),
+                (s(3700), area("MapPort", 1681640215)),
+                (s(3907), area("HideoutCanal", 1)),
+            ],
+            s(6600),
+        );
+        let status = tracker.status();
+        assert_eq!(
+            status.activity,
+            Activity::Paused {
+                since: s(3907),
+                elapsed: s(2693),
+            }
+        );
+        // The first map may have begun before the tail: not averaged.
+        assert_eq!(
+            status.map,
+            Some(MapStatus {
+                time: s(207),
+                gained: 0.0,
+                state: RunState::Last,
+                finished: 0,
+                average: None,
+            })
+        );
+        enter(&mut tracker, "MapPort", 1681640215, 6700.0);
+        play(&mut tracker, 6700.0, 31, |_| None);
+        let map = tracker.status().map.unwrap();
+        assert_eq!((map.time, map.state), (s(267), RunState::Running));
+
+        // After a login in the tail, the first map is timed too, up to the restart; and the idle
+        // allowance starts at the restart, not at the map's entry.
+        let mut tracker = XpTracker::new();
+        tracker.restore(
+            [
+                (s(10), LogEvent::SceneLost),
+                (s(20), area("HideoutCanal", 1)),
+                (s(30), area("MapBluff", 17)),
+            ],
+            s(900),
+        );
+        let status = tracker.status();
+        assert_eq!(status.activity, Activity::Playing);
+        assert_eq!(
+            status.map.map(|map| (map.time, map.state)),
+            Some((s(870), RunState::Running))
+        );
+    }
+
+    #[test]
+    fn a_lines_tick_puts_it_on_the_overlays_clock() {
+        let line = "2026/09/24 09:24:50 143185343 2caa229f [DEBUG Client 31244] Generating level 77 \
+                    area \"MapPort\" with seed 1681640215";
+        assert_eq!(
+            parse_timed_log_line(line),
+            Some((Some(143_185_343), area("MapPort", 1681640215)))
+        );
+        // The test machine, 2026-09-24: 144087359 on the line at 09:39:52, and GetTickCount64
+        // 145499812 at 10:03:24.71.
+        let now = Duration::from_millis(145_499_812);
+        assert_eq!(
+            log_time(Some(144_087_359), now),
+            Duration::from_millis(144_087_359)
+        );
+        // 49.7 days on, the line's 32-bit tick has wrapped and the clock hasn't.
+        let now = Duration::from_millis((1 << 32) + 5_000);
+        assert_eq!(
+            log_time(Some(u32::MAX - 999), now),
+            Duration::from_millis((1 << 32) - 1_000)
+        );
+        // A line from before a reboot lands no later than now; a line without a tick, now.
+        let early = Duration::from_millis(60_000);
+        assert!(log_time(Some(144_087_359), early) <= early);
+        assert_eq!(log_time(None, now), now);
     }
 
     #[test]
