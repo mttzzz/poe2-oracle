@@ -2,7 +2,8 @@
 
 ## Requirements
 
-- Windows 10 or Windows 11, 64-bit.
+- Windows 10 or Windows 11, 64-bit. Nothing else to install first: the app needs no .NET and no
+  Visual C++ Redistributable.
 - Path of Exile 2 with the English or Russian client.
 - The game in **Windowed** or **Windowed Fullscreen** display mode. Over exclusive Fullscreen,
   Windows cannot show other programs' windows, so the panel would stay invisible.

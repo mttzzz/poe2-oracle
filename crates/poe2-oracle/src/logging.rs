@@ -37,7 +37,9 @@ pub fn init() {
             .filter_module("poe2_oracle", LevelFilter::Info)
             .filter_module("trade_client", LevelFilter::Info),
     };
+    // Milliseconds: what a price check spends its time on shows only at that grain.
     builder
+        .format_timestamp_millis()
         .write_style(env_logger::WriteStyle::Never)
         .target(env_logger::Target::Pipe(Box::new(sink)))
         .init();

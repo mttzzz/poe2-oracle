@@ -35,24 +35,72 @@ use windows::Win32::Graphics::Dwm::{
     DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND, DwmSetWindowAttribute,
 };
 use windows::Win32::Graphics::Gdi::{
-    CombineRgn, CreateRectRgn, DeleteObject, RGN_OR, SetWindowRgn,
+    CombineRgn, CreateRectRgn, DeleteObject, InvalidateRect, RGN_OR, SetWindowRgn, ValidateRect,
 };
+use windows::Win32::System::SystemInformation::GetTickCount64;
 use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CallWindowProcW, GWL_EXSTYLE, GWL_STYLE, GWLP_WNDPROC, GetForegroundWindow, GetWindowLongPtrW,
-    HWND_NOTOPMOST, HWND_TOPMOST, MA_NOACTIVATE, SW_HIDE, SW_SHOWNOACTIVATE, SWP_FRAMECHANGED,
-    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetForegroundWindow, SetWindowLongPtrW,
-    SetWindowPos, ShowWindow, WM_MOUSEACTIVATE, WNDPROC, WS_CAPTION, WS_EX_CLIENTEDGE,
-    WS_EX_DLGMODALFRAME, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_STATICEDGE, WS_EX_TRANSPARENT,
-    WS_EX_WINDOWEDGE, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
+    CallWindowProcW, DefWindowProcW, GWL_EXSTYLE, GWL_STYLE, GWLP_WNDPROC, GetForegroundWindow,
+    GetWindowLongPtrW, HWND_NOTOPMOST, HWND_TOPMOST, MA_NOACTIVATE, SW_HIDE, SW_SHOWNOACTIVATE,
+    SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetForegroundWindow,
+    SetWindowLongPtrW, SetWindowPos, ShowWindow, WM_DPICHANGED, WM_LBUTTONDOWN, WM_LBUTTONUP,
+    WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT, WM_SHOWWINDOW, WM_SIZE,
+    WM_WINDOWPOSCHANGED, WNDPROC, WS_CAPTION, WS_EX_CLIENTEDGE, WS_EX_DLGMODALFRAME, WS_EX_LAYERED,
+    WS_EX_NOACTIVATE, WS_EX_STATICEDGE, WS_EX_TRANSPARENT, WS_EX_WINDOWEDGE, WS_MAXIMIZEBOX,
+    WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
 };
 
 use crate::overlay_layout::PhysicalRect;
 
-/// GPUI's own window procedure of each window [`Win32Overlay::set_no_activate`] wrapped, by the
-/// window's handle value.
-static WRAPPED_PROCS: LazyLock<Mutex<HashMap<isize, isize>>> =
+/// The windows whose procedure [`overlay_proc`] wraps, by the window's handle value: GPUI's own
+/// procedure, and what the wrapper does before it.
+static WRAPPED: LazyLock<Mutex<HashMap<isize, Wrapped>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
+
+struct Wrapped {
+    gpui_proc: isize,
+    /// Answers `WM_MOUSEACTIVATE` with `MA_NOACTIVATE` ([`Win32Overlay::set_no_activate`]).
+    no_activate: bool,
+    /// Paints only in bursts ([`Win32Overlay::gate_paints`]).
+    gate: Option<PaintGate>,
+}
+
+/// When a gated window's paints last went through to GPUI, and until when they all do; ticks of
+/// `GetTickCount64`, milliseconds.
+struct PaintGate {
+    open_until: u64,
+    last_passed: u64,
+}
+
+impl PaintGate {
+    /// Whether a paint at `now` goes through: within a burst, or a trickle's worth after the last.
+    fn due(&self, now: u64) -> bool {
+        now < self.open_until || now.saturating_sub(self.last_passed) >= PAINT_TRICKLE_MS
+    }
+}
+
+/// Whether `hwnd`'s next paint would go through to GPUI: any window but a
+/// [`Win32Overlay::gate_paints`] one outside its bursts and trickle. For
+/// `redraw_filter::filtered_redraw_window`, on `gpui_windows`' vsync thread.
+pub(super) fn paint_due(hwnd: HWND) -> bool {
+    let now = unsafe { GetTickCount64() };
+    WRAPPED
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .get(&(hwnd.0 as isize))
+        .and_then(|wrapped| wrapped.gate.as_ref())
+        .is_none_or(|gate| gate.due(now))
+}
+
+/// `WM_MOUSELEAVE`, which the `windows` crate files under `Win32_UI_Controls`.
+const WM_MOUSELEAVE: u32 = 0x02A3;
+
+/// How long a gated window's paints go through once a burst opens: well past its transitions,
+/// 120 ms (`ui::style::TRANSITION`).
+const PAINT_BURST_MS: u64 = 400;
+/// How often a gated window's paint goes through outside a burst: whatever made its view dirty
+/// unforeseen still shows within this.
+const PAINT_TRICKLE_MS: u64 = 500;
 
 /// A raw Win32 handle to a single GPUI window. `Copy`: it's a plain handle, and deferred window
 /// operations (see [`Win32Overlay::set_bounds`]) need to carry it into a spawned task.
@@ -275,30 +323,12 @@ impl Win32Overlay {
     /// Makes a click on the window leave the keyboard with the game: a game that loses focus makes
     /// other overlays react (PoE Overlay II opens its Session Recap). `WS_EX_NOACTIVATE` alone
     /// isn't enough: `gpui_windows` answers every `WM_MOUSEACTIVATE` with `MA_ACTIVATE` itself
-    /// (`events.rs`), so the window procedure is wrapped to answer `MA_NOACTIVATE` and hand
-    /// everything else to GPUI's. Deferred like [`Self::set_bounds`]: the style change sends
+    /// (`events.rs`), so the window procedure is wrapped ([`overlay_proc`]) to answer
+    /// `MA_NOACTIVATE`. Deferred like [`Self::set_bounds`]: the style change sends
     /// `WM_STYLECHANGED` synchronously.
     pub fn set_no_activate(&self) -> Result<()> {
-        let wrapper: unsafe extern "system" fn(HWND, u32, WPARAM, LPARAM) -> LRESULT =
-            no_activate_proc;
-        let wrapper = wrapper as usize as isize;
+        self.wrap(|wrapped| wrapped.no_activate = true)?;
         unsafe {
-            let gpui_proc = GetWindowLongPtrW(self.hwnd, GWLP_WNDPROC);
-            if gpui_proc == wrapper {
-                return Ok(());
-            }
-            if gpui_proc == 0 {
-                bail!(
-                    "GetWindowLongPtrW(GWLP_WNDPROC) failed: {:?}",
-                    GetLastError()
-                );
-            }
-            // Recorded before the swap: the wrapper looks it up for the very next message.
-            WRAPPED_PROCS
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .insert(self.hwnd.0 as isize, gpui_proc);
-            SetWindowLongPtrW(self.hwnd, GWLP_WNDPROC, wrapper);
             let ex_style = GetWindowLongPtrW(self.hwnd, GWL_EXSTYLE) as u32;
             // See `set_click_through` for why the last error is cleared first.
             SetLastError(WIN32_ERROR(0));
@@ -318,6 +348,71 @@ impl Win32Overlay {
         Ok(())
     }
 
+    /// Lets GPUI paint the window only in bursts: once the app says what it shows has changed
+    /// ([`Self::open_paints`]), while the mouse is on it, and once moved, resized or shown --
+    /// else a paint once each `PAINT_TRICKLE_MS`. `gpui_windows` invalidates every window of the
+    /// app on each refresh of the display (`platform.rs`'s `begin_vsync_thread`), so each
+    /// visible one would be drawn 60 to 165 times a second whether or not it has anything new --
+    /// the XP overlay's plates are up all the while the game is played, for words that change
+    /// every few seconds -- and would wake the UI thread as often; `redraw_filter`, installed at
+    /// start, keeps the refreshes from even asking outside a burst.
+    pub fn gate_paints(&self) -> Result<()> {
+        let now = unsafe { GetTickCount64() };
+        self.wrap(|wrapped| {
+            wrapped.gate = Some(PaintGate {
+                open_until: now + PAINT_BURST_MS,
+                last_passed: 0,
+            });
+        })
+    }
+
+    /// Opens a burst of a [`Self::gate_paints`] window's paints, and asks for the first: what it
+    /// shows has changed.
+    pub fn open_paints(&self) {
+        let now = unsafe { GetTickCount64() };
+        let gated = WRAPPED
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .get_mut(&(self.hwnd.0 as isize))
+            .and_then(|wrapped| wrapped.gate.as_mut())
+            .map(|gate| gate.open_until = now + PAINT_BURST_MS)
+            .is_some();
+        if gated {
+            let _ = unsafe { InvalidateRect(Some(self.hwnd), None, false) };
+        }
+    }
+
+    /// Puts [`overlay_proc`] in front of GPUI's window procedure, once, and has `edit` set what
+    /// it does for this window.
+    fn wrap(&self, edit: impl FnOnce(&mut Wrapped)) -> Result<()> {
+        let wrapper: unsafe extern "system" fn(HWND, u32, WPARAM, LPARAM) -> LRESULT = overlay_proc;
+        let wrapper = wrapper as usize as isize;
+        let mut wrapped = WRAPPED
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(entry) = wrapped.get_mut(&(self.hwnd.0 as isize)) {
+            edit(entry);
+            return Ok(());
+        }
+        let gpui_proc = unsafe { GetWindowLongPtrW(self.hwnd, GWLP_WNDPROC) };
+        if gpui_proc == 0 {
+            bail!("GetWindowLongPtrW(GWLP_WNDPROC) failed: {:?}", unsafe {
+                GetLastError()
+            });
+        }
+        let mut entry = Wrapped {
+            gpui_proc,
+            no_activate: false,
+            gate: None,
+        };
+        edit(&mut entry);
+        // Recorded before the swap: the wrapper looks it up for the very next message.
+        wrapped.insert(self.hwnd.0 as isize, entry);
+        drop(wrapped);
+        unsafe { SetWindowLongPtrW(self.hwnd, GWLP_WNDPROC, wrapper) };
+        Ok(())
+    }
+
     /// Gives the window the keyboard: a [`Self::set_no_activate`] window whose click took none,
     /// when something in it is to be typed into. GPUI's own `activate_window` won't do -- its
     /// first call also puts the window back where it was created (`set_window_placement`). Call
@@ -333,22 +428,52 @@ impl Win32Overlay {
     }
 }
 
-/// The window procedure [`Win32Overlay::set_no_activate`] puts in front of GPUI's.
-unsafe extern "system" fn no_activate_proc(
+/// The window procedure [`Win32Overlay::wrap`] puts in front of GPUI's: `MA_NOACTIVATE` for a
+/// [`Win32Overlay::set_no_activate`] window, and a [`Win32Overlay::gate_paints`] window's paints
+/// only in bursts -- a paint outside one is marked done, and the display's next refresh asks
+/// again, unless `redraw_filter` drops that refresh's ask. Everything else goes to GPUI's
+/// procedure, the registry unlocked first: GPUI's may send messages to another wrapped window of
+/// the app.
+unsafe extern "system" fn overlay_proc(
     hwnd: HWND,
     message: u32,
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
-    if message == WM_MOUSEACTIVATE {
+    let (gpui_proc, no_activate, swallowed) = {
+        let mut wrapped = WRAPPED
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let Some(entry) = wrapped.get_mut(&(hwnd.0 as isize)) else {
+            return unsafe { DefWindowProcW(hwnd, message, wparam, lparam) };
+        };
+        let mut swallowed = false;
+        if let Some(gate) = entry.gate.as_mut() {
+            let now = unsafe { GetTickCount64() };
+            match message {
+                WM_PAINT => {
+                    if gate.due(now) {
+                        gate.last_passed = now;
+                    } else {
+                        swallowed = true;
+                    }
+                }
+                WM_MOUSEMOVE | WM_MOUSELEAVE | WM_MOUSEWHEEL | WM_LBUTTONDOWN | WM_LBUTTONUP
+                | WM_SIZE | WM_WINDOWPOSCHANGED | WM_SHOWWINDOW | WM_DPICHANGED => {
+                    gate.open_until = now + PAINT_BURST_MS;
+                }
+                _ => {}
+            }
+        }
+        (entry.gpui_proc, entry.no_activate, swallowed)
+    };
+    if message == WM_MOUSEACTIVATE && no_activate {
         return LRESULT(MA_NOACTIVATE as isize);
     }
-    let gpui_proc = WRAPPED_PROCS
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .get(&(hwnd.0 as isize))
-        .copied()
-        .unwrap_or(0);
+    if swallowed {
+        let _ = unsafe { ValidateRect(Some(hwnd), None) };
+        return LRESULT(0);
+    }
     // SAFETY: the value `GWLP_WNDPROC` held before the swap, a window procedure of this window.
     let gpui_proc: WNDPROC = unsafe { std::mem::transmute::<isize, WNDPROC>(gpui_proc) };
     unsafe { CallWindowProcW(gpui_proc, hwnd, message, wparam, lparam) }

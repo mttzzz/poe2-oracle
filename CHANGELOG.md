@@ -108,7 +108,8 @@ The first public release.
   `SHA256SUMS`, installed silently, and the app restarts.
 - **Installer** for the current user, without administrator rights: Start menu shortcut, optional
   start with Windows, the license texts and third-party notices next to the app. Uninstalling
-  removes the saved sign-in and keeps settings and caches unless asked to remove them.
+  removes the saved sign-in and keeps settings and caches unless asked to remove them. Nothing
+  else to install: the C runtime is built into the app, so no Visual C++ Redistributable.
 - **Diagnostics report:** a zip on the desktop with the logs, settings, unread item texts and a
   summary of the system, with the user's folder paths masked, and the Windows user name too if it
   has three characters or more.

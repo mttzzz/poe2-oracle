@@ -66,7 +66,7 @@ basics on the first launch.
 
 ## Requirements
 
-- Windows 10 or 11, 64-bit.
+- Windows 10 or 11, 64-bit; no .NET or Visual C++ Redistributable needed.
 - Path of Exile 2 in **Windowed Fullscreen** or **Windowed** mode. The panel can't be shown over
   exclusive Fullscreen; the app's settings window warns you about it.
 - An English or Russian game client.

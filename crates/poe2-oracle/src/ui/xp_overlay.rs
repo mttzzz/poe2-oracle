@@ -26,8 +26,9 @@
 //! loading screen, a full-screen panel, another program, or a HUD laid out otherwise. While the
 //! player is at the game -- it's in front, or the cursor is over it -- the lips are watched frame
 //! by frame (`platform::lip_watch`), so a plate steps aside the moment a tooltip covers its rail
-//! and comes back the moment it goes; otherwise the sampler's look decides, a single miss let
-//! pass. The price-check panel hides only a plate it
+//! and comes back the moment it goes, and the bar is read off the same frames every half second:
+//! the sampler takes that reading, and reads no pixels itself. Otherwise the sampler's look
+//! decides, a single miss let pass. The price-check panel hides only a plate it
 //! covers, and the setting both ([`XpOverlay::set_cover`]). Their size is the game's, not the
 //! app's interface scale: at any game height a plate is its rail's width, and its words the
 //! HUD's.
@@ -282,12 +283,14 @@ pub struct XpOverlay {
     level_fit: Fit<(bool, bool, bool, Lang, Pixels)>,
     /// The sampler's look at the rails, every two seconds.
     rails: RailPresence,
-    /// The frame-by-frame look at the rails while the player is at the game
+    /// The frame-by-frame look at the rails and the bar while the player is at the game
     /// (`platform::lip_watch`): its handle, `None` if its thread couldn't start; the game it was
-    /// last given; and what it saw last, `None` while it isn't watching.
+    /// last given; and what it saw last -- the rails, `None` while it isn't watching, and the
+    /// bar's fill, which the sampler takes instead of reading the screen itself.
     lip_watch: Option<LipWatch>,
     watched: Option<PhysicalRect>,
     lips: Option<RailsSeen>,
+    watched_fill: Option<f64>,
 }
 
 /// The gear's window, at the level plate's right end: what the [`XpOverlay`] knows decides where
@@ -304,6 +307,14 @@ pub struct MapPlate {
     /// The plate's wording: for which state of the run, with or without the average, in what
     /// language and room.
     fit: Fit<(RunState, bool, Lang, Pixels)>,
+}
+
+/// What the plates say ([`XpOverlay::shown`]): a new sample redraws them only when it changes.
+#[derive(PartialEq)]
+struct Shown {
+    level: Vec<Vec<Vec<Word>>>,
+    playing: bool,
+    map: Option<(Vec<Vec<Vec<Word>>>, RunState)>,
 }
 
 /// Which of a plate's wordings -- longest first -- it shows, and in what state. The choice sticks
@@ -383,6 +394,7 @@ pub fn open(
                 lip_watch,
                 watched: None,
                 lips: None,
+                watched_fill: None,
             }
         })
     })?;
@@ -456,6 +468,10 @@ async fn sample_forever(view: WeakEntity<XpOverlay>, cx: &mut AsyncApp) {
     let mut log: Option<ClientLog> = None;
     loop {
         cx.background_executor().timer(SAMPLE_INTERVAL).await;
+        // While the lip watcher watches, its looks read the bar and the rails: no blit here.
+        let Ok(read_pixels) = view.read_with(cx, |view, _| view.lips.is_none()) else {
+            return;
+        };
         let (history, events, sample, still_open) = cx
             .background_executor()
             .spawn(async move {
@@ -473,7 +489,7 @@ async fn sample_forever(view: WeakEntity<XpOverlay>, cx: &mut AsyncApp) {
                     .as_mut()
                     .map(|log| log.poll(parse_log_line))
                     .unwrap_or_default();
-                (history, events, xp_bar::sample(), log)
+                (history, events, xp_bar::sample(read_pixels), log)
             })
             .await;
         log = still_open;
@@ -489,8 +505,14 @@ async fn sample_forever(view: WeakEntity<XpOverlay>, cx: &mut AsyncApp) {
             for event in events {
                 view.tracker.on_log_event(event, at);
             }
-            view.tracker
-                .on_sample(sample.as_ref().and_then(|sample| sample.fill), at);
+            // The watcher's reading while it watches -- it may have stopped since the look above
+            // left the pixels to it, and then the tracker keeps its last reading this once.
+            let fill = if view.lips.is_some() {
+                view.watched_fill
+            } else {
+                sample.as_ref().and_then(|sample| sample.fill)
+            };
+            view.tracker.on_sample(fill, at);
             let status = view.tracker.status();
             // A moved or rescaled game moves the plates and resizes their words.
             let place = |sample: &Option<BarSample>| {
@@ -499,16 +521,21 @@ async fn sample_forever(view: WeakEntity<XpOverlay>, cx: &mut AsyncApp) {
                     .map(|sample| (sample.client, sample.dpi_scale))
             };
             let moved = place(&view.sample) != place(&sample);
-            view.rails.note(
-                sample
-                    .as_ref()
-                    .map(|sample| sample.rails)
-                    .unwrap_or_default(),
-            );
+            // No game is no rails; a look that left the rails to the watcher says nothing.
+            let rails = match &sample {
+                Some(sample) => sample.rails,
+                None => Some(RailsSeen::default()),
+            };
+            if let Some(rails) = rails {
+                view.rails.note(rails);
+            }
             view.sample = sample;
-            if status != view.status || moved {
-                view.status = status;
-                cx.notify();
+            // The status moves on with every sample -- a pause's length, a rate's last digits --
+            // but the plates are redrawn only when what they say changes, or where.
+            let shown = view.shown();
+            view.status = status;
+            if moved || view.shown() != shown {
+                view.repaint(cx);
             }
             view.sync_windows(cx);
         });
@@ -530,8 +557,31 @@ impl XpOverlay {
         self.tracker.set_rate_window(options.rate_window_minutes);
         self.options = options;
         self.status = self.tracker.status();
-        cx.notify();
+        self.repaint(cx);
         self.sync_windows(cx);
+    }
+
+    /// What the plates say, as far as drawing them goes: their words, whether the level plate
+    /// shows play or a pause, and whether the map is still being run.
+    fn shown(&self) -> Shown {
+        Shown {
+            level: self.level_wordings(),
+            playing: !self.paused(),
+            map: self
+                .map_status()
+                .map(|map| (self.map_wordings(&map), map.state)),
+        }
+    }
+
+    /// Redraws the plates, whose words or art changed: their windows paint only in bursts
+    /// (`Win32Overlay::gate_paints`), so each opens one as its view is notified.
+    fn repaint(&mut self, cx: &mut Context<Self>) {
+        cx.notify();
+        for window in [&self.level, &self.gear, &self.map] {
+            if let Some(overlay) = window.overlay {
+                overlay.open_paints();
+            }
+        }
     }
 
     /// The map plate's run, when the player wants it and there is one to show.
@@ -573,9 +623,9 @@ impl XpOverlay {
             .into()
     }
 
-    /// Takes a plate's platform window once it exists: frameless, and letting clicks through to
-    /// the game -- but for the gear's, which takes clicks and never the keyboard, so a click on it
-    /// leaves the keyboard with the game.
+    /// Takes a plate's platform window once it exists: frameless, painting only in bursts
+    /// (`repaint`), and letting clicks through to the game -- but for the gear's, which takes
+    /// clicks and never the keyboard, so a click on it leaves the keyboard with the game.
     fn attach(&mut self, plate: Plate, overlay: Win32Overlay, cx: &mut Context<Self>) {
         if let Err(err) = overlay.disable_dwm_frame() {
             log::warn!("{err:#}");
@@ -589,7 +639,7 @@ impl XpOverlay {
                 Plate::Level | Plate::Map => overlay.set_click_through(true),
                 Plate::Gear => overlay.set_no_activate(),
             };
-            if let Err(err) = styled {
+            if let Err(err) = styled.and_then(|()| overlay.gate_paints()) {
                 log::warn!("{err:#}");
             }
         })
@@ -604,12 +654,17 @@ impl XpOverlay {
 
     /// Takes the lip watcher's word on the rails and puts the plates in line with it at once:
     /// a tooltip over a rail takes its plate down in the frame it appears, and back when it goes.
+    /// The bar's fill waits for the next sample, which the tracker takes it from.
     fn on_lips(&mut self, report: LipReport, cx: &mut Context<Self>) {
         log::debug!("lip watch: {report:?}");
         match report {
-            LipReport::Seen(seen) => self.lips = Some(seen),
+            LipReport::Seen { rails, fill } => {
+                self.lips = Some(rails);
+                self.watched_fill = fill;
+            }
             // The sampler takes over from the watcher's last look, not from its own older ones.
             LipReport::Idle => {
+                self.watched_fill = None;
                 if let Some(seen) = self.lips.take() {
                     self.rails.seed(seen);
                 }

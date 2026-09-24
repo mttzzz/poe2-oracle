@@ -115,6 +115,8 @@ zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2
 # `Win32_Graphics_Direct3D`, `Win32_Graphics_Direct3D11`, `Win32_Graphics_Dxgi` and
 # `Win32_Graphics_Dxgi_Common` (desktop duplication, which reads the HUD rails' lips frame by frame
 # for the XP overlay -- src/platform/lip_watch.rs; gpui_windows' renderer builds them already).
+# `Win32_System_Diagnostics_Debug` and `Win32_System_SystemServices` (this executable's own PE
+# headers, whose import of `RedrawWindow` src/platform/redraw_filter.rs points at its filter).
 windows = { version = "0.62", features = [
     "Win32_Foundation",
     "Win32_Globalization",
@@ -127,11 +129,13 @@ windows = { version = "0.62", features = [
     "Win32_Security_Credentials",
     "Win32_System_Console",
     "Win32_System_DataExchange",
+    "Win32_System_Diagnostics_Debug",
     "Win32_System_LibraryLoader",
     "Win32_System_Memory",
     "Win32_System_Ole",
     "Win32_System_Registry",
     "Win32_System_SystemInformation",
+    "Win32_System_SystemServices",
     "Win32_System_Threading",
     "Win32_System_Time",
     "Win32_UI_Accessibility",

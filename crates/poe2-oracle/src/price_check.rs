@@ -1067,6 +1067,13 @@ impl PriceCheckApp {
                     .collect();
                 self.international = international;
                 self.russian = russian;
+                // Once: from here the hotkey prices items (the log's time says how long it took).
+                if !matches!(self.bootstrap, BootstrapState::Ready) {
+                    log::info!(
+                        "ready to price items: {} leagues listed",
+                        self.leagues.len()
+                    );
+                }
                 self.bootstrap = BootstrapState::Ready;
                 // The market loads up front: exchange items then price instantly, and the title
                 // bar shows the divine rate from the start.

@@ -72,8 +72,11 @@ account page.
   has ever run.
 - **The game's log**, `Client.txt` in the game's `logs` folder: level-ups, area changes and returns
   to character selection for the [XP overlay](xp-overlay.md). Read only.
-- **The screen**: every two seconds, the strip of pixels where the experience bar is, for the XP
-  overlay. Nothing of it is saved or sent.
+- **The screen**, for the XP overlay: the strip of pixels where the experience bar is, and a few
+  rows along the top of the flask and skill panels' rails, where the plates stand. While you are at
+  the game -- it is in front, or the pointer is over it -- the rails are looked at many times a
+  second, so that a plate steps aside the moment a tooltip covers its rail, and the bar twice a
+  second; otherwise both every two seconds. Nothing of it is saved or sent.
 
 ## What it types into the game
 

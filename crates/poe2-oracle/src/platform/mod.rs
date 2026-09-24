@@ -24,6 +24,8 @@ pub mod lip_watch;
 #[cfg(target_os = "windows")]
 pub mod login_window;
 #[cfg(target_os = "windows")]
+pub mod redraw_filter;
+#[cfg(target_os = "windows")]
 pub mod synth_input;
 #[cfg(target_os = "windows")]
 pub mod win32;

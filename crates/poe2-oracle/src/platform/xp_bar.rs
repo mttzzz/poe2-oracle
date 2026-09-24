@@ -17,6 +17,11 @@
 //! No `CAPTUREBLT`: it only adds layered windows to the copy (the game's isn't one) and is known
 //! to make the mouse cursor flicker on each blit, which here would be every two seconds over the
 //! game.
+//!
+//! A blit waits for the desktop's next composition and costs the app about a millisecond of CPU
+//! each. While the player is at the game `platform::lip_watch` reads the lips and the bar off
+//! the duplicated desktop instead, and the sampler asks here only where the game is
+//! ([`sample`]'s `read_pixels`).
 
 use windows::Win32::Foundation::{HWND, POINT};
 use windows::Win32::Graphics::Gdi::{
@@ -38,10 +43,10 @@ pub struct BarSample {
     pub client: PhysicalRect,
     /// The game window's DPI scale (1.0 at 96 DPI), for sizing the overlay's windows.
     pub dpi_scale: f64,
-    /// The fraction of the level the bar shows; `None` when it isn't readable.
+    /// The fraction of the level the bar shows; `None` when it isn't readable, or wasn't read.
     pub fill: Option<f64>,
-    /// Whether each plate's rail is on screen where the plate goes.
-    pub rails: RailsSeen,
+    /// Whether each plate's rail is on screen where the plate goes; `None` when not looked at.
+    pub rails: Option<RailsSeen>,
 }
 
 /// Whether the flask and the skill panel's rails were seen where `overlay_layout::hud_rails`
@@ -52,15 +57,24 @@ pub struct RailsSeen {
     pub skill: bool,
 }
 
-/// Looks at the bar once; `None` while there is no game window or it is minimized. Blocking GDI
-/// work (a readback of the composed screen), so call it off the UI thread.
-pub fn sample() -> Option<BarSample> {
+/// Looks at the game once: where it is, and with `read_pixels` its bar and rails too. `None`
+/// while there is no game window or it is minimized. Blocking GDI work when reading pixels (a
+/// readback of the composed screen), so call it off the UI thread.
+pub fn sample(read_pixels: bool) -> Option<BarSample> {
     let hwnd = game_window::game_window()?;
     if unsafe { IsIconic(hwnd) }.as_bool() {
         return None;
     }
     let client = game_window::client_rect_on_screen(hwnd)?;
     let dpi_scale = game_window::dpi_to_scale(unsafe { GetDpiForWindow(hwnd) });
+    if !read_pixels {
+        return Some(BarSample {
+            client,
+            dpi_scale,
+            fill: None,
+            rails: None,
+        });
+    }
     let geometry = XpBarGeometry::for_client(client);
     let fill = geometry
         .as_ref()
@@ -79,10 +93,10 @@ pub fn sample() -> Option<BarSample> {
         client,
         dpi_scale,
         fill,
-        rails: RailsSeen {
+        rails: Some(RailsSeen {
             flask: seen(plates.flask),
             skill: seen(plates.skill),
-        },
+        }),
     })
 }
 
@@ -93,7 +107,7 @@ pub fn sample() -> Option<BarSample> {
 /// pass `read_fill`'s checks reads as a wrong fill: a drop the tracker takes for a loss, then a
 /// "gain" when the cover goes. Windows that let clicks through are passed over by
 /// `WindowFromPoint`, as by the mouse.
-fn shows_the_game(game: HWND, rect: PhysicalRect) -> bool {
+pub(crate) fn shows_the_game(game: HWND, rect: PhysicalRect) -> bool {
     const POINTS: i32 = 9;
     let y = rect.y + rect.height / 2;
     (0..POINTS).all(|i| {

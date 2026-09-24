@@ -43,7 +43,7 @@ use crate::login;
 use crate::overlay_layout::PhysicalRect;
 use crate::platform::instance::{self, Request};
 use crate::platform::win32::Win32Overlay;
-use crate::platform::{autostart, game_config, game_window};
+use crate::platform::{autostart, game_config, game_window, redraw_filter};
 use crate::price_check::{self, BootstrapState, PriceCheckApp};
 use crate::session::{self, SessionHttpClient};
 use crate::settings::{self, Hotkey};
@@ -592,6 +592,8 @@ pub fn run() {
         claimed => claimed,
     };
     logging::init();
+    // Before GPUI starts: its vsync thread loads the `RedrawWindow` import once, before its loop.
+    redraw_filter::install();
     let requests = requests.unwrap_or_else(|err| {
         log::warn!("the single-copy check failed, running anyway: {err:#}");
         None

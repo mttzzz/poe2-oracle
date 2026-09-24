@@ -1,16 +1,17 @@
 //! Watches the lips of the HUD's rails for the XP overlay frame by frame, so that a plate steps
 //! aside the moment the game draws anything over its rail -- a tooltip, a panel, the chat -- and
-//! comes back the moment it's gone.
+//! comes back the moment it's gone; and reads the experience bar off the same frames.
 //!
 //! `platform::xp_bar` looks at the lips every two seconds with a GDI blit of the screen, and a
 //! blit waits for the desktop's next composition: 11 ms a lip, 27 ms both, up to 145 ms (measured
 //! 2026-09-24 on the test machine's 4K game) -- far too slow to look many times a second. Here the
 //! desktop comes through DXGI desktop duplication instead: Windows hands over each frame it
 //! composes as a texture, the lips' few rows are copied out of it on the GPU, and only those rows
-//! are read back. The watching runs on a thread of its own, while the player is at the game -- it's
-//! in front, or the cursor is over it: the game shows its tooltips under the cursor whatever has
-//! the keyboard -- and a moment after; otherwise the duplication is released and
-//! [`LipReport::Idle`] leaves the plates to the sampler's slower look.
+//! are read back -- the bar's too, every `BAR_EVERY`, so that the sampler needs no blit at all
+//! while this watches. The watching runs on a thread of its own, while the player is at the game
+//! -- it's in front, or the cursor is over it: the game shows its tooltips under the cursor
+//! whatever has the keyboard -- and a moment after; otherwise the duplication is released and
+//! [`LipReport::Idle`] leaves the plates and the bar to the sampler's slower look.
 
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::time::{Duration, Instant};
@@ -37,7 +38,8 @@ use windows::core::Interface;
 
 use crate::overlay_layout::{PhysicalRect, hud_rails, rail_lip, rail_seen};
 use crate::platform::game_window;
-use crate::platform::xp_bar::RailsSeen;
+use crate::platform::xp_bar::{RailsSeen, shows_the_game};
+use crate::xp_tracker::{XpBarGeometry, read_fill};
 
 /// How often the watcher looks at what to watch and at the player while it isn't watching.
 const IDLE_POLL: Duration = Duration::from_millis(250);
@@ -61,13 +63,17 @@ const STILL_AFTER: Duration = Duration::from_secs(1);
 /// How long it waits after the desktop couldn't be duplicated -- the secure desktop of a UAC
 /// prompt, another program's exclusive fullscreen -- before it tries again.
 const RETRY_AFTER: Duration = Duration::from_secs(3);
+/// How often a look reads the experience bar too: the sampler takes a reading every two seconds,
+/// and a reading this old is as good as its own.
+const BAR_EVERY: Duration = Duration::from_millis(500);
 
 /// What the watcher saw.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum LipReport {
-    /// Whether each rail's lip shows, as `overlay_layout::rail_seen` reads it: sent at the first
-    /// look and whenever it changes.
-    Seen(RailsSeen),
+    /// The latest looks: whether each rail's lip shows, as `overlay_layout::rail_seen` reads it,
+    /// and the fill the bar showed when last read (`xp_tracker::read_fill`), `None` when it was
+    /// covered or unreadable. Sent at the first look and whenever either changes.
+    Seen { rails: RailsSeen, fill: Option<f64> },
     /// Not watching -- the player isn't at the game, there is no game to watch, or the desktop
     /// can't be duplicated -- so the sampler's look decides.
     Idle,
@@ -101,7 +107,9 @@ fn watch(targets: &Receiver<Option<PhysicalRect>>, reports: &async_channel::Send
     let mut game = None;
     let mut duplication: Option<Duplication> = None;
     // What was reported last: `None` for `Idle`, and before the first report.
-    let mut reported: Option<RailsSeen> = None;
+    let mut reported: Option<(RailsSeen, Option<f64>)> = None;
+    // The bar's fill as last read, while watching.
+    let mut fill: Option<f64> = None;
     let mut retry_at = Instant::now();
     let mut last_error = String::new();
     // The first duplication of the run is logged, as a sign in the diagnostics report that the
@@ -138,6 +146,7 @@ fn watch(targets: &Receiver<Option<PhysicalRect>>, reports: &async_channel::Send
         }
         let Some(client) = game.filter(|_| watching) else {
             duplication = None;
+            fill = None;
             if reported.take().is_some() {
                 let _ = reports.try_send(LipReport::Idle);
             }
@@ -147,9 +156,19 @@ fn watch(targets: &Receiver<Option<PhysicalRect>>, reports: &async_channel::Send
             let rails = hud_rails(client);
             [rails.flask, rails.skill].map(|plate| rail_lip(plate, client.height))
         };
-        if duplication.as_ref().is_none_or(|open| !open.shows(&lips)) {
+        let bar = XpBarGeometry::for_client(client);
+        let rects = || lips.iter().chain(bar.as_ref().map(|bar| &bar.capture));
+        if duplication.as_ref().is_none_or(|open| !open.shows(rects())) {
             duplication = None;
-            match Duplication::open(client) {
+            // A game across two monitors: what's read must all be on the one duplicated, else
+            // the next round would open it again, and again.
+            let opened = Duplication::open(client).and_then(|opened| {
+                if !opened.shows(rects()) {
+                    bail!("the rails and the bar aren't all on the game's monitor");
+                }
+                Ok(opened)
+            });
+            match opened {
                 Ok(opened) => {
                     let monitor = opened.monitor;
                     if announced {
@@ -175,12 +194,20 @@ fn watch(targets: &Receiver<Option<PhysicalRect>>, reports: &async_channel::Send
         let Some(open) = duplication.as_mut() else {
             continue;
         };
-        match open.next_look(&lips) {
-            Ok(Some(seen)) if reported != Some(seen) => {
-                reported = Some(seen);
-                let _ = reports.try_send(LipReport::Seen(seen));
+        match open.next_look(&lips, bar.as_ref(), window) {
+            Ok(Some(look)) => {
+                if let Some(read) = look.fill {
+                    fill = read;
+                }
+                if reported != Some((look.rails, fill)) {
+                    reported = Some((look.rails, fill));
+                    let _ = reports.try_send(LipReport::Seen {
+                        rails: look.rails,
+                        fill,
+                    });
+                }
             }
-            Ok(_) => {}
+            Ok(None) => {}
             // Lost to a mode change, the secure desktop or another program's fullscreen: open
             // it again on the next round.
             Err(err) => {
@@ -191,20 +218,29 @@ fn watch(targets: &Receiver<Option<PhysicalRect>>, reports: &async_channel::Send
     }
 }
 
-/// The duplication of the monitor the game is on, and what reading its lips takes.
+/// The duplication of the monitor the game is on, and what reading its lips and bar takes.
 struct Duplication {
     /// The monitor's area of the desktop, physical pixels.
     monitor: PhysicalRect,
     duplication: IDXGIOutputDuplication,
     context: ID3D11DeviceContext,
     device: ID3D11Device,
-    /// The texture the lips are copied into to be read, the flask lip's rows over the skill
-    /// lip's, and its size.
+    /// The texture the lips and the bar are copied into to be read -- the flask lip's rows, the
+    /// skill lip's under them, the bar's under those -- and its size.
     staging: Option<(ID3D11Texture2D, u32, u32)>,
     /// When the last frame was taken: looks are paced from it.
     last_look: Option<Instant>,
-    /// One lip's rows, reused from look to look.
+    /// When the bar was last read.
+    bar_read: Option<Instant>,
+    /// One lip's or the bar's rows, reused from look to look.
     rows: Vec<u8>,
+}
+
+/// What one look read.
+struct Look {
+    rails: RailsSeen,
+    /// The bar's fill if the look read the bar: `Some(None)` when it was covered or unreadable.
+    fill: Option<Option<f64>>,
 }
 
 impl Duplication {
@@ -274,6 +310,7 @@ impl Duplication {
                     device,
                     staging: None,
                     last_look: None,
+                    bar_read: None,
                     rows: Vec::new(),
                 });
             }
@@ -281,23 +318,30 @@ impl Duplication {
         bail!("no monitor shows the game")
     }
 
-    /// Whether the monitor shows both of `lips` whole.
-    fn shows(&self, lips: &[PhysicalRect; 2]) -> bool {
+    /// Whether the monitor shows every one of `rects` whole.
+    fn shows<'a>(&self, mut rects: impl Iterator<Item = &'a PhysicalRect>) -> bool {
         let m = self.monitor;
-        lips.iter().all(|lip| {
-            lip.x >= m.x
-                && lip.y >= m.y
-                && lip.x + lip.width <= m.x + m.width
-                && lip.y + lip.height <= m.y + m.height
+        rects.all(|rect| {
+            rect.x >= m.x
+                && rect.y >= m.y
+                && rect.x + rect.width <= m.x + m.width
+                && rect.y + rect.height <= m.y + m.height
         })
     }
 
     /// Waits for the next frame -- no sooner than the next look is due (`wait_for_look`) -- and
-    /// reads `lips` off it: `None` if none came in time, or only the pointer moved.
-    fn next_look(&mut self, lips: &[PhysicalRect; 2]) -> Result<Option<RailsSeen>> {
+    /// reads `lips` off it, and `bar` if it's due (`BAR_EVERY`) and the game itself shows it on
+    /// `game`'s window: `None` if no frame came in time, or only the pointer moved.
+    fn next_look(
+        &mut self,
+        lips: &[PhysicalRect; 2],
+        bar: Option<&XpBarGeometry>,
+        game: Option<HWND>,
+    ) -> Result<Option<Look>> {
         if let Some(last) = self.last_look {
             wait_for_look(last);
         }
+        let bar_due = self.bar_read.is_none_or(|at| at.elapsed() >= BAR_EVERY);
         let mut info = DXGI_OUTDUPL_FRAME_INFO::default();
         let mut resource = None;
         match unsafe {
@@ -312,7 +356,7 @@ impl Duplication {
         let copied = if info.LastPresentTime == 0 {
             Ok(false)
         } else {
-            self.copy_lips(resource, lips)
+            self.copy_rows(resource, lips, bar.map(|bar| &bar.capture), bar_due)
         };
         // Windows holds the next frame back until this one is released. The copies are queued
         // on the GPU before the release, so they read this frame.
@@ -320,21 +364,34 @@ impl Duplication {
         if !copied? {
             return Ok(None);
         }
-        self.read_lips(lips).map(Some)
+        // The bar counts only where the game itself shows it: a window over it -- the price
+        // panel spans its middle -- would read as a wrong fill (see `xp_bar::shows_the_game`).
+        let bar = bar.filter(|_| bar_due).map(|geometry| {
+            game.is_some_and(|game| shows_the_game(game, geometry.capture))
+                .then_some(geometry)
+        });
+        if bar.is_some() {
+            self.bar_read = self.last_look;
+        }
+        self.read_rows(lips, bar).map(Some)
     }
 
-    /// Queues the copy of `lips` out of the frame into the staging texture; whether it did.
-    fn copy_lips(
+    /// Queues the copy of `lips`, and of `bar` if `copy_bar`, out of the frame into the staging
+    /// texture -- which has room for the bar either way; whether it did.
+    fn copy_rows(
         &mut self,
         resource: Option<IDXGIResource>,
         lips: &[PhysicalRect; 2],
+        bar: Option<&PhysicalRect>,
+        copy_bar: bool,
     ) -> Result<bool> {
         let Some(resource) = resource else {
             return Ok(false);
         };
         let frame: ID3D11Texture2D = resource.cast().context("the frame as a texture")?;
-        let width = lips.iter().map(|lip| lip.width).max().unwrap_or(0) as u32;
-        let height = lips.iter().map(|lip| lip.height).sum::<i32>() as u32;
+        let rects = || lips.iter().chain(bar);
+        let width = rects().map(|rect| rect.width).max().unwrap_or(0) as u32;
+        let height = rects().map(|rect| rect.height).sum::<i32>() as u32;
         if self
             .staging
             .as_ref()
@@ -367,28 +424,44 @@ impl Duplication {
             return Ok(false);
         };
         let mut top = 0;
-        for lip in lips {
-            let x = (lip.x - self.monitor.x) as u32;
-            let y = (lip.y - self.monitor.y) as u32;
-            let area = D3D11_BOX {
-                left: x,
-                top: y,
-                front: 0,
-                right: x + lip.width as u32,
-                bottom: y + lip.height as u32,
-                back: 1,
-            };
-            unsafe {
-                self.context
-                    .CopySubresourceRegion(staging, 0, 0, top, 0, &frame, 0, Some(&area));
+        for (index, rect) in rects().enumerate() {
+            // The lips first, then the bar.
+            if index < lips.len() || copy_bar {
+                let x = (rect.x - self.monitor.x) as u32;
+                let y = (rect.y - self.monitor.y) as u32;
+                let area = D3D11_BOX {
+                    left: x,
+                    top: y,
+                    front: 0,
+                    right: x + rect.width as u32,
+                    bottom: y + rect.height as u32,
+                    back: 1,
+                };
+                unsafe {
+                    self.context.CopySubresourceRegion(
+                        staging,
+                        0,
+                        0,
+                        top,
+                        0,
+                        &frame,
+                        0,
+                        Some(&area),
+                    );
+                }
             }
-            top += lip.height as u32;
+            top += rect.height as u32;
         }
         Ok(true)
     }
 
-    /// Reads the copied lips back, once the GPU has copied them.
-    fn read_lips(&mut self, lips: &[PhysicalRect; 2]) -> Result<RailsSeen> {
+    /// Reads the copied lips back, once the GPU has copied them, and the bar if `bar` says it
+    /// was copied (`Some`) and shows the game (`Some(Some)`).
+    fn read_rows(
+        &mut self,
+        lips: &[PhysicalRect; 2],
+        bar: Option<Option<&XpBarGeometry>>,
+    ) -> Result<Look> {
         let Some((staging, _, _)) = self.staging.as_ref() else {
             bail!("no staging texture");
         };
@@ -398,31 +471,66 @@ impl Duplication {
                 .Map(staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))
         }
         .context("Map")?;
+        let data = mapped.pData.cast::<u8>().cast_const();
         let pitch = mapped.RowPitch as usize;
         let mut seen = [false; 2];
         let mut top = 0;
         for (lip, seen) in lips.iter().zip(&mut seen) {
             let (width, height) = (lip.width as usize, lip.height as usize);
-            self.rows.clear();
-            for row in top..top + height {
-                // SAFETY: the mapped texture is `pitch` bytes a row, at least as wide as the
-                // widest lip, and holds both lips' rows.
-                let bytes = unsafe {
-                    std::slice::from_raw_parts(
-                        mapped.pData.cast::<u8>().add(row * pitch),
-                        width * 4,
-                    )
-                };
-                self.rows.extend_from_slice(bytes);
-            }
+            // SAFETY: the mapped texture is `pitch` bytes a row, as wide as the widest of the
+            // lips and the bar, and holds all their rows.
+            unsafe { gather(&mut self.rows, data, pitch, top, width, height) };
             *seen = rail_seen(&self.rows, width);
             top += height;
         }
+        let fill = bar.map(|shown| {
+            shown.and_then(|geometry| {
+                let capture = geometry.capture;
+                // SAFETY: as for the lips; the bar's rows are the last ones.
+                unsafe {
+                    gather(
+                        &mut self.rows,
+                        data,
+                        pitch,
+                        top,
+                        capture.width as usize,
+                        capture.height as usize,
+                    );
+                }
+                read_fill(geometry, &self.rows)
+            })
+        });
         unsafe { self.context.Unmap(staging, 0) };
-        Ok(RailsSeen {
-            flask: seen[0],
-            skill: seen[1],
+        Ok(Look {
+            rails: RailsSeen {
+                flask: seen[0],
+                skill: seen[1],
+            },
+            fill,
         })
+    }
+}
+
+/// Puts `height` rows of `width` pixels, from row `top` down, of a mapped texture's `data` into
+/// `rows`, tightly packed.
+///
+/// # Safety
+///
+/// `data` points at a mapped texture of at least `top + height` rows, `pitch` bytes each, each at
+/// least `width` 4-byte pixels wide.
+unsafe fn gather(
+    rows: &mut Vec<u8>,
+    data: *const u8,
+    pitch: usize,
+    top: usize,
+    width: usize,
+    height: usize,
+) {
+    rows.clear();
+    for row in top..top + height {
+        rows.extend_from_slice(unsafe {
+            std::slice::from_raw_parts(data.add(row * pitch), width * 4)
+        });
     }
 }
 
