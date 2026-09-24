@@ -13,6 +13,11 @@
 //!   creation time (`gpui_windows/src/window.rs:490`) -- genuinely native, real always-on-top;
 //!   [`Win32Overlay::set_bounds`] keeps it topmost when it moves the window.
 //!
+//! - Sizing the settings window with its content, which the UI scale grows and shrinks:
+//!   `gpui_windows`' own `resize` keeps the top left corner in place, and its least size is set
+//!   for good when the window is created, so [`Win32Overlay::zoom`] scales the window about the
+//!   pointer and [`Win32Overlay::set_min_size`] answers `WM_GETMINMAXINFO` in its place.
+//!
 //! A transparent background and the popup window kind need no raw code:
 //! `WindowOptions { kind: WindowKind::PopUp, titlebar: None,
 //! window_background: WindowBackgroundAppearance::Transparent, .. }`. The frame Windows still
@@ -28,32 +33,37 @@ use std::sync::{LazyLock, Mutex};
 use anyhow::{Context as _, Result, bail};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use windows::Win32::Foundation::{
-    GetLastError, HWND, LPARAM, LRESULT, SetLastError, WIN32_ERROR, WPARAM,
+    GetLastError, HWND, LPARAM, LRESULT, POINT, RECT, SetLastError, WIN32_ERROR, WPARAM,
 };
 use windows::Win32::Graphics::Dwm::{
     DWM_WINDOW_CORNER_PREFERENCE, DWMWA_BORDER_COLOR, DWMWA_COLOR_NONE,
     DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND, DwmSetWindowAttribute,
 };
 use windows::Win32::Graphics::Gdi::{
-    CombineRgn, CreateRectRgn, DeleteObject, InvalidateRect, RGN_OR, SetWindowRgn, ValidateRect,
+    CombineRgn, CreateRectRgn, DeleteObject, GetMonitorInfoW, InvalidateRect,
+    MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow, RGN_OR, SetWindowRgn, ValidateRect,
 };
 use windows::Win32::System::SystemInformation::GetTickCount64;
+use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CallWindowProcW, DefWindowProcW, GWL_EXSTYLE, GWL_STYLE, GWLP_WNDPROC, GetForegroundWindow,
-    GetWindowLongPtrW, HWND_NOTOPMOST, HWND_TOPMOST, MA_NOACTIVATE, SW_HIDE, SW_SHOWNOACTIVATE,
-    SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetForegroundWindow,
-    SetWindowLongPtrW, SetWindowPos, ShowWindow, WM_DPICHANGED, WM_LBUTTONDOWN, WM_LBUTTONUP,
-    WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT, WM_SHOWWINDOW, WM_SIZE,
+    CallWindowProcW, DefWindowProcW, GWL_EXSTYLE, GWL_STYLE, GWLP_WNDPROC, GetCursorPos,
+    GetForegroundWindow, GetWindowLongPtrW, GetWindowRect, HWND_NOTOPMOST, HWND_TOPMOST, IsIconic,
+    IsZoomed, MA_NOACTIVATE, MINMAXINFO, SW_HIDE, SW_SHOWNOACTIVATE, SWP_FRAMECHANGED,
+    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetForegroundWindow, SetWindowLongPtrW,
+    SetWindowPos, ShowWindow, WM_DPICHANGED, WM_GETMINMAXINFO, WM_LBUTTONDOWN, WM_LBUTTONUP,
+    WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCDESTROY, WM_PAINT, WM_SHOWWINDOW, WM_SIZE,
     WM_WINDOWPOSCHANGED, WNDPROC, WS_CAPTION, WS_EX_CLIENTEDGE, WS_EX_DLGMODALFRAME, WS_EX_LAYERED,
     WS_EX_NOACTIVATE, WS_EX_STATICEDGE, WS_EX_TRANSPARENT, WS_EX_WINDOWEDGE, WS_MAXIMIZEBOX,
     WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
 };
 
+use super::game_window::{client_rect_on_screen, dpi_to_scale};
 use crate::overlay_layout::PhysicalRect;
 
 /// The windows whose procedure [`overlay_proc`] wraps, by the window's handle value: GPUI's own
-/// procedure, and what the wrapper does before it.
+/// procedure, and what the wrapper does before it. An entry goes with its window
+/// (`WM_NCDESTROY`), since Windows hands its handle value to later windows.
 static WRAPPED: LazyLock<Mutex<HashMap<isize, Wrapped>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
@@ -63,6 +73,9 @@ struct Wrapped {
     no_activate: bool,
     /// Paints only in bursts ([`Win32Overlay::gate_paints`]).
     gate: Option<PaintGate>,
+    /// The least client area the player can size the window to, in pixels at 96 DPI
+    /// ([`Win32Overlay::set_min_size`]).
+    min_size: Option<(f32, f32)>,
 }
 
 /// When a gated window's paints last went through to GPUI, and until when they all do; ticks of
@@ -404,6 +417,7 @@ impl Win32Overlay {
             gpui_proc,
             no_activate: false,
             gate: None,
+            min_size: None,
         };
         edit(&mut entry);
         // Recorded before the swap: the wrapper looks it up for the very next message.
@@ -426,6 +440,110 @@ impl Win32Overlay {
             let _ = SetFocus(Some(self.hwnd));
         }
     }
+
+    /// Makes `size` -- a client area's width and height, in pixels at 96 DPI -- the least the
+    /// player can size the window to, in place of the one it was created with, which
+    /// `gpui_windows` keeps for good: the settings window's grows and shrinks with the UI scale.
+    /// Deferred like [`Self::set_bounds`], ahead of a [`Self::zoom`] that shrinks the window below
+    /// the least it had.
+    pub fn set_min_size(&self, size: (f32, f32)) -> Result<()> {
+        self.wrap(|wrapped| wrapped.min_size = Some(size))
+    }
+
+    /// Scales the window's client area by `factor` about the pointer -- or about its middle, the
+    /// pointer elsewhere -- so what's under the pointer stays there: the settings window growing
+    /// or shrinking with the UI scale keeps the stepper that changed it under the pointer. Kept
+    /// on the monitor's work area; a maximized or minimized window keeps its size. Deferred like
+    /// [`Self::set_bounds`]: `SetWindowPos` sends `WM_SIZE` synchronously.
+    pub fn zoom(&self, factor: f64) -> Result<()> {
+        if unsafe { IsZoomed(self.hwnd) }.as_bool() || unsafe { IsIconic(self.hwnd) }.as_bool() {
+            return Ok(());
+        }
+        let client = client_rect_on_screen(self.hwnd).context("the window has no client area")?;
+        let mut frame = RECT::default();
+        unsafe { GetWindowRect(self.hwnd, &mut frame) }.context("GetWindowRect failed")?;
+        let mut pointer = POINT::default();
+        let (anchor_x, anchor_y) = if unsafe { GetCursorPos(&mut pointer) }.is_ok()
+            && (client.x..client.x + client.width).contains(&pointer.x)
+            && (client.y..client.y + client.height).contains(&pointer.y)
+        {
+            (pointer.x, pointer.y)
+        } else {
+            (client.x + client.width / 2, client.y + client.height / 2)
+        };
+        let scaled = |length: i32| (f64::from(length) * factor).round() as i32;
+        let mut zoomed = PhysicalRect {
+            x: anchor_x - scaled(anchor_x - client.x),
+            y: anchor_y - scaled(anchor_y - client.y),
+            width: scaled(client.width),
+            height: scaled(client.height),
+        };
+        if let Some(work) = work_area(self.hwnd) {
+            zoomed.width = zoomed.width.min(work.width);
+            zoomed.height = zoomed.height.min(work.height);
+            zoomed.x = zoomed.x.min(work.x + work.width - zoomed.width).max(work.x);
+            zoomed.y = zoomed
+                .y
+                .min(work.y + work.height - zoomed.height)
+                .max(work.y);
+        }
+        // What the window has around its client area: `gpui_windows` keeps the resize borders.
+        let (left, top) = (client.x - frame.left, client.y - frame.top);
+        let right = frame.right - (client.x + client.width);
+        let bottom = frame.bottom - (client.y + client.height);
+        unsafe {
+            SetWindowPos(
+                self.hwnd,
+                None,
+                zoomed.x - left,
+                zoomed.y - top,
+                zoomed.width + left + right,
+                zoomed.height + top + bottom,
+                SWP_NOZORDER | SWP_NOACTIVATE,
+            )
+        }
+        .context("SetWindowPos(zoom) failed")
+    }
+}
+
+/// The work area -- the monitor less the taskbar -- of the monitor `hwnd` is on.
+fn work_area(hwnd: HWND) -> Option<PhysicalRect> {
+    let mut info = MONITORINFO {
+        cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+        ..Default::default()
+    };
+    let monitor = unsafe { MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) };
+    if !unsafe { GetMonitorInfoW(monitor, &mut info) }.as_bool() {
+        return None;
+    }
+    let work = info.rcWork;
+    Some(PhysicalRect {
+        x: work.left,
+        y: work.top,
+        width: work.right - work.left,
+        height: work.bottom - work.top,
+    })
+}
+
+/// Puts `size` -- a client area in pixels at 96 DPI ([`Win32Overlay::set_min_size`]) -- in `info`,
+/// the `MINMAXINFO` of `hwnd`'s `WM_GETMINMAXINFO`, as the least size of the whole window at its
+/// DPI. A minimized window's rects say nothing of its frame, so its answer stays GPUI's.
+fn set_min_track_size(hwnd: HWND, info: &mut MINMAXINFO, (width, height): (f32, f32)) {
+    if unsafe { IsIconic(hwnd) }.as_bool() {
+        return;
+    }
+    let mut frame = RECT::default();
+    let (Some(client), Ok(())) = (client_rect_on_screen(hwnd), unsafe {
+        GetWindowRect(hwnd, &mut frame)
+    }) else {
+        return;
+    };
+    let scale = dpi_to_scale(unsafe { GetDpiForWindow(hwnd) });
+    let physical = |length: f32| (f64::from(length) * scale).round() as i32;
+    info.ptMinTrackSize = POINT {
+        x: physical(width) + (frame.right - frame.left) - client.width,
+        y: physical(height) + (frame.bottom - frame.top) - client.height,
+    };
 }
 
 /// The window procedure [`Win32Overlay::wrap`] puts in front of GPUI's: `MA_NOACTIVATE` for a
@@ -433,14 +551,15 @@ impl Win32Overlay {
 /// only in bursts -- a paint outside one is marked done, and the display's next refresh asks
 /// again, unless `redraw_filter` drops that refresh's ask. Everything else goes to GPUI's
 /// procedure, the registry unlocked first: GPUI's may send messages to another wrapped window of
-/// the app.
+/// the app. GPUI's answer to `WM_GETMINMAXINFO` then gets a [`Win32Overlay::set_min_size`]
+/// window's least size, and the window's entry goes with its last message.
 unsafe extern "system" fn overlay_proc(
     hwnd: HWND,
     message: u32,
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
-    let (gpui_proc, no_activate, swallowed) = {
+    let (gpui_proc, no_activate, swallowed, min_size) = {
         let mut wrapped = WRAPPED
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -465,7 +584,12 @@ unsafe extern "system" fn overlay_proc(
                 _ => {}
             }
         }
-        (entry.gpui_proc, entry.no_activate, swallowed)
+        (
+            entry.gpui_proc,
+            entry.no_activate,
+            swallowed,
+            entry.min_size,
+        )
     };
     if message == WM_MOUSEACTIVATE && no_activate {
         return LRESULT(MA_NOACTIVATE as isize);
@@ -476,5 +600,22 @@ unsafe extern "system" fn overlay_proc(
     }
     // SAFETY: the value `GWLP_WNDPROC` held before the swap, a window procedure of this window.
     let gpui_proc: WNDPROC = unsafe { std::mem::transmute::<isize, WNDPROC>(gpui_proc) };
-    unsafe { CallWindowProcW(gpui_proc, hwnd, message, wparam, lparam) }
+    let answer = unsafe { CallWindowProcW(gpui_proc, hwnd, message, wparam, lparam) };
+    match message {
+        WM_GETMINMAXINFO => {
+            if let Some(size) = min_size {
+                // SAFETY: a `WM_GETMINMAXINFO`'s `lparam` points at the `MINMAXINFO` it fills.
+                let info = unsafe { &mut *(lparam.0 as *mut MINMAXINFO) };
+                set_min_track_size(hwnd, info, size);
+            }
+        }
+        WM_NCDESTROY => {
+            WRAPPED
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .remove(&(hwnd.0 as isize));
+        }
+        _ => {}
+    }
+    answer
 }

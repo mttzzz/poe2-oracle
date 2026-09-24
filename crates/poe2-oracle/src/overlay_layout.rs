@@ -12,8 +12,10 @@
 //! than the English ones EE2's width was sized for.
 //!
 //! The player can drag the panel sideways by its title bar ([`dragged`]), never off the game's
-//! monitor. Where it was left is kept for each side ([`PanelPositions`]) and used by the next check
-//! on that side, until a double-click on the title bar forgets it.
+//! monitor, and a drag that brings it back beside the inventory or the stash sticks it there
+//! again ([`stuck`]). How far from its side panel it was left is kept for each side
+//! ([`PanelPositions`]) and used by the next check on that side, until a double-click on the
+//! title bar forgets it.
 //!
 //! (EE2 also closes an untouched panel when the cursor drifts off the item; this app deliberately
 //! does not -- the player asked for Esc to be the only way the panel closes, see
@@ -396,23 +398,41 @@ impl PanelSide {
     }
 }
 
-/// The panel's automatic rect on `side` of the game window's client area `game`. A panel wider
-/// than the room beside the side panel is narrowed to fit, so it never covers the inventory or
-/// stash, nor leaves the game.
+/// The panel's automatic rect on `side` of the game window's client area `game`: against the side
+/// panel. A panel wider than the room beside the side panel is narrowed to fit, so it never covers
+/// the inventory or stash, nor leaves the game.
 pub fn panel_rect(game: PhysicalRect, side: PanelSide, scale: f64) -> PhysicalRect {
-    let sidebar = (f64::from(game.height) * SIDEBAR_WIDTH_PER_GAME_HEIGHT).round() as i32;
     let width = ((PANEL_WIDTH_REM * EE2_FONT_SIZE_PX * scale).round() as i32)
-        .min(game.width - sidebar)
+        .min(game.width - side_panel_width(game))
         .max(0);
-    let x = match side {
-        PanelSide::Inventory => game.x + game.width - sidebar - width,
-        PanelSide::Stash => game.x + sidebar,
-    };
     PhysicalRect {
-        x,
+        x: docked_x(game, side, width),
         y: game.y,
         width,
         height: game.height,
+    }
+}
+
+/// How wide PoE's inventory and stash panels are on `game`.
+fn side_panel_width(game: PhysicalRect) -> i32 {
+    (f64::from(game.height) * SIDEBAR_WIDTH_PER_GAME_HEIGHT).round() as i32
+}
+
+/// The x of a `width`-wide panel against `side`'s side panel: its right edge on the inventory's
+/// left one, or its left edge on the stash's right one.
+fn docked_x(game: PhysicalRect, side: PanelSide, width: i32) -> i32 {
+    match side {
+        PanelSide::Inventory => game.x + game.width - side_panel_width(game) - width,
+        PanelSide::Stash => game.x + side_panel_width(game),
+    }
+}
+
+/// How far `panel` stands from `side`'s side panel: 0 against it, more away from it, less over it.
+fn gap(panel: PhysicalRect, side: PanelSide, game: PhysicalRect) -> i32 {
+    let docked = docked_x(game, side, panel.width);
+    match side {
+        PanelSide::Inventory => docked - panel.x,
+        PanelSide::Stash => panel.x - docked,
     }
 }
 
@@ -425,9 +445,25 @@ pub fn dragged(start: PhysicalRect, dx: i32, monitor: PhysicalRect) -> PhysicalR
     PhysicalRect { x, ..start }
 }
 
-/// Where the player left the panel on each side: its left edge's distance from the game's left
-/// edge, as a share of the game's width -- so the place follows a moved or resized game window --
-/// or `None` while that side keeps the automatic placement. Kept in the settings.
+/// `panel` against `side`'s side panel if it's within `reach` pixels of it, on either side of its
+/// edge: a drag that brings the panel back beside the inventory or the stash lands it exactly
+/// against it.
+pub fn stuck(panel: PhysicalRect, side: PanelSide, game: PhysicalRect, reach: i32) -> PhysicalRect {
+    if gap(panel, side, game).abs() > reach {
+        return panel;
+    }
+    PhysicalRect {
+        x: docked_x(game, side, panel.width),
+        ..panel
+    }
+}
+
+/// Where the player left the panel on each side: how far from the inventory or the stash -- the
+/// gap between the panel and that side panel as a share of the game's width, more away from it,
+/// less over it -- or `None` while the panel stands against it. Kept from the side panel rather
+/// than the screen's edge, so the panel stays against it, or as far from it, however wide the UI
+/// scale makes it; and as a share, so the place follows a moved or resized game window. Kept in
+/// the settings.
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PanelPositions {
@@ -443,11 +479,20 @@ impl PanelPositions {
         }
     }
 
-    /// Keeps `x`, the left edge the panel was dragged to over the game's client area `game`, as
-    /// `side`'s place.
-    pub fn remember(&mut self, side: PanelSide, game: PhysicalRect, x: i32) {
+    /// `side`'s place: `None` while the panel stands against its side panel.
+    pub fn place(&self, side: PanelSide) -> Option<f64> {
+        match side {
+            PanelSide::Inventory => self.inventory,
+            PanelSide::Stash => self.stash,
+        }
+    }
+
+    /// Keeps where `panel` was dragged to over the game's client area `game` as `side`'s place --
+    /// none for a panel left against the side panel, which stays against it.
+    pub fn remember(&mut self, side: PanelSide, game: PhysicalRect, panel: PhysicalRect) {
         if game.width > 0 {
-            *self.slot(side) = Some(f64::from(x - game.x) / f64::from(game.width));
+            let gap = gap(panel, side, game);
+            *self.slot(side) = (gap != 0).then(|| f64::from(gap) / f64::from(game.width));
         }
     }
 
@@ -456,10 +501,10 @@ impl PanelPositions {
         *self.slot(side) = None;
     }
 
-    /// The panel's rect on `side`: the automatic one ([`panel_rect`]) at the place the player left
-    /// it there -- unless that place would put any of it off `monitor`, the game's monitor (the
-    /// game moved to a smaller one, or the panel grew with the UI scale), where the automatic
-    /// placement stands in and the place stays kept.
+    /// The panel's rect on `side`: the automatic one ([`panel_rect`]), as far from the side panel
+    /// as the player left it there -- and kept whole on `monitor`, the game's monitor, as a drag
+    /// keeps it (the game moved to a smaller one, or the panel grew with the UI scale), the place
+    /// itself kept for when it fits again.
     pub fn rect(
         &self,
         side: PanelSide,
@@ -468,18 +513,15 @@ impl PanelPositions {
         scale: f64,
     ) -> PhysicalRect {
         let automatic = panel_rect(game, side, scale);
-        let place = match side {
-            PanelSide::Inventory => self.inventory,
-            PanelSide::Stash => self.stash,
-        };
-        let Some(share) = place else {
+        let Some(share) = self.place(side) else {
             return automatic;
         };
-        let x = game.x + (share * f64::from(game.width)).round() as i32;
-        if x < monitor.x || x + automatic.width > monitor.x + monitor.width {
-            return automatic;
-        }
-        PhysicalRect { x, ..automatic }
+        let gap = (share * f64::from(game.width)).round() as i32;
+        let away = match side {
+            PanelSide::Inventory => -gap,
+            PanelSide::Stash => gap,
+        };
+        dragged(automatic, away, monitor)
     }
 }
 
@@ -716,21 +758,65 @@ mod tests {
     #[test]
     fn a_dragged_panel_opens_where_it_was_left_on_that_side_only() {
         let mut positions = PanelPositions::default();
-        positions.remember(PanelSide::Inventory, GAME_4K, 1200);
-
-        let inventory = positions.rect(PanelSide::Inventory, GAME_4K, GAME_4K, 2.0);
         let automatic = panel_rect(GAME_4K, PanelSide::Inventory, 2.0);
+        let left = PhysicalRect {
+            x: 1200,
+            ..automatic
+        };
+        positions.remember(PanelSide::Inventory, GAME_4K, left);
+
         assert_eq!(
-            inventory,
-            PhysicalRect {
-                x: 1200,
-                ..automatic
-            }
+            positions.rect(PanelSide::Inventory, GAME_4K, GAME_4K, 2.0),
+            left
         );
         assert_eq!(
             positions.rect(PanelSide::Stash, GAME_4K, GAME_4K, 2.0),
             panel_rect(GAME_4K, PanelSide::Stash, 2.0)
         );
+    }
+
+    /// The UI scale changes how wide the panel is, not where it stands: it grows away from its
+    /// side panel and keeps as far from it as it was left. Kept from the screen's left edge
+    /// instead, the panel left against the inventory at 80 % covered 209 px of it at 100 %.
+    #[test]
+    fn a_panel_keeps_its_distance_from_its_side_panel_at_any_scale() {
+        let side_panel = (2160.0_f64 * 986.0 / 1600.0).round() as i32;
+        let mut positions = PanelPositions::default();
+        // Dragged at 80 % on the 200 % DPI test machine: 4 px over the inventory, as the owner
+        // left it by hand, and 100 px off the stash.
+        let inventory = panel_rect(GAME_4K, PanelSide::Inventory, 1.6);
+        positions.remember(
+            PanelSide::Inventory,
+            GAME_4K,
+            PhysicalRect {
+                x: inventory.x + 4,
+                ..inventory
+            },
+        );
+        let stash = panel_rect(GAME_4K, PanelSide::Stash, 1.6);
+        positions.remember(
+            PanelSide::Stash,
+            GAME_4K,
+            PhysicalRect {
+                x: stash.x + 100,
+                ..stash
+            },
+        );
+
+        for scale in [1.6, 2.0, 3.0] {
+            let inventory = positions.rect(PanelSide::Inventory, GAME_4K, GAME_4K, scale);
+            assert_eq!(
+                inventory.x + inventory.width,
+                3840 - side_panel + 4,
+                "at {scale}"
+            );
+            let stash = positions.rect(PanelSide::Stash, GAME_4K, GAME_4K, scale);
+            assert_eq!(stash.x, side_panel + 100, "at {scale}");
+            assert_eq!(
+                stash.width,
+                panel_rect(GAME_4K, PanelSide::Stash, scale).width
+            );
+        }
     }
 
     /// The place is kept relative to the game window: a windowed game moved across the monitor
@@ -745,7 +831,14 @@ mod tests {
             height: 1440,
         };
         let mut positions = PanelPositions::default();
-        positions.remember(PanelSide::Stash, game, 1000);
+        positions.remember(
+            PanelSide::Stash,
+            game,
+            PhysicalRect {
+                x: 1000,
+                ..panel_rect(game, PanelSide::Stash, 2.0)
+            },
+        );
 
         let moved = PhysicalRect { x: 1000, ..game };
         assert_eq!(
@@ -775,31 +868,84 @@ mod tests {
         assert_eq!(right.x + right.width, 0);
     }
 
-    /// A place kept on a bigger screen, or before the panel grew with the UI scale, that would now
-    /// put the panel partly off the monitor gives way to the automatic placement -- and is kept for
-    /// when it fits again.
+    /// A panel dragged back within reach of its side panel lands exactly against it, and keeps no
+    /// place there: it stands against it at any scale, as if never dragged.
     #[test]
-    fn a_place_that_would_leave_the_monitor_falls_back_to_the_automatic_placement() {
+    fn a_panel_dragged_back_beside_its_side_panel_sticks_to_it() {
+        let docked = panel_rect(GAME_4K, PanelSide::Inventory, 2.0);
+        let at = |x| PhysicalRect { x, ..docked };
+        for x in [docked.x - 32, docked.x - 1, docked.x + 32] {
+            assert_eq!(stuck(at(x), PanelSide::Inventory, GAME_4K, 32), docked);
+        }
+        assert_eq!(
+            stuck(at(docked.x - 33), PanelSide::Inventory, GAME_4K, 32),
+            at(docked.x - 33),
+            "out of reach, the drag decides"
+        );
+        let stash = panel_rect(GAME_4K, PanelSide::Stash, 2.0);
+        assert_eq!(
+            stuck(
+                PhysicalRect {
+                    x: stash.x + 20,
+                    ..stash
+                },
+                PanelSide::Stash,
+                GAME_4K,
+                32
+            ),
+            stash
+        );
+
+        let mut positions = PanelPositions {
+            inventory: Some(0.1),
+            stash: None,
+        };
+        positions.remember(PanelSide::Inventory, GAME_4K, docked);
+        assert_eq!(positions.place(PanelSide::Inventory), None);
+    }
+
+    /// A place kept on a bigger screen, or before the panel grew with the UI scale, that would now
+    /// put the panel partly off the monitor keeps it whole on the monitor, as a drag does -- and
+    /// is kept for when it fits again.
+    #[test]
+    fn a_place_that_would_leave_the_monitor_keeps_the_panel_on_it() {
         let mut positions = PanelPositions::default();
-        positions.remember(PanelSide::Inventory, GAME_4K, 3840 - 1024);
+        positions.remember(
+            PanelSide::Inventory,
+            GAME_4K,
+            PhysicalRect {
+                x: 0,
+                ..panel_rect(GAME_4K, PanelSide::Inventory, 2.0)
+            },
+        );
+
+        let bigger = positions.rect(PanelSide::Inventory, GAME_4K, GAME_4K, 2.5);
+        assert_eq!(
+            (bigger.x, bigger.width),
+            (0, panel_rect(GAME_4K, PanelSide::Inventory, 2.5).width)
+        );
         assert_eq!(
             positions
                 .rect(PanelSide::Inventory, GAME_4K, GAME_4K, 2.0)
                 .x,
-            3840 - 1024,
-            "flush with the right edge still fits"
+            0,
+            "where it was left, once it fits"
         );
-
-        let bigger = positions.rect(PanelSide::Inventory, GAME_4K, GAME_4K, 2.5);
-        assert_eq!(bigger, panel_rect(GAME_4K, PanelSide::Inventory, 2.5));
-        assert!(positions.inventory.is_some());
     }
 
     #[test]
     fn forgetting_a_side_returns_it_to_the_automatic_placement() {
         let mut positions = PanelPositions::default();
-        positions.remember(PanelSide::Inventory, GAME_4K, 1200);
-        positions.remember(PanelSide::Stash, GAME_4K, 2400);
+        let at = |side, x| PhysicalRect {
+            x,
+            ..panel_rect(GAME_4K, side, 2.0)
+        };
+        positions.remember(
+            PanelSide::Inventory,
+            GAME_4K,
+            at(PanelSide::Inventory, 1200),
+        );
+        positions.remember(PanelSide::Stash, GAME_4K, at(PanelSide::Stash, 2400));
 
         positions.forget(PanelSide::Inventory);
         assert_eq!(

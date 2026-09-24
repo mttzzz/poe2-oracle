@@ -66,6 +66,9 @@ const WHISPER_COPIED_SHOWN: Duration = Duration::from_secs(4);
 
 /// How often a drag of the panel by its title bar looks at the pointer: each frame at 120 Hz.
 const PANEL_DRAG_POLL: Duration = Duration::from_millis(8);
+/// How near the inventory or the stash a drag brings the panel before it sticks to it, in pixels
+/// at 96 DPI (`overlay_layout::stuck`).
+const PANEL_STICK_REACH: f64 = 16.;
 
 /// Up to 10 listings per `fetch` request -- the trade API's own per-request limit -- and one
 /// request per search. EE2 fetches a second page (listings 10-20, `trade-api.ts`), but two
@@ -362,9 +365,10 @@ struct PanelDrag {
 }
 
 /// One trade site's localized catalogs: the stat templates `item-parser` matches mod lines
-/// against (indexed once, as they load), the exchange-tradable static items `route_search` matches currency-like items
-/// against, the base types it recognizes a magic item's base in, and the leagues by their names
-/// there. All are in the site's language, so a Russian item needs the Russian site's set.
+/// against (indexed once, as they load), the exchange-tradable static items `route_search`
+/// matches currency-like items against, the base types it recognizes a magic item's base in, and
+/// the leagues by their names there. All are in the site's language, so a Russian item needs the
+/// Russian site's set.
 #[derive(Default)]
 struct SiteCatalog {
     stats: IndexedCatalog,
@@ -1507,11 +1511,12 @@ impl PriceCheckApp {
     }
 
     /// The player pressed the title bar's empty part: the panel follows the pointer sideways, kept
-    /// on the game's monitor (`overlay_layout::dragged`), until the button is released -- and its
-    /// side keeps the place (`drag_panel`). The pointer is polled rather than followed through
-    /// mouse moves: the game keeps the foreground, so the panel can't capture the mouse, and the
-    /// moves stop reaching it the moment the pointer outruns it. Nothing here activates the
-    /// panel: the game keeps the keyboard throughout.
+    /// on the game's monitor (`overlay_layout::dragged`) and sticking to the inventory or the stash
+    /// when it comes near (`overlay_layout::stuck`), until the button is released -- and its side
+    /// keeps the place (`drag_panel`). The pointer is polled rather than followed through mouse
+    /// moves: the game keeps the foreground, so the panel can't capture the mouse, and the moves
+    /// stop reaching it the moment the pointer outruns it. Nothing here activates the panel: the
+    /// game keeps the keyboard throughout.
     pub fn begin_panel_drag(&mut self, cx: &mut Context<Self>) {
         let (Some(start), Some(side)) = (self.placement, self.panel_side) else {
             return;
@@ -1548,8 +1553,8 @@ impl PriceCheckApp {
     }
 
     /// One look at the pointer during a drag: the panel at its x -- then, the button released, the
-    /// drag's end, where the side keeps the place the panel was left at. `false` once the drag is
-    /// over or called off (the panel closed; a double-click sent it back).
+    /// drag's end, where the side keeps how far from its side panel the panel was left. `false`
+    /// once the drag is over or called off (the panel closed; a double-click sent it back).
     fn drag_panel(&mut self, cursor_x: Option<i32>, held: bool, cx: &mut Context<Self>) -> bool {
         let Some(drag) = self.panel_drag else {
             return false;
@@ -1559,8 +1564,18 @@ impl PriceCheckApp {
             return false;
         }
         if let Some(cursor_x) = cursor_x {
-            let rect =
-                overlay_layout::dragged(drag.start, cursor_x - drag.cursor_x, drag.screen.monitor);
+            let GameScreen {
+                game,
+                monitor,
+                dpi_scale,
+            } = drag.screen;
+            let reach = (PANEL_STICK_REACH * dpi_scale).round() as i32;
+            let rect = overlay_layout::stuck(
+                overlay_layout::dragged(drag.start, cursor_x - drag.cursor_x, monitor),
+                drag.side,
+                game,
+                reach,
+            );
             if self.placement != Some(rect) {
                 self.placement = Some(rect);
                 cx.notify();
@@ -1572,14 +1587,20 @@ impl PriceCheckApp {
         self.panel_drag = None;
         cx.notify();
         if let Some(rect) = self.placement.filter(|rect| rect.x != drag.start.x) {
-            self.settings
-                .panel_positions
-                .remember(drag.side, drag.screen.game, rect.x);
-            log::info!(
-                "the price panel was dragged to x {} on the {:?} side",
-                rect.x,
-                drag.side
-            );
+            let positions = &mut self.settings.panel_positions;
+            positions.remember(drag.side, drag.screen.game, rect);
+            if positions.place(drag.side).is_some() {
+                log::info!(
+                    "the price panel was dragged to x {} on the {:?} side",
+                    rect.x,
+                    drag.side
+                );
+            } else {
+                log::info!(
+                    "the price panel was dragged back against the {:?} side panel",
+                    drag.side
+                );
+            }
             self.save_settings(cx);
         }
         false

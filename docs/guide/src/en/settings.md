@@ -72,8 +72,10 @@ language Craft of Exile opens in and the trade site whose league names the leagu
 ### Interface scale
 
 Row **Interface scale**: 100% by default, from 80 to 150% in steps of 5, with the − and + buttons. It
-sizes the text and controls of the price panel (its width too). The XP overlay is part of the game's
-HUD and takes its size; the settings window itself does not scale.
+sizes the text and controls of the price panel (its width too) and of the settings window, which
+grows or shrinks around the pointer, so the − and + buttons stay under it. The price panel keeps its
+place beside the inventory or the stash and grows away from it. The XP overlay is part of the game's
+HUD and takes its size.
 
 ### System
 

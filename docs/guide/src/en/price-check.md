@@ -41,9 +41,11 @@ site picks it, or the league you chose. Click it for the same choice of leagues 
 new league. Leagues are named as the trade site in the interface language names them, the
 English site's names in English. Once the exchange prices have loaded, the bar also shows how many
 Exalted Orbs a Divine Orb is worth, drawn with the two currency icons. Drag the bar's empty part to
-move the panel sideways: the next checks on that side open it there too. A double-click on it puts
-the panel back in its usual place. The gear **⚙** opens the [settings](settings.md); **×** closes
-the panel.
+move the panel sideways: the next checks on that side open it there too, as far from the inventory
+or the stash as you left it, whatever the [interface scale](settings.md#interface-scale). Dragged
+back near the inventory or the stash, the panel sticks to it. A double-click on the bar puts the
+panel back in its usual place. The gear **⚙** opens the [settings](settings.md); **×** closes the
+panel.
 
 > [!TIP]
 > Numbers follow the interface language: `1.72` and `15%` in English, `1,72` and `15 %` in

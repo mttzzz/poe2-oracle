@@ -31,8 +31,10 @@ use crate::paths;
 
 /// The file layout [`Settings`] reads and writes. A change to what an existing field means bumps
 /// it, and [`load`] converts older files before handing them out. 2: new checks search instant
-/// buyouts by default, and a version-1 file's old default moves there.
-pub const SETTINGS_VERSION: u32 = 2;
+/// buyouts by default, and a version-1 file's old default moves there. 3: the price panel's places
+/// are kept from the inventory and the stash, no longer from the game's left edge, and a version-2
+/// file's places are dropped.
+pub const SETTINGS_VERSION: u32 = 3;
 
 /// The smallest [`Settings::ui_scale`].
 pub const MIN_UI_SCALE: f32 = 0.8;
@@ -92,8 +94,8 @@ pub struct Settings {
     /// [`MAX_QUICK_ACTIONS`].
     #[serde(deserialize_with = "or_default")]
     pub quick_actions: Vec<QuickAction>,
-    /// Where the player dragged the price panel, beside the inventory and beside the stash; a
-    /// side without one keeps EE2's placement.
+    /// How far from the inventory, and from the stash, the player dragged the price panel; a side
+    /// without a place keeps the panel against its side panel, EE2's placement.
     #[serde(deserialize_with = "or_default")]
     pub panel_positions: PanelPositions,
     /// The onboarding tour (`ui::tour`) was finished or skipped. Until then it starts by itself
@@ -142,6 +144,11 @@ impl Settings {
         // to instant buyout once: saved as version 2 from then on, a player's switch back stays.
         if self.version < 2 && self.listing_status == ListingStatusChoice::Available {
             self.listing_status = ListingStatusChoice::Securable;
+        }
+        // Version 2 kept the panel's left edge, which the UI scale moved the panel's other side
+        // from: the panel goes back against the inventory and the stash once.
+        if self.version < 3 {
+            self.panel_positions = PanelPositions::default();
         }
         self.version = SETTINGS_VERSION;
         // A typed league as typed, minus the spaces around it; nothing typed is no choice. The
@@ -794,7 +801,7 @@ mod tests {
             }
         );
 
-        // Saved as version 2, the player's switch back to both kinds of sellers stays.
+        // Saved in the current layout, the player's switch back to both kinds of sellers stays.
         let chosen = Settings {
             listing_status: ListingStatusChoice::Available,
             ..loaded
@@ -805,6 +812,29 @@ mod tests {
         // A version 1 file on another choice keeps it.
         write_file(&path, r#"{"version": 1, "listing_status": "online"}"#);
         assert_eq!(load_from(&path).listing_status, ListingStatusChoice::Online);
+    }
+
+    /// Version 2 kept the panel's left edge: its places are dropped once, a version 3 file's kept.
+    #[test]
+    fn a_version_2_file_drops_its_panel_places_once() {
+        let dir = TempDir::new();
+        let path = dir.settings_file();
+        write_file(
+            &path,
+            r#"{"version": 2, "panel_positions": {"inventory": 0.44, "stash": 0.41}}"#,
+        );
+        let loaded = load_from(&path);
+        assert_eq!(loaded.panel_positions, PanelPositions::default());
+
+        let dragged = Settings {
+            panel_positions: PanelPositions {
+                inventory: Some(0.01),
+                stash: None,
+            },
+            ..loaded
+        };
+        save_to(&path, &dragged).unwrap();
+        assert_eq!(load_from(&path), dragged);
     }
 
     #[test]

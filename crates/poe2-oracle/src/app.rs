@@ -427,16 +427,11 @@ pub fn quit(cx: &mut App) {
     cx.quit();
 }
 
-/// The settings window's size, logical px, as the owner approved it on the style mockup; and
-/// the least it can be resized to.
-const SETTINGS_SIZE: (f32, f32) = (1100., 720.);
-const SETTINGS_MIN_SIZE: (f32, f32) = (900., 600.);
-
 /// Opens the settings window (`ui::settings_view`) -- or brings the open one forward -- centred
-/// on the monitor the game is on. The price panel steps aside while it's open: the price-check
-/// hotkey belongs to the window's recorder then, so no check could bring the panel back, and one
-/// left up would cover part of the window. The setup problems (`diagnostics::setup_problems`)
-/// head it.
+/// on the monitor the game is on, as big as the UI scale makes its content. The price panel steps
+/// aside while it's open: the price-check hotkey belongs to the window's recorder then, so no
+/// check could bring the panel back, and one left up would cover part of the window. The setup
+/// problems (`diagnostics::setup_problems`) head it.
 ///
 /// Autostart is read from the registry first: that is where it lives -- the installer and Task
 /// Manager change it too -- so the window shows what Windows will do; and the account's private
@@ -464,12 +459,13 @@ pub fn open_settings(app: &Entity<PriceCheckApp>, cx: &mut App) {
     let display = game_window::game_monitor()
         .map(DisplayId::new)
         .filter(|&display| cx.find_display(display).is_some());
-    let (width, height) = SETTINGS_SIZE;
-    let (min_width, min_height) = SETTINGS_MIN_SIZE;
+    let scale = app.read(cx).settings.ui_scale;
+    let (width, height) = settings_view::WINDOW_SIZE;
+    let (min_width, min_height) = settings_view::WINDOW_MIN_SIZE;
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
             display,
-            size(px(width), px(height)),
+            size(px(width * scale), px(height * scale)),
             cx,
         ))),
         // Transparent: the view draws its own title bar and frame.
@@ -480,7 +476,7 @@ pub fn open_settings(app: &Entity<PriceCheckApp>, cx: &mut App) {
         }),
         kind: WindowKind::Normal,
         display_id: display,
-        window_min_size: Some(size(px(min_width), px(min_height))),
+        window_min_size: Some(size(px(min_width * scale), px(min_height * scale))),
         focus: true,
         show: true,
         ..Default::default()

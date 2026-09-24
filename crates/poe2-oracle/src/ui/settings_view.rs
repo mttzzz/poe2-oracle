@@ -21,6 +21,10 @@
 //! isn't topmost -- is open over it. × and Esc (with no menu or dialog open) close it, and so does
 //! anything that sends it `WM_CLOSE` -- Alt+F4, the taskbar -- routed through the same close
 //! ([`SettingsView::close`]).
+//!
+//! It follows the UI scale as the price panel does: everything in it is sized in rems, whose size
+//! the scale sets, and the window grows and shrinks with its content -- about the pointer, which
+//! so stays on the stepper that changed the scale ([`SettingsView::follow_scale`]).
 
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -60,10 +64,15 @@ use crate::ui::style::{
 };
 use crate::ui::text_field::{Committed, TextField};
 use crate::ui::theme::{
-    BG_CARD, BG_PANEL, BG_SIDEBAR, BORDER_CARD, BORDER_GOLD, GOLD, GOLD_LIGHT, TEXT, TEXT_DIM,
-    TEXT_MUTED, TEXT_WARNING, blend,
+    BASE_REM_SIZE, BG_CARD, BG_PANEL, BG_SIDEBAR, BORDER_CARD, BORDER_GOLD, GOLD, GOLD_LIGHT, TEXT,
+    TEXT_DIM, TEXT_MUTED, TEXT_WARNING, blend, rems_from_px,
 };
 use crate::ui::tour;
+
+/// The window's size at 100 % UI scale, as the owner approved it on the style mockup, and the
+/// least the player can size it to; both grow and shrink with the scale, as its content does.
+pub(crate) const WINDOW_SIZE: (f32, f32) = (1100., 720.);
+pub(crate) const WINDOW_MIN_SIZE: (f32, f32) = (900., 600.);
 
 const TITLE_HEIGHT: f32 = 40.;
 const SIDEBAR_WIDTH: f32 = 216.;
@@ -268,6 +277,9 @@ pub struct SettingsView {
     /// The language «Авто» stands for (`i18n::auto`), read when the window opens: its choice
     /// names it.
     auto_language: Lang,
+    /// The UI scale the window is sized for: it opens sized for the scale then, and a step of the
+    /// scale sizes it again ([`Self::follow_scale`]).
+    scaled_for: f32,
 }
 
 impl SettingsView {
@@ -277,7 +289,7 @@ impl SettingsView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let (actions, private_league) = {
+        let (actions, private_league, scale) = {
             let settings = &app.read(cx).settings;
             (
                 settings
@@ -286,6 +298,7 @@ impl SettingsView {
                     .map(ActionDraft::saved)
                     .collect::<Vec<_>>(),
                 settings.private_league.clone(),
+                settings.ui_scale,
             )
         };
         let actions = actions
@@ -371,6 +384,7 @@ impl SettingsView {
             overlay,
             topmost: None,
             auto_language: i18n::auto(),
+            scaled_for: scale,
         };
         view.sync_topmost(cx);
         view
@@ -624,6 +638,33 @@ impl SettingsView {
             // forward again.
             if !topmost {
                 crate::platform::login_window::bring_forward();
+            }
+        })
+        .detach();
+    }
+
+    /// Sizes the window for the UI scale `scale` once it moved: its content is in rems, whose size
+    /// the scale sets (`render`), so the window grows or shrinks with it -- about the pointer, so
+    /// the stepper that changed the scale stays under it -- and so does the least the player can
+    /// size it to.
+    fn follow_scale(&mut self, scale: f32, cx: &mut Context<Self>) {
+        if scale == self.scaled_for {
+            return;
+        }
+        let factor = f64::from(scale) / f64::from(self.scaled_for);
+        self.scaled_for = scale;
+        let Some(overlay) = self.overlay else {
+            return;
+        };
+        let (width, height) = WINDOW_MIN_SIZE;
+        // `SetWindowPos` sends messages into GPUI's window procedure: not from inside a render.
+        cx.spawn(async move |_, _| {
+            // The least size first: a shrinking window would stop at the bigger one it had.
+            if let Err(err) = overlay.set_min_size((width * scale, height * scale)) {
+                log::warn!("{err:#}");
+            }
+            if let Err(err) = overlay.zoom(factor) {
+                log::warn!("{err:#}");
             }
         })
         .detach();
@@ -990,7 +1031,7 @@ impl SettingsView {
             .flex()
             .flex_none()
             .items_center()
-            .h(px(TITLE_HEIGHT))
+            .h(rems_from_px(TITLE_HEIGHT))
             .bg(title_gradient())
             .border_b_1()
             .border_color(rgb(BORDER_GOLD))
@@ -1001,20 +1042,20 @@ impl SettingsView {
                     .min_w_0()
                     .h_full()
                     .items_center()
-                    .gap(px(10.))
-                    .pl(px(20.))
+                    .gap(rems_from_px(10.))
+                    .pl(rems_from_px(20.))
                     .window_control_area(WindowControlArea::Drag)
                     .child(diamond(8., GOLD))
                     .child(
                         heading(face)
-                            .text_size(px(15.))
+                            .text_size(rems_from_px(15.))
                             .text_color(rgb(GOLD_LIGHT))
                             .child("PoE2 Oracle"),
                     )
                     .child(div().text_color(rgb(TEXT_MUTED)).child("·"))
                     .child(
                         heading(face)
-                            .text_size(px(15.))
+                            .text_size(rems_from_px(15.))
                             .text_color(rgb(TEXT))
                             .child(tr!("Settings")),
                     ),
@@ -1032,10 +1073,10 @@ impl SettingsView {
         let (from, to) = (self.marker_from, self.marker_to);
         let marker = div()
             .absolute()
-            .left(px(10.))
-            .right(px(10.))
-            .h(px(NAV_ITEM_HEIGHT))
-            .rounded(px(6.))
+            .left(rems_from_px(10.))
+            .right(rems_from_px(10.))
+            .h(rems_from_px(NAV_ITEM_HEIGHT))
+            .rounded(rems_from_px(6.))
             .bg(linear_gradient(
                 90.,
                 linear_color_stop(alpha(GOLD, 0.16), 0.),
@@ -1045,22 +1086,22 @@ impl SettingsView {
                 div()
                     .absolute()
                     .left_0()
-                    .top(px(10.))
-                    .bottom(px(10.))
-                    .w(px(2.))
+                    .top(rems_from_px(10.))
+                    .bottom(rems_from_px(10.))
+                    .w(rems_from_px(2.))
                     .rounded_full()
                     .bg(rgb(GOLD)),
             )
             .with_animation(
                 ("marker", self.marker_slides),
                 Animation::new(TRANSITION).with_easing(ease),
-                move |marker, t| marker.top(px(from + (to - from) * t)),
+                move |marker, t| marker.top(rems_from_px(from + (to - from) * t)),
             );
         div()
             .flex()
             .flex_col()
             .flex_none()
-            .w(px(SIDEBAR_WIDTH))
+            .w(rems_from_px(SIDEBAR_WIDTH))
             .h_full()
             .bg(rgb(BG_SIDEBAR))
             .border_r_1()
@@ -1070,9 +1111,9 @@ impl SettingsView {
                     .relative()
                     .flex()
                     .flex_col()
-                    .gap(px(NAV_GAP))
-                    .px(px(10.))
-                    .pt(px(NAV_TOP))
+                    .gap(rems_from_px(NAV_GAP))
+                    .px(rems_from_px(10.))
+                    .pt(rems_from_px(NAV_TOP))
                     .child(marker)
                     .children(Section::ALL.map(|section| self.render_nav_item(section, face, cx))),
             )
@@ -1081,18 +1122,18 @@ impl SettingsView {
                 div()
                     .flex()
                     .flex_col()
-                    .gap(px(2.))
-                    .px(px(26.))
-                    .pb(px(18.))
+                    .gap(rems_from_px(2.))
+                    .px(rems_from_px(26.))
+                    .pb(rems_from_px(18.))
                     .child(
                         heading(face)
-                            .text_size(px(13.))
+                            .text_size(rems_from_px(13.))
                             .text_color(rgb(GOLD))
                             .child("PoE2 Oracle"),
                     )
                     .child(
                         div()
-                            .text_size(px(11.))
+                            .text_size(rems_from_px(11.))
                             .text_color(rgb(TEXT_MUTED))
                             .child(tr!("version {version}", version = VERSION)),
                     ),
@@ -1112,12 +1153,12 @@ impl SettingsView {
             .relative()
             .flex()
             .items_center()
-            .h(px(NAV_ITEM_HEIGHT))
-            .px(px(18.))
-            .rounded(px(6.))
+            .h(rems_from_px(NAV_ITEM_HEIGHT))
+            .px(rems_from_px(18.))
+            .rounded(rems_from_px(6.))
             .font_family(face.family)
             .font_weight(face.weight)
-            .text_size(px(15.))
+            .text_size(rems_from_px(15.))
             .cursor_pointer()
             .on_mouse_down(
                 MouseButton::Left,
@@ -1183,28 +1224,28 @@ impl SettingsView {
                             .flex()
                             .flex_col()
                             .flex_none()
-                            .gap(px(4.))
-                            .px(px(CONTENT_INSET))
-                            .pt(px(26.))
-                            .pb(px(16.))
+                            .gap(rems_from_px(4.))
+                            .px(rems_from_px(CONTENT_INSET))
+                            .pt(rems_from_px(26.))
+                            .pb(rems_from_px(16.))
                             .child(
                                 heading(face)
-                                    .text_size(px(24.))
+                                    .text_size(rems_from_px(24.))
                                     .text_color(rgb(GOLD_LIGHT))
                                     .child(section.title()),
                             )
                             .child(
                                 div()
-                                    .text_size(px(13.))
+                                    .text_size(rems_from_px(13.))
                                     .text_color(rgb(TEXT_DIM))
                                     .child(section.summary()),
                             )
                             .children(self.app.read(cx).save_failure().map(|error| {
                                 div()
                                     .flex()
-                                    .gap(px(8.))
-                                    .pt(px(4.))
-                                    .text_size(px(13.))
+                                    .gap(rems_from_px(8.))
+                                    .pt(rems_from_px(4.))
+                                    .text_size(rems_from_px(13.))
                                     .text_color(rgb(TEXT_WARNING))
                                     .child(div().flex_none().child("⚠"))
                                     // Wrapped in the content's width: the system's reason can be
@@ -1214,7 +1255,11 @@ impl SettingsView {
                                         error = error
                                     )))
                             }))
-                            .child(div().pt(px(12.)).child(ornament_rule(BORDER_GOLD))),
+                            .child(
+                                div()
+                                    .pt(rems_from_px(12.))
+                                    .child(ornament_rule(BORDER_GOLD)),
+                            ),
                     )
                     .child(
                         div()
@@ -1222,9 +1267,9 @@ impl SettingsView {
                             .flex_1()
                             .min_h_0()
                             .overflow_y_scroll()
-                            .px(px(CONTENT_INSET))
-                            .pt(px(4.))
-                            .pb(px(28.))
+                            .px(rems_from_px(CONTENT_INSET))
+                            .pt(rems_from_px(4.))
+                            .pb(rems_from_px(28.))
                             .child(body),
                     ),
             ))
@@ -1240,18 +1285,18 @@ impl SettingsView {
             div()
                 .flex()
                 .flex_col()
-                .gap(px(8.))
-                .px(px(18.))
-                .py(px(16.))
-                .rounded(px(CARD_RADIUS))
+                .gap(rems_from_px(8.))
+                .px(rems_from_px(18.))
+                .py(rems_from_px(16.))
+                .rounded(rems_from_px(CARD_RADIUS))
                 .bg(rgb(BG_CARD))
                 .border_1()
                 .border_color(rgb(BORDER_GOLD))
                 .children(problems.iter().map(|problem| {
                     div()
                         .flex()
-                        .gap(px(8.))
-                        .text_size(px(13.))
+                        .gap(rems_from_px(8.))
+                        .text_size(rems_from_px(13.))
                         .text_color(rgb(TEXT_WARNING))
                         .child(div().flex_none().child("⚠"))
                         .child(problem.text())
@@ -1279,7 +1324,7 @@ impl SettingsView {
         div()
             .flex()
             .flex_col()
-            .gap(px(22.))
+            .gap(rems_from_px(22.))
             .children(self.render_intro())
             .child(group(
                 face,
@@ -1340,7 +1385,7 @@ impl SettingsView {
                 [setting_row(
                     tr!("Interface scale"),
                     [note(
-                        tr!("Size of the text and controls on the price panel"),
+                        tr!("Size of the text and controls on the price panel and in this window"),
                         TEXT_DIM,
                     )],
                     stepper(
@@ -1501,7 +1546,7 @@ impl SettingsView {
         div()
             .flex()
             .flex_col()
-            .gap(px(22.))
+            .gap(rems_from_px(22.))
             .child(group(
                 face,
                 tr!("Hotkey"),
@@ -1592,8 +1637,8 @@ impl SettingsView {
         let rows: Vec<AnyElement> = if self.actions.is_empty() {
             vec![
                 div()
-                    .px(px(14.))
-                    .py(px(12.))
+                    .px(rems_from_px(14.))
+                    .py(rems_from_px(12.))
                     .text_color(rgb(TEXT_MUTED))
                     .child(tr!("No actions yet"))
                     .into_any_element(),
@@ -1609,20 +1654,20 @@ impl SettingsView {
         div()
             .flex()
             .flex_col()
-            .gap(px(14.))
+            .gap(rems_from_px(14.))
             .child(
                 div()
                     .flex()
                     .flex_col()
-                    .gap(px(4.))
-                    .text_size(px(13.))
+                    .gap(rems_from_px(4.))
+                    .text_size(rems_from_px(13.))
                     .child(div().text_color(rgb(TEXT_DIM)).child(tr!(
                         "Chat: the command goes to the game's chat — /hideout, /exit, @last thanks \
                          (a reply to the last player who whispered you). Stash: a search in the \
                          open stash or at a vendor, e.g. from poe2.re. The keys work while the \
                          game is in front."
                     )))
-                    .child(div().text_size(px(12.)).text_color(rgb(TEXT_MUTED)).child(tr!(
+                    .child(div().text_size(rems_from_px(12.)).text_color(rgb(TEXT_MUTED)).child(tr!(
                         "Dangerous commands, such as /destroy and /clear_ignore_list, are never \
                          sent or saved."
                     ))),
@@ -1671,14 +1716,14 @@ impl SettingsView {
             .id(("action", index))
             .flex()
             .flex_col()
-            .gap(px(6.))
-            .px(px(12.))
-            .py(px(10.))
+            .gap(rems_from_px(6.))
+            .px(rems_from_px(12.))
+            .py(rems_from_px(10.))
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(10.))
+                    .gap(rems_from_px(10.))
                     .child(segmented(
                         "kind",
                         ACTION_KINDS.map(|(_, label)| SharedString::from(label())),
@@ -1845,7 +1890,7 @@ impl SettingsView {
         let problem = login.and_then(Login::problem).map(login_problem);
         let buttons = div()
             .flex()
-            .gap(px(8.))
+            .gap(rems_from_px(8.))
             .when(!signed_in, |this| {
                 this.child(button(
                     "sign-in",
@@ -1888,7 +1933,7 @@ impl SettingsView {
         div()
             .flex()
             .flex_col()
-            .gap(px(22.))
+            .gap(rems_from_px(22.))
             .child(group(
                 face,
                 "pathofexile.com",
@@ -1943,7 +1988,10 @@ impl SettingsView {
                     ]
                     .into_iter()
                     .flatten(),
-                    div().flex().w(px(250.)).child(self.league_field.clone()),
+                    div()
+                        .flex()
+                        .w(rems_from_px(250.))
+                        .child(self.league_field.clone()),
                 )],
             ))
     }
@@ -2002,7 +2050,7 @@ impl SettingsView {
                     .flatten(),
                     div()
                         .flex()
-                        .gap(px(8.))
+                        .gap(rems_from_px(8.))
                         .child(button(
                             "report",
                             tr!("Report ↗"),
@@ -2045,7 +2093,7 @@ impl SettingsView {
                     )],
                     div()
                         .flex()
-                        .gap(px(8.))
+                        .gap(rems_from_px(8.))
                         .children(notices.map(|notices| {
                             button(
                                 "licenses",
@@ -2098,23 +2146,23 @@ impl SettingsView {
                     .relative()
                     .flex()
                     .flex_col()
-                    .gap(px(10.))
-                    .w(px(420.))
-                    .px(px(24.))
-                    .pt(px(22.))
-                    .pb(px(20.))
+                    .gap(rems_from_px(10.))
+                    .w(rems_from_px(420.))
+                    .px(rems_from_px(24.))
+                    .pt(rems_from_px(22.))
+                    .pb(rems_from_px(20.))
                     .bg(rgb(BG_CARD))
                     .shadow(modal_shadow())
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .child(
                         heading(face)
-                            .text_size(px(18.))
+                            .text_size(rems_from_px(18.))
                             .text_color(rgb(GOLD_LIGHT))
                             .child(tr!("Reset the marks?")),
                     )
                     .child(
                         div()
-                            .text_size(px(13.))
+                            .text_size(rems_from_px(13.))
                             .text_color(rgb(TEXT_DIM))
                             .child(tr!(
                                 "All Waystone modifier marks ({count}) will be deleted. This \
@@ -2126,8 +2174,8 @@ impl SettingsView {
                         div()
                             .flex()
                             .justify_end()
-                            .gap(px(8.))
-                            .pt(px(10.))
+                            .gap(rems_from_px(8.))
+                            .pt(rems_from_px(10.))
                             .child(button(
                                 "keep",
                                 tr!("Cancel"),
@@ -2159,6 +2207,9 @@ impl Focusable for SettingsView {
 impl Render for SettingsView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let face = fonts::interface_font();
+        let scale = self.app.read(cx).settings.ui_scale;
+        self.follow_scale(scale, cx);
+        window.set_rem_size(px(BASE_REM_SIZE * scale));
         let settings = &self.app.read(cx).settings;
         div()
             .track_focus(&self.focus_handle)
@@ -2171,7 +2222,7 @@ impl Render for SettingsView {
             .flex_col()
             .bg(rgb(BG_PANEL))
             .text_color(rgb(TEXT))
-            .text_size(px(14.))
+            .text_size(rems_from_px(14.))
             .line_height(relative(1.4))
             .child(self.render_title_bar(face, cx))
             .child(appear(
@@ -2205,7 +2256,7 @@ fn group(
     div()
         .flex()
         .flex_col()
-        .gap(px(10.))
+        .gap(rems_from_px(10.))
         .child(section_heading(face, title))
         .child(card(rows))
 }
@@ -2219,9 +2270,9 @@ fn setting_row(
     div()
         .flex()
         .items_center()
-        .gap(px(24.))
-        .px(px(14.))
-        .py(px(12.))
+        .gap(rems_from_px(24.))
+        .px(rems_from_px(14.))
+        .py(rems_from_px(12.))
         .child(label_block(label, lines))
         .child(div().flex_none().child(control))
         .into_any_element()
@@ -2231,7 +2282,7 @@ fn label_block(label: impl IntoElement, lines: impl IntoIterator<Item = AnyEleme
     div()
         .flex()
         .flex_col()
-        .gap(px(2.))
+        .gap(rems_from_px(2.))
         .flex_1()
         .min_w_0()
         .child(div().text_color(rgb(TEXT)).child(label))
@@ -2241,7 +2292,7 @@ fn label_block(label: impl IntoElement, lines: impl IntoIterator<Item = AnyEleme
 /// A line under a setting's name: what it does, or what just happened, in its colour.
 fn note(text: impl Into<SharedString>, color: u32) -> AnyElement {
     div()
-        .text_size(px(12.))
+        .text_size(rems_from_px(12.))
         .text_color(rgb(color))
         .child(text.into())
         .into_any_element()
@@ -2261,10 +2312,10 @@ fn toggle_row(
         .id(key)
         .flex()
         .items_center()
-        .gap(px(24.))
-        .px(px(14.))
-        .py(px(12.))
-        .rounded(px(6.))
+        .gap(rems_from_px(24.))
+        .px(rems_from_px(14.))
+        .py(rems_from_px(12.))
+        .rounded(rems_from_px(6.))
         .cursor_pointer()
         .on_mouse_down(
             MouseButton::Left,
@@ -2331,8 +2382,8 @@ fn login_problem(problem: &LoginProblem) -> AnyElement {
         LoginProblem::NoRuntime => div()
             .flex()
             .flex_wrap()
-            .gap_x(px(6.))
-            .text_size(px(12.))
+            .gap_x(rems_from_px(6.))
+            .text_size(rems_from_px(12.))
             .text_color(rgb(TEXT_WARNING))
             .child(tr!(
                 "Signing in needs the Microsoft Edge WebView2 Runtime, and this computer doesn't \

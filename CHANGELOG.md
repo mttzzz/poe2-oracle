@@ -17,8 +17,10 @@ The first public release.
   item with the game's advanced copy (`Ctrl+Alt+C`), puts your clipboard back and opens a panel
   next to the inventory or the stash. Works with English and Russian game clients; searches go to
   www.pathofexile.com or ru.pathofexile.com, matching the item's language. Drag the panel sideways
-  by its title bar: the next check on that side opens it there again, even after a restart, and a
-  double-click on the title bar puts it back next to the inventory or the stash.
+  by its title bar: the next check on that side opens it there again, even after a restart, as far
+  from the inventory or the stash as you left it at any interface scale. Dragged back near the
+  inventory or the stash, the panel sticks to it, and a double-click on the title bar puts it back
+  there.
 - **The price panel:** the item's name in its rarity colour, its art and links to poe2db and the
   wiki, and for an item you can craft, to Craft of Exile, which opens it with its base, item
   level, rarity and mods (in the site's Russian interface when the app's interface is Russian);
@@ -80,9 +82,9 @@ The first public release.
 - **Quick actions:** up to 12 hotkeys that type a chat command (`/hideout` is preset, `@last thanks`
   answers whoever whispered last) or paste a stash search string.
 - **Settings window:** league, client language, hotkeys, quick actions, default sellers, seller
-  column, interface scale (80 to 150 %), XP overlay, start with Windows, update checks, bug
-  reporting and the diagnostics report. It warns when the game runs in exclusive fullscreen or
-  another program holds the item-copy combination.
+  column, interface scale (80 to 150 %, the price panel and the settings window), XP overlay, start
+  with Windows, update checks, bug reporting and the diagnostics report. It warns when the game runs
+  in exclusive fullscreen or another program holds the item-copy combination.
 - **Guided tour** at launch, until finished or skipped, and again from Settings → Help →
   **Tutorial**: the screen dims around one thing at a time, with a card beside it — the league in
   the settings, a first price check in the game, the price panel's filters, Search, listings and

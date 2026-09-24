@@ -31,7 +31,7 @@
   "The app's own words; items and the trade site stay as they are. Auto follows the game client, or Windows until the game has run": "Надписи самой программы; предметы и сайт торговли остаются как есть. Авто — как в клиенте игры, а пока игра не запускалась — как в Windows",
   "Window": "Окно",
   "Interface scale": "Масштаб интерфейса",
-  "Size of the text and controls on the price panel": "Размер текста и элементов панели цены",
+  "Size of the text and controls on the price panel and in this window": "Размер текста и элементов панели цены и этого окна",
   "System": "Система",
   "Start with Windows": "Запускать вместе с Windows",
   "Check for updates automatically": "Проверять обновления",
