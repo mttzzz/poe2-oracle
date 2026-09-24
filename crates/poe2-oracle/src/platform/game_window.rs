@@ -82,13 +82,6 @@ pub(crate) fn client_rect_on_screen(hwnd: HWND) -> Option<PhysicalRect> {
     })
 }
 
-/// The game's client area and its DPI scale, `None` without a game window.
-pub fn game_client() -> Option<(PhysicalRect, f64)> {
-    let hwnd = game_window()?;
-    let rect = client_rect_on_screen(hwnd).filter(|rect| rect.width > 0 && rect.height > 0)?;
-    Some((rect, dpi_to_scale(unsafe { GetDpiForWindow(hwnd) })))
-}
-
 /// What the price panel is placed on: the game's client area, the monitor it's on, and the
 /// game's DPI scale -- or, without a game window, the monitor under a point standing in for the
 /// game, at that monitor's scale.

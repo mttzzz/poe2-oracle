@@ -38,7 +38,6 @@ use crate::brand;
 use crate::bug_report;
 use crate::diagnostics;
 use crate::i18n::{self, Lang};
-use crate::live_search::{self, LiveCard, LiveSearches};
 use crate::logging;
 use crate::login;
 use crate::overlay_layout::PhysicalRect;
@@ -53,7 +52,6 @@ use crate::ui::fonts;
 use crate::ui::settings_view::{self, Intro, SettingsView};
 use crate::ui::theme::BASE_REM_SIZE;
 use crate::ui::tour;
-use crate::ui::trade_overlay::{self, TradeOverlay, TradeOverlayOptions};
 use crate::ui::xp_overlay::{self, XpCover, XpOverlay, XpOverlayOptions};
 use crate::updates::Updates;
 
@@ -92,13 +90,6 @@ struct PriceCheckRoot {
     xp_opening: bool,
     /// Last cover handed to the XP overlay; `None` until the first sync.
     last_xp_cover: Option<XpCover>,
-    /// The trade overlay, opened once a search is watched (see `sync_trade`).
-    trade: Option<Entity<TradeOverlay>>,
-    trade_opening: bool,
-    /// Last suppression handed to the trade overlay; `None` until the first sync.
-    last_trade_suppressed: Option<bool>,
-    /// Live search's cards, which the trade overlay shows (`live_search::init`).
-    live_cards: async_channel::Receiver<LiveCard>,
 }
 
 impl PriceCheckRoot {
@@ -146,7 +137,6 @@ impl PriceCheckRoot {
         }
         self.sync_tray(cx);
         self.sync_xp(cx);
-        self.sync_trade(cx);
         let Some(overlay) = self.overlay else {
             return;
         };
@@ -267,49 +257,6 @@ impl PriceCheckRoot {
                 self.last_xp_cover = Some(cover);
             }
             xp.update(cx, |xp, cx| xp.set_options(options, cx));
-        }
-    }
-
-    /// Opens the trade overlay once a search is watched -- live search's cards show in it -- and
-    /// hides it while the price window is shown. The player's options follow it whenever they
-    /// change.
-    fn sync_trade(&mut self, cx: &mut Context<Self>) {
-        let (price_shown, options) = {
-            let state = self.inner.read(cx);
-            (
-                state.visible,
-                TradeOverlayOptions::from_settings(&state.settings),
-            )
-        };
-        let watching = cx
-            .try_global::<LiveSearches>()
-            .is_some_and(|live| live.count() > 0);
-        if watching && self.trade.is_none() && !self.trade_opening {
-            // Spawned: this runs from `render`, where no window may be opened.
-            self.trade_opening = true;
-            let app = self.inner.downgrade();
-            let live_cards = self.live_cards.clone();
-            cx.spawn(async move |this, cx| {
-                let opened = cx.update(|cx| trade_overlay::open(options, app, live_cards, cx));
-                this.update(cx, |root, cx| {
-                    root.trade_opening = false;
-                    match opened {
-                        Ok(trade) => root.trade = Some(trade),
-                        Err(err) => log::warn!("the trade overlay is unavailable: {err:#}"),
-                    }
-                    root.last_trade_suppressed = None;
-                    root.sync_trade(cx);
-                })
-                .ok();
-            })
-            .detach();
-        }
-        if let Some(trade) = &self.trade {
-            if self.last_trade_suppressed != Some(price_shown) {
-                trade.update(cx, |trade, cx| trade.set_suppressed(price_shown, cx));
-                self.last_trade_suppressed = Some(price_shown);
-            }
-            trade.update(cx, |trade, cx| trade.set_options(options, cx));
         }
     }
 }
@@ -676,7 +623,6 @@ pub fn run() {
             let start_tour = !settings.tour_done;
             let inner = price_check::create_app(cx, http_client, settings);
             login::init(cx);
-            let live_cards = live_search::init(&inner, USER_AGENT, cx);
             if start_tour {
                 tour_when_ready(&inner, cx);
             }
@@ -726,10 +672,6 @@ pub fn run() {
                         xp: None,
                         xp_opening: false,
                         last_xp_cover: None,
-                        trade: None,
-                        trade_opening: false,
-                        last_trade_suppressed: None,
-                        live_cards,
                     }
                 })
             })

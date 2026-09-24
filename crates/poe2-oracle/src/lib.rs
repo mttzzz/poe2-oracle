@@ -8,7 +8,6 @@ pub mod i18n;
 pub mod item_refs;
 pub mod league_chip;
 pub mod listing_match;
-pub mod live_search;
 pub mod overlay_layout;
 pub mod paths;
 pub mod platform;

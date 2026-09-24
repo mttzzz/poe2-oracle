@@ -60,14 +60,13 @@ The first public release.
   sign-in page in a window of the app (Microsoft Edge WebView2), Steam included. The app doesn't
   read or keep the password; the site's session is kept in Windows Credential Manager, sent only
   to pathofexile.com, and removed by **Sign out** or uninstalling. Signed in, the app searches
-  private leagues (Settings → Account → **League name**) and the trade site's “sum” rows, and
-  watches searches. A private league trades too little on the Currency Exchange to price by, so
-  its exchange prices, Divine Orb rate and poe2scout prices come from the public league it's made
-  from (the current one, or its "HC" twin for a hardcore league), and the market card says so.
-- **Live search:** the panel's **Live search** switch watches a search on the trade site, up to 20
-  at once as the site allows; each new listing arrives as a card over the game.
+  private leagues (Settings → Account → **League name**) and the trade site's “sum” rows. A
+  private league trades too little on the Currency Exchange to price by, so its exchange prices,
+  Divine Orb rate and poe2scout prices come from the public league it's made from (the current
+  one, or its "HC" twin for a hardcore league), and the market card says so.
 - **XP overlay** on top of the game's HUD, on the rails along the top of its flask and skill
-  panels -- never over them: the rails are the game's rage and stun gauges. Above the flask panel
+  panels -- never over them: the rails are the game's rage and stun gauges -- each plate running on
+  to its life or mana globe's frame, the gap there filled to the pixel. Above the flask panel
   the levelling rate (percent of a level per hour, averaged over 5 to 30 minutes), the time to the
   next level, optionally the level percentage, and a ⚙ that opens the settings; above the skill
   panel a map timer with the map's experience and the session's average map time. The plates are

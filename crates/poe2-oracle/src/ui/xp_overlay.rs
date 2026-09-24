@@ -31,10 +31,14 @@
 //! Each plate is its own opaque window (a transparent `PopUp` background still tints the game
 //! behind it, see `Win32Overlay::set_shown`) that lets clicks through to the game -- the plates
 //! stand over the game's world. The gear is a window of its own at the level plate's right end,
-//! the one place that takes a click, and never the keyboard. All three wear one frame
-//! (`plate_frame`): the rails' cap molding along the top, a dark face, a post at each outer end
-//! and a thin seam where they sit on the rail; the values in the HUD's cream, the words saying
-//! what they are muted, the rate in its gold, a small diamond between the parts.
+//! the one place that takes a click, and never the keyboard. At its globe a plate runs on over
+//! the world between its rail's end and the globe's frame: its window reaches that far and is
+//! shaped, row by row, to that gap alone (`overlay_layout::meet_globe`, a window region), so the
+//! plate meets the frame with nothing of the world between and nothing of the frame covered. All
+//! three wear one frame (`plate_frame`): the rails' cap molding along the top, a dark face, a post
+//! where a plate stops on its rail and a thin seam where they sit on it; the values in the HUD's
+//! cream, the words saying what they are muted, the rate in its gold, a small diamond between the
+//! parts.
 
 use std::time::{Duration, Instant};
 
@@ -46,7 +50,7 @@ use gpui::{
 };
 
 use crate::i18n::{self, Lang};
-use crate::overlay_layout::{PhysicalRect, hud_rails};
+use crate::overlay_layout::{Globe, PhysicalRect, PlateShape, hud_rails, meet_globe};
 use crate::platform::client_log::{self, ClientLog};
 use crate::platform::win32::Win32Overlay;
 use crate::platform::xp_bar::{self, BarSample, RailsSeen};
@@ -133,27 +137,69 @@ struct PlateWindow {
     overlay: Option<Win32Overlay>,
     /// `None` until the first sync.
     last_bounds: Option<PhysicalRect>,
+    last_region: Option<Vec<PhysicalRect>>,
     last_shown: Option<bool>,
 }
 
+/// Where a plate's window goes: its rect and, for a plate run on to its globe, the parts of it
+/// that show (`overlay_layout::meet_globe`).
+struct Placement {
+    bounds: PhysicalRect,
+    shown: Option<Vec<PhysicalRect>>,
+}
+
+impl Placement {
+    fn rect(bounds: PhysicalRect) -> Placement {
+        Placement {
+            bounds,
+            shown: None,
+        }
+    }
+
+    fn shaped(shape: PlateShape) -> Placement {
+        Placement {
+            bounds: shape.window,
+            shown: Some(shape.shown),
+        }
+    }
+}
+
 impl PlateWindow {
-    /// Moves the window to `rect` and shows it, or hides it for `None`; returns whether anything
-    /// changed. Deferred: `SetWindowPos`/`ShowWindow` send `WM_SIZE`/`WM_SHOWWINDOW` synchronously
-    /// into GPUI's own window state.
-    fn sync<T: 'static>(&mut self, rect: Option<PhysicalRect>, cx: &mut Context<T>) -> bool {
+    /// Moves the window to its place, shaped, and shows it, or hides it for `None`; returns
+    /// whether anything changed. Deferred: `SetWindowRgn`/`SetWindowPos`/`ShowWindow` send
+    /// `WM_WINDOWPOSCHANGED`/`WM_SIZE`/`WM_SHOWWINDOW` synchronously into GPUI's own window
+    /// state. The shape goes first, so a window never shows unshaped where its globe is.
+    fn sync<T: 'static>(&mut self, placed: Option<Placement>, cx: &mut Context<T>) -> bool {
         let Some(overlay) = self.overlay else {
             return false;
         };
-        let bounds = rect.filter(|rect| self.last_bounds != Some(*rect));
-        let shown = (self.last_shown != Some(rect.is_some())).then_some(rect.is_some());
-        if bounds.is_none() && shown.is_none() {
+        let visible = placed.is_some();
+        let (bounds, region) = match placed {
+            Some(placed) => (
+                Some(placed.bounds).filter(|rect| self.last_bounds != Some(*rect)),
+                placed
+                    .shown
+                    .filter(|shown| self.last_region.as_ref() != Some(shown)),
+            ),
+            None => (None, None),
+        };
+        let shown = (self.last_shown != Some(visible)).then_some(visible);
+        if bounds.is_none() && region.is_none() && shown.is_none() {
             return false;
         }
         if bounds.is_some() {
             self.last_bounds = bounds;
         }
-        self.last_shown = Some(rect.is_some());
+        if region.is_some() {
+            self.last_region.clone_from(&region);
+        }
+        self.last_shown = Some(visible);
         cx.spawn(async move |_, _| {
+            if let Some(region) = region
+                && let Err(err) = overlay.set_region(&region)
+            {
+                log::warn!("{err:#}");
+            }
             if let Some(rect) = bounds
                 && let Err(err) = overlay.set_bounds(rect)
             {
@@ -472,7 +518,9 @@ impl XpOverlay {
     /// GPUI window is never redrawn (see `app::PriceCheckRoot::sync_window`), so a render-only
     /// sync could never show it again.
     fn sync_windows(&mut self, cx: &mut Context<Self>) {
-        let rails = self.sample.as_ref().map(|sample| hud_rails(sample.client));
+        let game = self.sample.as_ref().map(|sample| sample.client);
+        let rails = game.map(hud_rails);
+        let height = game.map_or(0, |game| game.height);
         let cover = self.cover;
         let clear = |rect: &PhysicalRect| {
             !cover.off && cover.panel.is_none_or(|panel| !panel.intersects(rect))
@@ -484,14 +532,22 @@ impl XpOverlay {
             .map(|rails| rails.flask)
             .filter(|rect| flask && clear(rect));
         let (level, gear) = line.map(split_gear).unzip();
+        let level = level.map(|level| meet_globe(level, height, Globe::Life));
+        // What the tour spotlights: the plate from the life globe's frame to the gear's end.
+        let on_screen = line.zip(level.as_ref()).map(|(line, level)| PhysicalRect {
+            x: level.window.x,
+            width: line.x + line.width - level.window.x,
+            ..line
+        });
         let map = rails
             .map(|rails| rails.skill)
-            .filter(|rect| self.rails.skill() && self.map_status().is_some() && clear(rect));
-        if self.level.sync(level, cx) {
-            cx.set_global(XpLineOnScreen(line));
+            .filter(|rect| self.rails.skill() && self.map_status().is_some() && clear(rect))
+            .map(|map| meet_globe(map, height, Globe::Mana));
+        if self.level.sync(level.map(Placement::shaped), cx) {
+            cx.set_global(XpLineOnScreen(on_screen));
         }
-        self.gear.sync(gear, cx);
-        self.map.sync(map, cx);
+        self.gear.sync(gear.map(Placement::rect), cx);
+        self.map.sync(map.map(Placement::shaped), cx);
     }
 }
 
@@ -561,6 +617,7 @@ impl Render for XpOverlay {
         window.set_rem_size(hud_rem_size(&sample));
         let font = plate_font(window);
         let (level, _) = split_gear(hud_rails(sample.client).flask);
+        let shape = meet_globe(level, sample.client.height, Globe::Life);
         let room = room(level, &sample, 2. * PADDING_X, window);
         let status = self.status;
         let key = (
@@ -572,12 +629,11 @@ impl Render for XpOverlay {
         );
         let wordings = self.level_wordings();
         let parts = self.level_fit.choose(key, wordings, room, &font, window);
-        ease_state(
-            "playing",
-            !self.paused(),
-            plate_frame(Ends::Left),
-            move |frame, lit| frame.child(words(parts.clone(), &font, Tones::at(lit))),
-        )
+        // The frame runs on over the gap to the life globe; the words keep to the plate's run.
+        let frame = plate_frame(Ends::None).pl(end_padding(shape.plate_x, &sample, window));
+        ease_state("playing", !self.paused(), frame, move |frame, lit| {
+            frame.child(words(parts.clone(), &font, Tones::at(lit)))
+        })
         .into_any_element()
     }
 }
@@ -635,12 +691,9 @@ impl Render for MapPlate {
         };
         window.set_rem_size(hud_rem_size(&sample));
         let font = plate_font(window);
-        let room = room(
-            hud_rails(sample.client).skill,
-            &sample,
-            2. * PADDING_X,
-            window,
-        );
+        let skill = hud_rails(sample.client).skill;
+        let shape = meet_globe(skill, sample.client.height, Globe::Mana);
+        let room = room(skill, &sample, 2. * PADDING_X, window);
         let key = (
             map.state,
             map.average.is_some() && !xp.paused(),
@@ -650,14 +703,14 @@ impl Render for MapPlate {
         let parts = self
             .fit
             .choose(key, xp.map_wordings(&map), room, &font, window);
-        // Dimmed once the character has left the run.
+        // Dimmed once the character has left the run. The frame runs on over the gap to the mana
+        // globe; the words keep to the plate's run.
         let running = map.state == RunState::Running;
-        ease_state(
-            "running",
-            running,
-            plate_frame(Ends::Both),
-            move |frame, lit| frame.child(words(parts.clone(), &font, Tones::at(lit))),
-        )
+        let reach = shape.window.width - skill.width;
+        let frame = plate_frame(Ends::Left).pr(end_padding(reach, &sample, window));
+        ease_state("running", running, frame, move |frame, lit| {
+            frame.child(words(parts.clone(), &font, Tones::at(lit)))
+        })
         .into_any_element()
     }
 }
@@ -674,6 +727,13 @@ fn hud_rem_size(sample: &BarSample) -> Pixels {
 fn room(rect: PhysicalRect, sample: &BarSample, reserved: f32, window: &Window) -> Pixels {
     px((f64::from(rect.width) / sample.dpi_scale) as f32)
         - rems_from_px(reserved).to_pixels(window.rem_size())
+}
+
+/// The padding at a plate's end that runs on to its globe: the ends' own, plus the `reach`
+/// physical pixels over the gap, so the words keep to the plate's run.
+fn end_padding(reach: i32, sample: &BarSample, window: &Window) -> Pixels {
+    rems_from_px(PADDING_X).to_pixels(window.rem_size())
+        + px((f64::from(reach) / sample.dpi_scale) as f32)
 }
 
 /// The plates' typeface: the game-styled one of the interface language, as the HUD's own words
@@ -742,19 +802,20 @@ impl Tones {
     }
 }
 
-/// Which ends of the frame a window draws: the level plate and its gear share one frame, a post
-/// at each outer end.
+/// Which posts a window's frame draws: one at each end that stops on its rail. The level plate
+/// and its gear share one frame whose left end runs on to the life globe, so only the gear has a
+/// post, on the right; the map plate runs on to the mana globe and has its post on the left.
 #[derive(Clone, Copy)]
 enum Ends {
+    None,
     Left,
     Right,
-    Both,
 }
 
 /// A plate's frame, built as the rail it stands on: the rail's cap molding along its top, band by
-/// band, a dark face under it, a post at each outer end -- lit on the left, in shade on the right,
-/// as the rails' end caps are -- and a thin seam where it sits on the rail's highlight. Its
-/// contents go in a row on the face.
+/// band, a dark face under it, a post at an end that stops on the rail -- lit on the left, in
+/// shade on the right, as the rails' end caps are -- and a thin seam where it sits on the rail's
+/// highlight. Its contents go in a row on the face.
 fn plate_frame(ends: Ends) -> Div {
     let cap = div()
         .absolute()
@@ -798,11 +859,9 @@ fn plate_frame(ends: Ends) -> Div {
                 .bg(rgb(HUD_SEAM)),
         );
     match ends {
+        Ends::None => frame,
         Ends::Left => frame.child(post(div().left_0(), HUD_POST_LIGHT)),
         Ends::Right => frame.child(post(div().right_0(), HUD_POST_SHADE)),
-        Ends::Both => frame
-            .child(post(div().left_0(), HUD_POST_LIGHT))
-            .child(post(div().right_0(), HUD_POST_SHADE)),
     }
 }
 

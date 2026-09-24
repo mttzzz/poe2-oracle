@@ -1,10 +1,11 @@
 // The XP overlay's plates (crates/poe2-oracle/src/ui/xp_overlay.rs) where the app sets them on
 // the game's HUD: the level plate with its gear on the flask panel's rail, the map plate on the
 // skill panel's -- each drawn over a capture of its rail (img/hud-flask.webp, img/hud-skill.webp),
-// side by side when both are given. A plate reads its words the way the app puts them together
-// (xp_tracker.rs Word): values in the HUD's cream, the words saying what they are muted, the rate
-// in its gold, a small diamond between the parts. Like the app, a plate says as much as fits it,
-// measured in its own typeface: its `words`, else the first of its `shorter` wordings that fits.
+// side by side when both are given, and run on over the gap to its globe's frame as the app runs
+// it. A plate reads its words the way the app puts them together (xp_tracker.rs Word): values in
+// the HUD's cream, the words saying what they are muted, the rate in its gold, a small diamond
+// between the parts. Like the app, a plate says as much as fits it, measured in its own typeface:
+// its `words`, else the first of its `shorter` wordings that fits.
 
 import { diamond, h } from "./dom.js";
 
@@ -21,6 +22,64 @@ const WORD_GAP = 3;
 const PART_GAP = 2 * 5 + 4;
 // The plates' typeface: the interface language's game-styled one (fonts.rs interface_font).
 const FONTS = { en: '500 12px "Alegreya SC"', ru: '700 12px "Philosopher"' };
+// Where a plate meets its globe (overlay_layout.rs LIFE_GLOBE_GAP, MANA_GLOBE_GAP): down the
+// plate's 40 rows of a 2160-row game, the run of the world between its outer end and the globe's
+// frame, [from, to) pixels out from the end. The app covers exactly that; the tables' one-pixel
+// runs over the frames' anti-aliased rims are left out here, where a pixel is half a CSS px.
+const GAP = {
+    flask: [
+        [0, 49], [0, 48], [0, 47], [0, 47], [0, 46], [0, 45], [0, 45], [0, 44], [0, 40], [0, 38],
+        [0, 36], [0, 34], [0, 32], [0, 31], [0, 30], [0, 29], [0, 28], [0, 27], [0, 27], [0, 26],
+        [0, 25], [0, 25], [0, 24], [0, 24], [0, 16], [0, 14], [0, 13], [0, 12], [0, 10], [0, 8],
+        [0, 5], [0, 6], [0, 7], [0, 10], [2, 12], [2, 12], [3, 12], [4, 12],
+    ],
+    skill: [
+        [0, 49], [0, 48], [0, 47], [0, 46], [0, 46], [0, 45], [0, 44], [0, 43], [0, 39], [0, 37],
+        [0, 35], [0, 33], [0, 32], [0, 31], [0, 29], [0, 28], [0, 28], [0, 27], [0, 26], [0, 26],
+        [0, 25], [0, 24], [0, 24], [0, 24], [0, 15], [0, 13], [0, 12], [0, 11], [0, 10], [0, 8],
+        [0, 5], [0, 6], [0, 7], [0, 10], [2, 12], [2, 12], [3, 12], [4, 11],
+    ],
+};
+// The plate's rows, and how far the widest run reaches (the plates' CSS widths add half of it).
+const ROWS = 40;
+const REACH = 49;
+
+// The clip-path that shows a plate `width` HUD px wide on its rail plus the gap to its globe --
+// `rail` "flask" for the life globe on its left, "skill" for the mana globe on its right -- in
+// percentages of the element, which is REACH/2 px wider than the plate: along the top to the
+// gap's far end, down the frame's side row by row, back up the side of the rail's end cap the
+// last rows leave to the game, then down the plate's own end.
+function globeClip(rail, width) {
+    const runs = GAP[rail];
+    const whole = 2 * width + REACH;
+    // A distance out from the plate's end, as x from the element's left edge (in 2160-row px).
+    const out = rail === "flask" ? (d) => REACH - d : (d) => 2 * width + d;
+    const end = out(0);
+    const outer = runs.flatMap(([, to], row) => [
+        [out(to), row],
+        [out(to), row + 1],
+    ]);
+    const capped = runs.findIndex(([from]) => from > 0);
+    const inner = runs
+        .slice(capped)
+        .map(([from], index) => [out(from), capped + index])
+        .reverse()
+        .flatMap(([x, row]) => [
+            [x, row + 1],
+            [x, row],
+        ]);
+    const far = rail === "flask" ? whole : 0;
+    const points = [
+        [far, 0],
+        ...outer,
+        ...inner,
+        [end, capped],
+        [end, ROWS],
+        [far, ROWS],
+    ];
+    const pct = (value, of) => `${+((100 * value) / of).toFixed(3)}%`;
+    return `polygon(${points.map(([x, y]) => `${pct(x, whole)} ${pct(y, ROWS)}`).join(", ")})`;
+}
 
 /** Draws `data.plates` (see data/xp.en.json) in `lang`, "en" or "ru". */
 export function render(data, lang) {
@@ -41,14 +100,14 @@ export function render(data, lang) {
     );
 }
 
-// The level plate and its gear: one frame over two windows, a post at each outer end.
+// The level plate and its gear: one frame over two windows, run on to the life globe on the left,
+// a post at the gear's end.
 function levelPlate(plate, lang) {
     return [
         h(
             "div",
-            plateClass("level", plate),
+            { class: plateClass("level", plate), style: { clipPath: globeClip("flask", 210) } },
             words(fit(plate, ROOM.flask, lang)),
-            h("span", "oui-xp-post oui-xp-post--left"),
         ),
         h(
             "div",
@@ -60,13 +119,13 @@ function levelPlate(plate, lang) {
     ];
 }
 
+// The map plate: a post at its left end, run on to the mana globe on the right.
 function mapPlate(plate, lang) {
     return h(
         "div",
-        plateClass("map", plate),
+        { class: plateClass("map", plate), style: { clipPath: globeClip("skill", 234.5) } },
         words(fit(plate, ROOM.skill, lang)),
         h("span", "oui-xp-post oui-xp-post--left"),
-        h("span", "oui-xp-post oui-xp-post--right"),
     );
 }
 

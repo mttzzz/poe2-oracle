@@ -11,8 +11,7 @@
 //! (`/api/trade2/data/{stats,items,static}`), `cache` gives that slow-changing data a disk
 //! cache, and `rate_limit` tracks the real rate-limit response headers so a caller that owns an
 //! executor can hold off until the trade API will take its next request -- this crate itself
-//! never sleeps. `live` speaks the live search socket's protocol (the socket is the caller's), and
-//! `account` asks whether the session the caller's client sends is signed in.
+//! never sleeps. `account` asks whether the session the caller's client sends is signed in.
 //!
 //! Every trade API response, `catalog`'s included, goes through `checked_body`: a refusal (a `429`
 //! while rate-limited, a rejected query, a Cloudflare error page) reaches the caller as a
@@ -23,7 +22,6 @@ pub mod account;
 pub mod cache;
 pub mod catalog;
 pub mod cx;
-pub mod live;
 pub mod rate_limit;
 pub mod rates;
 pub mod scout;
@@ -63,15 +61,6 @@ impl TradeSite {
         match self {
             TradeSite::International => "https://www.pathofexile.com",
             TradeSite::Russian => "https://ru.pathofexile.com",
-        }
-    }
-
-    /// The site's host name: the one the player's session cookie belongs to, and the live search
-    /// socket's (`live::live_url`).
-    pub fn host(self) -> &'static str {
-        match self {
-            TradeSite::International => "www.pathofexile.com",
-            TradeSite::Russian => "ru.pathofexile.com",
         }
     }
 

@@ -59,9 +59,8 @@ basics on the first launch.
   the settings; above the skill panel, a timer for the current map.
 - **Quick actions:** your own hotkeys that type a chat command (`/hideout`, `@last thanks`) or a
   stash search string (for example one made with poe2.re).
-- **Sign-in to pathofexile.com**, optional, on the site's own page: it opens private leagues,
-  **sum** rows (a stat added up across mods) and **Live search**, which watches a search and brings
-  each new listing as a card over the game.
+- **Sign-in to pathofexile.com**, optional, on the site's own page: it opens private leagues and
+  **sum** rows (a stat added up across mods).
 - **Updates** from the tray menu: the new installer is downloaded from GitHub Releases, checked
   against its published SHA-256 sum and installed; the app restarts by itself.
 
@@ -155,7 +154,7 @@ PoE2 Oracle has no telemetry, no analytics and no accounts of its own. It connec
 
 | Where | What for |
 |---|---|
-| www.pathofexile.com, ru.pathofexile.com | The trade site's API: leagues, stat and item catalogs, your searches (the item's stats) and the listings they find; once you sign in, the site's session goes along, and each live search keeps a connection open |
+| www.pathofexile.com, ru.pathofexile.com | The trade site's API: leagues, stat and item catalogs, your searches (the item's stats) and the listings they find; once you sign in, the site's session goes along |
 | api.poe2scout.com | Prices of uniques; the week's prices and pages of Currency Exchange items, and prices of those that haven't traded in your league lately |
 | web.poecdn.com | Item images, and GGG's hourly record of the trades made on the Currency Exchange (one file per hour for all leagues, the same for everyone) |
 | api.github.com, github.com, GitHub's file storage (…githubusercontent.com) | The update check (30 seconds after start while update checks are on, or from the tray menu) and the installer download |

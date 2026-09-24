@@ -71,9 +71,8 @@ language Craft of Exile opens in and the trade site whose league names the leagu
 ### Interface scale
 
 Row **Interface scale**: 100% by default, from 80 to 150% in steps of 5, with the − and + buttons. It
-sizes the text and controls of the price panel (its width too) and of the trade overlay's cards.
-The XP overlay is part of the game's HUD and takes its size; the settings window itself does not
-scale.
+sizes the text and controls of the price panel (its width too). The XP overlay is part of the game's
+HUD and takes its size; the settings window itself does not scale.
 
 ### System
 
@@ -149,8 +148,8 @@ Section **XP overlay**, group **XP line**. See [XP overlay](xp-overlay.md) for w
 
 ## Account
 
-Section **Account**. Signing in to pathofexile.com is needed to search private leagues, to watch
-searches and for the **sum** rows among the [filters](price-check.md#filters).
+Section **Account**. Signing in to pathofexile.com is needed to search private leagues and for the
+**sum** rows among the [filters](price-check.md#filters).
 
 - **pathofexile.com.** The row tells what is known about your sign-in: "Sign in through the window
   that opened" while the sign-in window is open, "Not signed in", "Checking the sign-in…", "Signed
@@ -163,9 +162,6 @@ searches and for the **sum** rows among the [filters](price-check.md#filters).
   only. **Sign out** makes PoE2 Oracle forget the session; you stay signed in on the site. The
   sign-in window needs the Microsoft Edge WebView2 Runtime; without it, the row shows a link
   **Download from Microsoft**.
-- **Live searches.** Row **Live search**: how many searches the price panel's **Live search** button
-  is watching, for example "2 of 20". New listings for them arrive as cards over the game. The site
-  allows 20 at most. Signed out, the row reads "sign-in needed".
 - **Private league.** Row **League name**: the name as the trade site writes it, brackets included:
   `My League (PL12345)`. When you press <kbd>Enter</kbd> or leave the box, searches move to that
   league, and **General** lists it as **Private league · *name***. An empty box brings back **Auto**.

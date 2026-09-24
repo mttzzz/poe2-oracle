@@ -282,15 +282,6 @@ stats".
 You can also widen the search yourself: untick some rows, lower some **min** values, search by
 class instead of base, or let other sellers in with the **Sellers:** choice.
 
-### Live search
-
-Signed in to pathofexile.com (see [Account](settings.md#account)), you can have new listings for a
-search come to you. The **Live search** switch sits in the line with **Found: N**, and under
-**Nothing found** after "Notify me when one is listed:". Switched on, each new listing the trade
-site gets for that search arrives as a card over the game while PoE2 Oracle runs. Beside the
-switch, "N of 20 in use" counts the searches you watch: the site allows 20 at most. Hover the
-switch for what it does; if the site refuses to watch a search, the reason shows under it.
-
 ## Currency and exchange items
 
 <img src="../images/en/market.webp" width="512" alt="The market card for a currency item">

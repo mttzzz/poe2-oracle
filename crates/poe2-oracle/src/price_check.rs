@@ -35,8 +35,8 @@ use trade_client::rate_limit::RateLimiter;
 use trade_client::rates::PriceUnit;
 use trade_client::scout::ScoutPrices;
 use trade_client::{
-    AccountStatus, FetchedItem, GroupedListing, League, ListedItem, ListingStatus, PriceCurrency,
-    RarityFilter, SearchOutcome, SearchRoute, SearchScope, StatMatch, TradeApiError, TradeSite,
+    AccountStatus, GroupedListing, League, ListedItem, ListingStatus, PriceCurrency, RarityFilter,
+    SearchOutcome, SearchRoute, SearchScope, StatMatch, TradeApiError, TradeSite,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, VIRTUAL_KEY, VK_CONTROL, VK_MENU, VK_SHIFT,
@@ -48,7 +48,6 @@ use crate::game_chat;
 use crate::i18n;
 use crate::item_refs::{self, RefKind};
 use crate::league_chip;
-use crate::live_search::{self, WatchedSearch};
 use crate::overlay_layout::{self, PanelSide, PhysicalRect};
 use crate::paths;
 use crate::platform::game_window::{Foreground, GameScreen};
@@ -538,9 +537,6 @@ pub struct PriceCheckApp {
     /// Recent searches' listings by `search_key`, newest last, each with when it arrived: a
     /// repeated search within `SEARCH_CACHE_TTL` is answered without the trade API.
     search_cache: Vec<(String, Instant, SearchResults)>,
-    /// The search the panel shows, as the trade site knows it -- what "Следить" watches
-    /// (`live_search`); `None` while a search runs and after one the site didn't answer.
-    pub watchable: Option<WatchedSearch>,
 
     /// Site the displayed item was parsed for; its searches go to the same site, because the
     /// `Exact` search and the exchange catalog `Market` routing match localized names.
@@ -602,7 +598,6 @@ impl PriceCheckApp {
             copied_whisper: None,
             search_generation: 0,
             search_cache: Vec::new(),
-            watchable: None,
             site: TradeSite::International,
             market: None,
             scout: None,
@@ -2298,7 +2293,6 @@ pub async fn run_search(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
             state.league
         );
         state.search = SearchState::Searching;
-        state.watchable = None;
         state.search_generation += 1;
         cx.notify();
         Some((
@@ -2367,20 +2361,6 @@ pub async fn run_search(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
         if state.search_generation != generation {
             return;
         }
-        state.watchable = match &outcome {
-            Ok(RouteOutcome::Listings(results)) => Some(WatchedSearch {
-                site,
-                league: league.clone(),
-                query_id: results.query_id.clone(),
-                trade_url: results.trade_url.clone(),
-                label: state
-                    .item
-                    .as_ref()
-                    .map(live_search::watch_label)
-                    .unwrap_or_default(),
-            }),
-            _ => None,
-        };
         // Rows stay in the order they arrived in: the search sorts by price across currencies,
         // which raw amounts ("1 divine" vs "40 exalted") can't.
         state.search = match outcome {
@@ -2445,8 +2425,6 @@ struct SearchResults {
     rows: Vec<ListingRow>,
     total: u64,
     trade_url: String,
-    /// The search's id: its fetches' `query`, and what live search watches.
-    query_id: String,
     /// See `SearchState::Matched::relaxed`.
     relaxed: Option<(u32, u32)>,
 }
@@ -2618,59 +2596,8 @@ async fn fetch_listings(
         rows: groups.into_iter().map(ListingRow::from).collect(),
         total: outcome.total,
         trade_url,
-        query_id: outcome.query_id,
         relaxed: None,
     })
-}
-
-/// A watched search's new listings (`live_search`), by id: fetched like a search's own page,
-/// through the same fetch limiter, a page at a time. Nobody watches a spinner here, so a
-/// restriction is sat out however long it is, and a 429 is one more restriction to sit out.
-pub(crate) async fn fetch_new_listings(
-    view: &Entity<PriceCheckApp>,
-    cx: &mut AsyncApp,
-    site: TradeSite,
-    query_id: &str,
-    ids: &[String],
-) -> Result<Vec<FetchedItem>> {
-    /// No panel search has this generation, so the waits never show in the panel.
-    const NOT_A_PANEL_SEARCH: u64 = u64::MAX;
-    /// Tries per page, each after a refusal's wait.
-    const TRIES: u32 = 3;
-    let client = view.read_with(cx, |state, _| state.http_client.clone());
-    let mut items = Vec::new();
-    for page in ids.chunks(FETCH_PAGE_SIZE) {
-        let mut tries = 0;
-        loop {
-            tries += 1;
-            let mut limiter =
-                match limiter_for_request(view, cx, NOT_A_PANEL_SEARCH, Endpoint::Fetch).await {
-                    Ok(limiter) => limiter,
-                    Err(err) => match err.downcast_ref::<RateLimitedFor>() {
-                        Some(&RateLimitedFor(wait)) if tries < TRIES => {
-                            cx.background_executor().timer(wait).await;
-                            continue;
-                        }
-                        _ => return Err(err),
-                    },
-                };
-            let result = trade_client::fetch(&client, site, page, query_id, &mut limiter).await;
-            store_limiter(view, cx, Endpoint::Fetch, limiter);
-            match result {
-                Ok(fetched) => {
-                    items.extend(fetched);
-                    break;
-                }
-                Err(err)
-                    if tries < TRIES
-                        && err
-                            .downcast_ref::<TradeApiError>()
-                            .is_some_and(TradeApiError::is_rate_limited) => {}
-                Err(err) => return Err(err),
-            }
-        }
-    }
-    Ok(items)
 }
 
 /// The trade API's independently rate-limited endpoint families -- one `RateLimiter` each,

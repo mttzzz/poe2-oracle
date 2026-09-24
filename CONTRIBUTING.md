@@ -49,8 +49,8 @@ Security vulnerabilities are not reported in public issues; see [SECURITY.md](SE
 
 ```text
 crates/
-  poe2-oracle/     the app: price panel, settings, XP overlay, live search, tray, updates,
-                   Win32 overlay windows, hotkeys and the game's input
+  poe2-oracle/     the app: price panel, settings, XP overlay, tray, updates, Win32 overlay
+                   windows, hotkeys and the game's input
   item-parser/     clipboard item text -> ParsedItem (English and Russian clients)
   stat-filters/    ParsedItem -> the trade search's filter rows (built as in Exiled Exchange 2;
                    which ones a search starts with, and their bounds, as in PoE Overlay II)

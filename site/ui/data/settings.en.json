@@ -34,7 +34,7 @@
             "rows": [
                 {
                     "label": "Interface scale",
-                    "note": "Size of the text and controls on the price panel and live search cards",
+                    "note": "Size of the text and controls on the price panel",
                     "control": { "type": "stepper", "value": "100%" }
                 }
             ]

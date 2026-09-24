@@ -69,7 +69,6 @@
         "currency": "Любая валюта"
     },
     "found": { "label": "Найдено:", "count": "489" },
-    "live": { "label": "Следить", "on": false, "inUse": "поисков: 0 из 20", "watching": 0 },
     "trade": "ru.pathofexile.com/trade ↗",
     "table": { "price": "Цена", "level": "Ур.", "listed": "Выставлен" },
     "listings": [

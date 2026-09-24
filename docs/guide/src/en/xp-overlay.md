@@ -7,7 +7,8 @@ of the flask panel, left of the experience bar, stands a plate that tells how fa
 experience and when the next level comes, with a ⚙ at its end that opens the
 [settings](settings.md). With the map timer on, a plate on the skill panel's rail shows the current
 map. The plates stand on the rails, never over them -- the game fills the rails with its rage and
-stun gauges -- and are built of the same molding. The overlay is on by default; the
+stun gauges -- and are built of the same molding. At its outer end each plate runs on to the frame
+of its globe, life or mana, filling the gap there to the pixel. The overlay is on by default; the
 [settings](settings.md#xp-overlay) section **XP overlay** turns it and its parts on and off.
 
 Above the flask panel:

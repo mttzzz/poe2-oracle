@@ -85,10 +85,12 @@
 }
 
 /* FLASK_RAIL_RUN: x 467-927 of the game, here from its column 300 -- the words, then the gear's
-   square at the right end. */
+   square at the right end -- run on 24.5 px to the left over the gap to the life globe (xp.js
+   globeClip shapes it), the words kept to the rail's run. */
 .oui-xp-plate--level {
-    left: calc(83.5 * var(--u));
-    width: calc(210 * var(--u));
+    left: calc(59 * var(--u));
+    width: calc(234.5 * var(--u));
+    padding-left: calc(31.5 * var(--u));
 }
 
 .oui-xp-plate--gear {
@@ -97,10 +99,12 @@
     padding: 0;
 }
 
-/* SKILL_RAIL_RUN: x 2905-3374 of the game, here from its column 2740. */
+/* SKILL_RAIL_RUN: x 2905-3374 of the game, here from its column 2740 -- run on 24.5 px to the
+   right over the gap to the mana globe. */
 .oui-xp-plate--map {
     left: calc(82.5 * var(--u));
-    width: calc(234.5 * var(--u));
+    width: calc(259 * var(--u));
+    padding-right: calc(31.5 * var(--u));
 }
 
 /* The plate's end posts: lit on its left end, in shade on its right, as the rails' end caps are. */

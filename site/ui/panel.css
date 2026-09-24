@@ -23,7 +23,6 @@
     --p14: round(calc(14 * var(--u)), var(--dp));
     --p15: round(calc(15 * var(--u)), var(--dp));
     --p16: round(calc(16 * var(--u)), var(--dp));
-    --p18: round(calc(18 * var(--u)), var(--dp));
     --p22: round(calc(22 * var(--u)), var(--dp));
     --p23: round(calc(23 * var(--u)), var(--dp));
     --p24: round(calc(24 * var(--u)), var(--dp));
@@ -89,22 +88,6 @@
     line-height: var(--p13);
 }
 
-.oui-panel .oui-switch {
-    width: var(--p34);
-    height: var(--p18);
-}
-
-.oui-panel .oui-switch::after {
-    top: var(--p2);
-    left: var(--p2);
-    width: var(--p12);
-    height: var(--p12);
-}
-
-.oui-panel .oui-switch--on::after {
-    left: var(--p18);
-}
-
 .oui-panel .oui-heading {
     gap: var(--p7);
 }
@@ -153,8 +136,6 @@
 .oui-panel-source,
 .oui-panel-sum,
 .oui-panel-count > span,
-.oui-panel-watch-toggle > span:last-child,
-.oui-panel-in-use,
 .oui-panel-amount,
 .oui-panel-amount-in > span,
 .oui-panel-times,
@@ -628,19 +609,13 @@
     padding-top: var(--p12);
 }
 
-.oui-panel-matched {
-    display: flex;
-    flex-direction: column;
-    gap: var(--p4);
-    padding-bottom: var(--p6);
-}
-
 .oui-panel-found {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
     gap: var(--p8);
+    padding-bottom: var(--p6);
 }
 
 .oui-panel-count {
@@ -650,31 +625,6 @@
 
 .oui-panel-dim {
     color: var(--text-dim);
-}
-
-.oui-panel-found-side {
-    display: flex;
-    align-items: center;
-    gap: var(--p14);
-}
-
-.oui-panel-watch {
-    display: flex;
-    align-items: center;
-    gap: var(--p8);
-}
-
-.oui-panel-watch-toggle {
-    display: flex;
-    flex: none;
-    align-items: center;
-    gap: var(--p6);
-    font-size: calc(12 * var(--u));
-}
-
-.oui-panel-in-use {
-    color: var(--text-dim);
-    font-size: calc(12 * var(--u));
 }
 
 .oui-panel-table {

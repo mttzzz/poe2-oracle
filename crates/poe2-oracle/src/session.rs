@@ -1,19 +1,18 @@
 //! The player's pathofexile.com web session -- the site's `POESESSID` cookie, taken from the
 //! sign-in window (`crate::login`) -- and what carries it. Signed in, searches reach the player's
-//! private leagues and live search can watch a search (`crate::live_search`).
+//! private leagues and the trade site's weighted sums (`stat_filters::Session`).
 //!
 //! The session is a key to the player's web account, so it goes nowhere it isn't needed:
 //! - it is kept in the Windows Credential Manager (`platform::credentials`), never in the settings
 //!   file, the log or the diagnostics report, and a `Debug` print of anything holding it masks it;
 //!   the sign-in window's browser keeps no copy (`platform::login_window`);
 //! - it is sent only as `Cookie: POESESSID=<value>`, and only to `https://www.pathofexile.com` and
-//!   `https://ru.pathofexile.com` -- by [`SessionHttpClient`] for the app's HTTP requests and by
-//!   live search's socket handshake; never to poe2scout, GGG's CDN (item images, exchange prices)
-//!   or GitHub.
+//!   `https://ru.pathofexile.com` -- by [`SessionHttpClient`] for the app's HTTP requests; never to
+//!   poe2scout, GGG's CDN (item images, exchange prices) or GitHub.
 //!   A redirect to another host drops it (reqwest strips `Cookie` on a cross-host redirect), and
 //!   the session check follows no redirect at all.
 //!
-//! [`TradeSession`] holds the value, shared by the HTTP client and the live search threads;
+//! [`TradeSession`] holds the value, which the HTTP client shares;
 //! [`SessionStatus`] is what the app knows of it -- checked against the account page at startup,
 //! and before a sign-in keeps it ([`check_candidate`]) -- for the settings window and the panel.
 //! Both are GPUI globals.
@@ -43,7 +42,7 @@ const CREDENTIAL_USER: &str = "POESESSID";
 const SESSION_HOSTS: [&str; 2] = ["www.pathofexile.com", "ru.pathofexile.com"];
 
 /// The session itself, or none. Cheap to clone: every clone shares the one value, so the HTTP
-/// client and the live search threads see a sign-in or sign-out at once.
+/// client sees a sign-in or sign-out at once.
 #[derive(Clone, Default)]
 pub struct TradeSession(Arc<RwLock<Option<String>>>);
 
@@ -272,15 +271,6 @@ pub fn sign_out(cx: &mut App) {
     CHECKS.fetch_add(1, Ordering::Relaxed);
     cx.set_global(SessionStatus::SignedOut);
     log::info!("pathofexile.com session forgotten");
-}
-
-/// The site refused the session elsewhere (live search's socket): it is invalid from now on, as a
-/// check would find.
-pub fn refused(cx: &mut App) {
-    CHECKS.fetch_add(1, Ordering::Relaxed);
-    if cx.global::<TradeSession>().is_signed_in() {
-        cx.set_global(SessionStatus::Invalid);
-    }
 }
 
 /// Asks the account page about the stored session and shows the answer: at start, and whenever

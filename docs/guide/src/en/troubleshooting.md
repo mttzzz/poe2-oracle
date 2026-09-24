@@ -136,9 +136,9 @@ item names, modifiers and the trade site's texts keep their own language.
 
 **Does it need my account, password or session cookie?**
 No. PoE2 Oracle prices items like a visitor who is not signed in. Signing in is optional: it opens
-private leagues, live search and the "sum" rows. You sign in on pathofexile.com's own page in a
-window of the app; PoE2 Oracle doesn't read or keep your password, only the site's session, in
-Windows Credential Manager. See [Account](settings.md#account) and [Privacy](privacy.md).
+private leagues and the "sum" rows. You sign in on pathofexile.com's own page in a window of the
+app; PoE2 Oracle doesn't read or keep your password, only the site's session, in Windows Credential
+Manager. See [Account](settings.md#account) and [Privacy](privacy.md).
 
 **Does it play for me?**
 No. Each hotkey press does one thing: it copies one item, sends one chat message or pastes one

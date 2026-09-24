@@ -978,7 +978,7 @@ impl Render for Screen {
             return div().into_any_element();
         };
         let g = guide.read(cx);
-        // Over the game, the tour follows the interface scale as the overlays do.
+        // Over the game, the tour follows the interface scale as the price panel does.
         window.set_rem_size(px(BASE_REM_SIZE * g.app.read(cx).settings.ui_scale));
         let unit = rem_unit(window);
         match layout {

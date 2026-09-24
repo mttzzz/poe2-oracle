@@ -34,6 +34,9 @@ use windows::Win32::Graphics::Dwm::{
     DWM_WINDOW_CORNER_PREFERENCE, DWMWA_BORDER_COLOR, DWMWA_COLOR_NONE,
     DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND, DwmSetWindowAttribute,
 };
+use windows::Win32::Graphics::Gdi::{
+    CombineRgn, CreateRectRgn, DeleteObject, RGN_OR, SetWindowRgn,
+};
 use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
 use windows::Win32::UI::WindowsAndMessaging::{
     CallWindowProcW, GWL_EXSTYLE, GWL_STYLE, GWLP_WNDPROC, GetForegroundWindow, GetWindowLongPtrW,
@@ -245,6 +248,28 @@ impl Win32Overlay {
         let command = if shown { SW_SHOWNOACTIVATE } else { SW_HIDE };
         // Returns the *previous* visibility, not an error.
         let _ = unsafe { ShowWindow(self.hwnd, command) };
+    }
+
+    /// Shows only `shown` of the window -- rects relative to its top left corner -- and lets the
+    /// game show everywhere else: a window region, which DWM clips the window's composition to. A
+    /// transparent GPUI background won't do, it tints what's behind it ([`Self::set_shown`]).
+    /// Deferred like [`Self::set_bounds`]: `SetWindowRgn` sends `WM_WINDOWPOSCHANGED`
+    /// synchronously.
+    pub fn set_region(&self, shown: &[PhysicalRect]) -> Result<()> {
+        unsafe {
+            let region = CreateRectRgn(0, 0, 0, 0);
+            for rect in shown {
+                let part = CreateRectRgn(rect.x, rect.y, rect.x + rect.width, rect.y + rect.height);
+                CombineRgn(Some(region), Some(region), Some(part), RGN_OR);
+                let _ = DeleteObject(part.into());
+            }
+            // The system owns the region once it's set.
+            if SetWindowRgn(self.hwnd, Some(region), true) == 0 {
+                let _ = DeleteObject(region.into());
+                bail!("SetWindowRgn failed: {:?}", GetLastError());
+            }
+        }
+        Ok(())
     }
 
     /// Makes a click on the window leave the keyboard with the game: a game that loses focus makes

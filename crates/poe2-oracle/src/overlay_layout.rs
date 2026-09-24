@@ -69,6 +69,8 @@ const HUD_REFERENCE_HEIGHT: f64 = 2160.0;
 const RAIL_TOP: f64 = 301.0;
 /// A plate's height: the rail's own cap molding over a face for one line of words.
 const PLATE_HEIGHT: f64 = 40.0;
+/// Its rows at a 2160-row game.
+const PLATE_ROWS: usize = PLATE_HEIGHT as usize;
 /// The flask rail's straight run, x 467-927: its ends' distances from the game's left edge.
 const FLASK_RAIL_RUN: (f64, f64) = (467.0, 927.0);
 /// The skill rail's straight run, x 2905-3374: its ends' distances from the game's right edge.
@@ -120,6 +122,213 @@ pub fn hud_rails(game: PhysicalRect) -> HudRails {
             right - SKILL_RAIL_RUN.0 * scale,
             right - SKILL_RAIL_RUN.1 * scale,
         ),
+    }
+}
+
+// --- Where a plate meets its globe --------------------------------------------------------------
+//
+// A rail's straight run ends a little short of its globe: between a plate's outer end and the
+// globe's frame -- its rim, then an ornament's curl, a knob and a notch under it -- the game's
+// world shows through, a gap as tall as the plate and 49 pixels wide at its top. Mapped pixel by
+// pixel 2026-09-24 on the 4K test machine: a pixel is the world where the capture of a map with a
+// black world shows black and captures over bright ground don't (the frame is the HUD's art, the
+// same in every capture), and the gap is what a fill from the plate's end reaches through such
+// pixels within the plate's rows, then the frame's anti-aliased rim one pixel further. A plate's
+// window covers exactly that ([`meet_globe`]), so the plate runs on to the frame: no gap left, no
+// frame covered. The two sides are the HUD's mirror images but for a pixel of anti-aliasing here
+// and there, so each has its own map.
+
+/// The gap left of the flask plate, row by row from the plate's top at a 2160-row game: its runs
+/// as distances out from the plate's end, `[from, to)` pixels.
+const LIFE_GLOBE_GAP: [&[(u8, u8)]; PLATE_ROWS] = [
+    &[(0, 49)],
+    &[(0, 48)],
+    &[(0, 47)],
+    &[(0, 47)],
+    &[(0, 46)],
+    &[(0, 45)],
+    &[(0, 45)],
+    &[(0, 44)],
+    &[(0, 40), (42, 43)],
+    &[(0, 38)],
+    &[(0, 36)],
+    &[(0, 34)],
+    &[(0, 32)],
+    &[(0, 31)],
+    &[(0, 30)],
+    &[(0, 29)],
+    &[(0, 28)],
+    &[(0, 27)],
+    &[(0, 27)],
+    &[(0, 26)],
+    &[(0, 25)],
+    &[(0, 25)],
+    &[(0, 24)],
+    &[(0, 24)],
+    &[(0, 16), (23, 24)],
+    &[(0, 14)],
+    &[(0, 13)],
+    &[(0, 12)],
+    &[(0, 10)],
+    &[(0, 8)],
+    &[(0, 5)],
+    &[(0, 6)],
+    &[(0, 7)],
+    &[(0, 10)],
+    &[(2, 12)],
+    &[(2, 12)],
+    &[(3, 12)],
+    &[(4, 12)],
+    &[],
+    &[],
+];
+
+/// The gap right of the skill plate, the same way.
+const MANA_GLOBE_GAP: [&[(u8, u8)]; PLATE_ROWS] = [
+    &[(0, 49)],
+    &[(0, 48)],
+    &[(0, 47)],
+    &[(0, 46)],
+    &[(0, 46)],
+    &[(0, 45)],
+    &[(0, 44)],
+    &[(0, 43)],
+    &[(0, 39), (42, 43)],
+    &[(0, 37)],
+    &[(0, 35)],
+    &[(0, 33)],
+    &[(0, 32)],
+    &[(0, 31)],
+    &[(0, 29)],
+    &[(0, 28)],
+    &[(0, 28)],
+    &[(0, 27)],
+    &[(0, 26)],
+    &[(0, 26)],
+    &[(0, 25)],
+    &[(0, 24)],
+    &[(0, 24)],
+    &[(0, 24)],
+    &[(0, 15)],
+    &[(0, 13)],
+    &[(0, 12)],
+    &[(0, 11)],
+    &[(0, 10)],
+    &[(0, 8)],
+    &[(0, 5)],
+    &[(0, 6)],
+    &[(0, 7)],
+    &[(0, 10)],
+    &[(2, 12)],
+    &[(2, 12)],
+    &[(3, 12)],
+    &[(4, 11)],
+    &[],
+    &[],
+];
+
+/// The globe a plate's outer end meets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Globe {
+    /// The life globe, left of the flask plate.
+    Life,
+    /// The mana globe, right of the skill plate.
+    Mana,
+}
+
+/// A plate run on to its globe's frame: its window, and what of the window shows -- rects
+/// relative to the window: the plate's own, then the gap between its outer end and the frame.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlateShape {
+    pub window: PhysicalRect,
+    /// Where the plate itself starts in the window: past the gap, for the life globe's.
+    pub plate_x: i32,
+    pub shown: Vec<PhysicalRect>,
+}
+
+/// `plate` -- one of [`hud_rails`]'s in a game `game_height` rows high, or a part of one that
+/// keeps its outer end -- run on to `globe`'s frame. Each of the plate's rows covers the gap of
+/// every 2160-row plate's row it spans, its runs widened to whole pixels, rather than leave a
+/// sliver of the world at another height; runs of equal rows make one rect.
+pub fn meet_globe(plate: PhysicalRect, game_height: i32, globe: Globe) -> PlateShape {
+    let scale = f64::from(game_height) / HUD_REFERENCE_HEIGHT;
+    let gap = match globe {
+        Globe::Life => &LIFE_GLOBE_GAP,
+        Globe::Mana => &MANA_GLOBE_GAP,
+    };
+    let rows: Vec<Vec<(i32, i32)>> = (0..plate.height)
+        .map(|row| {
+            let first = ((f64::from(row) / scale) as usize).min(PLATE_ROWS - 1);
+            let last = ((f64::from(row + 1) / scale).ceil() as usize)
+                .saturating_sub(1)
+                .clamp(first, PLATE_ROWS - 1);
+            let mut runs: Vec<(i32, i32)> = gap[first..=last]
+                .iter()
+                .flat_map(|runs| runs.iter())
+                .map(|&(from, to)| {
+                    (
+                        (f64::from(from) * scale).floor() as i32,
+                        (f64::from(to) * scale).ceil() as i32,
+                    )
+                })
+                .collect();
+            runs.sort_unstable();
+            runs.dedup_by(|next, kept| {
+                let touches = next.0 <= kept.1;
+                if touches {
+                    kept.1 = kept.1.max(next.1);
+                }
+                touches
+            });
+            runs
+        })
+        .collect();
+    let reach = rows.iter().flatten().map(|&(_, to)| to).max().unwrap_or(0);
+    let (window, plate_x) = match globe {
+        Globe::Life => (
+            PhysicalRect {
+                x: plate.x - reach,
+                width: plate.width + reach,
+                ..plate
+            },
+            reach,
+        ),
+        Globe::Mana => (
+            PhysicalRect {
+                width: plate.width + reach,
+                ..plate
+            },
+            0,
+        ),
+    };
+    let mut shown = vec![PhysicalRect {
+        x: plate_x,
+        y: 0,
+        width: plate.width,
+        height: plate.height,
+    }];
+    let mut first = 0;
+    for row in 1..=rows.len() {
+        if row < rows.len() && rows[row] == rows[first] {
+            continue;
+        }
+        for &(from, to) in &rows[first] {
+            shown.push(PhysicalRect {
+                x: match globe {
+                    Globe::Life => plate_x - to,
+                    Globe::Mana => plate.width + from,
+                },
+                y: first as i32,
+                width: to - from,
+                height: (row - first) as i32,
+            });
+        }
+        first = row;
+    }
+    PlateShape {
+        window,
+        plate_x,
+        shown,
     }
 }
 
@@ -386,6 +595,55 @@ mod tests {
         });
         assert_eq!(wide.flask, hud_rails(GAME_4K).flask);
         assert_eq!(wide.skill.x, 5120 - 935);
+    }
+
+    #[test]
+    fn a_plate_runs_on_to_its_globe_over_the_gap_and_not_the_frame() {
+        let rails = hud_rails(GAME_4K);
+        let shows = |shape: &PlateShape, x: i32, y: i32| {
+            shape
+                .shown
+                .iter()
+                .any(|r| r.x <= x && x < r.x + r.width && r.y <= y && y < r.y + r.height)
+        };
+        // Left of the flask plate the gap is 49 pixels wide at its top row, one less a row down,
+        // where the life globe's rim comes in.
+        let life = meet_globe(rails.flask, 2160, Globe::Life);
+        assert_eq!(
+            life.window,
+            PhysicalRect {
+                x: 418,
+                width: rails.flask.width + 49,
+                ..rails.flask
+            }
+        );
+        assert_eq!(life.plate_x, 49);
+        assert!(shows(&life, 0, 0) && !shows(&life, 0, 1));
+        // Row 24: the knob 16 pixels out stays the game's, its anti-aliased rim beyond is covered.
+        assert!(shows(&life, 49 - 16, 24) && !shows(&life, 49 - 17, 24));
+        assert!(shows(&life, 49 - 24, 24));
+        // Over the rail's end cap, the plate alone.
+        assert!(!shows(&life, 48, 38) && shows(&life, 49, 38));
+        // The skill plate reaches right, to the mana globe.
+        let mana = meet_globe(rails.skill, 2160, Globe::Mana);
+        let width = rails.skill.width;
+        assert_eq!(
+            mana.window,
+            PhysicalRect {
+                width: width + 49,
+                ..rails.skill
+            }
+        );
+        assert!(shows(&mana, width + 48, 0) && !shows(&mana, width + 49, 0));
+        // A 1080-row game: each row covers the two it stands for, whole pixels out.
+        let small = hud_rails(PhysicalRect {
+            width: 1920,
+            height: 1080,
+            ..GAME_4K
+        });
+        let life = meet_globe(small.flask, 1080, Globe::Life);
+        assert_eq!(life.plate_x, 25);
+        assert!(shows(&life, 0, 0));
     }
 
     #[test]

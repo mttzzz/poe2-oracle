@@ -62,20 +62,11 @@ env_logger = "0.11"
 # the tree through `url`.
 percent-encoding = "2"
 # Carries hotkey presses, tray-menu clicks, consumed Esc presses and foreground-window changes
-# from the OS callbacks that report them to the GPUI tasks that act on them, so nothing polls --
-# and what the live search threads hear to the task that fetches it (src/live_search.rs, which
-# builds and is tested on every target). Already in the tree through GPUI's executor (smol).
+# from the OS callbacks that report them to the GPUI tasks that act on them, so nothing polls.
+# Already in the tree through GPUI's executor (smol).
 async-channel = "2"
-# Live search (src/live_search.rs): the trade site's websocket, one blocking socket per watched
-# search on a thread of its own. TLS through the rustls 0.23 already in the tree (reqwest's), with
-# the system's root certificates -- no second TLS stack. Its config is built with an explicit
-# crypto provider, aws-lc-rs (the one Zed's `http_client_tls` picks): the tree enables both of
-# rustls' providers, and `ClientConfig::builder()` then refuses to choose.
-tungstenite = { version = "0.30", features = ["rustls-tls-native-roots"] }
-rustls = { version = "0.23", default-features = false, features = ["std", "aws_lc_rs"] }
-rustls-native-certs = "0.8"
-# The locks around the pathofexile.com session (src/session.rs) and live search's per-socket stop
-# signal (src/live_search.rs): no poisoning to unwrap. Already in the tree through GPUI.
+# The lock around the pathofexile.com session (src/session.rs): no poisoning to unwrap. Already
+# in the tree through GPUI.
 parking_lot = "0.12"
 # The `AsyncRead` the app's HTTP client wraps each answer's body in (src/session.rs), so that
 # reqwest's read timeout can start its timer while GPUI's executors read. Already in the tree

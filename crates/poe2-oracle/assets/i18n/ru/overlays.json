@@ -6,16 +6,5 @@
   "paused": "пауза",
   "map": "карта",
   "last map": "последняя карта",
-  "avg": "ср.",
-
-  "PoE2 Oracle — Trade": "PoE2 Oracle — торговля",
-  "Live search · {search}": "Слежение · {search}",
-  "Live search ended · {label}": "Слежение остановлено · {label}",
-  "Reason: {reason}.": "Причина: {reason}.",
-  "sold by": "продаёт",
-  "Copy whisper": "Скопировать шёпот",
-  "Copies the whisper to the seller: paste it into the game chat and send it yourself": "Сообщение продавцу — в буфер обмена: вставьте его в чат игры и отправьте сами",
-  "Copied ✓": "Скопировано ✓",
-  "Instant Buyout listing": "мгновенный выкуп",
-  "Open on trade site": "Открыть на сайте"
+  "avg": "ср."
 }

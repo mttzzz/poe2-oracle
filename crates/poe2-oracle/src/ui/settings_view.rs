@@ -32,14 +32,12 @@ use gpui::{
     linear_gradient, prelude::*, px, relative, rgb,
 };
 use serde_json::Value;
-use trade_client::live::MAX_LIVE_SEARCHES;
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, VK_0, VK_9, VK_SHIFT};
 
 use crate::bug_report;
 use crate::diagnostics::{self, SetupProblem};
 use crate::i18n::{self, Lang};
 use crate::league_chip;
-use crate::live_search::LiveSearches;
 use crate::login::{self, Login, LoginProblem};
 use crate::platform::autostart;
 use crate::platform::win32::Win32Overlay;
@@ -61,8 +59,8 @@ use crate::ui::style::{
 };
 use crate::ui::text_field::{Committed, TextField};
 use crate::ui::theme::{
-    BG_CARD, BG_PANEL, BG_SIDEBAR, BORDER_CARD, BORDER_GOLD, GOLD, GOLD_LIGHT, PRICE_RISE, TEXT,
-    TEXT_DIM, TEXT_MUTED, TEXT_WARNING, blend,
+    BG_CARD, BG_PANEL, BG_SIDEBAR, BORDER_CARD, BORDER_GOLD, GOLD, GOLD_LIGHT, TEXT, TEXT_DIM,
+    TEXT_MUTED, TEXT_WARNING, blend,
 };
 use crate::ui::tour;
 
@@ -157,7 +155,7 @@ impl Section {
             Section::QuickActions => tr!("Keys that type chat commands and searches into the game"),
             Section::XpOverlay => tr!("Experience rate and map timer, on top of the game's panels"),
             Section::Account => {
-                tr!("Signing in to pathofexile.com: private leagues and live search")
+                tr!("Signing in to pathofexile.com: private leagues and “sum” rows")
             }
             Section::Help => tr!("Bug reports, logs and about the app"),
         }
@@ -307,8 +305,6 @@ impl SettingsView {
         // Everything shown comes from the app and these globals as they stand.
         cx.observe(&app, |_, _, cx| cx.notify()).detach();
         cx.observe_global::<SessionStatus>(|_, cx| cx.notify())
-            .detach();
-        cx.observe_global::<LiveSearches>(|_, cx| cx.notify())
             .detach();
         cx.observe_global::<Login>(|view, cx| {
             view.sync_topmost(cx);
@@ -1236,9 +1232,7 @@ impl SettingsView {
                 [setting_row(
                     tr!("Interface scale"),
                     [note(
-                        tr!(
-                            "Size of the text and controls on the price panel and live search cards"
-                        ),
+                        tr!("Size of the text and controls on the price panel"),
                         TEXT_DIM,
                     )],
                     stepper(
@@ -1669,8 +1663,8 @@ impl SettingsView {
     }
 
     /// The pathofexile.com session: what the site says of it (`session`'s check), «Войти» (the
-    /// sign-in window, `crate::login`) or «Выйти»; the watched searches; the private league, and
-    /// the public league its exchange prices come from.
+    /// sign-in window, `crate::login`) or «Выйти»; the private league, and the public league its
+    /// exchange prices come from.
     fn render_account(
         &self,
         settings: &Settings,
@@ -1708,32 +1702,6 @@ impl SettingsView {
                     |_: &MouseDownEvent, _: &mut Window, cx: &mut App| session::sign_out(cx),
                 ))
             });
-        let watching = cx
-            .try_global::<LiveSearches>()
-            .map_or(0, LiveSearches::count);
-        let watched: AnyElement = if signed_in {
-            div()
-                .flex()
-                .items_center()
-                .gap(px(8.))
-                .child(div().size(px(7.)).rounded_full().bg(rgb(if watching > 0 {
-                    PRICE_RISE
-                } else {
-                    TEXT_MUTED
-                })))
-                .text_color(rgb(TEXT_DIM))
-                .child(tr!(
-                    "{count} of {max}",
-                    count = watching,
-                    max = MAX_LIVE_SEARCHES
-                ))
-                .into_any_element()
-        } else {
-            div()
-                .text_color(rgb(TEXT_MUTED))
-                .child(tr!("sign-in needed"))
-                .into_any_element()
-        };
         let private = matches!(settings.league, LeagueChoice::Custom(_));
         let reference = match &settings.league {
             LeagueChoice::Custom(name) => {
@@ -1755,23 +1723,6 @@ impl SettingsView {
                     div().text_color(rgb(label_color)).child(label),
                     [Some(note(about, TEXT_DIM)), problem].into_iter().flatten(),
                     buttons,
-                )],
-            ))
-            .child(group(
-                face,
-                tr!("Live searches"),
-                [setting_row(
-                    tr!("Live search"),
-                    [note(
-                        tr!(
-                            "The price panel's “Live search” button: new listings for the search \
-                             arrive as cards over the game. At most {max} searches at once — the \
-                             site's rule",
-                            max = MAX_LIVE_SEARCHES
-                        ),
-                        TEXT_DIM,
-                    )],
-                    watched,
                 )],
             ))
             .child(group(

@@ -15,5 +15,4 @@ pub mod style;
 pub mod text_field;
 pub mod theme;
 pub mod tour;
-pub mod trade_overlay;
 pub mod xp_overlay;

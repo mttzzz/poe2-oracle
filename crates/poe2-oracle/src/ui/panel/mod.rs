@@ -54,7 +54,7 @@ use crate::ui::tour;
 
 use filters::render_sections;
 use nameplate::{render_chips, render_nameplate};
-use results::{render_empty_watch, render_results, render_search_row, render_toolbar};
+use results::{render_results, render_search_row, render_toolbar};
 use title_bar::render_title_bar;
 use waystone::render_waystone_marks;
 
@@ -172,7 +172,6 @@ fn render_item(
                                 )
                             })
                             .child(tour::spot(Stop::Listings, render_results(state, item, cx)))
-                            .children(render_empty_watch(state, cx))
                     }
                 }),
         )

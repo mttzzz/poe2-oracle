@@ -69,7 +69,6 @@
         "currency": "Any currency"
     },
     "found": { "label": "Found:", "count": "489" },
-    "live": { "label": "Live search", "on": false, "inUse": "0 of 20 in use", "watching": 0 },
     "trade": "www.pathofexile.com/trade ↗",
     "table": { "price": "Price", "level": "iLvl", "listed": "Listed" },
     "listings": [

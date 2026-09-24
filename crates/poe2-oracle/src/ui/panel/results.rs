@@ -12,17 +12,14 @@ use gpui::{
 
 use poe2_domain::ParsedItem;
 use stat_filters::SearchProfile;
-use trade_client::live::MAX_LIVE_SEARCHES;
 use trade_client::rates::PriceUnit;
 use trade_client::{AccountStatus, ListedItem, ListedMod, ListingStatus, PriceCurrency};
 
 use crate::i18n;
 use crate::league_chip;
 use crate::listing_match::{self, Asked, WantedStat};
-use crate::live_search::LiveSearches;
 use crate::price_check::{ListingRow, PriceCheckApp, SearchFailure, SearchState};
 use crate::relative_time;
-use crate::session::SessionStatus;
 use crate::tour::Stop;
 use crate::tr;
 use crate::ui::fonts;
@@ -30,7 +27,7 @@ use crate::ui::hint as hints;
 use crate::ui::item_card::{CardPrice, ItemCard, ModMark, render_item_card};
 use crate::ui::style::{
     ButtonKind, CONTROL_RADIUS, alpha, button, ease_hover, glow, inner_glow, link, menu_row, plate,
-    select, switch,
+    select,
 };
 use crate::ui::theme::{
     BORDER_GOLD, BORDER_ROW, GOLD, GOLD_LIGHT, PRICE_RISE, STATUS_AFK, STATUS_OFFLINE,
@@ -517,7 +514,7 @@ fn render_outcome(
                         of = of
                     ))
             }))
-            .child(render_matched_line(state, *total, trade_url.clone(), cx))
+            .child(render_matched_line(*total, trade_url.clone()))
             .child(render_results_table(state, rows, *relaxed, cx))
             .into_any_element(),
     }
@@ -635,13 +632,8 @@ fn render_sums_refused(failure: &SearchFailure, cx: &Context<PriceCheckApp>) -> 
         )
 }
 
-/// The results' header: how many the search found, the watch switch and the trade site link.
-fn render_matched_line(
-    state: &PriceCheckApp,
-    total: u64,
-    trade_url: String,
-    cx: &Context<PriceCheckApp>,
-) -> impl IntoElement {
+/// The results' header: how many the search found, and the trade site link.
+fn render_matched_line(total: u64, trade_url: String) -> impl IntoElement {
     let host = trade_url
         .split('/')
         .nth(2)
@@ -649,140 +641,19 @@ fn render_matched_line(
         .to_owned();
     div()
         .flex()
-        .flex_col()
-        .gap(rems_from_px(4.))
+        .flex_wrap()
+        .items_center()
+        .justify_between()
+        .gap(rems_from_px(8.))
         .pb(rems_from_px(6.))
         .child(
             div()
                 .flex()
-                .flex_wrap()
-                .items_center()
-                .justify_between()
-                .gap(rems_from_px(8.))
-                .child(
-                    div()
-                        .flex()
-                        .gap(rems_from_px(4.))
-                        .child(div().text_color(rgb(TEXT_DIM)).child(tr!("Found:")))
-                        .child(i18n::integer(total)),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(rems_from_px(14.))
-                        .children(render_watch(state, cx))
-                        .child(render_link(format!("{host}/trade ↗"), trade_url)),
-                ),
+                .gap(rems_from_px(4.))
+                .child(div().text_color(rgb(TEXT_DIM)).child(tr!("Found:")))
+                .child(i18n::integer(total)),
         )
-        .children(render_watch_refusal(state, cx))
-}
-
-/// Under «Ничего не найдено» (`Nothing found`): a search nothing matches yet is just what watching
-/// is for.
-pub(super) fn render_empty_watch(
-    state: &PriceCheckApp,
-    cx: &Context<PriceCheckApp>,
-) -> Option<impl IntoElement> {
-    if !matches!(state.search, SearchState::Empty { .. }) || state.priced_by_market {
-        return None;
-    }
-    let toggle = render_watch(state, cx)?;
-    Some(
-        div()
-            .mt(rems_from_px(10.))
-            .flex()
-            .flex_col()
-            .items_center()
-            .gap(rems_from_px(4.))
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(rems_from_px(10.))
-                    .child(
-                        div()
-                            .text_size(rems_from_px(12.))
-                            .text_color(rgb(TEXT_DIM))
-                            .child(tr!("Notify me when one is listed:")),
-                    )
-                    .child(toggle),
-            )
-            .children(render_watch_refusal(state, cx)),
-    )
-}
-
-/// «Следить» (`Live search`, the trade site's name for it): the search's new listings come as
-/// cards over the game (`crate::live_search`) -- with how many searches are watched. Only for a
-/// signed-in player (`crate::session`) and a search the trade site answered.
-fn render_watch(state: &PriceCheckApp, cx: &Context<PriceCheckApp>) -> Option<impl IntoElement> {
-    let search = state.watchable.clone()?;
-    if !cx.try_global::<SessionStatus>()?.signed_in() {
-        return None;
-    }
-    let live = cx.try_global::<LiveSearches>()?;
-    let watching = live.is_watched(&search.query_id);
-    let count = live.count();
-    let hint = if watching {
-        tr!("Live search is on — click to turn it off")
-    } else {
-        tr!("New listings for this search arrive as cards over the game while the app runs")
-    };
-    let toggle = div()
-        .id("watch")
-        .flex()
-        .flex_none()
-        .items_center()
-        .gap(rems_from_px(6.))
-        .cursor_pointer()
-        .text_size(rems_from_px(12.))
-        .tooltip(hints::hint(hint))
-        .on_mouse_down(
-            MouseButton::Left,
-            cx.listener(move |_view, _event: &MouseDownEvent, _window, cx| {
-                cx.global_mut::<LiveSearches>().toggle(&search);
-            }),
-        )
-        .child(switch("switch", watching))
-        .child(tr!("Live search"));
-    // The count keeps its room while nothing is watched, only unseen: the switch then stays under
-    // the pointer when a click turns watching on and the count appears -- a second click turns it
-    // off again instead of landing on the count.
-    Some(
-        div()
-            .flex()
-            .items_center()
-            .gap(rems_from_px(8.))
-            .child(ease_hover("watch", toggle, |toggle, hover| {
-                toggle.text_color(rgb(blend(TEXT, GOLD_LIGHT, hover)))
-            }))
-            .child(
-                div()
-                    .text_size(rems_from_px(12.))
-                    .text_color(rgb(TEXT_DIM))
-                    .when(count == 0, |this| this.opacity(0.))
-                    .child(tr!(
-                        "{count} of {max} in use",
-                        count = count,
-                        max = MAX_LIVE_SEARCHES
-                    )),
-            ),
-    )
-}
-
-/// Why watching the shown search was just refused, in the language the panel is drawn in.
-fn render_watch_refusal(
-    state: &PriceCheckApp,
-    cx: &Context<PriceCheckApp>,
-) -> Option<impl IntoElement> {
-    let search = state.watchable.as_ref()?;
-    let refusal = cx.try_global::<LiveSearches>()?.refusal(&search.query_id)?;
-    Some(
-        div()
-            .text_size(rems_from_px(12.))
-            .text_color(rgb(TEXT_WARNING))
-            .child(refusal.message()),
-    )
+        .child(render_link(format!("{host}/trade ↗"), trade_url))
 }
 
 /// A text link opened in the default browser via GPUI's own `App::open_url`.

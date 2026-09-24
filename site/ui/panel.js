@@ -26,8 +26,6 @@
 //   folded    the line that unfolds the rows kept out of sight, or none
 //   search    { button, sellers, currency: a string, or strings and { icon: id } in a row }
 //   found     { label, count }
-//   live      the Live search switch, for a signed-in player: { label, on, inUse: the count of
-//             searches watched, shown while `watching` isn't 0 }, or none
 //   trade     the trade site link
 //   table     the column headings { price, level, seller (none: the column hidden), listed }
 //   listings  [{ amount, currency: an icon id or a name, about + unit: what it comes to (≈),
@@ -46,7 +44,6 @@ import {
     sectionHeading,
     select,
     toggleChip,
-    toggleSwitch,
 } from "./dom.js";
 
 const NAME_COLORS = {
@@ -309,41 +306,17 @@ function searchRow(search, icons) {
     );
 }
 
-/** The Found line -- the count, the live search switch, the trade site link -- and the table. */
+/** The Found line -- the count and the trade site link -- and the table. */
 function results(data) {
-    const { found, live, table } = data;
+    const { found, table } = data;
     return h(
         "div",
         "oui-panel-results",
         h(
             "div",
-            "oui-panel-matched",
-            h(
-                "div",
-                "oui-panel-found",
-                h(
-                    "div",
-                    "oui-panel-count",
-                    h("span", "oui-panel-dim", found.label),
-                    h("span", null, found.count),
-                ),
-                h(
-                    "div",
-                    "oui-panel-found-side",
-                    live &&
-                        h(
-                            "div",
-                            "oui-panel-watch",
-                            h("div", "oui-panel-watch-toggle", toggleSwitch(live.on), h("span", null, live.label)),
-                            h(
-                                "div",
-                                { class: "oui-panel-in-use", style: live.watching ? null : { opacity: 0 } },
-                                live.inUse,
-                            ),
-                        ),
-                    link(data.trade),
-                ),
-            ),
+            "oui-panel-found",
+            h("div", "oui-panel-count", h("span", "oui-panel-dim", found.label), h("span", null, found.count)),
+            link(data.trade),
         ),
         h(
             "div",
