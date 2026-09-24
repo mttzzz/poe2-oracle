@@ -252,9 +252,10 @@ seconds the row reads **✓ copied — paste it into the chat**. Open the chat i
 Hover a row to see the listing the way the game's own item tooltip shows it: the name in its
 rarity colour, properties, requirements, sockets with their runes, item level, every modifier,
 flags such as **Corrupted** and the seller's note. Each modifier has its tier on the left and
-**lvl N** (the item level it needs) on the right. The range a value rolls in follows it in
-brackets, for example `+38(36-40)%`. The listing's own text is in the trade site's language: in
-Russian for an item from a Russian client.
+**lvl N** (the item level it needs) on the right; as in the game's advanced (<kbd>Alt</kbd>)
+tooltip, the prefixes (**P1**, **P2**…) come first, then the suffixes (**S1**…). The range a value
+rolls in follows it in brackets, for example `+38(36-40)%`. The listing's own text is in the trade
+site's language: in Russian for an item from a Russian client.
 
 The modifiers you search for are marked:
 

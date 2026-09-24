@@ -4,7 +4,7 @@
 //! implicits, granted skills, the explicit mods, flavour and description, the flags, the seller's
 //! note -- every value and mod in the game's colours, mods with their tier on the left, the item
 //! level they need on the right and their roll ranges written in as the game's advanced (Alt)
-//! tooltip writes them.
+//! tooltip writes them. As in that tooltip, the explicit mods run prefixes first, then suffixes.
 //!
 //! Every line's text and colour runs are worked out once, in [`ItemCard::new`], so drawing the card
 //! each frame it shows only builds elements. The card is as wide as the game's tooltip and wraps
@@ -161,12 +161,32 @@ impl ItemCard {
                 .map(|skill| valued_line("", skill.text()))
                 .collect(),
         );
-        section(mods(&[
-            ModKind::Fractured,
-            ModKind::Explicit,
-            ModKind::Desecrated,
-            ModKind::Crafted,
-        ]));
+        // The site lists explicit mods in the tooltip's stat order, prefixes and suffixes mixed;
+        // the advanced tooltip, whose tiers the card shows, lists the prefixes first. Each side
+        // keeps the site's order, and a mod the site gives no side for comes last.
+        let mut explicit: Vec<&ListedMod> = item
+            .mods
+            .iter()
+            .filter(|listed| {
+                matches!(
+                    listed.kind,
+                    ModKind::Fractured | ModKind::Explicit | ModKind::Desecrated | ModKind::Crafted
+                )
+            })
+            .collect();
+        explicit.sort_by_key(
+            |listed| match listed.tier.as_deref().map(|tier| tier.as_bytes()) {
+                Some([b'P', ..]) => 0,
+                Some([b'S', ..]) => 1,
+                _ => 2,
+            },
+        );
+        section(
+            explicit
+                .into_iter()
+                .map(|listed| mod_line(listed, mark(listed)))
+                .collect(),
+        );
         if let Some(flavour) = &item.flavour {
             section(vec![plain(flavour.clone(), RARITY_UNIQUE, true)]);
         }
