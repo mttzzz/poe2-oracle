@@ -74,7 +74,7 @@
   "Sign out": "Выйти",
   "Private league": "Приватная лига",
   "League name": "Название лиги",
-  "As the trade site writes it, brackets included — searches go there. An empty box brings back “Auto”": "Как на сайте торговли, со скобками — поиск пойдёт в ней. Пустое поле возвращает лигу «Авто»",
+  "As the trade site writes it, brackets included. Enter makes it the league searched, and the league menus keep it; an empty box forgets it": "Как на сайте торговли, со скобками. Enter переключает поиск на неё, и меню лиг её запоминает; пустое поле её забывает",
   "Without a sign-in the site won't answer searches in a private league — sign in above": "Без входа сайт не отвечает на поиск в приватной лиге — войдите выше",
   "Collecting the report…": "Собираю отчёт…",
   "Saved: {path} — attach it to your bug report": "Сохранён: {path} — приложите его к сообщению об ошибке",

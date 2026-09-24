@@ -105,6 +105,7 @@ fn render_league_select(
         .when(state.league_menu, |this| {
             let choices = league_chip::menu(
                 &state.settings.league,
+                &state.settings.private_league,
                 state.leagues(),
                 state.league_names(),
             );

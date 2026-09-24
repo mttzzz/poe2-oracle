@@ -164,7 +164,9 @@ Section **Account**. Signing in to pathofexile.com is needed to search private l
   **Download from Microsoft**.
 - **Private league.** Row **League name**: the name as the trade site writes it, brackets included:
   `My League (PL12345)`. When you press <kbd>Enter</kbd> or leave the box, searches move to that
-  league, and **General** lists it as **Private league · *name***. An empty box brings back **Auto**.
+  league, and from then on the league menus, in **General** and on the price panel, list it as
+  **Private league · *name***, even while you search another league: switching back is one click.
+  An empty box forgets it, and brings back **Auto** if it was the league searched.
   The site does not answer searches in a private league without a sign-in, and the row warns about
   it. Exchange prices come from the public league yours is made from: see
   [In a private league](price-check.md#in-a-private-league).

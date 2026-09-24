@@ -252,7 +252,7 @@ impl SettingsView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let (actions, league) = {
+        let (actions, private_league) = {
             let settings = &app.read(cx).settings;
             (
                 settings
@@ -260,17 +260,13 @@ impl SettingsView {
                     .iter()
                     .map(ActionDraft::saved)
                     .collect::<Vec<_>>(),
-                settings.league.clone(),
+                settings.private_league.clone(),
             )
         };
         let actions = actions
             .into_iter()
             .map(|draft| Self::action_row(draft, window, cx))
             .collect();
-        let private_league = match league {
-            LeagueChoice::Custom(name) => name,
-            LeagueChoice::Auto | LeagueChoice::Named(_) => String::new(),
-        };
         // A league name as the trade site writes one: the same in every interface language.
         let league_field =
             cx.new(|cx| TextField::new(private_league, || "My League (PL12345)", window, cx));
@@ -472,29 +468,36 @@ impl SettingsView {
         cx.notify();
     }
 
-    /// Takes the private league's field as it reads: a name makes it the league searched;
-    /// emptied, searches go back to «Авто» -- when it was the league searched.
+    /// Takes the private league's field as it reads, once the player changed it: a name is
+    /// remembered and becomes the league searched; emptied, the private league is forgotten and
+    /// searches go back to «Авто» -- when it was the league searched.
     fn apply_private_league(&mut self, cx: &mut Context<Self>) {
         let typed = self.league_field.read(cx).text().trim().to_owned();
-        let league = match (typed.is_empty(), &self.app.read(cx).settings.league) {
-            (false, _) => LeagueChoice::Custom(typed),
-            (true, LeagueChoice::Custom(_)) => LeagueChoice::Auto,
-            (true, LeagueChoice::Auto | LeagueChoice::Named(_)) => return,
-        };
-        self.change(cx, |settings| settings.league = league);
+        let settings = &self.app.read(cx).settings;
+        if typed == settings.private_league {
+            return;
+        }
+        let searched = matches!(settings.league, LeagueChoice::Custom(_));
+        self.change(cx, |settings| {
+            if typed.is_empty() {
+                if searched {
+                    settings.league = LeagueChoice::Auto;
+                }
+            } else {
+                settings.league = LeagueChoice::Custom(typed.clone());
+            }
+            settings.private_league = typed;
+        });
     }
 
-    /// A league picked in Общие's menu. The private league's field shows the league searched
-    /// only while it is the private one.
+    /// A league picked in Общие's menu. The private league's field goes back to the name
+    /// remembered, dropping what was typed there and not taken yet: the pick is what counts.
     fn choose_league(&mut self, choice: LeagueChoice, cx: &mut Context<Self>) {
         self.league_menu = false;
-        let private_league = match &choice {
-            LeagueChoice::Custom(name) => name.clone(),
-            LeagueChoice::Auto | LeagueChoice::Named(_) => String::new(),
-        };
+        self.change(cx, |settings| settings.league = choice);
+        let private_league = self.app.read(cx).settings.private_league.clone();
         self.league_field
             .update(cx, |field, cx| field.set_text(private_league, cx));
-        self.change(cx, |settings| settings.league = choice);
         cx.notify();
     }
 
@@ -1282,7 +1285,12 @@ impl SettingsView {
     fn render_league(&self, settings: &Settings, cx: &Context<Self>) -> AnyElement {
         let app = self.app.read(cx);
         let listed = app.leagues();
-        let options = league_chip::menu(&settings.league, listed, app.league_names());
+        let options = league_chip::menu(
+            &settings.league,
+            &settings.private_league,
+            listed,
+            app.league_names(),
+        );
         let picked = options
             .iter()
             .position(|(choice, _)| *choice == settings.league)
@@ -1733,8 +1741,9 @@ impl SettingsView {
                     [
                         Some(note(
                             tr!(
-                                "As the trade site writes it, brackets included — searches go \
-                                 there. An empty box brings back “Auto”"
+                                "As the trade site writes it, brackets included. Enter makes it the \
+                                 league searched, and the league menus keep it; an empty box \
+                                 forgets it"
                             ),
                             TEXT_DIM,
                         )),

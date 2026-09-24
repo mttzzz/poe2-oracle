@@ -29,11 +29,13 @@ pub fn chip_label(choice: &LeagueChoice, league: &str, names: &[League]) -> Stri
 }
 
 /// The menu's choices, each with its label, as the settings window offers them: «Авто · » with the
-/// current league, every league `listed` (the trade site's ids, current first), then `current`
-/// itself when it is neither -- a picked league the site no longer lists, or a typed one. Leagues
-/// are named in `names`, as on the chip.
+/// current league, every league `listed` (the trade site's ids, current first), a picked league
+/// the site no longer lists while it's `current`, then the private league `private` -- the one
+/// typed in last, still on offer while another league is searched (and a typed one `current`
+/// names, should the two differ). Leagues are named in `names`, as on the chip.
 pub fn menu(
     current: &LeagueChoice,
+    private: &str,
     listed: &[String],
     names: &[League],
 ) -> Vec<(LeagueChoice, String)> {
@@ -41,14 +43,23 @@ pub fn menu(
         Some(id) => tr!("Auto · {league}", league = league_name(id, names)),
         None => tr!("Auto").to_owned(),
     };
-    let unlisted = match current {
+    let ended = match current {
         LeagueChoice::Named(id) if !listed.contains(id) => Some((current.clone(), id.clone())),
-        LeagueChoice::Custom(name) => Some((
-            current.clone(),
-            tr!("Private league · {league}", league = name),
-        )),
-        LeagueChoice::Auto | LeagueChoice::Named(_) => None,
+        LeagueChoice::Auto | LeagueChoice::Named(_) | LeagueChoice::Custom(_) => None,
     };
+    let typed = match current {
+        LeagueChoice::Custom(name) if name != private => Some(name.as_str()),
+        LeagueChoice::Auto | LeagueChoice::Named(_) | LeagueChoice::Custom(_) => None,
+    };
+    let privates = typed
+        .into_iter()
+        .chain(Some(private).filter(|name| !name.is_empty()))
+        .map(|name| {
+            (
+                LeagueChoice::Custom(name.to_owned()),
+                tr!("Private league · {league}", league = name),
+            )
+        });
     std::iter::once((LeagueChoice::Auto, auto))
         .chain(listed.iter().map(|id| {
             (
@@ -56,7 +67,8 @@ pub fn menu(
                 league_name(id, names).to_owned(),
             )
         }))
-        .chain(unlisted)
+        .chain(ended)
+        .chain(privates)
         .collect()
 }
 
@@ -182,7 +194,7 @@ mod tests {
         let labels = |choices: Vec<(LeagueChoice, String)>| -> Vec<String> {
             choices.into_iter().map(|(_, label)| label).collect()
         };
-        let choices = menu(&named("Standard"), &listed(), &russian());
+        let choices = menu(&named("Standard"), "", &listed(), &russian());
         assert_eq!(
             choices.iter().map(|(choice, _)| choice).collect::<Vec<_>>(),
             [
@@ -204,7 +216,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            labels(menu(&LeagueChoice::Auto, &listed(), &international())),
+            labels(menu(&LeagueChoice::Auto, "", &listed(), &international())),
             [
                 "Авто · Forbidden Rites",
                 "Forbidden Rites",
@@ -216,30 +228,33 @@ mod tests {
     }
 
     #[test]
-    fn the_menu_keeps_a_choice_the_site_does_not_list() {
-        // A typed private league is offered while it is the choice -- the only place its name is
-        // kept.
-        let typed = LeagueChoice::Custom("My League (PL12345)".to_owned());
+    fn the_menu_keeps_choices_the_site_does_not_list() {
+        // The private league typed last is offered while it's searched, and after the player
+        // picked another league: switching back is one click.
+        let name = "My League (PL12345)";
+        let typed = LeagueChoice::Custom(name.to_owned());
+        let offered = Some(&(typed.clone(), "Своя лига · My League (PL12345)".to_owned()));
+        assert_eq!(menu(&typed, name, &listed(), &russian()).last(), offered);
+        let aldur = named("Runes of Aldur");
+        assert_eq!(menu(&aldur, name, &listed(), &russian()).last(), offered);
         assert_eq!(
-            menu(&typed, &listed(), &russian()).last(),
-            Some(&(typed.clone(), "Своя лига · My League (PL12345)".to_owned()))
+            menu(&aldur, name, &listed(), &russian()).len(),
+            listed().len() + 2
         );
         assert!(
-            !menu(&LeagueChoice::Auto, &listed(), &russian())
+            !menu(&LeagueChoice::Auto, "", &listed(), &russian())
                 .iter()
                 .any(|(choice, _)| matches!(choice, LeagueChoice::Custom(_))),
             "no typed league to offer"
         );
-        // A picked league that has ended stays on offer, by its id.
+        // A picked league that has ended stays on offer, by its id, before the private one.
         let ended = named("Dawn of the Hunt");
+        let choices = menu(&ended, name, &listed(), &russian());
         assert_eq!(
-            menu(&ended, &listed(), &russian()).last(),
-            Some(&(ended.clone(), "Dawn of the Hunt".to_owned()))
+            choices[choices.len() - 2],
+            (ended.clone(), "Dawn of the Hunt".to_owned())
         );
-        assert_eq!(
-            menu(&ended, &listed(), &russian()).len(),
-            listed().len() + 2
-        );
+        assert_eq!(choices.last(), offered);
     }
 
     #[test]
@@ -250,7 +265,7 @@ mod tests {
                 "Auto · Forbidden Rites"
             );
             let typed = LeagueChoice::Custom("My League (PL12345)".to_owned());
-            let labels: Vec<String> = menu(&typed, &listed(), &international())
+            let labels: Vec<String> = menu(&typed, "", &listed(), &international())
                 .into_iter()
                 .map(|(_, label)| label)
                 .collect();
@@ -259,7 +274,7 @@ mod tests {
                 labels.last().unwrap(),
                 "Private league · My League (PL12345)"
             );
-            assert_eq!(menu(&typed, &[], &[])[0].1, "Auto");
+            assert_eq!(menu(&typed, "", &[], &[])[0].1, "Auto");
         });
     }
 
