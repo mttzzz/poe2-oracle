@@ -35,7 +35,6 @@ use gpui::{
     linear_gradient, prelude::*, px, relative, rgb,
 };
 use serde_json::Value;
-use trade_client::private_leagues;
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, VK_0, VK_9, VK_SHIFT};
 
 use crate::bug_report;
@@ -201,26 +200,6 @@ enum ReportState {
     Failed(String),
 }
 
-/// Where the lookup of a private league's typed name on pathofexile.com stands
-/// (`SettingsView::apply_private_league`), said under its field.
-enum LeagueCheck {
-    Idle,
-    Checking,
-    /// The site has the league, now the private league: `corrected` when the name typed wasn't
-    /// quite the site's -- its number missing or wrong, or, for one of the account's own leagues,
-    /// its letter case off.
-    Found {
-        corrected: bool,
-    },
-    /// The site has no league by the name typed, which changed nothing.
-    Missing(String),
-    /// The site couldn't be asked: the name was taken as typed if it reads as a private league's
-    /// (`taken`), and not otherwise.
-    Unchecked {
-        taken: bool,
-    },
-}
-
 /// A quick action's row: what it will save (`quick_action::kept_actions`), the field its text is
 /// typed in, and its hotkey recorder's focus.
 struct ActionRow {
@@ -258,12 +237,6 @@ pub struct SettingsView {
     /// an action left without one).
     refused: Option<(Recorder, Hotkey, Option<Hotkey>)>,
     actions: Vec<ActionRow>,
-    /// The private league's name (`LeagueChoice::Custom`): its text while that is the league.
-    league_field: Entity<TextField>,
-    /// Where the lookup of the name last typed there stands, and which lookup is the latest: an
-    /// older one's answer, for a name since changed, is dropped.
-    league_check: LeagueCheck,
-    league_checks: u64,
     report: ReportState,
     /// The notices file next to the exe; `None` for a copy that wasn't installed.
     notices: Option<PathBuf>,
@@ -286,7 +259,7 @@ impl SettingsView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let (actions, private_league, scale) = {
+        let (actions, scale) = {
             let settings = &app.read(cx).settings;
             (
                 settings
@@ -294,7 +267,6 @@ impl SettingsView {
                     .iter()
                     .map(ActionDraft::saved)
                     .collect::<Vec<_>>(),
-                settings.private_league.clone(),
                 settings.ui_scale,
             )
         };
@@ -302,13 +274,6 @@ impl SettingsView {
             .into_iter()
             .map(|draft| Self::action_row(draft, window, cx))
             .collect();
-        // A league name as the trade site writes one: the same in every interface language.
-        let league_field =
-            cx.new(|cx| TextField::new(private_league, || "My League (PL12345)", window, cx));
-        cx.subscribe(&league_field, |view, _field, _: &Committed, cx| {
-            view.apply_private_league(cx);
-        })
-        .detach();
 
         // Anything that closes the window through `WM_CLOSE` -- Alt+F4, the taskbar -- closes it
         // the way × does. Left to `DefWindowProc`, `WM_CLOSE` destroys the window before GPUI
@@ -372,9 +337,6 @@ impl SettingsView {
             capture_error: None,
             refused: None,
             actions,
-            league_field,
-            league_check: LeagueCheck::Idle,
-            league_checks: 0,
             report: ReportState::Idle,
             notices: third_party_notices(),
             overlay,
@@ -476,11 +438,10 @@ impl SettingsView {
         crate::app::close_window(window, cx);
     }
 
-    /// Applies what the fields hold, typed but not yet left: the private league's name and the
-    /// quick actions' texts. A field reports only when it's left, so the window's close does this
-    /// first, and so does quitting the app (`app::quit`), which closes no window.
+    /// Applies what the fields hold, typed but not yet left: the quick actions' texts. A field
+    /// reports only when it's left, so the window's close does this first, and so does quitting
+    /// the app (`app::quit`), which closes no window.
     pub fn apply_typed(&mut self, cx: &mut Context<Self>) {
-        self.take_typed_private_league(cx);
         let mut typed = false;
         for row in &mut self.actions {
             let text = row.field.read(cx).text();
@@ -505,111 +466,10 @@ impl SettingsView {
         cx.notify();
     }
 
-    /// Takes the private league's field as it reads, once the player changed it. Emptied, the
-    /// private league is forgotten. A name of one of the account's own leagues, in any letter
-    /// case, takes that league; any other is looked up on pathofexile.com first
-    /// (`private_leagues::find`: a league's page is public) -- the league it names is taken as the
-    /// site writes it, its number filled in or put right, and a name the site doesn't know
-    /// changes nothing and is said to be wrong.
-    fn apply_private_league(&mut self, cx: &mut Context<Self>) {
-        let typed = self.league_field.read(cx).text().trim().to_owned();
-        let app = self.app.read(cx);
-        if typed == app.settings.private_league {
-            return;
-        }
-        self.league_checks += 1;
-        let known =
-            private_leagues::among(app.private_leagues(), &typed).map(|league| league.id.clone());
-        if typed.is_empty() || known.is_some() {
-            let name = known.unwrap_or_default();
-            self.league_check = if name == typed {
-                LeagueCheck::Idle
-            } else {
-                self.league_field
-                    .update(cx, |field, cx| field.set_text(name.clone(), cx));
-                LeagueCheck::Found { corrected: true }
-            };
-            self.take_private_league(name, cx);
-            return;
-        }
-        self.league_check = LeagueCheck::Checking;
-        let check = self.league_checks;
-        let client = cx.http_client();
-        cx.spawn(async move |view, cx| {
-            let found = private_leagues::find(&client, &typed).await;
-            let _ = view.update(cx, |view, cx| {
-                if view.league_checks != check {
-                    return;
-                }
-                view.league_check = match found {
-                    Ok(Some(league)) => {
-                        let corrected = league.id != typed;
-                        view.league_field
-                            .update(cx, |field, cx| field.set_text(league.id.clone(), cx));
-                        view.take_private_league(league.id, cx);
-                        LeagueCheck::Found { corrected }
-                    }
-                    Ok(None) => LeagueCheck::Missing(typed),
-                    Err(err) => {
-                        log::warn!("looking the private league up failed: {err:#}");
-                        let taken = private_leagues::is_private(&typed);
-                        if taken {
-                            view.take_private_league(typed, cx);
-                        }
-                        LeagueCheck::Unchecked { taken }
-                    }
-                };
-                cx.notify();
-            });
-        })
-        .detach();
-        cx.notify();
-    }
-
-    /// The private league's field as it reads when the window closes, with no time left to look
-    /// a name up: taken if it names one of the account's own leagues, or is written as the trade
-    /// site writes one -- "<name> (PL<number>)" -- or is emptied; a bare name, unchecked, isn't.
-    fn take_typed_private_league(&mut self, cx: &mut Context<Self>) {
-        let typed = self.league_field.read(cx).text().trim().to_owned();
-        let app = self.app.read(cx);
-        if typed == app.settings.private_league {
-            return;
-        }
-        let known =
-            private_leagues::among(app.private_leagues(), &typed).map(|league| league.id.clone());
-        if let Some(name) = known {
-            self.take_private_league(name, cx);
-        } else if typed.is_empty() || private_leagues::is_private(&typed) {
-            self.take_private_league(typed, cx);
-        }
-    }
-
-    /// Makes `name` the private league: remembered, and the league searched -- or, empty,
-    /// forgotten, searches going back to «Авто» when it was the league searched.
-    fn take_private_league(&mut self, name: String, cx: &mut Context<Self>) {
-        let searched = matches!(self.app.read(cx).settings.league, LeagueChoice::Custom(_));
-        self.change(cx, |settings| {
-            if name.is_empty() {
-                if searched {
-                    settings.league = LeagueChoice::Auto;
-                }
-            } else {
-                settings.league = LeagueChoice::Custom(name.clone());
-            }
-            settings.private_league = name;
-        });
-    }
-
-    /// A league picked in Общие's menu. The private league's field goes back to the name
-    /// remembered, dropping what was typed there and not taken yet: the pick is what counts.
+    /// A league picked in Общие's menu.
     fn choose_league(&mut self, choice: LeagueChoice, cx: &mut Context<Self>) {
         self.league_menu = false;
-        self.league_checks += 1;
-        self.league_check = LeagueCheck::Idle;
         self.change(cx, |settings| settings.league = choice);
-        let private_league = self.app.read(cx).settings.private_league.clone();
-        self.league_field
-            .update(cx, |field, cx| field.set_text(private_league, cx));
         cx.notify();
     }
 
@@ -1179,7 +1039,7 @@ impl SettingsView {
             Section::XpOverlay => self
                 .render_xp_overlay(settings, face, cx)
                 .into_any_element(),
-            Section::Account => self.render_account(settings, face, cx).into_any_element(),
+            Section::Account => self.render_account(face, cx).into_any_element(),
             Section::Help => self.render_help(face, cx).into_any_element(),
         };
         div()
@@ -1410,8 +1270,9 @@ impl SettingsView {
 
     /// The league searches go to: «Авто» (naming the league it stands for), every league the
     /// trade site lists -- named as the site names them in the interface language, as the panel's
-    /// league chip does -- and the league chosen when it is neither: one the site no longer lists,
-    /// or the private one (set in Аккаунт).
+    /// league chip does -- the account's private leagues once signed in, and the league chosen
+    /// when it is none of these: one the site no longer lists, or a private one the account no
+    /// longer lists.
     fn render_league(
         &self,
         settings: &Settings,
@@ -1422,7 +1283,6 @@ impl SettingsView {
         let listed = app.leagues();
         let options = league_chip::menu(
             &settings.league,
-            &settings.private_league,
             app.private_leagues(),
             listed,
             app.league_names(),
@@ -1435,27 +1295,53 @@ impl SettingsView {
             .get(picked)
             .map(|(_, label)| label.clone().into())
             .unwrap_or_default();
-        let (about, color) = match &settings.league {
-            _ if listed.is_empty() && matches!(app.bootstrap, BootstrapState::Loading) => {
-                (tr!("Loading the league list from the trade site"), TEXT_DIM)
-            }
+        let signed_in = cx
+            .try_global::<SessionStatus>()
+            .is_some_and(SessionStatus::signed_in);
+        let (about, color): (SharedString, u32) = match &settings.league {
+            _ if listed.is_empty() && matches!(app.bootstrap, BootstrapState::Loading) => (
+                tr!("Loading the league list from the trade site").into(),
+                TEXT_DIM,
+            ),
             _ if listed.is_empty() => (
-                tr!("The league list from the trade site didn't load"),
+                tr!("The league list from the trade site didn't load").into(),
                 TEXT_WARNING,
             ),
             LeagueChoice::Named(league) if !listed.contains(league) => (
-                tr!("The trade site no longer lists this league — searches go to the current one"),
+                tr!("The trade site no longer lists this league — searches go to the current one")
+                    .into(),
                 TEXT_WARNING,
             ),
-            LeagueChoice::Custom(_) => (
-                tr!("Private league: its name is set in the “Account” section"),
+            LeagueChoice::Custom(_) if !signed_in => (
+                tr!(
+                    "Without a sign-in the site won't answer searches in a private league — sign \
+                     in, in “Account”"
+                )
+                .into(),
+                TEXT_WARNING,
+            ),
+            LeagueChoice::Custom(name) => {
+                let market = league_chip::market_league(name, listed, app.private_leagues());
+                (
+                    tr!(
+                        "Exchange and poe2scout prices come from {league}: a private league \
+                         trades too little on the exchange",
+                        league = league_chip::league_name(market, app.league_names())
+                    )
+                    .into(),
+                    TEXT_DIM,
+                )
+            }
+            LeagueChoice::Auto | LeagueChoice::Named(_) if signed_in => (
+                tr!("Where prices are searched. Auto is the trade site's current league").into(),
                 TEXT_DIM,
             ),
             LeagueChoice::Auto | LeagueChoice::Named(_) => (
                 tr!(
-                    "Where prices are searched. Auto is the trade site's current league; a \
-                     private one is set in “Account”"
-                ),
+                    "Where prices are searched. Auto is the trade site's current league; your \
+                     private leagues show up here once you sign in, in “Account”"
+                )
+                .into(),
                 TEXT_DIM,
             ),
         };
@@ -1779,56 +1665,10 @@ impl SettingsView {
         )
     }
 
-    /// What the lookup of the private league's typed name found, under its field.
-    fn league_check_note(&self) -> Option<AnyElement> {
-        let (text, color) = match &self.league_check {
-            LeagueCheck::Idle => return None,
-            LeagueCheck::Checking => (
-                tr!("Looking the league up on pathofexile.com…").to_owned(),
-                TEXT_DIM,
-            ),
-            LeagueCheck::Found { corrected: false } => {
-                (tr!("The league is on pathofexile.com").to_owned(), TEXT_DIM)
-            }
-            LeagueCheck::Found { corrected: true } => (
-                tr!("Found on pathofexile.com: the name is now as the site writes it").to_owned(),
-                TEXT_DIM,
-            ),
-            LeagueCheck::Missing(name) => (
-                tr!(
-                    "pathofexile.com has no private league “{name}”: check the name, capital \
-                     letters too",
-                    name = name
-                ),
-                TEXT_WARNING,
-            ),
-            LeagueCheck::Unchecked { taken: true } => (
-                tr!("pathofexile.com couldn't be reached to check the name: it's taken as typed")
-                    .to_owned(),
-                TEXT_WARNING,
-            ),
-            LeagueCheck::Unchecked { taken: false } => (
-                tr!(
-                    "pathofexile.com couldn't be reached, and without its number (PL…) the trade \
-                     site won't find the league: try again"
-                )
-                .to_owned(),
-                TEXT_WARNING,
-            ),
-        };
-        Some(note(text, color))
-    }
-
     /// The pathofexile.com session: what the site says of it (`session`'s check), «Войти» (the
-    /// sign-in window, `crate::login`) or «Выйти»; the private league -- the account's own, as
-    /// pathofexile.com lists them, and the name typed in, looked up there -- and the public league
-    /// its exchange prices come from.
-    fn render_account(
-        &self,
-        settings: &Settings,
-        face: &'static NameFont,
-        cx: &Context<Self>,
-    ) -> impl IntoElement {
+    /// sign-in window, `crate::login`) or «Выйти», and the account's private leagues, which the
+    /// league menus offer while it's signed in.
+    fn render_account(&self, face: &'static NameFont, cx: &Context<Self>) -> impl IntoElement {
         let status = cx
             .try_global::<SessionStatus>()
             .cloned()
@@ -1860,90 +1700,32 @@ impl SettingsView {
                     |_: &MouseDownEvent, _: &mut Window, cx: &mut App| session::sign_out(cx),
                 ))
             });
-        let private = matches!(settings.league, LeagueChoice::Custom(_));
-        let mine = {
-            let leagues = self.app.read(cx).private_leagues();
-            (signed_in && !leagues.is_empty()).then(|| {
-                leagues
-                    .iter()
-                    .map(|league| league.id.as_str())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            })
-        };
-        let reference = match &settings.league {
-            LeagueChoice::Custom(name) => {
-                let app = self.app.read(cx);
-                let market = league_chip::market_league(name, app.leagues(), app.private_leagues());
-                (market != name.as_str())
-                    .then(|| league_chip::league_name(market, app.league_names()).to_owned())
-            }
-            LeagueChoice::Auto | LeagueChoice::Named(_) => None,
-        };
-        div()
-            .flex()
-            .flex_col()
-            .gap(rems_from_px(22.))
-            .child(group(
-                face,
-                "pathofexile.com",
-                [setting_row(
-                    div().text_color(rgb(label_color)).child(label),
-                    [Some(note(about, TEXT_DIM)), problem].into_iter().flatten(),
-                    buttons,
-                )],
-            ))
-            .child(group(
-                face,
-                tr!("Private league"),
-                [setting_row(
-                    tr!("League name"),
-                    [
-                        Some(note(
-                            tr!(
-                                "As on pathofexile.com; the number in brackets comes from there. \
-                                 Enter looks the league up and makes it the league searched, and \
-                                 the league menus keep it; an empty box forgets it"
-                            ),
-                            TEXT_DIM,
-                        )),
-                        self.league_check_note(),
-                        mine.map(|leagues| {
-                            note(
-                                tr!(
-                                    "Your leagues on pathofexile.com are in the league menus: \
-                                     {leagues}",
-                                    leagues = leagues
-                                ),
-                                TEXT_DIM,
-                            )
-                        }),
-                        reference.map(|league| {
-                            note(
-                                tr!(
-                                    "Exchange and poe2scout prices come from {league}: a private \
-                                     league trades too little on the exchange",
-                                    league = league
-                                ),
-                                TEXT_DIM,
-                            )
-                        }),
-                        (private && !signed_in).then(|| {
-                            note(
-                                tr!("Without a sign-in the site won't answer searches in a \
-                                     private league — sign in above"),
-                                TEXT_WARNING,
-                            )
-                        }),
-                    ]
+        let leagues = self.app.read(cx).private_leagues();
+        let mine = (signed_in && !leagues.is_empty()).then(|| {
+            let names = leagues
+                .iter()
+                .map(|league| league.id.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            note(
+                tr!(
+                    "Your leagues on pathofexile.com are in the league menus: {leagues}",
+                    leagues = names
+                ),
+                TEXT_DIM,
+            )
+        });
+        group(
+            face,
+            "pathofexile.com",
+            [setting_row(
+                div().text_color(rgb(label_color)).child(label),
+                [Some(note(about, TEXT_DIM)), mine, problem]
                     .into_iter()
                     .flatten(),
-                    div()
-                        .flex()
-                        .w(rems_from_px(250.))
-                        .child(self.league_field.clone()),
-                )],
-            ))
+                buttons,
+            )],
+        )
     }
 
     fn render_help(&self, face: &'static NameFont, cx: &Context<Self>) -> impl IntoElement {

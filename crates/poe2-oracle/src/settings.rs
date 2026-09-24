@@ -51,10 +51,6 @@ pub struct Settings {
     /// Which league searches run in.
     #[serde(deserialize_with = "or_default")]
     pub league: LeagueChoice,
-    /// The private league the player typed in last (`My League (PL12345)`), kept while they
-    /// search another league so the league menus go on offering it; empty for none. A typed
-    /// league searched is always this one.
-    pub private_league: String,
     /// The game client's language: the language copied items arrive in.
     #[serde(deserialize_with = "or_default")]
     pub client_language: ClientLanguage,
@@ -108,7 +104,6 @@ impl Default for Settings {
         Settings {
             version: SETTINGS_VERSION,
             league: LeagueChoice::default(),
-            private_league: String::new(),
             client_language: ClientLanguage::default(),
             interface_language: InterfaceLanguage::default(),
             autostart: false,
@@ -151,15 +146,10 @@ impl Settings {
             self.panel_positions = PanelPositions::default();
         }
         self.version = SETTINGS_VERSION;
-        // A typed league as typed, minus the spaces around it; nothing typed is no choice. The
-        // one searched is the one remembered -- as in a file from before it was remembered.
-        self.private_league = self.private_league.trim().to_owned();
+        // A private league as picked, minus the spaces around it; an empty one is no choice.
         self.league = match std::mem::take(&mut self.league) {
             LeagueChoice::Custom(name) if name.trim().is_empty() => LeagueChoice::Auto,
-            LeagueChoice::Custom(name) => {
-                self.private_league = name.trim().to_owned();
-                LeagueChoice::Custom(self.private_league.clone())
-            }
+            LeagueChoice::Custom(name) => LeagueChoice::Custom(name.trim().to_owned()),
             choice => choice,
         };
         self.ui_scale = self.ui_scale.clamp(MIN_UI_SCALE, MAX_UI_SCALE);
@@ -250,16 +240,17 @@ pub enum LeagueChoice {
     Auto,
     /// A league the player picked by name from the trade site's list.
     Named(String),
-    /// A league the player typed in: a private one (`My League (PL12345)`), which the site's list
-    /// never shows -- searched as typed, listed or not. The site answers searches in it only for
-    /// a signed-in player (`crate::session`).
+    /// A private league (`My League (PL12345)`), which the trade site's list never shows: one of
+    /// the signed-in account's own, as the league menus offer them (`league_chip::menu`) --
+    /// searched as named, listed or not. The site answers searches in it only for a signed-in
+    /// player (`crate::session`).
     Custom(String),
 }
 
 impl LeagueChoice {
     /// The league to search, given the trade site's leagues in its order. A picked league the site
     /// no longer lists (it ended) gives way to the current one; without a list (it failed to load)
-    /// the pick is used as is. A typed league is always used as typed. `None` only for `Auto`
+    /// the pick is used as is. A private league is always used as named. `None` only for `Auto`
     /// without a list.
     pub fn resolve<'a>(&'a self, listed: &'a [String]) -> Option<&'a str> {
         match self {
@@ -838,27 +829,14 @@ mod tests {
     }
 
     #[test]
-    fn a_typed_league_loads_trimmed_and_remembered_and_an_empty_one_as_auto() {
+    fn a_private_league_loads_trimmed_and_an_empty_one_as_auto() {
         let dir = TempDir::new();
         let path = dir.settings_file();
         write_file(&path, r#"{"league": {"custom": " My League (PL12345) "}}"#);
-        let loaded = load_from(&path);
         assert_eq!(
-            loaded.league,
+            load_from(&path).league,
             LeagueChoice::Custom("My League (PL12345)".to_owned())
         );
-        assert_eq!(loaded.private_league, "My League (PL12345)");
-        // Searching a public league keeps the private one on offer.
-        write_file(
-            &path,
-            r#"{"league": {"named": "Forbidden Rites"}, "private_league": " My League (PL12345)"}"#,
-        );
-        let loaded = load_from(&path);
-        assert_eq!(
-            loaded.league,
-            LeagueChoice::Named("Forbidden Rites".to_owned())
-        );
-        assert_eq!(loaded.private_league, "My League (PL12345)");
         write_file(&path, r#"{"league": {"custom": "  "}}"#);
         assert_eq!(load_from(&path).league, LeagueChoice::Auto);
     }

@@ -10,7 +10,7 @@ use crate::settings::LeagueChoice;
 use crate::tr;
 
 /// League `id`'s name in `names` -- one trade site's league list, in that site's language -- or the
-/// id itself for a league the list lacks: a typed private league, or a list that didn't load.
+/// id itself for a league the list lacks: a private league, or a list that didn't load.
 pub fn league_name<'a>(id: &'a str, names: &'a [League]) -> &'a str {
     names
         .iter()
@@ -32,12 +32,11 @@ pub fn chip_label(choice: &LeagueChoice, league: &str, names: &[League]) -> Stri
 /// The menu's choices, each with its label, as the settings window offers them: «Авто · » with the
 /// current league, every league `listed` (the trade site's ids, current first), a picked league
 /// the site no longer lists while it's `current`, then the private leagues, each once: the
-/// account's own (`mine`, as pathofexile.com lists them), the one typed in last (`private`, still
-/// on offer while another league is searched), and a typed one `current` names, should that
-/// differ. Leagues are named in `names`, as on the chip.
+/// account's own (`mine`, as pathofexile.com lists them) and the one `current` names, should that
+/// be another -- the account signed out since, or no longer in it. Leagues are named in `names`,
+/// as on the chip.
 pub fn menu(
     current: &LeagueChoice,
-    private: &str,
     mine: &[PrivateLeague],
     listed: &[String],
     names: &[League],
@@ -50,17 +49,12 @@ pub fn menu(
         LeagueChoice::Named(id) if !listed.contains(id) => Some((current.clone(), id.clone())),
         LeagueChoice::Auto | LeagueChoice::Named(_) | LeagueChoice::Custom(_) => None,
     };
-    let typed = match current {
+    let searched = match current {
         LeagueChoice::Custom(name) => Some(name.as_str()),
         LeagueChoice::Auto | LeagueChoice::Named(_) => None,
     };
     let mut privates: Vec<&str> = Vec::new();
-    for name in mine
-        .iter()
-        .map(|league| league.id.as_str())
-        .chain(Some(private).filter(|name| !name.is_empty()))
-        .chain(typed)
-    {
+    for name in mine.iter().map(|league| league.id.as_str()).chain(searched) {
         if !privates.contains(&name) {
             privates.push(name);
         }
@@ -185,8 +179,8 @@ mod tests {
             chip_label(&LeagueChoice::Auto, "Forbidden Rites", &international()),
             "Авто · Forbidden Rites"
         );
-        // A league the site leaves untranslated reads as the site writes it; a typed one, which
-        // no list names, as typed.
+        // A league the site leaves untranslated reads as the site writes it; a private one, which
+        // no list names, as named.
         assert_eq!(
             chip_label(
                 &named("HC Forbidden Rites"),
@@ -195,9 +189,9 @@ mod tests {
             ),
             "HC Forbidden Rites"
         );
-        let typed = LeagueChoice::Custom("My League (PL12345)".to_owned());
+        let private = LeagueChoice::Custom("My League (PL12345)".to_owned());
         assert_eq!(
-            chip_label(&typed, "My League (PL12345)", &russian()),
+            chip_label(&private, "My League (PL12345)", &russian()),
             "My League (PL12345)"
         );
     }
@@ -207,7 +201,7 @@ mod tests {
         let labels = |choices: Vec<(LeagueChoice, String)>| -> Vec<String> {
             choices.into_iter().map(|(_, label)| label).collect()
         };
-        let choices = menu(&named("Standard"), "", &[], &listed(), &russian());
+        let choices = menu(&named("Standard"), &[], &listed(), &russian());
         assert_eq!(
             choices.iter().map(|(choice, _)| choice).collect::<Vec<_>>(),
             [
@@ -229,13 +223,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            labels(menu(
-                &LeagueChoice::Auto,
-                "",
-                &[],
-                &listed(),
-                &international()
-            )),
+            labels(menu(&LeagueChoice::Auto, &[], &listed(), &international())),
             [
                 "Авто · Forbidden Rites",
                 "Forbidden Rites",
@@ -248,38 +236,28 @@ mod tests {
 
     #[test]
     fn the_menu_keeps_choices_the_site_does_not_list() {
-        // The private league typed last is offered while it's searched, and after the player
-        // picked another league: switching back is one click.
-        let name = "My League (PL12345)";
-        let typed = LeagueChoice::Custom(name.to_owned());
-        let offered = Some(&(typed.clone(), "Своя лига · My League (PL12345)".to_owned()));
-        assert_eq!(
-            menu(&typed, name, &[], &listed(), &russian()).last(),
-            offered
-        );
-        let aldur = named("Runes of Aldur");
-        assert_eq!(
-            menu(&aldur, name, &[], &listed(), &russian()).last(),
-            offered
-        );
-        assert_eq!(
-            menu(&aldur, name, &[], &listed(), &russian()).len(),
-            listed().len() + 2
-        );
+        // The private league searched is offered even without the account's list (signed out).
+        let private = LeagueChoice::Custom("My League (PL12345)".to_owned());
+        let offered = Some(&(
+            private.clone(),
+            "Своя лига · My League (PL12345)".to_owned(),
+        ));
+        let choices = menu(&private, &[], &listed(), &russian());
+        assert_eq!(choices.last(), offered);
+        assert_eq!(choices.len(), listed().len() + 2);
         assert!(
-            !menu(&LeagueChoice::Auto, "", &[], &listed(), &russian())
+            !menu(&LeagueChoice::Auto, &[], &listed(), &russian())
                 .iter()
                 .any(|(choice, _)| matches!(choice, LeagueChoice::Custom(_))),
-            "no typed league to offer"
+            "no private league to offer"
         );
-        // A picked league that has ended stays on offer, by its id, before the private one.
+        // A picked league that has ended stays on offer, by its id.
         let ended = named("Dawn of the Hunt");
-        let choices = menu(&ended, name, &[], &listed(), &russian());
+        let choices = menu(&ended, &[], &listed(), &russian());
         assert_eq!(
-            choices[choices.len() - 2],
-            (ended.clone(), "Dawn of the Hunt".to_owned())
+            choices.last(),
+            Some(&(ended.clone(), "Dawn of the Hunt".to_owned()))
         );
-        assert_eq!(choices.last(), offered);
     }
 
     #[test]
@@ -289,8 +267,8 @@ mod tests {
             id: cardiff.to_owned(),
             parent: "HC Forbidden Rites".to_owned(),
         }];
-        let privates = |current: &LeagueChoice, private: &str| -> Vec<String> {
-            menu(current, private, &mine, &listed(), &russian())
+        let privates = |current: &LeagueChoice| -> Vec<String> {
+            menu(current, &mine, &listed(), &russian())
                 .into_iter()
                 .filter_map(|(choice, _)| match choice {
                     LeagueChoice::Custom(name) => Some(name),
@@ -298,14 +276,16 @@ mod tests {
                 })
                 .collect()
         };
-        // Signed in, nothing typed: the account's league is on offer all the same.
-        assert_eq!(privates(&LeagueChoice::Auto, ""), [cardiff]);
-        // Typed in and searched too: still once.
-        let searched = LeagueChoice::Custom(cardiff.to_owned());
-        assert_eq!(privates(&searched, cardiff), [cardiff]);
-        // Another league typed in last follows the account's own.
+        // Signed in, a public league searched: the account's league is on offer all the same.
+        assert_eq!(privates(&LeagueChoice::Auto), [cardiff]);
+        // Searched too: still once.
         assert_eq!(
-            privates(&LeagueChoice::Auto, "Friends (PL9)"),
+            privates(&LeagueChoice::Custom(cardiff.to_owned())),
+            [cardiff]
+        );
+        // A private league searched that the account no longer lists follows its own.
+        assert_eq!(
+            privates(&LeagueChoice::Custom("Friends (PL9)".to_owned())),
             [cardiff, "Friends (PL9)"]
         );
     }
@@ -317,8 +297,8 @@ mod tests {
                 chip_label(&LeagueChoice::Auto, "Forbidden Rites", &international()),
                 "Auto · Forbidden Rites"
             );
-            let typed = LeagueChoice::Custom("My League (PL12345)".to_owned());
-            let labels: Vec<String> = menu(&typed, "", &[], &listed(), &international())
+            let private = LeagueChoice::Custom("My League (PL12345)".to_owned());
+            let labels: Vec<String> = menu(&private, &[], &listed(), &international())
                 .into_iter()
                 .map(|(_, label)| label)
                 .collect();
@@ -327,7 +307,7 @@ mod tests {
                 labels.last().unwrap(),
                 "Private league · My League (PL12345)"
             );
-            assert_eq!(menu(&typed, "", &[], &[], &[])[0].1, "Auto");
+            assert_eq!(menu(&private, &[], &[], &[])[0].1, "Auto");
         });
     }
 

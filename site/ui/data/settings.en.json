@@ -10,7 +10,7 @@
             "rows": [
                 {
                     "label": "League",
-                    "note": "Where prices are searched. Auto is the trade site's current league; a private one is set in “Account”",
+                    "note": "Where prices are searched. Auto is the trade site's current league; your private leagues show up here once you sign in, in “Account”",
                     "control": { "type": "select", "value": "Forbidden Rites" }
                 },
                 {

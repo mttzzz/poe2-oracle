@@ -330,8 +330,8 @@ site" means the trade site has no listings of the item.
 A private league trades too little on the Currency Exchange to price anything by: even a busy one
 makes a few dozen trades in half a day, and poe2scout does not list private leagues. So the market
 card, the Divine Orb rate in the title bar and the **poe2scout price** of uniques come from the
-public league yours is made from: for one of your account's own leagues, the one its page on
-pathofexile.com names; for a league typed in, the current league, or its hardcore twin for a league
+public league yours is made from, the one its page on pathofexile.com names. Until the app has
+read that page (signed out, say), it takes the current league, or its hardcore twin for a league
 with "HC" or "Hardcore" in its name (**Forbidden Rites** and **HC Forbidden Rites** this season).
 The card says so in its first line, "Prices from *league*: a private league trades too little on the
 exchange.", and so does the rate's tooltip. Take them as a guide: a small league's own rates can be

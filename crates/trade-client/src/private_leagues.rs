@@ -2,12 +2,11 @@
 //! account's private leagues only under OAuth (`account:leagues`), and the trade site's league list
 //! (`data/leagues`) holds only public ones, signed in or not. The site's "Private Leagues" page,
 //! though, lists the signed-in account's own leagues -- the ones it made or joined; the caller's
-//! client adds the session, as for searches -- and every league's page, public, names the league
-//! the way the trade site does, "<name> (PL<number>)", and says which public league it's made from.
+//! client adds the session, as for searches -- and each league's page names the league the way
+//! the trade site does, "<name> (PL<number>)", and says which public league it's made from.
 //! Verified 2026-09-24 on the owner's account: the list named "HC FRites League by Cardiff", a
-//! "PoE 2 - HC Forbidden Rites" league, and its page "HC FRites League by Cardiff (PL86503)"; a
-//! league that doesn't exist is a 404. Only these pages are read, and nothing that changes the
-//! account.
+//! "PoE 2 - HC Forbidden Rites" league, and its page "HC FRites League by Cardiff (PL86503)". Only
+//! these pages are read, and nothing that changes the account.
 
 use std::sync::Arc;
 
@@ -48,40 +47,10 @@ pub async fn mine(client: &Arc<dyn HttpClient>) -> Result<Vec<PrivateLeague>> {
     Ok(leagues)
 }
 
-/// The PoE 2 private league `name` names -- as typed: with its "(PL<number>)" or without -- if
-/// pathofexile.com has one. The site finds a league by its name alone; its page gives the number.
-pub async fn find(client: &Arc<dyn HttpClient>, name: &str) -> Result<Option<PrivateLeague>> {
-    let base = without_number(name);
-    if base.is_empty() {
-        return Ok(None);
-    }
-    let path = format!("/private-leagues/league/{}", form_encode(base));
-    Ok(match get(client, &path).await? {
-        Page::Found(page) => read_league(&page),
-        Page::Missing => None,
-    })
-}
-
-/// The league among `known` -- the account's own, say -- that `typed` names: by its name in any
-/// letter case, with or without its number. The site's own lookup ([`find`]) goes by the name's
-/// exact letters: "hc frites league by cardiff" is a 404 there (verified 2026-09-24).
-pub fn among<'a>(known: &'a [PrivateLeague], typed: &str) -> Option<&'a PrivateLeague> {
-    let base = without_number(typed).to_lowercase();
-    known
-        .iter()
-        .find(|league| without_number(&league.id).to_lowercase() == base)
-}
-
 /// Whether `name` is a private league's as the trade site writes it: "<name> (PL<number>)", the
 /// way EE2 tells them apart (`Leagues.ts`, `isPrivateLeague`).
 pub fn is_private(name: &str) -> bool {
     number_start(name).is_some()
-}
-
-/// `name` without its "(PL<number>)", and without the spaces around what's left.
-pub fn without_number(name: &str) -> &str {
-    let name = name.trim();
-    number_start(name).map_or(name, |start| name[..start].trim_end())
 }
 
 /// Where `name`'s trailing "(PL<number>)" starts, if it has one.
@@ -158,22 +127,6 @@ fn read_league(page: &str) -> Option<PrivateLeague> {
         &page[page.find(&format!("<span>{POE2_TYPE}"))? + "<span>".len() + POE2_TYPE.len()..];
     let parent = unescape_html(kind[..kind.find("</span>")?].trim());
     (is_private(&id) && !parent.is_empty()).then_some(PrivateLeague { id, parent })
-}
-
-/// `text` as a form-encoded path segment, the way the list's links write a league's name: letters,
-/// digits and `*-._` as they are, a space as `+`, every other byte of its UTF-8 as `%XX`.
-fn form_encode(text: &str) -> String {
-    let mut encoded = String::with_capacity(text.len());
-    for byte in text.bytes() {
-        match byte {
-            b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'*' | b'-' | b'.' | b'_' => {
-                encoded.push(char::from(byte));
-            }
-            b' ' => encoded.push('+'),
-            _ => encoded.push_str(&format!("%{byte:02X}")),
-        }
-    }
-    encoded
 }
 
 #[cfg(test)]
@@ -311,49 +264,6 @@ mod tests {
     }
 
     #[test]
-    fn a_typed_league_is_found_by_its_name_whatever_number_it_was_given() {
-        let site = Site::new(&[(
-            "/private-leagues/league/HC+FRites+League+by+Cardiff",
-            200,
-            LEAGUE,
-        )]);
-        let client: Arc<dyn HttpClient> = site.clone();
-        let found = |typed: &str| futures::executor::block_on(find(&client, typed)).unwrap();
-        let league = Some(PrivateLeague {
-            id: "HC FRites League by Cardiff (PL86503)".to_owned(),
-            parent: "HC Forbidden Rites".to_owned(),
-        });
-        assert_eq!(found("HC FRites League by Cardiff"), league);
-        assert_eq!(found("  HC FRites League by Cardiff (PL86503) "), league);
-        // A wrong number: the league the name names, with its own.
-        assert_eq!(found("HC FRites League by Cardiff (PL1)"), league);
-        // A name the site doesn't know is a 404: no such league.
-        assert_eq!(found("HC FRites League by Cardif"), None);
-        assert_eq!(found("   "), None);
-        assert_eq!(
-            site.asked.lock().unwrap().last().map(String::as_str),
-            Some("https://www.pathofexile.com/private-leagues/league/HC+FRites+League+by+Cardif")
-        );
-    }
-
-    #[test]
-    fn a_typed_name_names_one_of_the_known_leagues_in_any_letter_case() {
-        let known = [PrivateLeague {
-            id: "HC FRites League by Cardiff (PL86503)".to_owned(),
-            parent: "HC Forbidden Rites".to_owned(),
-        }];
-        for typed in [
-            "HC FRites League by Cardiff (PL86503)",
-            "hc frites league by cardiff",
-            " HC FRITES LEAGUE BY CARDIFF (PL1) ",
-        ] {
-            assert_eq!(among(&known, typed), Some(&known[0]), "{typed}");
-        }
-        assert_eq!(among(&known, "HC FRites League"), None);
-        assert_eq!(among(&[], "HC FRites League by Cardiff"), None);
-    }
-
-    #[test]
     fn a_page_that_is_not_a_poe2_private_leagues_names_none() {
         assert_eq!(
             read_league("<html><title>Path of Exile</title></html>"),
@@ -364,24 +274,11 @@ mod tests {
     }
 
     #[test]
-    fn a_name_is_encoded_as_the_lists_links_write_it() {
-        assert_eq!(
-            form_encode("HC FRites League by Cardiff"),
-            "HC+FRites+League+by+Cardiff"
-        );
-        assert_eq!(form_encode("Rock & Roll #1/2"), "Rock+%26+Roll+%231%2F2");
-        assert_eq!(form_encode("Лига"), "%D0%9B%D0%B8%D0%B3%D0%B0");
-    }
-
-    #[test]
     fn a_private_leagues_number_is_its_last_bracket() {
         assert!(is_private("HC FRites League by Cardiff (PL86503)"));
         assert!(!is_private("My League (PL12a)"));
         assert!(!is_private("My League (PL12345) x"));
         assert!(!is_private("My League (PL)"));
         assert!(!is_private("Forbidden Rites"));
-        assert_eq!(without_number(" Friends (PL7) "), "Friends");
-        assert_eq!(without_number("Friends (PL7a)"), "Friends (PL7a)");
-        assert_eq!(without_number("Friends"), "Friends");
     }
 }

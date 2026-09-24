@@ -39,12 +39,16 @@ Row **League**: a list of where prices are searched.
 - Any league the trade site lists, named the way the site names it in the interface language
   (www.pathofexile.com's names in English, ru.pathofexile.com's in Russian), as on the price panel's
   league chip.
-- **Private league · *name***: a private league -- each of your account's own while you are signed
-  in, and one whose name is set in [Account](#account).
+- **Private league · *name***: each of your account's private leagues, as pathofexile.com's
+  **Private Leagues** page lists them, while you are signed in ([Account](#account)).
 
 Notes under the row's name: "Loading the league list from the trade site" or "The league list from
 the trade site didn't load"; "The trade site no longer lists this league — searches go to the
 current one" means the league you picked has ended and searches go to the current league instead.
+Signed out, the row adds that your private leagues show up here once you sign in. With a private
+league picked, it names the public league its exchange prices come from (see
+[In a private league](price-check.md#in-a-private-league)), and signed out it warns: "Without a
+sign-in the site won't answer searches in a private league — sign in, in “Account”".
 
 ### Game client language
 
@@ -158,17 +162,11 @@ Section **Account**. Signing in to pathofexile.com is needed to search private l
   only. **Sign out** makes PoE2 Oracle forget the session; you stay signed in on the site. The
   sign-in window needs the Microsoft Edge WebView2 Runtime; without it, the row shows a link
   **Download from Microsoft**.
-- **Private league.** Signed in, you need not type anything: the league menus, in **General** and
-  on the price panel, list your account's private leagues as pathofexile.com shows them on its
-  **Private Leagues** page, and the row names them. For any other league, row **League name**:
-  its name as on pathofexile.com, `My League`. When you press <kbd>Enter</kbd> or leave the box,
-  the app looks the league up on the site and takes the name as the site writes it, number
-  included -- `My League (PL12345)`; searches move to that league, and from then on the league
-  menus list it as **Private league · *name***, even while you search another league: switching
-  back is one click. A name the site doesn't know changes nothing, and the row says so. An empty
-  box forgets it, and brings back **Auto** if it was the league searched. The site does not answer
-  searches in a private league without a sign-in, and the row warns about it. Exchange prices come
-  from the public league yours is made from: see
+- **Private leagues.** Signed in, nothing needs typing: the league menus, in **General** and on
+  the price panel, list your account's private leagues as pathofexile.com shows them on its
+  **Private Leagues** page, and the row names them: "Your leagues on pathofexile.com are in the
+  league menus: *names*". The list is read again each time the settings open, so a league you
+  joined since shows up. Exchange prices come from the public league yours is made from: see
   [In a private league](price-check.md#in-a-private-league).
 
 ## Help
