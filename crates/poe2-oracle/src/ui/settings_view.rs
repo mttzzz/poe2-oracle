@@ -1146,7 +1146,9 @@ impl SettingsView {
     ) -> impl IntoElement {
         let section = self.section;
         let body: AnyElement = match section {
-            Section::General => self.render_general(settings, face, cx).into_any_element(),
+            Section::General => self
+                .render_general(settings, face, window, cx)
+                .into_any_element(),
             Section::PriceCheck => self
                 .render_price_check(settings, face, window, cx)
                 .into_any_element(),
@@ -1262,6 +1264,7 @@ impl SettingsView {
         &self,
         settings: &Settings,
         face: &'static NameFont,
+        window: &Window,
         cx: &Context<Self>,
     ) -> impl IntoElement {
         let language = CLIENT_LANGUAGES
@@ -1282,7 +1285,7 @@ impl SettingsView {
                 face,
                 tr!("League and language"),
                 [
-                    self.render_league(settings, cx),
+                    self.render_league(settings, window, cx),
                     setting_row(
                         tr!("Game client language"),
                         [note(
@@ -1384,7 +1387,12 @@ impl SettingsView {
     /// trade site lists -- named as the site names them in the interface language, as the panel's
     /// league chip does -- and the league chosen when it is neither: one the site no longer lists,
     /// or the private one (set in Аккаунт).
-    fn render_league(&self, settings: &Settings, cx: &Context<Self>) -> AnyElement {
+    fn render_league(
+        &self,
+        settings: &Settings,
+        window: &Window,
+        cx: &Context<Self>,
+    ) -> AnyElement {
         let app = self.app.read(cx);
         let listed = app.leagues();
         let options = league_chip::menu(
@@ -1448,6 +1456,7 @@ impl SettingsView {
                     labels,
                     picked,
                     LEAGUE_MENU_WIDTH,
+                    window,
                     cx.listener(move |view, index: &usize, _, cx| {
                         if let Some(choice) = choices.get(*index) {
                             view.choose_league(choice.clone(), cx);

@@ -39,6 +39,8 @@ pub(crate) const APPEAR: Duration = Duration::from_millis(150);
 const APPEAR_RISE: f32 = 6.;
 /// How far content switched in -- a settings section -- rises into place, px.
 const SWITCH_RISE: f32 = 4.;
+/// The least room a menu keeps from its window's edges.
+pub(crate) const MENU_MARGIN: f32 = 4.;
 
 /// A card's corners: VibeTools' 8 px.
 pub(crate) const CARD_RADIUS: f32 = 8.;
@@ -933,32 +935,42 @@ pub(crate) fn select(
 }
 
 /// A select's open list, framed and casting the popup shadow, the current choice marked with a
-/// diamond; it appears over [`APPEAR`], just below whatever it follows (a zero-height slot keeps
-/// the anchor at the select's bottom-left) and over everything else. `on_pick` gets the index
-/// pressed, `on_dismiss` any press outside the list (a `cx.listener` fits either).
+/// diamond; it appears over [`APPEAR`], just below whatever it follows and over everything else,
+/// its right edge under the select's: the zero-height slot after the select, as wide as it, lays
+/// the list out flush with its right end -- `anchored` keeps the place layout gave it -- so a list
+/// wider than the select (a private league's name with its number) grows to the left. At least
+/// `min_width` wide, and kept inside the window, where a choice longer still is cut short.
+/// `on_pick` gets the index pressed, `on_dismiss` any press outside the list (a `cx.listener`
+/// fits either).
 pub(crate) fn menu(
     key: impl Into<ElementId>,
     options: Vec<SharedString>,
     picked: usize,
-    width: f32,
+    min_width: f32,
+    window: &Window,
     on_pick: impl Fn(&usize, &mut Window, &mut App) + 'static,
     on_dismiss: impl Fn(&MouseDownEvent, &mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
     let on_pick = Rc::new(on_pick);
     let rows = options.into_iter().enumerate().map(|(index, label)| {
         let on_pick = on_pick.clone();
-        menu_row(index, index == picked, label, move |_, window, cx| {
-            on_pick(&index, window, cx);
-        })
+        menu_row(
+            index,
+            index == picked,
+            div().min_w_0().truncate().child(label),
+            move |_, window, cx| on_pick(&index, window, cx),
+        )
     });
     let list = menu_list(key, rows)
-        .w(rems_from_px(width))
+        .min_w(rems_from_px(min_width))
+        .max_w(window.viewport_size().width - px(2. * MENU_MARGIN))
         .on_mouse_down_out(on_dismiss);
-    div().h_0().child(
+    div().h_0().flex().justify_end().child(
         deferred(
             anchored()
                 .anchor(Anchor::TopLeft)
                 .offset(point(px(0.), px(4.)))
+                .snap_to_window_with_margin(px(MENU_MARGIN))
                 .child(appear("menu", list)),
         )
         .with_priority(1),

@@ -8,11 +8,8 @@ use gpui::{
 };
 
 use crate::price_check::PriceCheckApp;
-use crate::ui::style::{appear, menu_list};
+use crate::ui::style::{MENU_MARGIN, appear, menu_list};
 use crate::ui::theme::rems_from_px;
-
-/// The least room a menu keeps from the panel's edges.
-const MENU_MARGIN: f32 = 4.;
 
 /// The menu `key` of `rows` ([`style::menu_row`]), at least `min_width` wide, hanging just below
 /// the select it follows: laid right after the select in a column, this zero-height slot sits at
