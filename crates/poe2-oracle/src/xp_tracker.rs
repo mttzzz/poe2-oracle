@@ -200,7 +200,10 @@ pub fn read_fill(geometry: &XpBarGeometry, bgra: &[u8]) -> Option<f64> {
     }
     let boundary = match split {
         0 => geometry.fill_start,
-        n if n == columns.len() => geometry.fill_end,
+        // A bar filled end to end never shows in play: at 100 % the level wraps. Something over
+        // the bar reads that way -- live on 2026-09-24, twice for 5-20 s in the hideout -- and
+        // taken at its word it gains the rest of the level, then loses it again.
+        n if n == columns.len() => return None,
         // Between the last filled and the first empty column -- mid-gap when a tick hides it.
         n => (columns[n - 1].0 + 1 + columns[n].0) as f64 / 2.0,
     };
@@ -1164,6 +1167,27 @@ mod tests {
         let expected = (2146.0 - 1154.0) / 1532.0;
         let fraction = read_fill(&geometry, &bgra).unwrap();
         assert!((fraction - expected).abs() < 0.001, "{fraction}");
+    }
+
+    #[test]
+    fn a_bar_filled_end_to_end_is_not_a_reading() {
+        // The live 65 % bar with its empty part painted in the fill's colours, row by row, the
+        // tick stems under it left as they were: what the tracker read as 100 % for 5-20 s at a
+        // time on 2026-09-24, crediting a quarter of a level each time.
+        let geometry = XpBarGeometry::for_client(GAME_4K).unwrap();
+        let mut bgra = fixture_bgra(include_bytes!("../tests/fixtures/xp_bar_4k_65pct.rgb"));
+        let width = geometry.capture.width as usize;
+        // Capture columns: x = 1500 is well inside the fill, and the fill ends at x = 2145.
+        let (filled, empty_from) = (1500 - 1152, 2146 - 1152);
+        for row in geometry.fill_rows.clone() {
+            let source = (row * width + filled) * 4;
+            let colour: [u8; 4] = bgra[source..source + 4].try_into().unwrap();
+            for column in empty_from..width {
+                let at = (row * width + column) * 4;
+                bgra[at..at + 4].copy_from_slice(&colour);
+            }
+        }
+        assert_eq!(read_fill(&geometry, &bgra), None);
     }
 
     #[test]
