@@ -1,6 +1,6 @@
 //! Where the app keeps its files, all in `directories`' per-user folders for "poe2-oracle": the
 //! settings in the roaming config folder (`%APPDATA%\poe2-oracle\config`), the log, the kept item
-//! texts and the sign-in window's browser profile in the local data folder
+//! texts, the last crash and the sign-in window's browser profile in the local data folder
 //! (`%LOCALAPPDATA%\poe2-oracle\data`), and whatever can be fetched again -- trade catalogs,
 //! exchange and poe2scout prices, downloaded updates -- in the local cache folder
 //! (`%LOCALAPPDATA%\poe2-oracle\cache`). Without a home folder (never on a real Windows profile)
@@ -40,6 +40,11 @@ pub fn unparsed_dir() -> PathBuf {
 /// The app's logs (`logging`).
 pub fn logs_dir() -> PathBuf {
     data_dir().join("logs")
+}
+
+/// What the last panic said (`logging`), until a report of it is sent or dismissed (`report`).
+pub fn crash_file() -> PathBuf {
+    data_dir().join("crash").join("last-crash.txt")
 }
 
 /// The sign-in window's browser profiles (`platform::login_window`), each deleted once its

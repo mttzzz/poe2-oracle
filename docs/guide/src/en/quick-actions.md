@@ -15,8 +15,8 @@ Out of the box there is one action, `/hideout`, without a hotkey: record a key f
    poe2.re"). The action is saved as soon as you press <kbd>Enter</kbd> or leave the box.
 4. Click the key field, which reads "no key", and press a combination: one of
    <kbd>F1</kbd>–<kbd>F12</kbd>, or <kbd>Ctrl</kbd> or <kbd>Alt</kbd> with a letter or a digit.
-   The key works at once. <kbd>Backspace</kbd> leaves the action without a key; <kbd>Esc</kbd>
-   keeps the old one.
+   The key works once you close the settings window: while it is open, hotkeys do nothing.
+   <kbd>Backspace</kbd> leaves the action without a key; <kbd>Esc</kbd> keeps the old one.
 
 Like everything in the settings, changes apply at once: there is no Save button. The **×** at the
 right of a row removes the action. An action without text is not saved. A key cannot be the
@@ -68,8 +68,8 @@ the same way. Any other text, such as `@last thanks`, is sent as you wrote it.
 
 ## Good to know
 
-- Quick action hotkeys work only while the game is the window in front. In every other program
-  those keys keep their usual meaning.
+- Quick action hotkeys work only while the game is the window in front and the settings window is
+  closed. In every other program those keys keep their usual meaning.
 - The text arrives through the clipboard, so text in any language arrives intact whatever your
   keyboard layout. Your clipboard is put back right after.
 - Each press sends one message: holding the key down sends it once, and a press while an action

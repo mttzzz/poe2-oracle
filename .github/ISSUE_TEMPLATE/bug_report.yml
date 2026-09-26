@@ -5,9 +5,9 @@ body:
   - type: markdown
     attributes:
       value: |
-        The app can open this form for you: **Report a bug** in its tray menu, or **Report ↗** in the **Help** section of its settings, saves a diagnostics report to your desktop and fills in the version and client language. Please search the [existing issues](https://github.com/mttzzz/poe2-oracle/issues?q=is%3Aissue) first and report one problem per issue. If an item isn't recognised or gets wrong filters or a wrong price, use the [item problem form](https://github.com/mttzzz/poe2-oracle/issues/new?template=item_problem.yml) instead. Never post passwords or your session cookie (`POESESSID`).
+        For the maintainer's own notes. Players report from the app (**Report a problem or idea…** in its tray menu, **Write to the developer** in the **Help** section of its settings) or through the site's form at https://oracle.pushka.biz/report.html, and oracle.pushka.biz files those reports here as issues by itself. One problem per issue; if an item isn't recognised or gets wrong filters or a wrong price, use the item problem form instead. Never post passwords or a session cookie (`POESESSID`).
 
-        Программа может открыть эту форму сама: «Сообщить об ошибке» в меню значка в трее или «Сообщить ↗» в разделе «Помощь» настроек сохраняет отчёт диагностики на рабочий стол и заполняет версию и язык клиента. Сначала поищите среди [существующих задач](https://github.com/mttzzz/poe2-oracle/issues?q=is%3Aissue); одна задача — одна проблема. Если предмет не распознаётся или у него неверные фильтры или цена, заполните [форму о предмете](https://github.com/mttzzz/poe2-oracle/issues/new?template=item_problem.yml). Никогда не публикуйте пароли и cookie сессии (`POESESSID`).
+        Для заметок самого сопровождающего. Игроки пишут из программы («Сообщить о проблеме или идее…» в меню значка в трее, «Написать разработчику» в разделе «Помощь» настроек) или через форму на сайте https://oracle.pushka.biz/ru/report.html, и такие сообщения oracle.pushka.biz сам заводит здесь задачами. Одна задача — одна проблема; если предмет не распознаётся или у него неверные фильтры или цена, заполните форму о предмете. Никогда не публикуйте пароли и cookie сессии (`POESESSID`).
   - type: input
     id: version
     attributes:
@@ -53,6 +53,6 @@ body:
     id: diagnostics
     attributes:
       label: Diagnostics report / Отчёт диагностики
-      description: "**Report a bug** in the app's tray menu or settings saves PoE2-Oracle-report-….zip to your desktop, with your Windows user name masked, and shows it in File Explorer (**Collect report** in the settings only saves it). Drag the zip into this box. / «Сообщить об ошибке» в меню значка или в настройках программы сохраняет PoE2-Oracle-report-….zip на рабочий стол, имя пользователя Windows в нём скрыто, и показывает его в Проводнике («Собрать отчёт» в настройках только сохраняет архив). Перетащите архив в это поле."
+      description: "**Collect report** in the **Help** section of the app's settings saves PoE2-Oracle-report-….zip to the desktop, with the Windows user name masked, and shows it in File Explorer. Drag the zip into this box. / «Собрать отчёт» в разделе «Помощь» настроек программы сохраняет PoE2-Oracle-report-….zip на рабочий стол, имя пользователя Windows в нём скрыто, и показывает его в Проводнике. Перетащите архив в это поле."
     validations:
       required: false

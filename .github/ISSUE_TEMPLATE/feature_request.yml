@@ -5,9 +5,9 @@ body:
   - type: markdown
     attributes:
       value: |
-        Please search the [existing issues](https://github.com/mttzzz/poe2-oracle/issues?q=is%3Aissue) first and suggest one idea per issue.
+        For the maintainer's own notes. Players send ideas from the app (**Report a problem or idea…** in its tray menu, kind **Idea**) or through the site's form at https://oracle.pushka.biz/report.html. Search the existing issues first and suggest one idea per issue.
 
-        Сначала поищите среди [существующих задач](https://github.com/mttzzz/poe2-oracle/issues?q=is%3Aissue); одна задача — одна идея.
+        Для заметок самого сопровождающего. Игроки присылают идеи из программы («Сообщить о проблеме или идее…» в меню значка в трее, вид «Идея») или через форму на сайте https://oracle.pushka.biz/ru/report.html. Сначала поищите среди существующих задач; одна задача — одна идея.
   - type: textarea
     id: need
     attributes:

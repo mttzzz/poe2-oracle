@@ -1,0 +1,51 @@
+[package]
+name = "oracle-web"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+oracle-protocol = { path = "../oracle-protocol" }
+# The HTTP server: HTTP/1.1 only (Envoy talks to the pod over it), JSON answers, and the tracing
+# of its own rejections.
+axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "tokio", "tracing"] }
+tokio = { version = "1.53", features = ["fs", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+# The site's files (ETag and Last-Modified, conditional GET, ranges, content types), their gzip/br
+# compression and the request log. 0.7: 0.6, which reqwest brings along for its redirects, sends no
+# ETag for files.
+tower-http = { version = "0.7.1", features = ["compression-br", "compression-gzip", "fs", "trace"] }
+# Calls to GitHub and Telegram: JSON, the files sent to Telegram (multipart), and release files too
+# large to keep in memory passed through as GitHub sends them (stream). rustls with ring and the
+# webpki roots: no OpenSSL, no CMake to build aws-lc, no CA bundle in the runtime image; 0.13 has no
+# webpki-roots feature left.
+reqwest = { version = "0.12.28", default-features = false, features = ["json", "multipart", "rustls-tls-webpki-roots", "stream"] }
+# Reading a report's body frame by frame, up to its limit.
+http-body-util = "0.1.3"
+# The locks around the in-memory counters and the release cache: no poisoning to unwrap.
+parking_lot = "0.12"
+# Keeps track of the reports still sending their files to Telegram, which shutting down waits for.
+# Already in the tree through tower-http and reqwest.
+tokio-util = { version = "0.7", default-features = false, features = ["rt"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["ansi", "env-filter", "fmt", "std"] }
+# Counters and rate limits shared by every replica, when REDIS_URL names a Redis; reconnecting on its
+# own after a restart of Redis.
+redis = { version = "1.7", default-features = false, features = ["connection-manager", "tokio-comp"] }
+# The release answer's strong ETag.
+sha2 = "0.10"
+# Site paths come percent-encoded, and download URLs are built from asset names. Already in the tree
+# through tower-http.
+percent-encoding = "2"
+
+[dev-dependencies]
+# The static-site tests serve throwaway directories.
+tempfile = "3"
+# The rate limits' Redis script, run in tests by Lua 5.1 -- the Lua Redis embeds -- built from its
+# source.
+mlua = { version = "0.12.1", features = ["lua51", "vendored"] }

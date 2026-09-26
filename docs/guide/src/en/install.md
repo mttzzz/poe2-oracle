@@ -3,7 +3,8 @@
 ## Requirements
 
 - Windows 10 or Windows 11, 64-bit. Nothing else to install first: the app needs no .NET and no
-  Visual C++ Redistributable.
+  Visual C++ Redistributable. Only the optional sign-in to pathofexile.com needs the Microsoft Edge
+  WebView2 Runtime; if Windows lacks it, the settings say so and offer **Download from Microsoft**.
 - Path of Exile 2 with the English or Russian client.
 - The game in **Windowed** or **Windowed Fullscreen** display mode. Over exclusive Fullscreen,
   Windows cannot show other programs' windows, so the panel would stay invisible.
@@ -12,14 +13,17 @@
 
 ## Download
 
-Download `PoE2-Oracle-Setup-<version>.exe` from the
-[latest release](https://github.com/mttzzz/poe2-oracle/releases/latest).
+On [oracle.pushka.biz](https://oracle.pushka.biz/), click **Download for Windows**: the button
+always downloads the latest installer, `PoE2-Oracle-Setup-<version>.exe`.
 
-The release also has a `SHA256SUMS` file. To check the download, run this in PowerShell in the
-folder with the installer and compare the result with the line for the installer in `SHA256SUMS`:
+Each release also has a `SHA256SUMS` file on the site, at
+`https://oracle.pushka.biz/download/v<version>/SHA256SUMS`: for version 0.1.0,
+<https://oracle.pushka.biz/download/v0.1.0/SHA256SUMS>. To check the download, run this in
+PowerShell in the folder with the installer and compare the result with the installer's line in
+`SHA256SUMS` (letter case doesn't matter):
 
 ```powershell
-Get-FileHash .\PoE2-Oracle-Setup-<version>.exe -Algorithm SHA256
+Get-FileHash .\PoE2-Oracle-Setup-*.exe -Algorithm SHA256
 ```
 
 ## Windows SmartScreen
@@ -35,7 +39,8 @@ not commonly downloaded; keep it.
   `%LOCALAPPDATA%\Programs\PoE2 Oracle`; you can pick another one.
 - It adds a **PoE2 Oracle** shortcut to the Start menu. There is no desktop shortcut.
 - The last page offers to run PoE2 Oracle and to start it with Windows. The start-with-Windows box
-  is ticked only if PoE2 Oracle already starts with Windows; leaving it unticked turns that off.
+  is ticked if Windows has a startup entry for PoE2 Oracle, even one turned off in Task Manager;
+  finishing with it ticked turns autostart on, leaving it unticked turns it off.
 - If PoE2 Oracle is running, the installer says "PoE2 Oracle is running and will be closed to
   continue." and closes it first.
 
@@ -78,8 +83,7 @@ Click the icon (a right-click works too) to open its menu:
 
 - **Settings** opens the [settings](settings.md);
 - **Check for updates** looks for a new version; see [Updates and uninstall](updates.md);
-- **Report a bug** saves a diagnostics report to your desktop and opens GitHub's bug report form
-  in your browser; see [Reporting a bug](troubleshooting.md#reporting-a-bug);
+- **Report a problem or idea…** opens the [report window](report.md) to write to the developer;
 - **Quit** closes PoE2 Oracle.
 
 ## One copy at a time
@@ -91,4 +95,6 @@ one runs quietly exits.
 ## Start with Windows
 
 Turn on **Start with Windows** in the settings, section **General**, or tick the box on the
-installer's last page. Started with Windows, PoE2 Oracle waits in the tray until you play.
+installer's last page. Started with Windows, PoE2 Oracle waits in the tray until you play, with two
+exceptions: until you finish or skip it, the tour opens at every start, and the first start after a
+crash opens the [report window](report.md#after-a-crash).

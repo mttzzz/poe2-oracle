@@ -4,8 +4,8 @@
 //!
 //! The words are written in English in the code and translated through tables, as EE2's
 //! `app_i18n.json`: `assets/i18n/ru/*.json` map each English text to its Russian, one file per
-//! area of the app (settings, panel, overlays, tour) so a change to one area touches one file. A
-//! new language is new tables, not a code change.
+//! area of the app (settings, panel, overlays, tour, report) so a change to one area touches one
+//! file. A new language is new tables, not a code change.
 //!
 //! - [`tr!`]`("Search")` is the text in the interface language, and
 //!   `tr!("Found: {count}", count = total)` fills in named placeholders.
@@ -178,11 +178,12 @@ pub fn apply(choice: InterfaceLanguage) -> bool {
 }
 
 /// The Russian tables, each area's file as (its name, its JSON).
-const RUSSIAN_FILES: [(&str, &str); 4] = [
+const RUSSIAN_FILES: [(&str, &str); 5] = [
     ("settings", include_str!("../assets/i18n/ru/settings.json")),
     ("panel", include_str!("../assets/i18n/ru/panel.json")),
     ("overlays", include_str!("../assets/i18n/ru/overlays.json")),
     ("tour", include_str!("../assets/i18n/ru/tour.json")),
+    ("report", include_str!("../assets/i18n/ru/report.json")),
 ];
 
 /// Each Russian table's entries, by file: English text -> Russian text.

@@ -55,8 +55,9 @@ The first public release.
 - **Trade site limits kept:** after the trade site refuses a request (HTTP 429), nothing is sent to
   it until the lockout ends, and the panel says when to try again. The limit is per IP address and
   shared with the trade site open in a browser.
-- **Waystone marks:** modifiers can be marked as danger, caution or wanted; the marks are kept and
-  highlighted on every waystone checked later.
+- **Waystone marks**, right on the panel: each click on the ◇ at the end of a waystone's modifier
+  row steps its mark through danger, caution, wanted and none; the marks are kept and highlighted
+  on every waystone checked later.
 - **Vendor gamble offers** ("Random Helmet") are recognised and explained instead of searched.
 - **Sign-in to pathofexile.com**, optional: Settings → Account → **Sign in** opens the site's own
   sign-in page in a window of the app (Microsoft Edge WebView2), Steam included. The app doesn't
@@ -72,17 +73,20 @@ The first public release.
   to its life or mana globe's frame, the gap there filled to the pixel, and curling down onto the
   tip of the game's scrollwork at its other end. Above the flask panel the levelling rate (percent
   of a level per hour, averaged over 5 to 30 minutes), the time to the next level, optionally the
-  level percentage, and a ⚙ that opens the settings; above the skill panel a map timer with the
-  map's experience and the session's average map time. The plates are drawn pixel by pixel in the
-  HUD's own molding and colours, take the HUD's size, let clicks through to the game but for the
-  ⚙, step aside the moment a game tooltip covers their rail, and say as much as they have room
-  for.
-- **Quick actions:** up to 12 hotkeys that type a chat command (`/hideout` is preset, `@last thanks`
-  answers whoever whispered last) or paste a stash search string.
+  level percentage, and a ⚙ that opens the settings; in a pause (a town or hideout, or five minutes
+  without a gain) that plate dims to the level percentage alone. Above the skill panel a map timer
+  with the map's experience and the session's average map time. The plates are drawn pixel by
+  pixel in the HUD's own molding and colours, take the HUD's size, let clicks through to the game
+  but for the ⚙, step aside the moment a game tooltip covers their rail, and say as much as they
+  have room for.
+- **Quick actions:** up to 12 hotkeys that type a chat command (`/hideout` is preset and waits for
+  its key; `@last thanks` answers whoever whispered last) or paste a stash search string.
 - **Settings window:** league, client language, hotkeys, quick actions, default sellers, seller
   column, interface scale (80 to 150 %, the price panel and the settings window), XP overlay, start
-  with Windows, update checks, bug reporting and the diagnostics report. It warns when the game runs
-  in exclusive fullscreen or another program holds the item-copy combination.
+  with Windows, update checks, reports to the developer and the diagnostics report. It warns when
+  the game runs in exclusive fullscreen or another program holds the item-copy combination.
+- **Title-bar buttons** (⚙ and × on the panel, × on the settings window) light up gold under the
+  pointer, with a soft glow behind the glyph.
 - **Guided tour** at launch, until finished or skipped, and again from Settings → Help →
   **Tutorial**: the screen dims around one thing at a time, with a card beside it — the league in
   the settings, a first price check in the game, the price panel's filters, Search, listings and
@@ -95,23 +99,36 @@ The first public release.
   names and mods stay in the language the game copied them in. Numbers follow the interface
   (`1.72` and `15%` in English, `1,72` and `15 %` in Russian), and so do the league names (as the
   trade site in that language names them), the pathofexile.com sign-in page, Craft of Exile's
-  language and the GitHub forms the app fills in.
-- **Tray icon** with Settings, the update check, Report a bug and Quit. One copy runs per Windows
-  session; starting it again opens the settings.
-- **Bug reports from the app:** **Report a bug**, in the tray menu and the settings, writes the
-  diagnostics report to the desktop, shows it in Explorer and opens GitHub's bug form with the
-  version, the client language and the report's file name filled in. The link **report a problem ↗**
-  under the item name on the panel and the button **Report a problem** under an item the app
-  couldn't read open the item form with the item text filled in. The player submits the form from
-  their own GitHub account; the app sends nothing.
-- **Updates** from GitHub Releases: the installer is downloaded, verified against the release's
-  `SHA256SUMS`, installed silently, and the app restarts.
+  language and the page **Website ↗** opens.
+- **Tray icon** with Settings, the update check, Report a problem or idea… and Quit. One copy runs
+  per Windows session; starting it again opens the settings.
+- **Reports to the developer**, from a window of the app, no account needed: **Report a problem or
+  idea…** in the tray menu or **Write to the developer** in Settings → Help for a problem or an
+  idea; **report a problem** under the item name on the panel, or **Report a problem** under an
+  item the app couldn't read, for that item, with its text attached. The kind is **Problem**,
+  **Idea** or **Item**; the text takes up to 8000 characters, and a contact (Telegram, Discord or
+  email) is optional, for an answer. **Attach diagnostics** adds the diagnostics report (on by
+  default for a problem or an item, off for an idea), and **What's inside** saves the same zip to
+  the desktop. The window sends the report to oracle.pushka.biz, which passes it on to the
+  developer, and then says "Sent — thank you! Report #{id}", or "Couldn't send: {reason}" with
+  **Try again**, **Save to desktop** (the whole report as one zip) and **Close**.
+- **Crash reports:** after a crash, the next launch (within 7 days) opens the report window by
+  itself, once, as a **Crash** report with what the app reported attached (the version, the time,
+  the panic message, where in the code and the backtrace, with the Windows user name and folders
+  masked); writing something is optional. Closing the window drops the report; quitting from the
+  tray while it's open keeps it for the next launch.
+- **A report form on the site**, https://oracle.pushka.biz/report.html (Russian: /ru/report.html),
+  for a problem or an idea without the app.
+- **Updates** served by oracle.pushka.biz: 30 seconds after start while **Check for updates
+  automatically** is on, or from the tray menu's **Check for updates**; a newer version shows up as
+  **Install version X.Y.Z**. The installer runs only after the Ed25519 signature on the release's
+  `SHA256SUMS` checks out against the public key built into the app and the installer matches its
+  SHA-256 there; it installs silently and the app restarts. Pre-releases are never offered.
 - **Installer** for the current user, without administrator rights: Start menu shortcut, optional
   start with Windows, the license texts and third-party notices next to the app. Uninstalling
   removes the saved sign-in and keeps settings and caches unless asked to remove them. Nothing
   else to install: the C runtime is built into the app, so no Visual C++ Redistributable.
-- **Diagnostics report:** a zip on the desktop with the logs, settings, unread item texts and a
-  summary of the system, with the user's folder paths masked, and the Windows user name too if it
-  has three characters or more.
-
-[0.1.0]: https://github.com/mttzzz/poe2-oracle/releases/tag/v0.1.0
+- **Diagnostics report:** **Collect report** (Settings → Help) saves a zip on the desktop with the
+  logs, settings, unread item texts and a summary of the system, with the user's folder paths
+  masked, and the Windows user name too if it has three characters or more, and shows it in
+  Explorer; a report sent with **Attach diagnostics** on carries the same zip.

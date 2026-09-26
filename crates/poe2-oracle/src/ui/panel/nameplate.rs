@@ -34,8 +34,8 @@ const ART_SIZE: f32 = 48.;
 /// and in the stand-in for its tooltip face on the item's client language (see `fonts`), like its
 /// tooltip header; beside it the item's art, and under it links to the item's poe2db and wiki
 /// pages (`item_refs`), when the item database knows it, to the item in Craft of Exile
-/// (`craft_link`, the site in the interface language), when the site crafts it, and to the form
-/// that reports the item read or priced wrong (`PriceCheckApp::report_item`).
+/// (`craft_link`, the site in the interface language), when the site crafts it, and to the report
+/// window about the item read or priced wrong (`PriceCheckApp::report_item`).
 pub(super) fn render_nameplate(
     item: &ParsedItem,
     site: TradeSite,
@@ -86,12 +86,11 @@ pub(super) fn render_nameplate(
                 .id("report-item")
                 .flex_none()
                 .tooltip(hints::hint(tr!(
-                    "Item read or priced wrong? Opens a GitHub form with the item's text: all \
-                     that's left is to describe what's wrong."
+                    "Tell the developer what's wrong with this item; its text is attached"
                 )))
                 .child(link(
                     "link",
-                    tr!("report a problem ↗"),
+                    tr!("report a problem"),
                     cx.listener(|view, _event: &MouseDownEvent, _window, cx| {
                         view.report_item(cx);
                     }),

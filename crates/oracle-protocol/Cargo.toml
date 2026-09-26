@@ -1,0 +1,22 @@
+[package]
+name = "oracle-protocol"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+# The diagnostics zip travels inside the report's JSON as standard base64.
+base64 = "0.22"
+
+[features]
+# Test builds only: POE2_ORACLE_API_BASE may name a plain-http service, such as the local lane's
+# http://poe2-oracle-main.lanes.internal. packaging/build-release.ps1 refuses a release with it.
+dev-endpoints = []
+
+[dev-dependencies]
+serde_json = "1"

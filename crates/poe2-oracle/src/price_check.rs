@@ -44,7 +44,6 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 };
 
 use crate::bound_input;
-use crate::bug_report;
 use crate::game_chat;
 use crate::i18n;
 use crate::item_refs::{self, RefKind};
@@ -53,6 +52,7 @@ use crate::overlay_layout::{self, PanelSide, PhysicalRect};
 use crate::paths;
 use crate::platform::game_window::{Foreground, GameScreen};
 use crate::platform::{clipboard_poll, esc_hook, game_config, game_window, synth_input};
+use crate::report;
 use crate::roll_slider::{self, Handle, Slider};
 use crate::session::SessionStatus;
 use crate::settings::{self, Hotkey, LeagueChoice, QuickAction, Settings, WaystoneMark};
@@ -656,9 +656,9 @@ impl PriceCheckApp {
         self.sync_hotkey_registration(game_window::foreground());
     }
 
-    /// The app's side of the diagnostics report (`diagnostics::write_report`): what it priced
-    /// against and what state the hotkey and the last check are in. The settings file goes into
-    /// the report whole, so they aren't repeated here.
+    /// The app's side of the diagnostics (`diagnostics::collect`): what it priced against and
+    /// what state the hotkey and the last check are in. The settings file goes into the
+    /// diagnostics whole, so they aren't repeated here.
     pub fn diagnostics_summary(&self) -> String {
         let catalog = match &self.bootstrap {
             BootstrapState::Loading => "loading".to_owned(),
@@ -1118,7 +1118,7 @@ impl PriceCheckApp {
     }
 
     /// The game client's language as far as the app knows it: the last checked item's, else the
-    /// one the player set -- what a bug report says the client is.
+    /// one the player set -- what a report says the client is.
     pub fn item_language(&self) -> Option<ItemLanguage> {
         if self.item_text.is_some() {
             Some(match self.site {
@@ -1130,9 +1130,10 @@ impl PriceCheckApp {
         }
     }
 
-    /// Opens the item problem form (`bug_report::item_problem_url`) for the last checked item --
-    /// misread, or priced wrong -- with its text as the game copied it.
-    pub fn report_item(&self, cx: &mut App) {
+    /// Opens the report window (`app::open_report`) about the last checked item -- misread, or
+    /// priced wrong -- with its text as the game copied it: the price panel's «сообщить о
+    /// проблеме» and the unreadable item's «Сообщить о проблеме».
+    pub fn report_item(&self, cx: &mut Context<Self>) {
         let Some(text) = &self.item_text else {
             return;
         };
@@ -1140,11 +1141,10 @@ impl PriceCheckApp {
             .item
             .as_ref()
             .map_or(tr!("not recognized"), |item| item.name.as_str());
-        cx.open_url(&bug_report::item_problem_url(
-            self.item_language(),
-            name,
-            text,
-        ));
+        let request = report::Request::item(name.to_owned(), text.clone());
+        // Not from inside this entity's update: the window reads the app as it opens.
+        let app = cx.entity();
+        cx.defer(move |cx| crate::app::open_report(&app, request, cx));
     }
 
     /// Toggles one filter's checkbox. Does NOT trigger a re-search on its own (matches the

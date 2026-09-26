@@ -1,6 +1,6 @@
 # Summary
 
-[PoE2 Oracle](index.md)
+[Guide · Руководство](index.md)
 
 # English
 
@@ -12,6 +12,7 @@
 - [Settings](en/settings.md)
 - [Updates and uninstall](en/updates.md)
 - [Troubleshooting and FAQ](en/troubleshooting.md)
+- [Reporting a problem](en/report.md)
 - [Privacy](en/privacy.md)
 
 # Русский
@@ -24,4 +25,5 @@
 - [Настройки](ru/settings.md)
 - [Обновления и удаление](ru/updates.md)
 - [Решение проблем и вопросы](ru/troubleshooting.md)
+- [Сообщить о проблеме](ru/report.md)
 - [Конфиденциальность](ru/privacy.md)

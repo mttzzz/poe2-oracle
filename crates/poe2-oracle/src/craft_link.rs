@@ -16,7 +16,7 @@
 //! this app doesn't know the site's numbering.
 
 use item_parser::roll::{NumericRun, find_numeric_runs};
-use percent_encoding::utf8_percent_encode;
+use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use poe2_domain::{
     ItemRarity, ModGeneration, ModifierType, ParsedItem, ParsedModifier, ParsedStat,
 };
@@ -24,12 +24,18 @@ use serde::Serialize;
 use serde_json::Number;
 use stat_filters::Roll;
 
-use crate::bug_report::QUERY_VALUE;
 use crate::i18n::Lang;
 use crate::item_refs::{self, Base, Implicit};
 
 /// Craft of Exile's current site; the old craftofexile.com is a patch behind.
 const SITE: &str = "https://beta.craftofexile.com/";
+
+/// Encoded in a query value: everything but RFC 3986's unreserved characters.
+const QUERY_VALUE: &AsciiSet = &NON_ALPHANUMERIC
+    .remove(b'-')
+    .remove(b'.')
+    .remove(b'_')
+    .remove(b'~');
 
 /// Mods the site doesn't list (its data for 4.5.5.3, checked 2026-09-23): the desecrated mods of
 /// radius jewels. A mod it doesn't know fails the whole import, so these stay out of the link.

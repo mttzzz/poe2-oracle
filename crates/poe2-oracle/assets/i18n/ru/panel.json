@@ -2,7 +2,7 @@
   "Loading trade site data…": "Загрузка каталога…",
   "No data from the trade site — no internet connection, or the site is down. Retrying automatically.\n\n{error}": "Нет данных сайта торговли — нет интернета или сайт недоступен. Повторяю попытку сам.\n\n{error}",
   "Hover over an item and press {hotkey}": "Наведите курсор на предмет и нажмите {hotkey}",
-  "Opens a GitHub form with this item's text filled in: all that's left is to describe what's wrong and send it.": "Откроет на GitHub форму с текстом этого предмета: останется описать, что не так, и отправить.",
+  "Tell the developer what's wrong with this item; its text is attached": "Сообщить разработчику, что не так с этим предметом; текст предмета приложится",
   "Report a problem": "Сообщить о проблеме",
 
   "The game doesn't copy the item: another program takes {combo} — most often a graphics card overlay, a screen recorder or Discord. Free the shortcut in that program's settings.": "Игра не копирует предмет: сочетание {combo} перехватывает другая программа — чаще всего оверлей видеокарты, запись экрана или Discord. Освободите его в настройках той программы.",
@@ -26,8 +26,7 @@
   "Private league · {league}": "Своя лига · {league}",
 
   "wiki ↗": "вики ↗",
-  "report a problem ↗": "сообщить о проблеме ↗",
-  "Item read or priced wrong? Opens a GitHub form with the item's text: all that's left is to describe what's wrong.": "Предмет разобран или оценён неверно? Откроет на GitHub форму с текстом предмета: останется описать, что не так.",
+  "report a problem": "сообщить о проблеме",
   "Base:": "База:",
   "Searches this base only. Click to search every item of the class.": "Поиск только по этой базе. Нажмите, чтобы искать среди всех вещей класса.",
   "Class:": "Класс:",

@@ -16,9 +16,10 @@ PoE2 Oracle — бесплатный оверлей для Path of Exile 2 по�
 
 ## Links · Ссылки
 
-- Download · Скачать: [latest release](https://github.com/mttzzz/poe2-oracle/releases/latest)
+- Download · Скачать: [the latest version · последняя версия](../download/latest)
 - Project site · Сайт проекта: [English](../index.html) · [Русский](../ru/index.html)
-- Source code · Исходный код: [GitHub](https://github.com/mttzzz/poe2-oracle)
+- Report a problem · Сообщить о проблеме: [English](en/report.md) · [Русский](ru/report.md)
+- License · Лицензия: [MIT](../LICENSE-MIT.txt) or · или [Apache-2.0](../LICENSE-APACHE.txt)
 
 PoE2 Oracle is a fan-made tool. This product isn\'t affiliated with or endorsed by Grinding Gear
 Games in any way. Path of Exile is a trademark of Grinding Gear Games.

@@ -40,15 +40,16 @@ the line reads `measuring rate…`. Times use `m` for minutes, `h` for hours and
 the Russian [interface language](settings.md#interface-language), the lines are in Russian:
 `64,8 % ◆ +12,4 %/ч · до 75 ур. 2 ч 50 мин`.
 
-In a town or hideout, and after five minutes of play without experience, the line dims and says
-only how much of the level is done, with **Level percentage** off too: the rate and the time to
-level would still be those of the play before.
+In a town or hideout, and after five minutes of play without experience or a change of area, the
+line dims and says only how much of the level is done, with **Level percentage** off too: the rate
+and the time to level would still be those of the play before.
 
 ```text
 64.8%
 ```
 
-The map line keeps the map you left, dimmed and without the average. The pause does not change the
+The map line drops the average. In a town or hideout it keeps the map you left, dimmed; in an idle
+pause inside a map it stays lit, and the map's time keeps running. The pause does not change the
 rate: it is back as it was when you play again.
 
 ## How it works
@@ -67,14 +68,16 @@ rate: it is back as it was when you play again.
 - The map timer pauses, dimmed, when you leave the map, and continues when you go back into the
   same map through its portal, even once it reads `last map`. A map counts as finished when you
   enter a different map, whether or not you completed it. Returning to character selection starts
-  the map statistics over.
+  everything over, since you may come back as another character: the rate (`measuring rate…`
+  again), the level (`next level in` until your next level-up) and the map statistics.
 - Ascendancy trials (the Trial of the Sekhemas and the Trial of Chaos) are never part of a map, but
   count as play for the rate.
 - If something covers the bar for more than a few seconds (a loading screen, the passive tree, the
   price panel), that time counts only when you earned experience behind the cover, as in a fight
   with the price panel open, and the bar was back within a minute; otherwise neither that time nor
-  the experience earned in it counts. After a few seconds without the bar the lines hide until it
-  is back, except while the price panel is open: the HUD is still in view then.
+  the experience earned in it counts. The plates themselves follow their rails, not the bar: a
+  loading screen or the passive tree takes them down with the HUD, and the price panel hides only
+  a plate it stands over (see [Requirements](#requirements)).
 
 ## Requirements
 
@@ -83,5 +86,7 @@ rate: it is back as it was when you play again.
   it.
 - The plates are the size of the game's HUD at the game's resolution; the **Interface scale**
   setting does not change them. They let clicks through to the game, all but the ⚙, and the price
-  panel hides one only when you drag the panel over it. A plate steps aside the moment a tooltip,
-  the chat or another part of the game's interface covers its rail, and is back the moment it goes.
+  panel hides one only while the panel stands over it: dragged there, or wide enough to reach it by
+  itself (a 4:3 or 5:4 game window, a large **Interface scale**). A plate steps aside the moment a
+  tooltip, the chat or another part of the game's interface covers its rail, and is back the moment
+  it goes.

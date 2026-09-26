@@ -10,6 +10,9 @@ members = [
     "crates/stat-filters",
     "crates/auto-update",
     "crates/poe2-oracle",
+    "crates/oracle-protocol",
+    "crates/oracle-web",
+    "crates/release-sign",
 ]
 
 [workspace.package]
@@ -23,4 +26,4 @@ publish = false
 authors = ["mttzzz"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/mttzzz/poe2-oracle"
-homepage = "https://mttzzz.github.io/poe2-oracle/"
+homepage = "https://oracle.pushka.biz/"

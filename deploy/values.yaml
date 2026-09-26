@@ -1,0 +1,58 @@
+# Deploy values for the app chart (helm upgrade -f, from .github/workflows/deploy.yml); the chart's
+# values.schema.json checks them at render.
+app:
+  name: oracle-pushka-biz
+  subdomain: oracle
+  domain: pushka.biz
+  # oracle-web's default PORT.
+  port: 8080
+  replicas: 1
+  # GITHUB_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID and REDIS_URL come from the Secret
+  # oracle-pushka-biz-env-secret, which the Infisical operator keeps in sync with the
+  # oracle-pushka-biz project (infisical/infisical-secret.yaml).
+  useSecret: true
+  # User namespaces: root in the container isn't root on the node. The pod is stateless.
+  hostUsers: false
+  probePath: /healthz
+  # The server answers within milliseconds of starting: a new pod takes traffic after its first
+  # probe, a second in.
+  readinessProbe:
+    initialDelaySeconds: 1
+    periodSeconds: 5
+  requests:
+    memory: 64Mi
+    cpu: 10m
+  limits:
+    # The latest release's assets stay in memory (up to about 40 MB) to serve downloads, and a
+    # report's body can be 12 MiB.
+    memory: 256Mi
+    cpu: 250m
+env:
+  PUBLIC_URL: https://oracle.pushka.biz
+  GITHUB_REPO: mttzzz/poe2-oracle
+  RUST_LOG: info
+httpRoute:
+  enabled: true
+  # Only the https listener: on :80 the gateway's catch-all redirect sends everyone to https.
+  sectionName: https-pushka-biz-wildcard
+  # The gateway gives a client 600 s to send a whole request (ClientTrafficPolicy default-policy,
+  # requestReceivedTimeout), so a 12 MiB report needs about 20 KB/s. A route's timeout runs from the
+  # end of the request to the end of the answer.
+  extraRules:
+    # A report: its 600 s cover forwarding the diagnostics zip to Telegram and opening the issue,
+    # and stay 600 s even if the gateway's default (BackendTrafficPolicy default-backend-policy)
+    # is lowered.
+    - matches:
+        - path:
+            type: Exact
+            value: /api/v1/reports
+      timeouts:
+        request: 600s
+    # Installers stream to the player at the player's pace, which the default 600 s would cut on a
+    # slow line; 0s turns the route timeout off.
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /download
+      timeouts:
+        request: 0s

@@ -4,7 +4,7 @@
         "exalted": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvQ3VycmVuY3kvQ3VycmVuY3lBZGRNb2RUb1JhcmUiLCJzY2FsZSI6MSwicmVhbG0iOiJwb2UyIn1d/ad7c366789/CurrencyAddModToRare.png",
         "chaos": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvQ3VycmVuY3kvQ3VycmVuY3lSZXJvbGxSYXJlIiwic2NhbGUiOjEsInJlYWxtIjoicG9lMiJ9XQ/c0ca392a78/CurrencyRerollRare.png"
     },
-    "league": "Запретные ритуалы",
+    "league": "Авто · Запретные ритуалы",
     "rate": "492",
     "item": {
         "art": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvQXJtb3Vycy9IZWxtZXRzL0Jhc2V0eXBlcy9IZWxtZXREZXgwNSIsInciOjIsImgiOjIsInNjYWxlIjoxLCJyZWFsbSI6InBvZTIifV0/367615d8a8/HelmetDex05.png",
@@ -13,7 +13,7 @@
         "rarity": "rare",
         "lang": "ru"
     },
-    "links": ["poe2db ↗", "вики ↗", "Craft of Exile ↗", "сообщить о проблеме ↗"],
+    "links": ["poe2db ↗", "вики ↗", "Craft of Exile ↗", "сообщить о проблеме"],
     "chips": [
         { "label": "Класс:", "value": "Шлемы", "toggle": true },
         { "label": "Требуется ур.:", "value": "59" },

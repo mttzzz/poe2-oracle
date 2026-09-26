@@ -1,0 +1,10 @@
+# The image is built from these alone; the rest of the repository (target/, .tmp/, the app's crates)
+# stays out of the build context.
+*
+!Cargo.toml
+!Cargo.lock
+!crates/oracle-protocol/
+!crates/oracle-web/
+!deploy/trim-workspace.sh
+!docs/guide/
+!site/

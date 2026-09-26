@@ -25,11 +25,11 @@ basics on the first launch.
 
 ## Features
 
-- **Price check.** The panel shows the item's name and art with links to poe2db, the wiki and a
-  problem report for this item, one row per stat with its min/max values and mod tier, and the
-  cheapest listings on the trade site (one page of 10 per search): price, item level, seller and
-  how long ago it was listed. Searches go to www.pathofexile.com or ru.pathofexile.com, matching
-  the language of the item. `Esc` closes the panel.
+- **Price check.** The panel shows the item's name and art with links to poe2db, the wiki, Craft of
+  Exile (for an item it can craft) and a problem report for this item, one row per stat with its
+  min/max values and mod tier, and the cheapest listings on the trade site (one page of 10 per
+  search): price, item level, seller and how long ago it was listed. Searches go to
+  www.pathofexile.com or ru.pathofexile.com, matching the item's language. `Esc` closes the panel.
 - **Search profiles** set up which stats are searched and how far below your rolls, as PoE Overlay
   II's do: **Quick price** (up to four of the most valuable stats, picked by PoE Overlay II's
   scoring of tier, tags and roll), **Exact match**, **Broad −10%** and **Crafting base**. A
@@ -56,13 +56,19 @@ basics on the first launch.
   instead of searching for it.
 - **XP overlay** on top of the game's HUD: above the flask panel, how fast you level (percent of a
   level per hour), the time to the next level and optionally the level percentage, with a ⚙ for
-  the settings; above the skill panel, a timer for the current map.
+  the settings (in a town or hideout, or after five minutes without a gain, it dims and shows only
+  the level percentage); above the skill panel, a timer for the current map.
 - **Quick actions:** your own hotkeys that type a chat command (`/hideout`, `@last thanks`) or a
   stash search string (for example one made with poe2.re).
 - **Sign-in to pathofexile.com**, optional, on the site's own page: it opens private leagues and
   **sum** rows (a stat added up across mods).
-- **Updates** from the tray menu: the new installer is downloaded from GitHub Releases, checked
-  against its published SHA-256 sum and installed; the app restarts by itself.
+- **Updates** from the tray menu, served by oracle.pushka.biz. The app installs a new version only
+  if the release's Ed25519 signature on `SHA256SUMS` checks out and the installer matches its
+  SHA-256 there, so no one on the way can hand you another installer; then it restarts by itself.
+- **Reports to the developer** from a window of the app, no account needed: a problem or an idea,
+  or what's wrong with an item's price or reading, with the item's text attached, and the
+  diagnostics report if you choose. After a crash, the next launch opens this window with what the
+  app reported attached.
 
 ## Requirements
 
@@ -70,19 +76,20 @@ basics on the first launch.
 - Path of Exile 2 in **Windowed Fullscreen** or **Windowed** mode. The panel can't be shown over
   exclusive Fullscreen; the app's settings window warns you about it.
 - An English or Russian game client.
-- Internet access to pathofexile.com, web.poecdn.com and poe2scout, and to GitHub for updates.
+- Internet access to pathofexile.com, web.poecdn.com and poe2scout, and to oracle.pushka.biz for
+  updates and the reports you send.
 
 ## Install
 
 1. Download `PoE2-Oracle-Setup-<version>.exe` from the
-   [latest release](https://github.com/mttzzz/poe2-oracle/releases/latest).
+   [PoE2 Oracle site](https://oracle.pushka.biz/).
 2. Run it. It installs for your Windows user only, without administrator rights, into
    `%LOCALAPPDATA%\Programs\PoE2 Oracle` and adds a Start menu shortcut. The last page offers to
    start the app and to start it with Windows.
 3. The installer isn't code-signed yet, so Windows SmartScreen may show "Windows protected your
    PC". Click **More info**, then **Run anyway**. To check that you have the published file, run
    `Get-FileHash .\PoE2-Oracle-Setup-<version>.exe` in PowerShell and compare the result with the
-   `SHA256SUMS` file of the same release.
+   release's `SHA256SUMS`, `https://oracle.pushka.biz/download/v<version>/SHA256SUMS`.
 
 To uninstall, open Windows Settings → Apps → Installed apps (Apps & features on Windows 10) →
 PoE2 Oracle → Uninstall. Your settings and downloaded price data are kept unless you tick
@@ -94,7 +101,7 @@ PoE2 Oracle → Uninstall. Your settings and downloaded price data are kept unle
    price check, the price panel and the XP overlay; skip it any time, and replay it from Settings →
    Help → **Tutorial**. The app runs in the background: its icon is in the notification area next
    to the clock, sometimes behind the "Show hidden icons" arrow. Its menu has **Settings**,
-   **Check for updates**, **Report a bug** and **Quit**.
+   **Check for updates**, **Report a problem or idea…** and **Quit**.
 2. In the game's graphics options, set the display mode to Windowed Fullscreen.
 3. Hover an item in the game and press `Ctrl+E`. Right after the first launch the app spends a few
    seconds downloading the trade site's catalogs; until then the panel says "Loading trade site
@@ -112,36 +119,34 @@ Good to know:
 ## User guide
 
 The full guide, with every setting explained, is at
-**[mttzzz.github.io/poe2-oracle/guide](https://mttzzz.github.io/poe2-oracle/guide/)**:
-[introduction](https://mttzzz.github.io/poe2-oracle/guide/en/introduction.html),
-[troubleshooting](https://mttzzz.github.io/poe2-oracle/guide/en/troubleshooting.html) and
-[privacy](https://mttzzz.github.io/poe2-oracle/guide/en/privacy.html). The project site is
-[mttzzz.github.io/poe2-oracle](https://mttzzz.github.io/poe2-oracle/).
+**[oracle.pushka.biz/guide](https://oracle.pushka.biz/guide/)**:
+[introduction](https://oracle.pushka.biz/guide/en/introduction.html),
+[troubleshooting](https://oracle.pushka.biz/guide/en/troubleshooting.html) and
+[privacy](https://oracle.pushka.biz/guide/en/privacy.html). The project site is
+[oracle.pushka.biz](https://oracle.pushka.biz/).
 
 ## Reporting a problem
 
-The quickest way is from the app itself. It fills in the form for you, and you submit it from your
-own GitHub account; the app sends nothing by itself.
+The quickest way is from the app itself: it opens a report window, and what you write there goes
+to the developer through oracle.pushka.biz. You don't need an account; leave a contact (Telegram,
+Discord or email) if you'd like an answer.
 
-- **Report a bug** in the tray menu, or **Report ↗** in the **Help** section of the settings, saves
-  a diagnostics report to your desktop (a zip with the logs and settings, your Windows user name
-  masked if it has three characters or more), shows it in Explorer and opens the bug form with the
-  version, the client language and the report's file name filled in. Drag the zip into the form.
-- The link **report a problem ↗** under the item name on the price panel, or the button
-  **Report a problem** in the message about an item the app couldn't read, opens the item form
-  with the item text filled in.
+- **Report a problem or idea…** in the tray menu, or **Write to the developer** in the **Help**
+  section of the settings, for a problem or an idea. With **Attach diagnostics** on (the default
+  for a problem), the report carries the logs, settings, the item texts the app couldn't read and a
+  summary of the system, with your Windows user name and folders hidden; **What's inside** saves
+  the same zip to your desktop, so you can look first.
+- The link **report a problem** under the item name on the price panel, or the button
+  **Report a problem** in the message about an item the app couldn't read, opens the window for
+  that item, with its text attached.
+- After a crash, the next launch opens the window by itself, with what the app reported attached.
 
-You can also open a form yourself:
-
-- [Report a bug](https://github.com/mttzzz/poe2-oracle/issues/new?template=bug_report.yml)
-- [An item isn't recognised, or gets wrong filters or a wrong price](https://github.com/mttzzz/poe2-oracle/issues/new?template=item_problem.yml)
-- [Suggest a feature](https://github.com/mttzzz/poe2-oracle/issues/new?template=feature_request.yml)
-
-Please search the [existing issues](https://github.com/mttzzz/poe2-oracle/issues) first. Mention
-the app version (Windows Settings → Apps → Installed apps shows it) and your game client language.
-For an item problem, paste the item text: hover the item in the game, press `Ctrl+Alt+C`, then
-paste into the form. Never post passwords or session cookies. Security problems go through private
-reporting, see [SECURITY.md](SECURITY.md).
+[Reporting a problem](https://oracle.pushka.biz/guide/en/report.html) in the guide tells what each
+report carries. Without the app, use the form on the site,
+[oracle.pushka.biz/report.html](https://oracle.pushka.biz/report.html), for a problem or an idea:
+mention the app version (Windows Settings → Apps → Installed apps shows it) and your game client
+language, and for an item paste its text (hover it in the game, press `Ctrl+Alt+C`). Never put
+passwords or session cookies in a report. For security problems, see [SECURITY.md](SECURITY.md).
 
 If searches stop with "The trade site has limited searches for a while", you have hit the trade
 site's limit on requests from one IP address, which is shared with the trade site open in your
@@ -150,49 +155,54 @@ for the time the panel shows and try again. Currency Exchange prices keep workin
 
 ## Privacy
 
-PoE2 Oracle has no telemetry, no analytics and no accounts of its own. It connects to:
+PoE2 Oracle has no telemetry and no accounts of its own. It connects to:
 
 | Where | What for |
 |---|---|
-| www.pathofexile.com, ru.pathofexile.com | The trade site's API: leagues, stat and item catalogs, your searches (the item's stats) and the listings they find; once you sign in, the site's session goes along |
+| www.pathofexile.com, ru.pathofexile.com | The trade site's API: leagues, stat and item catalogs, your searches (the item's stats) and the listings they find. Once you sign in, the site's session goes along, and the app also reads your account page (to check the sign-in) and your private leagues' pages on www.pathofexile.com |
 | api.poe2scout.com | Prices of uniques; the week's prices and pages of Currency Exchange items, and prices of those that haven't traded in your league lately |
 | web.poecdn.com | Item images, and GGG's hourly record of the trades made on the Currency Exchange (one file per hour for all leagues, the same for everyone) |
-| api.github.com, github.com, GitHub's file storage (…githubusercontent.com) | The update check (30 seconds after start while update checks are on, or from the tray menu) and the installer download |
+| oracle.pushka.biz | PoE2 Oracle's own service. The update check (30 seconds after start while update checks are on, or from the tray menu), which carries only the app's version, and the installer download; the service counts checks and downloads per day, with no id. A report, only when you send one: your text, the contact if given, the app's version, languages, Windows version, league and interface scale, the item's name and text or the crash text when attached, and the diagnostics report when **Attach diagnostics** is on. The service keeps no copy: it passes the report on to the developer as an issue in the project's private GitHub repository and a Telegram message, the diagnostics report to Telegram only |
 
 Signing in is optional. It happens on pathofexile.com's own page, in a window of the app (Microsoft
 Edge WebView2); PoE2 Oracle doesn't read or keep your password, only the site's session.
 
-Everything else stays on your computer. The app reads the item text the game copies, the game's
-own log (`Client.txt`: level-ups, area changes), the game's settings file and the screen
-pixels of the experience bar itself. It keeps its files here:
+Everything else stays on your computer, unless it goes into a report you send. The app reads the
+item text the game copies, the game's own log (`Client.txt`: level-ups, area changes), the game's
+settings file and, on the screen, the pixels of the experience bar and of thin strips along the top
+of the flask and skill panels, where the XP overlay's plates sit (to see when a tooltip covers
+them). It keeps its files here:
 
 | What | Where |
 |---|---|
 | Settings | `%APPDATA%\poe2-oracle\config\settings.json` |
 | Logs of this run and the previous one | `%LOCALAPPDATA%\poe2-oracle\data\logs` |
 | Item texts it couldn't read | `%LOCALAPPDATA%\poe2-oracle\data\unparsed` |
+| What the app reported about its last crash, until you send or close that report | `%LOCALAPPDATA%\poe2-oracle\data\crash\last-crash.txt` |
 | Downloaded catalogs, prices and updates | `%LOCALAPPDATA%\poe2-oracle\cache` |
 | The pathofexile.com session, once you sign in | Windows Credential Manager, `PoE2 Oracle/pathofexile.com`; **Sign out** in the settings or uninstalling removes it |
 
-The diagnostics report is made only when you ask for it, and the app never sends it anywhere:
-reporting a bug only opens GitHub's form in your browser, and you decide what to submit. Links on
-the panel (poe2db, the wiki, Craft of Exile, poe2scout, the trade site) open in your browser too,
-when you click them. The Craft of Exile link carries the item's base, item level, rarity and
-modifiers in its address; the app itself never contacts poe2db, the wiki or Craft of Exile.
+The diagnostics report is made only when you ask for it, and it leaves your computer only in a
+report you send with **Attach diagnostics** on. Links on the panel (poe2db, the wiki, Craft of
+Exile, poe2scout, the trade site) open in your browser when you click them. The Craft of Exile link
+carries the item's base, item level, rarity and modifiers in its address; the app itself never
+contacts poe2db, the wiki or Craft of Exile.
 
 ## Contributing
 
-Bug reports, item texts that the app gets wrong and pull requests are welcome. See
-[CONTRIBUTING.md](CONTRIBUTING.md) for the rules and how to build the app, and
-[CHANGELOG.md](CHANGELOG.md) for what changed between versions.
+Bug reports and item texts that the app gets wrong are welcome: send them from the app, see
+[Reporting a problem](#reporting-a-problem). See [CONTRIBUTING.md](CONTRIBUTING.md) for the rules
+and how to build the app, and [CHANGELOG.md](CHANGELOG.md) for what changed between versions.
 
 ## License and disclaimer
 
 PoE2 Oracle is licensed under either of the [MIT License](LICENSE-MIT) or the
 [Apache License 2.0](LICENSE-APACHE), at your option. It includes item and stat data derived from
-[Exiled Exchange 2](https://github.com/Kvan7/Exiled-Exchange-2) (MIT) and the Philosopher and
-Alegreya SC fonts (SIL Open Font License 1.1); the installer puts the full third-party notices
-next to the app as `THIRD-PARTY-NOTICES.html`.
+[Exiled Exchange 2](https://github.com/Kvan7/Exiled-Exchange-2) (MIT) and from Path of Exile 2's
+own mod and base item tables as exported by [RePoE](https://repoe-fork.github.io/poe2/) (MIT; the
+data belongs to Grinding Gear Games), and the Philosopher and Alegreya SC fonts (SIL Open Font
+License 1.1); the installer puts the full third-party notices next to the app as
+`THIRD-PARTY-NOTICES.html`.
 
 PoE2 Oracle is a fan-made tool. This product isn't affiliated with or endorsed by Grinding Gear
 Games in any way. Path of Exile is a trademark of Grinding Gear Games.

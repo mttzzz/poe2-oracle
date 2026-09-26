@@ -37,7 +37,6 @@ use gpui::{
 use serde_json::Value;
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, VK_0, VK_9, VK_SHIFT};
 
-use crate::bug_report;
 use crate::diagnostics::{self, SetupProblem};
 use crate::i18n::{self, Lang};
 use crate::league_chip;
@@ -46,6 +45,7 @@ use crate::platform::autostart;
 use crate::platform::win32::Win32Overlay;
 use crate::price_check::{BootstrapState, PriceCheckApp};
 use crate::quick_action::{self, ActionDraft};
+use crate::report;
 use crate::session::{self, SessionStatus};
 use crate::settings::{
     self, ClientLanguage, Hotkey, HotkeyProblem, InterfaceLanguage, KeyName, LeagueChoice,
@@ -88,8 +88,6 @@ const LEAGUE_MENU_WIDTH: f32 = 280.;
 const STEP_PERCENT: u16 = 5;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
-/// The app's repository: «GitHub ↗» in О программе.
-const REPOSITORY_URL: &str = "https://github.com/mttzzz/poe2-oracle";
 /// The third-party notices the installer puts next to the exe (`packaging/installer.nsi`).
 const NOTICES_FILE: &str = "THIRD-PARTY-NOTICES.html";
 /// Microsoft's WebView2 page, at its download section: the sign-in window needs the runtime.
@@ -567,13 +565,11 @@ impl SettingsView {
         }
     }
 
-    /// «Сообщить ↗»: the tray's «Сообщить об ошибке» (`bug_report::report_bug`).
-    fn report_bug(&mut self, cx: &mut Context<Self>) {
-        let (summary, language) = {
-            let state = self.app.read(cx);
-            (state.diagnostics_summary(), state.item_language())
-        };
-        bug_report::report_bug(summary, language, cx);
+    /// «Написать разработчику»: the report window, as the tray's «Сообщить о проблеме или идее…»
+    /// opens it (`app::open_report`).
+    fn write_to_developer(&mut self, cx: &mut Context<Self>) {
+        let app = self.app.clone();
+        cx.defer(move |cx| crate::app::open_report(&app, report::Request::general(), cx));
     }
 
     /// Writes the diagnostics report off the main thread, then shows it in Explorer.
@@ -1732,13 +1728,9 @@ impl SettingsView {
         let report = match &self.report {
             ReportState::Idle => None,
             ReportState::Writing => Some(note(tr!("Collecting the report…"), TEXT_DIM)),
-            ReportState::Written(path) => Some(note(
-                tr!(
-                    "Saved: {path} — attach it to your bug report",
-                    path = path.display()
-                ),
-                TEXT,
-            )),
+            ReportState::Written(path) => {
+                Some(note(tr!("Saved: {path}", path = path.display()), TEXT))
+            }
             ReportState::Failed(error) => Some(note(
                 tr!("Couldn't collect the report: {error}", error = error),
                 TEXT_WARNING,
@@ -1768,12 +1760,15 @@ impl SettingsView {
                     ),
                 ),
                 setting_row(
-                    tr!("Report a bug"),
+                    tr!("Report a problem or idea"),
                     [
                         Some(note(
-                            tr!("A form on GitHub. The report is the logs, settings and \
-                                 unrecognised items in one archive on your desktop, with your \
-                                 Windows user name hidden"),
+                            tr!(
+                                "Straight to the developer from the app, no account needed. \
+                                 “Collect report” saves the logs, settings and unread item texts \
+                                 to your desktop in one archive, with your Windows user name \
+                                 hidden"
+                            ),
                             TEXT_DIM,
                         )),
                         report,
@@ -1785,10 +1780,12 @@ impl SettingsView {
                         .gap(rems_from_px(8.))
                         .child(button(
                             "report",
-                            tr!("Report ↗"),
+                            tr!("Write to the developer"),
                             ButtonKind::Secondary,
                             face,
-                            cx.listener(|view, _: &MouseDownEvent, _, cx| view.report_bug(cx)),
+                            cx.listener(|view, _: &MouseDownEvent, _, cx| {
+                                view.write_to_developer(cx);
+                            }),
                         ))
                         .child(button(
                             "diagnostics",
@@ -1838,12 +1835,12 @@ impl SettingsView {
                             )
                         }))
                         .child(button(
-                            "github",
-                            "GitHub ↗",
+                            "site",
+                            tr!("Website ↗"),
                             ButtonKind::Secondary,
                             face,
                             |_: &MouseDownEvent, _: &mut Window, cx: &mut App| {
-                                cx.open_url(REPOSITORY_URL);
+                                cx.open_url(&site_url());
                             },
                         )),
                 ),
@@ -1896,6 +1893,14 @@ impl Render for SettingsView {
 /// The settings window's title, as the taskbar and Alt+Tab show it.
 pub fn window_title() -> &'static str {
     tr!("PoE2 Oracle — settings")
+}
+
+/// The app's site: «Сайт ↗» in О программе, at its Russian page for a Russian interface.
+fn site_url() -> String {
+    oracle_protocol::url(match i18n::lang() {
+        Lang::Russian => "/ru/",
+        Lang::English => "/",
+    })
 }
 
 /// A group of rows under its heading.

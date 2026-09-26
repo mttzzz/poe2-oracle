@@ -5,9 +5,9 @@ body:
   - type: markdown
     attributes:
       value: |
-        The item's text is what lets us reproduce the problem, so it is required. The app fills it in for you: use **Report a problem**, under the item name on the price panel or in the message about an item it couldn't read. Please search the [existing issues](https://github.com/mttzzz/poe2-oracle/issues?q=is%3Aissue) first: the same item may already be reported.
+        For the maintainer's own notes. Players report an item from the app: **report a problem** under the item name on the price panel, or **Report a problem** in the message about an item it couldn't read, sends the item's text with the report. The item's text is what lets us reproduce the problem, so it is required here. Search the existing issues first: the same item may already be reported.
 
-        Без текста предмета проблему не воспроизвести, поэтому он обязателен. Программа вставит его сама: нажмите «Сообщить о проблеме» под названием предмета на панели или в сообщении о предмете, который она не смогла прочитать. Сначала поищите среди [существующих задач](https://github.com/mttzzz/poe2-oracle/issues?q=is%3Aissue): о таком предмете, возможно, уже сообщили.
+        Для заметок самого сопровождающего. Игроки сообщают о предмете из программы: «сообщить о проблеме» под названием предмета на панели или «Сообщить о проблеме» в сообщении о предмете, который она не смогла прочитать, отправляет текст предмета вместе с сообщением. Без текста предмета проблему не воспроизвести, поэтому здесь он обязателен. Сначала поищите среди существующих задач: о таком предмете, возможно, уже сообщили.
   - type: input
     id: version
     attributes:

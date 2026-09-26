@@ -1,0 +1,58 @@
+name: Deploy oracle.pushka.biz
+
+# Builds the root Dockerfile (oracle-web with the site and the guide) and rolls it out to the
+# DigitalOcean cluster through the shared deploy workflow: image <registry>/mttzzz/poe2-oracle,
+# Helm release oracle-pushka-biz of the app chart with deploy/values.yaml, then a Telegram note.
+# oracle.pushka.biz took over from GitHub Pages, which can't publish a private repository.
+#
+# A push to main deploys only when it touches what the deployment is made of: the server's
+# crates, the site, the guide, the image's recipe, the chart values, the workspace manifest (its
+# edition, profiles and shared dependencies build the server too), the lockfile, this file.
+# workflow_dispatch redeploys by hand.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "crates/oracle-web/**"
+      - "crates/oracle-protocol/**"
+      - "site/**"
+      - "docs/guide/**"
+      - "Dockerfile"
+      - ".dockerignore"
+      - "deploy/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    # The shared workflow is pinned to a commit, as in ai.pushka.biz: a moving ref would change
+    # this deploy without a commit here. Moving the pin is its own commit, after reading the diff.
+    uses: mttzzz/github-deploy-template-workflow/.github/workflows/app.yml@51ea480eaa9032b626ba4e8769510c11f353e75f
+    with:
+      app_name: oracle-pushka-biz
+      helm_chart: app
+      # deploy/values.yaml uses httpRoute.extraRules, which the chart's schema accepts from 1.3.0.
+      chart_version: "^1.3.0"
+      # max keeps the Dockerfile's intermediate layers too -- the compiled dependencies above all;
+      # min would cache only the runtime image's layers, and every deploy would rebuild the
+      # dependencies from scratch.
+      cache_mode: max
+      # No Sentry project.
+      sentry_finalize: false
+    secrets:
+      HELM_REPO: ${{ secrets.HELM_REPO }}
+      REGISTRY_NAME: ${{ secrets.REGISTRY_NAME }}
+      REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
+      REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+      DO_TOKEN: ${{ secrets.DO_TOKEN }}
+      TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      # Docker Hub login for pulling the base images (anonymous pulls share the runners' rate
+      # limit); the shared workflow carries on without it.
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}

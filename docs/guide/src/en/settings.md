@@ -2,10 +2,11 @@
 
 ![The settings window](../images/en/settings.webp)
 
-Open the settings in any of three ways:
+Open the settings in any of four ways:
 
 - the tray icon's menu → **Settings**;
 - the gear **⚙** on the price panel;
+- the gear **⚙** at the end of the [XP overlay](xp-overlay.md)'s plate above the flask panel;
 - start PoE2 Oracle again while it is already running: the running copy opens its settings.
 
 If the settings window is already open, any of these brings it to the front.
@@ -17,7 +18,7 @@ settings on the right.
 Every change applies and is saved at once: there is no Save or Cancel button. Text in a box applies
 when you press <kbd>Enter</kbd> or <kbd>Tab</kbd>, click elsewhere or close the window;
 <kbd>Esc</kbd> in a box puts the old text back. The **×** in the title bar or <kbd>Esc</kbd> closes
-the window; with the league list or a dialog open, <kbd>Esc</kbd> closes that first.
+the window; with the league list open, <kbd>Esc</kbd> closes that first.
 
 While the settings window is open, the price panel is hidden and the price-check hotkey is off, so
 that you can record a new one.
@@ -46,9 +47,9 @@ Notes under the row's name: "Loading the league list from the trade site" or "Th
 the trade site didn't load"; "The trade site no longer lists this league — searches go to the
 current one" means the league you picked has ended and searches go to the current league instead.
 Signed out, the row adds that your private leagues show up here once you sign in. With a private
-league picked, it names the public league its exchange prices come from (see
-[In a private league](price-check.md#in-a-private-league)), and signed out it warns: "Without a
-sign-in the site won't answer searches in a private league — sign in, in “Account”".
+league picked, it names the public league its exchange and poe2scout prices come from (see
+[In a private league](price-check.md#in-a-private-league)); signed out, it warns instead: "Without
+a sign-in the site won't answer searches in a private league — sign in, in “Account”".
 
 ### Game client language
 
@@ -88,8 +89,9 @@ Group **System**.
 - **Start with Windows**, off by default. It adds PoE2 Oracle to the apps Windows starts when you
   sign in; the installer's last page has the same option. Turning it on here also re-enables it if it
   was disabled in Task Manager's startup apps.
-- **Check for updates automatically**, on by default: look for a new version 30 seconds after start.
-  The tray menu's update entry works either way. See [Updates and uninstall](updates.md).
+- **Check for updates automatically**, on by default: look for a new version on oracle.pushka.biz
+  30 seconds after start. The tray menu's update entry works either way. See
+  [Updates and uninstall](updates.md).
 
 ## Price check
 
@@ -97,8 +99,9 @@ Section **Price check**.
 
 ### Hotkey
 
-Row **Price check**. Click the key box and press the new combination: it works at once.
-<kbd>Esc</kbd> or a second click on the box keeps the old one.
+Row **Price check**. Click the key box and press the new combination: it takes over from the old
+one as soon as you close the settings window. <kbd>Esc</kbd> or a second click on the box keeps the
+old one.
 
 A combination can be <kbd>Ctrl</kbd> or <kbd>Alt</kbd> (with or without <kbd>Shift</kbd>) plus a
 letter A–Z or a digit 0–9, or one of <kbd>F1</kbd>–<kbd>F12</kbd>, alone or with modifiers. Letters
@@ -124,8 +127,9 @@ Group **Search**.
 
 - **Default sellers**: which sellers every new check searches. **Instant Buyout** (the default: you
   buy in the game and the seller need not be online), **Buyout or In Person** (instant buyout and
-  sellers online), **In Person** (sellers online) or **Any** (everyone, offline too). The panel's
-  **Sellers:** chip still switches it for one item. Settings saved by an older version with its
+  sellers online), **In Person** (sellers online) or **Any** (everyone, offline too). The sellers
+  choice beside **Search** on the price panel, which shows only its current value, such as
+  **Instant Buyout**, still switches it for one item. Settings saved by an older version with its
   default, buyout or in person, move to Instant Buyout once; after that, your choice stays.
 - **Seller column**, on by default: the seller's account name in the results table.
 
@@ -142,7 +146,7 @@ Section **XP overlay**, group **XP line**. See [XP overlay](xp-overlay.md) for w
 | Setting | Default | Meaning |
 |---|---|---|
 | **Show the XP overlay** | on | Show the experience rate and the time to the next level above the flask panel |
-| **Level percentage** | off | Also show how much of the current level is done |
+| **Level percentage** | off | Also show how much of the current level is done; a pause always shows it |
 | **Map timer** | on | Show the time in the current map, the experience it gave and the session's average map time above the skill panel |
 | **Rate smoothing** | 10m | 5, 10, 20 or 30 minutes. Shorter shows a change of farming sooner, longer reads steadier |
 
@@ -162,12 +166,13 @@ Section **Account**. Signing in to pathofexile.com is needed to search private l
   only. **Sign out** makes PoE2 Oracle forget the session; you stay signed in on the site. The
   sign-in window needs the Microsoft Edge WebView2 Runtime; without it, the row shows a link
   **Download from Microsoft**.
-- **Private leagues.** Signed in, nothing needs typing: the league menus, in **General** and on
-  the price panel, list your account's private leagues as pathofexile.com shows them on its
-  **Private Leagues** page, and the row names them: "Your leagues on pathofexile.com are in the
-  league menus: *names*". The list is read again each time the settings open, so a league you
-  joined since shows up. Exchange prices come from the public league yours is made from: see
-  [In a private league](price-check.md#in-a-private-league).
+
+  Signed in, a note under the row names your account's private leagues, if it has any: "Your
+  leagues on pathofexile.com are in the league menus: *names*". Nothing needs typing: the league
+  menus, in **General** and on the price panel, list them as pathofexile.com shows them on its
+  **Private Leagues** page. The list is read again each time the settings open, so a league you
+  joined since shows up. Exchange and poe2scout prices come from the public league yours is made
+  from: see [In a private league](price-check.md#in-a-private-league).
 
 ## Help
 
@@ -175,18 +180,20 @@ Section **Help**.
 
 - **Tutorial** → **Replay** runs the short guided tour again: the settings and the league, a price
   check, the price panel and the XP overlay, one at a time.
-- **Report a bug**:
-  - **Report ↗** does what the tray menu entry **Report a bug** does: it writes the diagnostics
-    report to your desktop, shows it in File Explorer and opens GitHub's bug report form in your
-    browser. See [Reporting a bug](troubleshooting.md#reporting-a-bug).
-  - **Collect report** only writes the report: a zip with the logs, the settings and the item texts
+- **Report a problem or idea**, with the note "Straight to the developer from the app, no account
+  needed. “Collect report” saves the logs, settings and unread item texts to your desktop in one
+  archive, with your Windows user name hidden":
+  - **Write to the developer** opens the [report window](report.md), as the tray menu entry
+    **Report a problem or idea…** does: write what went wrong or what you'd like, and PoE2 Oracle
+    sends it to the developer. You need no account.
+  - **Collect report** only saves the report: a zip with the logs, the settings and the item texts
     the app could not read, on your desktop, shown in File Explorer. Your Windows user name, if it
-    has three characters or more, is hidden in it. See
+    has three characters or more, is hidden in it. Then the row says "Saved: *path*". See
     [Troubleshooting](troubleshooting.md#collecting-a-diagnostics-report).
 - **Logs folder** → **Open** opens the folder with the logs of this run and the one before.
 - **About**: PoE2 Oracle's version and license. **Licenses** opens `THIRD-PARTY-NOTICES.html`, which
-  the installer puts next to the app: the licenses of everything it includes. **GitHub ↗** opens the
-  project's page.
+  the installer puts next to the app: the licenses of everything it includes. **Website ↗** opens
+  the app's site, [oracle.pushka.biz](https://oracle.pushka.biz/), in the interface language.
 
 ## Where the settings are kept
 

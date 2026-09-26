@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Report a problem · PoE2 Oracle</title>
+<meta name="description" content="Tell the developer of PoE2 Oracle about a problem or an idea. No account needed.">
+<link rel="canonical" href="https://oracle.pushka.biz/report.html">
+<link rel="alternate" hreflang="en" href="https://oracle.pushka.biz/report.html">
+<link rel="alternate" hreflang="ru" href="https://oracle.pushka.biz/ru/report.html">
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="topbar">
+  <div class="wrap">
+    <a class="brand" href="./"><img src="favicon.png" alt="" width="32" height="32">PoE2 Oracle</a>
+    <nav aria-label="Main">
+      <ul class="topnav">
+        <li><a href="./#features">Features</a></li>
+        <li><a href="guide/en/introduction.html">Guide</a></li>
+        <li class="lang-switch" aria-label="Language">
+          <span aria-current="page">EN</span>
+          <a href="ru/report.html" lang="ru" hreflang="ru" title="Русский">RU</a>
+        </li>
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <section class="section">
+    <div class="wrap narrow">
+      <h1 class="page-title">Report a problem</h1>
+      <p class="intro">Tell the developer of PoE2 Oracle what went wrong, or what you'd like the app to
+        do. You can write in English or Russian.</p>
+      <p class="note">For a problem, the app's own report window is better: it attaches the app's
+        version, the item's text or a diagnostics report, which is usually what a fix takes. In the
+        app, open the tray icon's menu → <em>Report a problem or idea…</em>, or click <em>Write to the
+        developer</em> in the settings, section <em>Help</em>. After a crash the window opens by
+        itself. <a href="guide/en/report.html">More about it</a></p>
+
+      <noscript>
+        <p class="note">Sending needs JavaScript, which is off in this browser. Turn it on for this
+          page, or write from the app: the tray icon's menu → <em>Report a problem or idea…</em></p>
+      </noscript>
+
+      <form class="report-form" id="report" hidden
+        data-send="Send"
+        data-sending="Sending…"
+        data-sent="Sent — thank you! Report #{id}"
+        data-sent-no-id="Sent — thank you!"
+        data-failed="Couldn't send: {reason}"
+        data-no-connection="no connection to {host}"
+        data-unavailable="the service is unavailable, try later"
+        data-rate-limited="too many reports from your address, try again in {minutes} min"
+        data-too-large="the report is too large"
+        data-invalid="the service refused the report">
+        <fieldset class="field">
+          <legend>What is it about?</legend>
+          <div class="segmented">
+            <input type="radio" name="kind" id="kind-bug" value="bug" checked>
+            <label for="kind-bug">Problem</label>
+            <input type="radio" name="kind" id="kind-idea" value="idea">
+            <label for="kind-idea">Idea</label>
+          </div>
+        </fieldset>
+        <div class="field">
+          <label for="text">Message</label>
+          <textarea id="text" name="text" rows="10" maxlength="8000" required
+            aria-describedby="text-count"
+            data-placeholder-bug="What happened, and how can it be repeated?"
+            data-placeholder-idea="What would you like the app to do?"></textarea>
+          <p class="counter" id="text-count">0 / 8000</p>
+        </div>
+        <div class="field">
+          <label for="contact">Contact (optional)</label>
+          <input type="text" id="contact" name="contact" maxlength="200" aria-describedby="contact-hint">
+          <p class="hint" id="contact-hint">Telegram, Discord or email — if you'd like an answer</p>
+        </div>
+        <div class="honeypot" aria-hidden="true">
+          <label for="website">Leave this field empty</label>
+          <input type="text" id="website" name="website" tabindex="-1" autocomplete="off">
+        </div>
+        <p class="hint">Sent to oracle.pushka.biz: your text and the contact if given. No account
+          needed.</p>
+        <div class="form-actions">
+          <button class="button button-primary" type="submit" disabled>Send</button>
+          <p class="status" role="status" aria-live="polite"></p>
+        </div>
+      </form>
+
+      <div class="report-sent" id="report-sent" hidden>
+        <p class="status sent" role="status" aria-live="polite"></p>
+        <button class="button" type="button">Write another</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <div class="wrap">
+    <ul class="footer-links">
+      <li><a href="guide/en/introduction.html">Guide</a></li>
+      <li><a href="report.html" aria-current="page">Report a problem</a></li>
+      <li><a href="ru/report.html" lang="ru" hreflang="ru">По-русски</a></li>
+    </ul>
+    <p>PoE2 Oracle is a fan-made tool. This product isn't affiliated with or endorsed by Grinding
+      Gear Games in any way. Path of Exile is a trademark of Grinding Gear Games.</p>
+    <p>PoE2 Oracle is licensed under <a href="LICENSE-MIT.txt">MIT</a> or
+      <a href="LICENSE-APACHE.txt">Apache-2.0</a>, at your option; both texts come with the app.
+      This site uses the Alegreya SC and Philosopher fonts under the SIL Open Font License 1.1
+      (<a href="fonts/OFL-AlegreyaSC.txt">Alegreya SC</a>, <a href="fonts/OFL-Philosopher.txt">Philosopher</a>).</p>
+  </div>
+</footer>
+<script type="module" src="report.js"></script>
+</body>
+</html>

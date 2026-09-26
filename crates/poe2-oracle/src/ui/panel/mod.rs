@@ -178,7 +178,7 @@ fn render_item(
 }
 
 /// What went wrong with a check, centred -- and, for an item the parser rejected, a button that
-/// opens the item problem form with its text filled in (`PriceCheckApp::report_item`).
+/// opens the report window with its text attached (`PriceCheckApp::report_item`).
 fn render_problem(problem: &Problem, cx: &Context<PriceCheckApp>) -> impl IntoElement {
     div()
         .flex()
@@ -201,8 +201,7 @@ fn render_problem(problem: &Problem, cx: &Context<PriceCheckApp>) -> impl IntoEl
                     .id("report-rejected-item")
                     .flex_none()
                     .tooltip(hints::hint(tr!(
-                        "Opens a GitHub form with this item's text filled in: all that's left is \
-                         to describe what's wrong and send it."
+                        "Tell the developer what's wrong with this item; its text is attached"
                     )))
                     .child(button(
                         "button",

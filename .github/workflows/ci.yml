@@ -17,10 +17,10 @@ jobs:
           persist-credentials: false
 
       # The project's own lane runner image (lanes/runner.Dockerfile): rust:1-bookworm plus the
-      # mingw-w64 cross toolchain for x86_64-pc-windows-gnu (this project's only ship target) and
-      # the rustfmt/clippy components. Built fresh here rather than pulled from a registry --
-      # this is a small project with no image-publishing infra, and a from-Dockerfile build is
-      # the standard, boring way to use a custom CI environment without one.
+      # mingw-w64 cross toolchain for x86_64-pc-windows-gnu (the app's only target) and the
+      # rustfmt/clippy components. Built fresh here rather than pulled from a registry -- only CI
+      # and the lane use it, and a from-Dockerfile build is the standard, boring way to use a
+      # custom CI environment. The root .dockerignore keeps its build context down to a few files.
       - name: Build runner image
         run: docker build -f lanes/runner.Dockerfile -t poe2-oracle-runner .
 
@@ -49,7 +49,10 @@ jobs:
       # of it compiles. `cargo test` runs natively (Linux), not cross-compiled -- GPUI's gpui_linux
       # backend builds and runs directly on this runner, and cross-compiled Windows binaries can't
       # execute here anyway (no Wine) -- so the app's own pass runs the tests of its
-      # platform-independent modules (`--lib`).
+      # platform-independent modules (`--lib`). Every other crate -- oracle-protocol, oracle-web
+      # and release-sign included -- goes through the native clippy and test passes. oracle-web is
+      # the Linux server behind oracle.pushka.biz (the root Dockerfile, deploy.yml), so the
+      # windows-gnu build leaves it out.
       - name: cargo fmt / clippy / test / build (windows-gnu)
         run: |
           docker run --rm \
@@ -65,5 +68,5 @@ jobs:
               cargo clippy -p poe2-oracle --all-targets --target x86_64-pc-windows-gnu -- -D warnings
               cargo test --workspace --exclude poe2-oracle
               cargo test -p poe2-oracle --lib
-              cargo build --workspace --target x86_64-pc-windows-gnu
+              cargo build --workspace --exclude oracle-web --target x86_64-pc-windows-gnu
             '

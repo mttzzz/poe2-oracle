@@ -15,17 +15,18 @@ text — its name, modifiers and properties — keeps the language the game copi
 PoE2 Oracle presses the game's own item-copy shortcut, <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>C</kbd>,
 reads the item text from the clipboard and puts back whatever you had copied before. A panel then
 opens over the full height of the game window: next to the inventory if the cursor was on the right
-half of the game, next to the stash if it was on the left half. It never covers the inventory or
-the stash.
+half of the game, next to the stash if it was on the left half. By itself it never covers the
+inventory or the stash, but you can drag it over them (see below).
 
 > [!NOTE]
 > <kbd>Alt</kbd> in that shortcut is the game's key for advanced item descriptions. If you bound
 > that action to another modifier key in the game's options, PoE2 Oracle reads your binding from the
 > game's settings file and presses <kbd>Ctrl</kbd> + that key + <kbd>C</kbd> instead.
 
-- The hotkey works only while the game or the panel is the window in front. In every other program
-  <kbd>Ctrl</kbd>+<kbd>E</kbd> keeps its usual meaning.
-- Press the hotkey over another item to check that one; the panel starts over for each item.
+- The hotkey works only while the game or the panel is the window in front and the settings window
+  is closed. In every other program <kbd>Ctrl</kbd>+<kbd>E</kbd> keeps its usual meaning.
+- Press the hotkey over another item to check that one; the panel starts over for each item, but
+  keeps the price currency you chose (see [Search options](#search-options)).
 - With no item under the cursor, nothing happens.
 - Close the panel with <kbd>Esc</kbd> or the **×** in its top-right corner. It does not close when
   the mouse leaves the item, so you can move into it and work with it. While the panel is open,
@@ -65,10 +66,10 @@ At the top of the panel:
 - the link **Craft of Exile ↗**, for an item the site can craft (gear, jewels, flasks, charms and
   waystones, not uniques or unidentified items): it opens the item in Craft of Exile's crafting
   simulator with its base, item level, rarity and modifiers, the site in the interface language;
-- the link **report a problem ↗**, for when the item was read or priced wrong. It opens GitHub's
-  item problem form in your browser with the item's text, the app's version and your client's
-  language filled in; you describe what is wrong and submit it from your GitHub account. See
-  [An item is not recognised](troubleshooting.md#an-item-is-not-recognised).
+- the link **report a problem**, for when the item was read or priced wrong. It opens PoE2 Oracle's
+  own report window, not a browser, with **Item** selected and the item's text attached (and, by
+  default, diagnostics). You describe what is wrong and click **Send**; no GitHub account is
+  needed. See [Reporting a problem](report.md).
 
 ## The chip row
 
@@ -78,7 +79,7 @@ Chips that only show information:
 
 | Chip | Meaning |
 |---|---|
-| **Class: …** | Item class, as the game names it (in Russian for items from a Russian client) |
+| *item class*, without a label | Item class, as the game names it (in Russian for items from a Russian client), on an item whose search can't switch to its base: a unique, a gem, a Currency Exchange item and the like |
 | **Item Level: …** | Item level |
 | **Required Level: …** | Required character level |
 | **Sockets: …** | Sockets |
@@ -86,8 +87,8 @@ Chips that only show information:
 | **Corrupted** | The item is corrupted |
 | **Stack Size: …** | Stack size |
 
-Chips with a gold border and **↔** at the end switch something when clicked. Hover any of them for
-an explanation.
+Chips with a gold **↔** at the end switch something when clicked; their outline turns gold under
+the pointer. Hover any of them for an explanation.
 
 | Chip | What it switches |
 |---|---|
@@ -120,20 +121,28 @@ game's Russian words (DPS as «УВС») and its modifiers as the client copied 
 are named by the Russian trade site.
 
 Each row has a checkbox (whether the row takes part in the search), the modifier text with your
-roll highlighted in blue, a tier badge and **min**/**max** boxes; a modifier whose tier the app
-knows also has a roll slider under it (see [Min and max](#min-and-max)). The tier badge is
-gold-filled for T1, gold-outlined for T2 and grey for lower tiers. Small labels under a row say
-where a modifier comes from: **augment** (from a rune or other augment), **crafted**, **fractured**,
-**enchant** (enchantment), **desecrated**. The label **sum**, explained when you hover it, marks a
-total whose value adds up the stat from all the item's modifiers: the trade site searches listings
-by the same sum. A line the trade site cannot search says **not part of the search**.
+roll highlighted in blue, a tier badge and **min**/**max** boxes; a ticked modifier whose tier the
+app knows also has a roll slider under it (see [Min and max](#min-and-max)). The tier badge is
+gold-filled for T1, gold-outlined for T2 and grey for lower tiers. Small labels before the modifier
+text, after the tier badge if there is one, say where a modifier comes from: **augment** (from a
+rune or other augment), **crafted**, **fractured**, **enchant** (enchantment), **desecrated**. The
+label **sum** in the same place, explained when you hover it, marks a total whose value adds up the
+stat from all the item's modifiers: the trade site searches listings by the same sum. Rows labelled
+**sum** appear only while PoE2 Oracle is signed in to pathofexile.com (section **Account** of the
+[settings](settings.md#account)): the trade site adds stats up only for a signed-in account. Signed
+out, the modifiers a sum would add up are rows of their own. A line the trade site cannot search
+says **not part of the search**.
+
+An item property left out of the search, such as item level, sockets or quality, is not a row but
+a small chip with an empty checkbox under its section's rows. Click it to add it to the search: its
+row appears, with bounds from the item's value. Untick the row and it folds back into a chip.
 
 On a magic or rare item that can still take modifiers, rows **Empty prefix** / **Empty prefixes: N**
 and **Empty suffix** / **Empty suffixes: N** (open prefix/suffix slots) can be searched too.
 
 Some rows are folded away: unselected totals, and minor properties such as a weapon's physical or
 elemental DPS when it is only a small part of the total. **▾ Totals and minor rows: N more** unfolds
-them; **▴ Hide totals and minor rows** folds them again.
+them; **▴ Hide totals and minor rows (N)** folds them again.
 
 ### Search profiles
 
@@ -190,20 +199,26 @@ a modifier yourself to search for it, or pick **Exact match** to search them all
   10% below it in **Broad −10%**. **max** stays empty, since a higher roll is never a reason to
   leave a listing out.
 - For the few modifiers where a lower number is better, **max** is filled in instead.
+- A waystone's tier and numbers that name something instead of measuring it, such as a timeless
+  jewel's legend, are searched exactly: **min** and **max** are both that number.
+- **Broad −10%** doesn't lower item level, sockets, quality, a gem's level and sockets, a granted
+  skill's level, a waystone's properties or a modifier that can roll only one value: they keep the
+  same bound as in the other profiles.
 - Type digits, a point or a comma (both give a decimal point) and a minus sign. The first key after
   you click into a box replaces its value.
 - <kbd>Enter</kbd> in a box runs the search again with the new bounds.
 
-Under a modifier row whose tier the app's tier table knows, a slider runs from the lowest to the
-highest roll of that modifier across all its tiers on this kind of item, with those two numbers at
-its ends. A bright gold tick marks your roll, and a gold circle, the handle, marks the search's
-**min** (its **max** on rows where a lower number is better); the part of the track the search
-admits is lit gold. Click or drag on the slider to move the handle, and the **min** (or **max**)
-box follows; typing in the box moves the handle. Hover the slider for a short explanation.
+Under a ticked modifier row whose tier the app's tier table knows, a slider runs from the lowest to
+the highest roll of that modifier across all its tiers on this kind of item. A bright gold tick
+marks your roll, and a gold circle, the handle, marks the search's **min** (its **max** on rows
+where a lower number is better); the part of the track the search admits is lit gold. Click or drag
+on the slider to move the handle, and the **min** (or **max**) box follows; typing in the box moves
+the handle. Hover the slider for a short explanation that names the lowest and highest rolls.
 
 Hover a tier badge to see where the tier stands: **Tier 3 of 9** (the tier among all tiers of that
-modifier on this kind of item), the lowest roll of this tier, every tier's range, the item level
-the tier requires, and the best tier the item's level can roll.
+modifier on this kind of item), the lowest roll of this tier, the lowest and highest rolls across
+all tiers (**All tiers: …**), the item level the tier requires, and the best tier the item's level
+can roll.
 
 The button **Tier minimum**, on the right of the profile's row, shows while a ticked modifier row
 has a known tier. It sets the **min** of every such ticked row to the bottom of its current tier,
@@ -216,15 +231,17 @@ box or click **Search**.
 ## Search options
 
 Under the filters, the **Search** button runs the search again; while a search runs, it reads
-**Searching…**. Beside it (under it, on a narrow panel) are two more choices. Each click on them
-moves to the next value and searches again at once.
+**Searching…**. Beside it (under it, on a narrow panel) are two more choices, each showing only its
+current value. Each click on them moves to the next value and searches again at once.
 
-- **Sellers:** **Buyout or In Person** → **Instant Buyout** (the default: the game's own auction
-  sells the item without the seller online) → **In Person** (sellers online, to trade with them in
-  the game) → **Any** (offline sellers too). The starting value comes from the
-  [settings](settings.md#search).
-- **Price:** **Any currency** → the Exalted Orb **or** the Divine Orb (shown by their icons) →
-  **Only** the Exalted Orb → only the Divine Orb → only the Chaos Orb.
+- Sellers (the tooltip starts with "Sellers:"): **Buyout or In Person** → **Instant Buyout** (the
+  default: the game's own auction sells the item without the seller online) → **In Person**
+  (sellers online, to trade with them in the game) → **Any** (offline sellers too). The starting
+  value comes from the [settings](settings.md#search), and every new item starts from it again.
+- Price currency (the tooltip starts with "Price:"): **Any currency** → the Exalted Orb **or** the
+  Divine Orb (shown by their icons) → **Only** the Exalted Orb → only the Divine Orb → only the
+  Chaos Orb. This choice stays from item to item until you change it; each start of PoE2 Oracle
+  resets it to **Any currency**.
 
 ## Results
 
@@ -278,12 +295,12 @@ costs one search on the trade site, and only when you press it:
   required. Offered only when at least two ticked rows count.
 
 After **Match N of M**, the results say "No exact matches — showing items with at least N of M
-selected stats", and each row shows how many of the selected rows it has, for example `3/4`. If
-that search finds nothing either, the panel says "Nothing found — not even with N of M selected
-stats".
+selected stats", and each row shows how many of the selected rows it has, for example `3/4`, when
+every ticked row that counts is a modifier, not a total or an empty slot. If that search finds
+nothing either, the panel says "Nothing found — not even with N of M selected stats".
 
 You can also widen the search yourself: untick some rows, lower some **min** values, search by
-class instead of base, or let other sellers in with the **Sellers:** choice.
+class instead of base, or let other sellers in with the sellers choice beside **Search**.
 
 ## Currency and exchange items
 
@@ -333,9 +350,10 @@ card, the Divine Orb rate in the title bar and the **poe2scout price** of unique
 public league yours is made from, the one its page on pathofexile.com names. Until the app has
 read that page (signed out, say), it takes the current league, or its hardcore twin for a league
 with "HC" or "Hardcore" in its name (**Forbidden Rites** and **HC Forbidden Rites** this season).
-The card says so in its first line, "Prices from *league*: a private league trades too little on the
-exchange.", and so does the rate's tooltip. Take them as a guide: a small league's own rates can be
-far from the public league's. Trade site searches, listings included, stay in your league.
+The card says so in a line under the price, "Prices from *league*: a private league trades too
+little on the exchange.", and so does the rate's tooltip. Take them as a guide: a small league's
+own rates can be far from the public league's. Trade site searches, listings included, stay in
+your league.
 
 ## Unique items
 
@@ -352,12 +370,14 @@ A waystone's modifiers start unselected: its tier and properties decide the pric
 modifiers to spot them at a glance on every waystone you check:
 
 - click the **◇** at the end of a modifier row. Each click moves the mark on: danger (red) →
-  caution (orange) → wanted (green) → no mark;
+  caution (orange) → wanted (green) → no mark. A marked row shows **◆** in the mark's colour; to
+  clear the mark, click it until it is **◇** again;
 - marked modifiers are listed under the filters: **Danger:**, **Caution:**, **Wanted:**;
-- with no marks yet, the panel reminds you: "◇ at the end of a modifier marks it: danger, caution
-  or wanted".
+- while none of this waystone's modifiers is marked, the panel reminds you: "◇ at the end of a
+  modifier marks it: danger, caution or wanted".
 
-Marks are kept in your settings and apply to the same modifier on every waystone, in both client
+Marks are saved in PoE2 Oracle's [settings file](settings.md#where-the-settings-are-kept), not
+shown in the settings window, and apply to the same modifier on every waystone, in both client
 languages. Marking a modifier does not add it to the search.
 
 ## Vendor gambles
@@ -376,16 +396,18 @@ trade site."
 | "Searching…" | Searching. |
 | "Loading exchange prices…" | Loading the Currency Exchange's prices for an exchange item. |
 | "Trade API request limit — waiting Ns…" | The trade site's request limit is close; the app waits N seconds and then searches. |
-| "The trade site has limited searches for a while — try again in 9m 50s." | The trade site has locked searches from your IP address for a while. Search again after that time; Currency Exchange prices keep working. See [Request limits](#request-limits). |
+| "The trade site has limited searches for a while — try again in 9m 50s." | Searches are on hold: the trade site has locked searches from your IP address for a while, or its limit would need a wait longer than 15 seconds. Search again after that time; Currency Exchange prices keep working. See [Request limits](#request-limits). |
 | "Can't reach the trade site — check your internet connection and try again." | The trade site could not be reached. Check your connection and search again. |
 | "The trade API refused the request (HTTP …): …" | The trade site refused the search; its own message follows. |
+| "The trade site searches the “sum” rows only for a signed-in account, and it isn't accepting this app's sign-in now…" | The search had a ticked **sum** row, and the trade site did not accept PoE2 Oracle's sign-in. **Search without sums** builds the rows again without sums, as a signed-out search does, and searches once; **Sign in** opens the pathofexile.com sign-in page. |
+| "The trade site finds this search too complex: uncheck some rows and search again. Signed in, the site allows more." | The search has more rows than the trade site takes. Untick some rows and search again, or sign in to pathofexile.com in the [settings](settings.md#account). |
 | "Search failed: …" | Any other search error. |
 | "Nothing found" | No listings match. Buttons under it offer broader searches, one trade search each: **Broad −10%** and **Match N of M**. "Nothing found — not even with N of M selected stats" means that **Match N of M** found nothing either. See [When nothing matches exactly](#when-nothing-matches-exactly). |
 | "Nobody traded this item on the Currency Exchange in … in the last hours." | This exchange item has not been traded in your league in the last hours; poe2scout's price or the trade site's listings are shown instead. See [When the exchange has no recent trades](#when-the-exchange-has-no-recent-trades). |
 | "GGG's Currency Exchange data is unavailable right now." | GGG's exchange data could not be reached; poe2scout's price or the trade site's listings are shown instead. |
 | "No listings on the trade site" | The trade site has no listings of this exchange item. |
 | "The game doesn't copy the item: another program takes Ctrl+Alt+C…" | Another program holds the copy shortcut, so the game never copied the item. See [Troubleshooting](troubleshooting.md#the-hotkey-does-nothing). |
-| "Couldn't read the item…" | The item text could not be read. The button **Report a problem** under the message opens the item problem form with the text filled in. See [Troubleshooting](troubleshooting.md#an-item-is-not-recognised). |
+| "Couldn't read the item…" | The item text could not be read. The button **Report a problem** under the message opens PoE2 Oracle's report window with **Item** selected and the item's text attached: describe what went wrong and click **Send**. See [Reporting a problem](report.md) and [Troubleshooting](troubleshooting.md#an-item-is-not-recognised). |
 
 ### Request limits
 
@@ -395,7 +417,9 @@ on the same connection. A price check costs one search and one request for the 1
 listings. PoE2 Oracle reads the limits from the site's answers:
 
 - when the next search would break a limit and the wait is 15 seconds or less, the app waits,
-  saying "Trade API request limit — waiting Ns…", and then searches by itself;
+  saying "Trade API request limit — waiting Ns…", and then searches by itself. It does not sit out
+  a longer wait: the search stops with "The trade site has limited searches for a while — try again
+  in …" and the time left;
 - when the trade site refuses a request, it locks your IP address out for a while, often for
   minutes. PoE2 Oracle then sends no trade request at all until the lockout ends and says when to
   try again: "The trade site has limited searches for a while — try again in 9m 50s." Currency

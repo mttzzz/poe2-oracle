@@ -4,7 +4,7 @@
         "exalted": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvQ3VycmVuY3kvQ3VycmVuY3lBZGRNb2RUb1JhcmUiLCJzY2FsZSI6MSwicmVhbG0iOiJwb2UyIn1d/ad7c366789/CurrencyAddModToRare.png",
         "chaos": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvQ3VycmVuY3kvQ3VycmVuY3lSZXJvbGxSYXJlIiwic2NhbGUiOjEsInJlYWxtIjoicG9lMiJ9XQ/c0ca392a78/CurrencyRerollRare.png"
     },
-    "league": "Forbidden Rites",
+    "league": "Auto · Forbidden Rites",
     "rate": "492",
     "item": {
         "art": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvQXJtb3Vycy9IZWxtZXRzL0Jhc2V0eXBlcy9IZWxtZXREZXgwNSIsInciOjIsImgiOjIsInNjYWxlIjoxLCJyZWFsbSI6InBvZTIifV0/367615d8a8/HelmetDex05.png",
@@ -13,7 +13,7 @@
         "rarity": "rare",
         "lang": "en"
     },
-    "links": ["poe2db ↗", "wiki ↗", "Craft of Exile ↗", "report a problem ↗"],
+    "links": ["poe2db ↗", "wiki ↗", "Craft of Exile ↗", "report a problem"],
     "chips": [
         { "label": "Class:", "value": "Helmets", "toggle": true },
         { "label": "Required Level:", "value": "59" },

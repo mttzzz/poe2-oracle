@@ -6,61 +6,71 @@ Thank you for helping. The most useful contributions are precise bug reports and
 the app reads wrong; code is welcome too. Everyone taking part follows the
 [Code of Conduct](CODE_OF_CONDUCT.md).
 
-## Filing an issue
+## Reporting a problem
 
-1. **Search first**, among open and closed issues. If your problem is already there, add what is
-   new to it (a different item, another client language) instead of opening a second issue.
-2. **One problem per issue.** Two unrelated bugs in one issue tend to get only one of them fixed.
-3. **Use the forms**, they ask for what is needed:
-   [bug report](https://github.com/mttzzz/poe2-oracle/issues/new?template=bug_report.yml),
-   [item problem](https://github.com/mttzzz/poe2-oracle/issues/new?template=item_problem.yml)
-   (not recognised, wrong filters, wrong price),
-   [feature request](https://github.com/mttzzz/poe2-oracle/issues/new?template=feature_request.yml).
-   You can write in English or Russian.
-4. **Always include:**
-   - the app version: Windows Settings → Apps → Installed apps shows it next to PoE2 Oracle;
-   - the game client language (English or Russian);
-   - what you did, what you expected and what happened instead.
-5. **For an item problem, include the item text.** The quickest way is the link
-   **report a problem ↗** under the item name on the price panel, or the button **Report a problem**
-   in the message about an item the app couldn't read: either opens the item form with the text
-   filled in. By hand: in the game, hover the item and press `Ctrl+Alt+C` (the game's advanced
-   copy, the same one the app uses: it includes the mod tiers), then paste it into the form. Texts
-   the app couldn't read are also kept in `%LOCALAPPDATA%\poe2-oracle\data\unparsed`.
-6. **Attach the diagnostics report** when the problem isn't about one item. **Report a bug** in the
-   tray menu, or **Report ↗** in the **Help** section of the settings, writes
-   `PoE2-Oracle-report-<date>_<time>.zip` to your desktop, shows it in Explorer and opens the bug
-   form with the version, the client language and the zip's name filled in; drag the zip into the
-   form. (**Collect report** only writes the zip.) It holds the logs of the current and the previous
-   run, your settings, the item texts the app couldn't read and a summary of the system (Windows
-   version, monitors, the game window's size, the game's display mode, language and copy key, the
-   cached files). Your Windows user name, if it has three characters or more, is replaced with
-   `%USERNAME%` in every file, and the paths of your user, Desktop, Documents and AppData folders
-   with `%USERPROFILE%`, `%DESKTOP%`, `%DOCUMENTS%`, `%APPDATA%` and `%LOCALAPPDATA%`. You can open
-   the zip and check it before attaching it. The app sends nothing itself: you submit the form from
-   your own GitHub account.
+Players report from the app or from the site; this repository's issue forms are for the
+maintainer's own notes, since outsiders can't reach them while the repository is private.
+
+1. **One problem per report.** Two unrelated bugs in one report tend to get only one of them fixed.
+2. **Report from the app**, which adds what is needed: **Report a problem or idea…** in the tray
+   menu, or **Write to the developer** in the **Help** section of the settings, opens the report
+   window. Along with your text it sends the app version, the interface and client languages, the
+   Windows version, the league and the interface scale. You can write in English or Russian; leave
+   a contact (Telegram, Discord or email) if you'd like an answer.
+3. **Always say** what you did, what you expected and what happened instead.
+4. **For an item problem, report it from the item.** The link **report a problem** under the item
+   name on the price panel, or the button **Report a problem** in the message about an item the app
+   couldn't read, opens the window with the item's text attached (not recognised, wrong filters,
+   wrong price). By hand: in the game, hover the item and press `Ctrl+Alt+C` (the game's advanced
+   copy, the same one the app uses: it includes the mod tiers), then paste it into your report.
+   Texts the app couldn't read are also kept in `%LOCALAPPDATA%\poe2-oracle\data\unparsed`.
+5. **Leave Attach diagnostics on** when the problem isn't about one item (it is on by default for a
+   problem, an item or a crash). The report then carries the diagnostics report: the logs of the
+   current and the previous run, your settings, the item texts the app couldn't read and a summary
+   of the system (Windows version, monitors, the game window's size, the game's display mode,
+   language and copy key, the cached files). Your Windows user name, if it has three characters or
+   more, is replaced with `%USERNAME%` in every file, and the paths of your user, Desktop, Documents
+   and AppData folders with `%USERPROFILE%`, `%DESKTOP%`, `%DOCUMENTS%`, `%APPDATA%` and
+   `%LOCALAPPDATA%`. To check it first, **What's inside** in the report window saves the same zip
+   to your desktop and shows it in Explorer; so does **Collect report** in the **Help** section of
+   the settings, as `PoE2-Oracle-report-<date>_<time>.zip`.
+6. **After a crash**, the next launch opens the report window by itself, with what the app reported
+   attached; say what you were doing when it closed.
+7. **Without the app**, the form at https://oracle.pushka.biz/report.html (Russian:
+   https://oracle.pushka.biz/ru/report.html) takes a problem or an idea, text only: mention the app
+   version (Windows Settings → Apps → Installed apps shows it next to PoE2 Oracle) and your game
+   client language.
+
+Reports reach only the maintainer: oracle.pushka.biz files each one as an issue in this repository
+and sends a Telegram message, the diagnostics zip to Telegram only.
 
 **Never post** passwords, your pathofexile.com session cookie (`POESESSID`) or any other token in
-issues, logs or screenshots: whoever has them can act as you on the site.
+reports, logs or screenshots: whoever has them can act as you on the site.
 
-Security vulnerabilities are not reported in public issues; see [SECURITY.md](SECURITY.md).
+For security vulnerabilities, see [SECURITY.md](SECURITY.md).
 
 ## The code
 
 ```text
 crates/
-  poe2-oracle/     the app: price panel, settings, XP overlay, tray, updates, Win32 overlay
-                   windows, hotkeys and the game's input
+  poe2-oracle/     the app: price panel, settings, XP overlay, report window, tray, updates, Win32
+                   overlay windows, hotkeys and the game's input
   item-parser/     clipboard item text -> ParsedItem (English and Russian clients)
   stat-filters/    ParsedItem -> the trade search's filter rows (built as in Exiled Exchange 2;
                    which ones a search starts with, and their bounds, as in PoE Overlay II)
   trade-client/    trade API (leagues, catalogs, search, fetch, rate limits), the Currency Exchange
                    market from GGG's hourly exchange data, poe2scout prices
   poe2-domain/     shared item and stat types, no I/O
-  auto-update/     GitHub release check and SHA-256-verified installer download
+  auto-update/     release check against oracle.pushka.biz, Ed25519-verified SHA256SUMS and the
+                   SHA-256-checked installer download
+  oracle-protocol/ the app <-> service contract: where the service is, what a report carries, the
+                   release answer the updater reads
+  oracle-web/      the oracle.pushka.biz service: site, guide, reports, update proxy, daily digest
+  release-sign/    signs a release's SHA256SUMS in CI
 packaging/         release script, NSIS installer, data table generators (packaging/data)
-docs/guide/        the user guide (mdBook), published with the site
-site/              the project site's landing pages
+docs/guide/        the user guide (mdBook), served by oracle-web under /guide/
+site/              the landing pages and the report form, served by oracle-web
+deploy/            the service's Helm values and the Docker build's workspace trim
 lanes/             the Linux build container used by CI
 ```
 
@@ -102,18 +112,23 @@ Things that save time:
   default filters (for example `RUST_LOG=debug`); with a console attached, the lines also go to
   stderr.
 - `POE2_ORACLE_KEEP_ITEM_TEXTS=1` keeps the text of every checked item in `data\unparsed`, not only
-  the troubled ones: handy for collecting parser fixtures.
+  the troubled ones: handy for collecting parser fixtures. The folder keeps the newest 100 texts,
+  so copy them out before checking more.
 - `POE2_ORACLE_CLIENT_LOG=<file>` makes the app read that file instead of the game's `Client.txt`,
   so the XP overlay can be tested by appending lines to it.
-- `POE2_ORACLE_RELEASES_URL` is read at build time: the updater then asks that URL instead of this
-  repository's latest GitHub release, for testing an update end to end against a local stand-in.
+- `POE2_ORACLE_API_BASE` is read at build time: the app then sends its reports and update checks to
+  that address instead of `https://oracle.pushka.biz`, for testing against your own `oracle-web`
+  (see [The web service](#the-web-service)). It must be https, without a trailing slash; a plain
+  `http://` address also needs `--features oracle-protocol/dev-endpoints`.
+  `packaging/build-release.ps1` refuses both, so a release always talks to oracle.pushka.biz.
 
 ## Checks (what CI runs)
 
 CI (`.github/workflows/ci.yml`) runs on Linux, in the container built from
 `lanes/runner.Dockerfile` (Rust with the `x86_64-pc-windows-gnu` cross toolchain, rustfmt and
-clippy). The windows-gnu cross build is for type-checking only; it is not a binary to ship. To run
-exactly what CI runs (Linux, macOS or WSL with Docker):
+clippy). The windows-gnu cross build is for type-checking only; it is not a binary to ship, and it
+leaves out `oracle-web`, a Linux server. To run exactly what CI runs (Linux, macOS or WSL with
+Docker):
 
 ```sh
 docker build -f lanes/runner.Dockerfile -t poe2-oracle-runner .
@@ -126,7 +141,7 @@ docker run --rm --user "$(id -u):$(id -g)" -v "$PWD":/workspace -w /workspace \
     cargo clippy -p poe2-oracle --all-targets --target x86_64-pc-windows-gnu -- -D warnings
     cargo test --workspace --exclude poe2-oracle
     cargo test -p poe2-oracle --lib
-    cargo build --workspace --target x86_64-pc-windows-gnu
+    cargo build --workspace --exclude oracle-web --target x86_64-pc-windows-gnu
   '
 ```
 
@@ -140,8 +155,12 @@ whenever you like. The maintainer runs the same container as a local "lane" (`la
   runs it.
 - Match the code around your change. Comments say why, not what, and name the source of a fact
   (an Exiled Exchange 2 file, a live API answer and its date) when the code depends on it.
-- The app's interface is Russian; new interface text is Russian too, in the wording the panel
-  already uses.
+- The interface speaks English and Russian. Write new interface text in English inside `tr!("…")`
+  (`tr_n!` for a count) and put its Russian in the `crates/poe2-oracle/assets/i18n/ru/*.json` file
+  for that part of the app, in the wording the app already uses (a new file also goes into
+  `RUSSIAN_FILES` in `i18n.rs`). `cargo test -p poe2-oracle --lib` fails on a text without its
+  Russian, a Russian entry no code uses, a text in two files, or a lost `{placeholder}` or plural
+  form.
 - Tests go where a plausible bug would fail them. For the parser, that is a real item text copied
   from the game (`Ctrl+Alt+C`) saved under `crates/item-parser/tests/fixtures/`, plus what it must
   parse to.
@@ -149,8 +168,8 @@ whenever you like. The maintainer runs the same container as a local "lane" (`la
 ## Regenerating the data tables
 
 Some tables come from [Exiled Exchange 2](https://github.com/Kvan7/Exiled-Exchange-2) (MIT), at the
-commit named in `crates/poe2-oracle/assets/data/NOTICE` and `crates/item-parser/data/NOTICE`. After
-a game patch or at a new league, from the repository root:
+commit named in `crates/poe2-oracle/assets/data/NOTICE`, `crates/item-parser/data/NOTICE` and
+`crates/stat-filters/data/NOTICE`. After a game patch or at a new league, from the repository root:
 
 ```sh
 # The ways the client prints stats: crates/item-parser/data/stat-matchers-{en,ru}.tsv
@@ -162,8 +181,8 @@ python3 packaging/data/generate_item_refs.py <EE2>/renderer/public/data <RePoE f
 
 `crates/stat-filters/src/better.rs` (stats where a lower roll is better) is kept by hand from the
 same stat database; its module comment says how. Don't edit the generated `.tsv` files by hand. When
-you move to another EE2 commit, update the commit in both `NOTICE` files and in `about.hbs`, which
-copies them into the third-party notices.
+you move to another EE2 commit, update the commit in those three `NOTICE` files, in `better.rs`'s
+module comment and in `about.hbs`, which copies them into the third-party notices.
 
 To check the result against real items, sweep item texts from the game (a vendor, the stash, your
 inventory) into one file, separated by lines starting with `####`, copy the app's cached catalogs
@@ -218,7 +237,72 @@ add `--no-sandbox`. It writes `docs/guide/src/images/<en|ru>/*.webp` and the soc
 `og.jpg` from `site/ui/shots.html`. The app's text face is Segoe UI, which comes with Windows and
 may not be shared: render on Windows or with Segoe UI installed, or the script warns and the
 pictures' text comes out in another face. The XP overlay's pictures lie on two crops of the game's
-HUD, `site/ui/img/hud-flask.webp` and `hud-skill.webp`.
+HUD, `site/ui/img/hud-flask.webp` and `hud-skill.webp`. The plates on them are the app's own
+pixels, `site/ui/img/plate-flask.png` and `plate-skill.png`: after changing the plates' look, draw
+them again from the app's code before running `render-ui.mjs`:
+
+```sh
+cargo run -p poe2-oracle --example plate_art -- site/ui/img
+```
+
+## The web service
+
+`crates/oracle-web` is the service at oracle.pushka.biz. It serves the landing pages (`site/`), the
+guide (built from `docs/guide`) and its images; takes reports on `POST /api/v1/reports` and passes
+each one on to the maintainer, as an issue in this repository and a Telegram message; serves the
+latest release and its files from this private repository (`/api/v1/releases/latest`,
+`/download/<tag>/<file>`, `/download/latest`); and posts a daily digest of downloads, update
+checks and reports. What the app and the service share is in `crates/oracle-protocol`: the
+service's address, the report and release types, and the report limits (`Report::check`, which
+both sides run).
+
+It takes its settings from the environment, all optional:
+
+| Variable | Default | What for |
+|---|---|---|
+| `PORT` | `8080` | Listens on `0.0.0.0:PORT` |
+| `PUBLIC_URL` | `https://oracle.pushka.biz` | The public address, no trailing slash; the release answer's download links start with it |
+| `SITE_DIR` | `/app/site` | The landing pages (`site/`); a `404.html` there is the 404 page |
+| `GUIDE_DIR` | `/app/guide` | The built guide (`mdbook build docs/guide`), served under `/guide/` |
+| `IMAGES_DIR` | `/app/images` | `docs/guide/src/images`, served under `/images/` |
+| `GITHUB_TOKEN` | — | A fine-grained token for this repository (Issues read and write, Contents read): files the report issues, reads the latest release and downloads its files. Unset: no issues are filed, and `/api/v1/releases/latest` and `/download` answer 503 |
+| `GITHUB_REPO` | `mttzzz/poe2-oracle` | The repository the issues and releases belong to |
+| `TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID` | — | The bot and the chat the reports and the digest go to; with either unset, nothing goes to Telegram |
+| `REDIS_URL` | — | Redis for the daily counters (kept 120 days), the report rate limits and the digest lock; unset, they're kept in memory and lost on a restart |
+| `RUST_LOG` | `info` | The log filter; the log goes to stdout |
+
+The digest goes out at 09:00 Moscow time: the day before, against the same weekday a week earlier.
+
+To run the service without sending anything, leave `GITHUB_TOKEN` and `TELEGRAM_TOKEN` unset: every
+report is still checked, rate-limited and counted, then written to the log instead of sent, and
+answered with id 0. Build the guide with mdBook (the version the root `Dockerfile` pins as
+`MDBOOK_VERSION`), then run the service and open http://localhost:8080/:
+
+```sh
+mdbook build docs/guide --dest-dir target/guide
+SITE_DIR=site GUIDE_DIR=target/guide IMAGES_DIR=docs/guide/src/images cargo run -p oracle-web
+```
+
+A test build of the app pointed at it (`POE2_ORACLE_API_BASE`) takes release files only from under
+that address's `/download/`, so set the service's `PUBLIC_URL` to the same address; a test
+release's `SHA256SUMS` still has to be signed with the real release key. The maintainer's lane runs
+the service the same way, dry, with `lane dev up` (`lanes/dev.sh`; `lane dev restart` after
+editing the guide or the server).
+
+### Deploying the service
+
+`.github/workflows/deploy.yml` deploys on a push to `main` that touches the service's crates,
+`site/`, `docs/guide/`, the `Dockerfile` or `.dockerignore`, `deploy/`, `Cargo.lock` or the
+workflow itself, and by hand (workflow_dispatch). It builds the root `Dockerfile` (`oracle-web` in
+a workspace trimmed to the two crates it needs by `deploy/trim-workspace.sh`, so the app's GPUI
+dependency isn't fetched; the guide with the pinned mdBook; `site/` and the guide's images; on a
+distroless image) and rolls it out through the shared deploy workflow as the Helm release
+`oracle-pushka-biz` on the DigitalOcean cluster (`deploy/values.yaml`: one replica, port 8080,
+probe `/healthz`). The service's secrets (`GITHUB_TOKEN`, `TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID`,
+`REDIS_URL`) live in Infisical, project `oracle-pushka-biz`, environment `prod`, which syncs them
+into the Kubernetes Secret `oracle-pushka-biz-env-secret`; the workflow's own secrets (the
+registry, the Helm repository, DigitalOcean, the Telegram note) are this repository's Actions
+secrets.
 
 ## Dependencies and licenses
 
@@ -233,10 +317,11 @@ cargo about generate -m crates/poe2-oracle/Cargo.toml about.hbs -o target/THIRD-
 
 ## Pull requests
 
-Open an issue first for anything bigger than a small fix, so the approach can be agreed before you
-spend time on it. Then:
+Write to the maintainer first (**Write to the developer** in the **Help** section of the app's
+settings) for anything bigger than a small fix, so the approach can be agreed before you spend time
+on it. Then:
 
-- [ ] One change per pull request, linked to its issue.
+- [ ] One change per pull request.
 - [ ] `cargo fmt`, clippy and the tests pass as in [Checks](#checks-what-ci-runs).
 - [ ] New behaviour is covered by a test where a plausible bug would fail it.
 - [ ] Changes to the panel or the overlays were tried in the game on Windows; visible changes come
@@ -248,11 +333,32 @@ spend time on it. Then:
 
 ## Releases
 
-For the maintainer: set the new version in the root `Cargo.toml` (`[workspace.package] version`),
-move the `Unreleased` changelog entries under it, and push a tag `v<version>`.
-`.github/workflows/release.yml` builds the installer with `packaging/build-release.ps1` and
-publishes it with `SHA256SUMS` as the GitHub release the in-app updater reads. A tag with a
-pre-release suffix (`v0.2.0-rc.1`) becomes a pre-release, which the updater never offers.
+For the maintainer:
+
+1. Set the new version in the root `Cargo.toml` (`[workspace.package] version`) and commit it
+   together with the `Cargo.lock` the next cargo command updates: the release build runs with
+   `--locked`.
+2. Date the version's heading in `CHANGELOG.md` and `CHANGELOG.ru.md`, keeping its form,
+   `## [<version>] - <date>`: `release.yml` takes the release notes from that section.
+3. Push a tag `v<version>`. `.github/workflows/release.yml` builds the installer on Windows with
+   `packaging/build-release.ps1` (a job without secrets), signs `SHA256SUMS` on Ubuntu with
+   `crates/release-sign` and the `RELEASE_SIGNING_KEY` secret, checks that signature against the
+   app's public key, and creates a **draft** GitHub release with the installer, `SHA256SUMS` and
+   `SHA256SUMS.sig`.
+4. Test the draft's installer, then publish the release by hand. oracle.pushka.biz serves only
+   published releases, so from then on the app offers it as the latest version and the site's
+   download button gives its installer.
+
+A tag with a pre-release suffix (`v0.2.0-rc.1`) becomes a pre-release, which the app never offers.
+
+`RELEASE_SIGNING_KEY` is the standard base64 of the 32-byte Ed25519 seed: one line, 44 characters,
+kept as a GitHub Actions secret. Its public key, `crates/auto-update/release-signing-key.pub`, is
+compiled into the app, which installs an update only if `SHA256SUMS.sig` checks out against it.
+`packaging/build-release.ps1` run by hand signs too when `RELEASE_SIGNING_KEY` is set, and
+otherwise warns that the release is unsigned. `cargo run -p release-sign -- keygen <secret file>`
+makes a new key pair: it writes the seed to a new file and prints only the public key.
+`sign <SHA256SUMS> [<out.sig>]` (the key from `RELEASE_SIGNING_KEY`, or `--key-file <file>`) and
+`verify <SHA256SUMS> <sig> <public key>` work by hand too.
 
 ## License
 

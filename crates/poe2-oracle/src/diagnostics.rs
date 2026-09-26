@@ -1,17 +1,21 @@
-//! The report the player sends with a bug: one zip on their desktop holding this run's and the
-//! previous run's log, the settings, the kept item texts and a summary of the app and the system.
-//! What would name the player is masked in every file (`bug_report::Masker`): their Windows user
-//! name, and their user folder and the Desktop, Documents and AppData folders wherever Windows
-//! keeps them -- they're in each path the logs mention.
+//! The diagnostics a report attaches (`report`, `ui::report_view`), which the settings window's
+//! «Собрать отчёт» also saves to the desktop: one zip, built in memory, of this run's and the
+//! previous run's log -- the newest part of each -- the settings, the kept item texts and a
+//! summary of the app and the system, kept under what the service takes
+//! (`oracle_protocol::MAX_DIAGNOSTICS_BYTES`). What would name the player is masked in every file
+//! (`report::Masker`): their Windows user name, and their user folder and the Desktop, Documents
+//! and AppData folders wherever Windows keeps them -- they're in each path the logs mention.
 
 use std::fs::{self, File};
-use std::io::Write as _;
+use std::io::{self, Read as _, Seek as _, SeekFrom};
 use std::os::windows::process::CommandExt as _;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::LazyLock;
 use std::time::SystemTime;
 
 use anyhow::{Context as _, Result};
+use oracle_protocol::MAX_DIAGNOSTICS_BYTES;
 use windows::Win32::Foundation::{ERROR_SUCCESS, LPARAM, RECT};
 use windows::Win32::Graphics::Gdi::{
     EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFO,
@@ -24,60 +28,97 @@ use windows::Win32::UI::HiDpi::{GetDpiForMonitor, GetDpiForWindow, MDT_EFFECTIVE
 use windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY;
 use windows::Win32::UI::WindowsAndMessaging::MONITORINFOF_PRIMARY;
 use windows::core::{BOOL, PCWSTR, w};
-use zip::write::SimpleFileOptions;
-use zip::{CompressionMethod, ZipWriter};
 
-use crate::bug_report::Masker;
 use crate::logging::{LOG_FILE, PREVIOUS_LOG_FILE};
 use crate::paths;
 use crate::platform::game_config::{self, DisplayMode, GameConfig};
 use crate::platform::{game_window, synth_input};
+use crate::report::{DiagnosticsZip, LOG_TAIL_BYTES, Masker, log_tail};
 use crate::tr;
 
-/// Writes the report and returns where it went: the desktop, or the log folder without one.
-/// `app_summary` is the app's own state (league, catalogs, hotkey, ...), gathered by the caller
-/// on the thread that owns it; the system half is gathered here.
-pub fn write_report(app_summary: &str) -> Result<PathBuf> {
-    let now = LocalTime::now();
-    let dir = directories::UserDirs::new()
-        .and_then(|dirs| dirs.desktop_dir().map(Path::to_path_buf))
-        .unwrap_or_else(paths::logs_dir);
-    fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
-    let path = dir.join(format!("PoE2-Oracle-report-{}.zip", now.for_file_name()));
+/// Windows as the registry names it ([`windows_version`]): read once, since it can't change while
+/// the app runs. The summary and every report's context say it.
+pub(crate) static WINDOWS_VERSION: LazyLock<String> = LazyLock::new(windows_version);
 
+/// The diagnostics zip. `app_summary` is the app's own state (league, catalogs, hotkey, ...),
+/// gathered by the caller on the thread that owns it; the system half is gathered here. Each log
+/// goes in as its newest part ([`read_log`]), and the kept item texts newest first, as many as fit
+/// under the service's limit.
+pub fn collect(app_summary: &str) -> Result<Vec<u8>> {
     let masker = Masker::for_this_user();
-    let file = File::create(&path).with_context(|| format!("creating {}", path.display()))?;
-    let mut zip = ZipWriter::new(file);
+    let mut zip = DiagnosticsZip::new(MAX_DIAGNOSTICS_BYTES);
     let summary = format!(
         "PoE2 Oracle {} -- report of {}\n\n{app_summary}\n{}",
         env!("CARGO_PKG_VERSION"),
-        now.for_humans(),
+        LocalTime::now().for_humans(),
         system_summary()
     );
-    add_text(&mut zip, "summary.txt", &masker.mask(&summary))?;
+    zip.add("summary.txt", masker.mask(&summary).as_bytes())?;
     for name in [LOG_FILE, PREVIOUS_LOG_FILE] {
-        if let Ok(bytes) = fs::read(paths::logs_dir().join(name)) {
-            let text = masker.mask(&String::from_utf8_lossy(&bytes));
-            add_text(&mut zip, &format!("logs/{name}"), &text)?;
+        if let Ok(text) = read_log(&paths::logs_dir().join(name)) {
+            zip.add(&format!("logs/{name}"), masker.mask(&text).as_bytes())?;
         }
     }
     if let Some(settings) = paths::settings_file()
         && let Ok(text) = fs::read_to_string(settings)
     {
-        add_text(&mut zip, "settings.json", &masker.mask(&text))?;
+        zip.add("settings.json", masker.mask(&text).as_bytes())?;
     }
-    for entry in fs::read_dir(paths::unparsed_dir())
+    // Newest first: when they don't all fit, the latest are the ones a report is about.
+    let mut texts: Vec<_> = fs::read_dir(paths::unparsed_dir())
         .into_iter()
         .flatten()
         .flatten()
-    {
-        if let Ok(text) = fs::read_to_string(entry.path()) {
-            let name = entry.file_name().to_string_lossy().into_owned();
-            add_text(&mut zip, &format!("unparsed/{name}"), &masker.mask(&text))?;
+        .filter_map(|entry| Some((entry.metadata().ok()?.modified().ok()?, entry)))
+        .collect();
+    texts.sort_by_key(|(written, _)| std::cmp::Reverse(*written));
+    for (_, entry) in texts {
+        let Ok(text) = fs::read_to_string(entry.path()) else {
+            continue;
+        };
+        let name = format!("unparsed/{}", entry.file_name().to_string_lossy());
+        if !zip.add(&name, masker.mask(&text).as_bytes())? {
+            break;
         }
     }
-    zip.finish().context("finishing the report zip")?;
+    zip.finish()
+}
+
+/// Saves the diagnostics zip ([`collect`]) to the desktop -- the settings window's «Собрать
+/// отчёт», the report window's «Что внутри» -- and returns where it went.
+pub fn write_report(app_summary: &str) -> Result<PathBuf> {
+    save_to_desktop("PoE2-Oracle-report", &collect(app_summary)?)
+}
+
+/// Saves `bytes` as `<name>-<local time>.zip` on the desktop -- or in the log folder without
+/// one -- and returns where it went.
+pub fn save_to_desktop(name: &str, bytes: &[u8]) -> Result<PathBuf> {
+    let dir = directories::UserDirs::new()
+        .and_then(|dirs| dirs.desktop_dir().map(Path::to_path_buf))
+        .unwrap_or_else(paths::logs_dir);
+    fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
+    let path = dir.join(format!("{name}-{}.zip", LocalTime::now().for_file_name()));
+    fs::write(&path, bytes).with_context(|| format!("writing {}", path.display()))?;
     Ok(path)
+}
+
+/// A log's newest part ([`log_tail`]), read from its end: the current run's can be long, and only
+/// its end is wanted. A log cut short says so on its first line.
+fn read_log(path: &Path) -> io::Result<String> {
+    let mut file = File::open(path)?;
+    let len = file.metadata()?.len();
+    // A byte more than the tail takes, so that `log_tail` finds where its first whole line starts.
+    let start = len.saturating_sub(LOG_TAIL_BYTES as u64 + 1);
+    file.seek(SeekFrom::Start(start))?;
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)?;
+    let tail = log_tail(&bytes, LOG_TAIL_BYTES);
+    let mut text = String::new();
+    if (tail.len() as u64) < len {
+        text.push_str("[the log's older lines are left out]\n");
+    }
+    text.push_str(&String::from_utf8_lossy(tail));
+    Ok(text)
 }
 
 /// Opens an Explorer window with `path` selected.
@@ -99,14 +140,6 @@ pub fn open_logs_folder() {
     if let Err(err) = Command::new("explorer.exe").arg(&dir).spawn() {
         log::warn!("opening {} failed: {err}", dir.display());
     }
-}
-
-fn add_text(zip: &mut ZipWriter<File>, name: &str, text: &str) -> Result<()> {
-    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
-    zip.start_file(name, options)
-        .with_context(|| format!("adding {name} to the report"))?;
-    zip.write_all(text.as_bytes())
-        .with_context(|| format!("writing {name} into the report"))
 }
 
 /// Something in the player's setup that keeps checks from working: the settings window lists
@@ -156,7 +189,7 @@ pub fn setup_problems(config: &GameConfig) -> Vec<SetupProblem> {
 /// cached files.
 fn system_summary() -> String {
     let mut out = String::from("[system]\n");
-    out += &format!("windows: {}\n", windows_version());
+    out += &format!("windows: {}\n", *WINDOWS_VERSION);
     for monitor in monitors() {
         out += &format!("monitor: {monitor}\n");
     }

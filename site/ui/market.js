@@ -12,7 +12,7 @@ import { h, chip, gameFrame, icon, link, ornamentRule, select } from "./dom.js";
 // The app's words in Russian; English is the key.
 const RUSSIAN = {
     "wiki ↗": "вики ↗",
-    "report a problem ↗": "сообщить о проблеме ↗",
+    "report a problem": "сообщить о проблеме",
     "Stack Size:": "В стопке:",
     "Last 7 days": "За 7 дней",
     "not enough data": "мало данных",
@@ -131,7 +131,7 @@ function nameplate(item, icons, say) {
     const color = NAME_COLORS[item.rarity] ?? item.rarity ?? NAME_COLORS.normal;
     const art = item.art ?? icons[item.id];
     const links = item.links.map((key) =>
-        link({ poe2db: "poe2db ↗", wiki: say("wiki ↗"), craft: "Craft of Exile ↗", report: say("report a problem ↗") }[key] ?? key),
+        link({ poe2db: "poe2db ↗", wiki: say("wiki ↗"), craft: "Craft of Exile ↗", report: say("report a problem") }[key] ?? key),
     );
     return h(
         "div",

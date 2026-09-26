@@ -1,5 +1,6 @@
 /*
- * PoE2 Oracle landing pages (index.html and ru/index.html).
+ * PoE2 Oracle's site: the landing pages (index.html, ru/index.html) and the report form
+ * (report.html, ru/report.html).
  * Colours are the app's own (crates/poe2-oracle/src/ui/theme.rs): the near-black panel, gold
  * accents and the nameplate faces, Alegreya SC for English and Philosopher for Russian.
  */
@@ -282,6 +283,12 @@ kbd {
     font-size: 0.9rem;
 }
 
+.hero .fineprint {
+    max-width: 44rem;
+    margin-left: auto;
+    margin-right: auto;
+}
+
 .shot {
     margin: 2.5rem auto 0;
     padding: 0;
@@ -466,6 +473,161 @@ kbd {
 
 .footer a {
     color: var(--text-dim);
+}
+
+/* Report form */
+
+.wrap.narrow {
+    max-width: 46rem;
+}
+
+.page-title {
+    margin: 0 0 1rem;
+    font-size: clamp(2rem, 5vw, 2.75rem);
+}
+
+.report-form {
+    margin-top: 2rem;
+}
+
+.field {
+    min-width: 0;
+    margin: 0 0 1.5rem;
+    padding: 0;
+    border: 0;
+}
+
+.field > label,
+.field > legend {
+    display: block;
+    margin-bottom: 0.5rem;
+    padding: 0;
+    color: var(--text);
+    font-weight: 600;
+}
+
+.report-form textarea,
+.report-form input[type="text"] {
+    display: block;
+    width: 100%;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    background: var(--bg-control);
+    color: var(--text);
+    font: inherit;
+}
+
+.report-form textarea {
+    min-height: 12rem;
+    resize: vertical;
+}
+
+.report-form textarea::placeholder,
+.report-form input::placeholder {
+    color: var(--text-muted);
+}
+
+.report-form textarea:focus-visible,
+.report-form input[type="text"]:focus-visible {
+    border-color: var(--gold);
+    outline: 1px solid var(--gold);
+}
+
+/* Problem or Idea, as one control like the app's kind switch. The radios stay in the page, only
+   out of sight, so keys and screen readers work as with plain radios. */
+.segmented {
+    display: inline-flex;
+    border: 1px solid var(--border-gold);
+    border-radius: 3px;
+}
+
+.segmented input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.segmented label {
+    padding: 0.4rem 1.25rem;
+    background: var(--bg-control);
+    color: var(--text-dim);
+    cursor: pointer;
+}
+
+.segmented label + input + label {
+    border-left: 1px solid var(--border-gold);
+}
+
+.segmented label:hover {
+    color: var(--text);
+}
+
+.segmented input:checked + label {
+    background: var(--bg-button-hover);
+    color: var(--gold-bright);
+}
+
+.segmented input:focus-visible + label {
+    outline: 2px solid var(--gold);
+    outline-offset: -2px;
+}
+
+.counter,
+.hint {
+    margin: 0.4rem 0 0;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+.counter {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+/* The honeypot: a field people never see and bots fill in. */
+.honeypot {
+    position: absolute;
+    left: -10000px;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+}
+
+.form-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem 1.25rem;
+    margin-top: 1.5rem;
+}
+
+button.button {
+    font-family: inherit;
+    cursor: pointer;
+}
+
+button.button:disabled {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+.status {
+    margin: 0;
+}
+
+.status.error {
+    color: var(--warning);
+}
+
+.status.sent {
+    margin-bottom: 1.25rem;
+    color: var(--gold-bright);
+    font-size: 1.2rem;
+}
+
+.report-sent {
+    margin-top: 2rem;
 }
 
 @media (max-width: 52rem) {

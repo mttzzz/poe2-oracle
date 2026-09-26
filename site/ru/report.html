@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Сообщить о проблеме · PoE2 Oracle</title>
+<meta name="description" content="Напишите разработчику PoE2 Oracle о проблеме или с идеей. Аккаунт не нужен.">
+<link rel="canonical" href="https://oracle.pushka.biz/ru/report.html">
+<link rel="alternate" hreflang="en" href="https://oracle.pushka.biz/report.html">
+<link rel="alternate" hreflang="ru" href="https://oracle.pushka.biz/ru/report.html">
+<link rel="icon" type="image/png" href="../favicon.png">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<a class="skip-link" href="#main">К содержанию</a>
+
+<header class="topbar">
+  <div class="wrap">
+    <a class="brand" href="./"><img src="../favicon.png" alt="" width="32" height="32">PoE2 Oracle</a>
+    <nav aria-label="Основное меню">
+      <ul class="topnav">
+        <li><a href="./#features">Возможности</a></li>
+        <li><a href="../guide/ru/introduction.html">Руководство</a></li>
+        <li class="lang-switch" aria-label="Язык">
+          <a href="../report.html" lang="en" hreflang="en" title="English">EN</a>
+          <span aria-current="page">RU</span>
+        </li>
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <section class="section">
+    <div class="wrap narrow">
+      <h1 class="page-title">Сообщить о проблеме</h1>
+      <p class="intro">Напишите разработчику PoE2 Oracle, что пошло не так или что бы вы хотели, чтобы
+        программа умела. Писать можно по-русски или по-английски.</p>
+      <p class="note">О проблеме лучше написать из самой программы: окно сообщения разработчику
+        приложит версию программы, текст предмета или отчёт диагностики — обычно без них ошибку не
+        исправить. В программе откройте меню значка в трее → <em>Сообщить о проблеме или идее…</em>
+        или нажмите <em>Написать разработчику</em> в настройках, раздел <em>Помощь</em>. После вылета
+        это окно откроется само. <a href="../guide/ru/report.html">Подробнее о нём</a></p>
+
+      <noscript>
+        <p class="note">Для отправки нужен JavaScript, а в этом браузере он выключен. Включите его для
+          этой страницы или напишите из программы: меню значка в трее → <em>Сообщить о проблеме или
+          идее…</em></p>
+      </noscript>
+
+      <form class="report-form" id="report" hidden
+        data-send="Отправить"
+        data-sending="Отправляю…"
+        data-sent="Отправлено — спасибо! Номер сообщения: {id}"
+        data-sent-no-id="Отправлено — спасибо!"
+        data-failed="Не удалось отправить: {reason}"
+        data-no-connection="нет связи с {host}"
+        data-unavailable="сервис недоступен, попробуйте позже"
+        data-rate-limited="слишком много сообщений с вашего адреса, попробуйте через {minutes} мин"
+        data-too-large="сообщение слишком большое"
+        data-invalid="сервис отклонил сообщение">
+        <fieldset class="field">
+          <legend>О чём сообщение?</legend>
+          <div class="segmented">
+            <input type="radio" name="kind" id="kind-bug" value="bug" checked>
+            <label for="kind-bug">Ошибка</label>
+            <input type="radio" name="kind" id="kind-idea" value="idea">
+            <label for="kind-idea">Идея</label>
+          </div>
+        </fieldset>
+        <div class="field">
+          <label for="text">Сообщение</label>
+          <textarea id="text" name="text" rows="10" maxlength="8000" required
+            aria-describedby="text-count"
+            data-placeholder-bug="Что случилось и как это повторить?"
+            data-placeholder-idea="Что бы вы хотели, чтобы программа умела?"></textarea>
+          <p class="counter" id="text-count">0 / 8000</p>
+        </div>
+        <div class="field">
+          <label for="contact">Контакт (необязательно)</label>
+          <input type="text" id="contact" name="contact" maxlength="200" aria-describedby="contact-hint">
+          <p class="hint" id="contact-hint">Telegram, Discord или почта — если хотите ответ</p>
+        </div>
+        <div class="honeypot" aria-hidden="true">
+          <label for="website">Оставьте это поле пустым</label>
+          <input type="text" id="website" name="website" tabindex="-1" autocomplete="off">
+        </div>
+        <p class="hint">Уйдёт на oracle.pushka.biz: ваш текст и контакт (если указан). Аккаунт не
+          нужен.</p>
+        <div class="form-actions">
+          <button class="button button-primary" type="submit" disabled>Отправить</button>
+          <p class="status" role="status" aria-live="polite"></p>
+        </div>
+      </form>
+
+      <div class="report-sent" id="report-sent" hidden>
+        <p class="status sent" role="status" aria-live="polite"></p>
+        <button class="button" type="button">Написать ещё</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <div class="wrap">
+    <ul class="footer-links">
+      <li><a href="../guide/ru/introduction.html">Руководство</a></li>
+      <li><a href="report.html" aria-current="page">Сообщить о проблеме</a></li>
+      <li><a href="../report.html" lang="en" hreflang="en">In English</a></li>
+    </ul>
+    <p>PoE2 Oracle — фанатский инструмент. Он никак не связан с Grinding Gear Games и не одобрен ею.
+      Path of Exile — товарный знак Grinding Gear Games.</p>
+    <p>PoE2 Oracle распространяется по лицензии <a href="../LICENSE-MIT.txt">MIT</a> или
+      <a href="../LICENSE-APACHE.txt">Apache-2.0</a> — на ваш выбор; тексты обеих лицензий
+      устанавливаются вместе с программой. Сайт использует шрифты Alegreya SC и Philosopher по лицензии
+      SIL Open Font License 1.1
+      (<a href="../fonts/OFL-AlegreyaSC.txt">Alegreya SC</a>, <a href="../fonts/OFL-Philosopher.txt">Philosopher</a>).</p>
+  </div>
+</footer>
+<script type="module" src="../report.js"></script>
+</body>
+</html>

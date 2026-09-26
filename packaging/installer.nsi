@@ -64,6 +64,10 @@ AllowSkipFiles off
 !define CREDENTIAL_TARGET "PoE2 Oracle/pathofexile.com"
 ; CredDeleteW's type for a generic credential (wincred.h).
 !define CRED_TYPE_GENERIC 1
+; RegGetValueW's arguments (winreg.h), for the StartupApproved value: binary, which NSIS's own
+; registry instructions don't read.
+!define /ifndef HKEY_CURRENT_USER 0x80000001
+!define RRF_RT_REG_BINARY 0x00000008
 
 ; VIProductVersion takes four numbers: cut a pre-release suffix ("0.2.0-rc.1" -> "0.2.0").
 !searchparse "${VERSION}-" "" VERSION_CORE "-"
@@ -93,6 +97,9 @@ VIAddVersionKey /LANG=0 "LegalCopyright" "Copyright (c) 2026 ${PUBLISHER}"
 !define MUI_UNICON "${ICON}"
 !define MUI_ABORTWARNING
 
+; Leaving the folder page closes a running copy, before anything is installed: Cancel in its
+; question keeps the player on the page instead of ending the installation.
+!define MUI_PAGE_CUSTOMFUNCTION_LEAVE DirectoryLeave
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
 ; The Finish page's second checkbox is the autostart choice: preset from the registry when the page
@@ -146,6 +153,8 @@ LangString SettingsDescription ${LANG_RUSSIAN} "Удалить также нас
 ; Then force-closing: gpui leaves its message loop on no window message (gpui_windows events.rs
 ; at the pinned rev), so a copy without the door -- or one that doesn't go -- is killed, which
 ; leaves its tray icon behind until the mouse passes over it.
+; Cancel in either question aborts: called from the folder page's leave function, that keeps the
+; player on the page; from a section, it ends the (un)installation.
 !macro CLOSE_RUNNING_APP_FUNCTION PREFIX
   Function ${PREFIX}CloseRunningApp
     Push $R0
@@ -154,6 +163,8 @@ LangString SettingsDescription ${LANG_RUSSIAN} "Удалить также нас
     ${If} $R0 == 0
     ${AndIfNot} ${Silent}
       MessageBox MB_OKCANCEL|MB_ICONINFORMATION "$(AppRunning)" IDOK close_app
+      Pop $R1
+      Pop $R0
       Abort
     ${EndIf}
     close_app:
@@ -189,6 +200,8 @@ LangString SettingsDescription ${LANG_RUSSIAN} "Удалить также нас
         IntOp $R1 $R1 + 1
         ${If} $R1 >= 6
           MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "$(AppNotClosed)" /SD IDCANCEL IDRETRY retry_close
+          Pop $R1
+          Pop $R0
           Abort
           retry_close:
           StrCpy $R1 0
@@ -230,6 +243,8 @@ FunctionEnd
 
 Section "-${PRODUCT_NAME}"
   SetOutPath "$INSTDIR"
+  ; What a silent run (an update) closes the app with; an interactive one closed it already on
+  ; leaving the folder page, and asks again only if it was started since.
   Call CloseRunningApp
   File "/oname=${APP_EXE}" "${APP_EXE_PATH}"
   File "/oname=${LICENSE_MIT}" "..\LICENSE-MIT"
@@ -242,7 +257,8 @@ Section "-${PRODUCT_NAME}"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayVersion" "${VERSION}"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayIcon" "$INSTDIR\${APP_EXE},0"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "Publisher" "${PUBLISHER}"
-  WriteRegStr HKCU "${UNINSTALL_KEY}" "URLInfoAbout" "https://github.com/mttzzz/poe2-oracle"
+  WriteRegStr HKCU "${UNINSTALL_KEY}" "URLInfoAbout" "https://oracle.pushka.biz/"
+  WriteRegStr HKCU "${UNINSTALL_KEY}" "HelpLink" "https://oracle.pushka.biz/"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "InstallLocation" "$INSTDIR"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "UninstallString" '"$INSTDIR\${UNINSTALLER}"'
   WriteRegStr HKCU "${UNINSTALL_KEY}" "QuietUninstallString" '"$INSTDIR\${UNINSTALLER}" /S'
@@ -271,10 +287,34 @@ Function .onInstFailed
   ${EndIf}
 FunctionEnd
 
+Function DirectoryLeave
+  Call CloseRunningApp
+FunctionEnd
+
+; Ticks the autostart box exactly when "Start with Windows" is on for this install, as the app's
+; settings read it (crates/poe2-oracle/src/platform/autostart.rs): the Run value starts this
+; folder's exe, and Task Manager hasn't disabled it. So Finish keeps the player's choice as it is:
+; a first install doesn't start with Windows unless the player ticks the box, and a reinstall
+; brings back no autostart the player turned off, in the app or in Task Manager. A Run value
+; another copy left elsewhere counts as off, as in the app: Finish removes it, or points it here
+; if the box is ticked.
 Function FinishPageShow
   ReadRegStr $R0 HKCU "${RUN_KEY}" "${RUN_VALUE}"
-  ${If} $R0 != ""
-    ${NSD_Check} $mui.FinishPage.ShowReadme
+  ${If} $R0 == '"$INSTDIR\${APP_EXE}" --autostart'
+    ; Task Manager's switch: the low bit of the StartupApproved value's first byte; no value,
+    ; or one that can't be read, leaves the entry enabled.
+    System::Alloc 64
+    Pop $R1
+    System::Call 'advapi32::RegGetValueW(p ${HKEY_CURRENT_USER}, w "${STARTUP_APPROVED_KEY}", w "${RUN_VALUE}", i ${RRF_RT_REG_BINARY}, p 0, p R1, *i 64) i .R2'
+    StrCpy $R3 0
+    ${If} $R2 == 0
+      System::Call '*$R1(&i1 .R3)'
+      IntOp $R3 $R3 & 1
+    ${EndIf}
+    System::Free $R1
+    ${If} $R3 == 0
+      ${NSD_Check} $mui.FinishPage.ShowReadme
+    ${EndIf}
   ${EndIf}
 FunctionEnd
 

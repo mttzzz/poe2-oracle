@@ -35,7 +35,6 @@ use windows::Win32::UI::HiDpi::{
 };
 
 use crate::brand;
-use crate::bug_report;
 use crate::diagnostics;
 use crate::i18n::{self, Lang};
 use crate::logging;
@@ -45,10 +44,12 @@ use crate::platform::instance::{self, Request};
 use crate::platform::win32::Win32Overlay;
 use crate::platform::{autostart, game_config, game_window, redraw_filter};
 use crate::price_check::{self, BootstrapState, PriceCheckApp};
+use crate::report;
 use crate::session::{self, SessionHttpClient};
 use crate::settings::{self, Hotkey};
 use crate::tr;
 use crate::ui::fonts;
+use crate::ui::report_view::{self, ReportView};
 use crate::ui::settings_view::{self, Intro, SettingsView};
 use crate::ui::theme::BASE_REM_SIZE;
 use crate::ui::tour;
@@ -60,7 +61,8 @@ const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/
 /// request, and the caller's own retry or error takes over (the catalog load retries), instead of
 /// "Loading…" for the rest of the run. Each part of the answer that arrives starts it anew, so a
 /// long download that keeps coming -- an update's installer, an hour of the exchange's record
-/// (2.7 MB) -- isn't cut short.
+/// (2.7 MB) -- isn't cut short. Until the answer begins, though, it runs from the request's start,
+/// an upload included: reports go through a client of their own (`report::send`).
 const READ_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Wraps `Entity<PriceCheckApp>` with the platform-window state that has to follow it: the
@@ -326,7 +328,7 @@ impl Tray {
     fn word(&self, hotkey: Hotkey) {
         self.settings.set_text(tr!("Settings"));
         self.updates.relabel();
-        self.report.set_text(tr!("Report a bug"));
+        self.report.set_text(tr!("Report a problem or idea…"));
         self.quit.set_text(tr!("Quit"));
         if let Err(err) = self.icon.set_tooltip(Some(tray_tooltip(hotkey))) {
             log::warn!("{err:#}");
@@ -334,8 +336,9 @@ impl Tray {
     }
 }
 
-/// Notification-area icon with «Настройки», the update entry (`crate::updates`), «Сообщить об
-/// ошибке» (`bug_report::report_bug`) and «Выход», worded in the interface language.
+/// Notification-area icon with «Настройки», the update entry (`crate::updates`), «Сообщить о
+/// проблеме или идее…» (the report window, [`open_report`]) and «Выход», worded in the interface
+/// language.
 /// Created on GPUI's main thread, whose message loop also drives the tray's hidden window; menu
 /// clicks come through `MenuEvent`'s handler into a channel a task here awaits.
 fn build_tray(cx: &mut App, app: &Entity<PriceCheckApp>) -> anyhow::Result<Tray> {
@@ -395,13 +398,7 @@ fn build_tray(cx: &mut App, app: &Entity<PriceCheckApp>) -> anyhow::Result<Tray>
             if event.id == report_id
                 && let Some(app) = app.upgrade()
             {
-                cx.update(|cx| {
-                    let (summary, language) = {
-                        let state = app.read(cx);
-                        (state.diagnostics_summary(), state.item_language())
-                    };
-                    bug_report::report_bug(summary, language, cx);
-                });
+                cx.update(|cx| open_report(&app, report::Request::general(), cx));
             }
         }
     })
@@ -500,15 +497,85 @@ pub fn open_settings(app: &Entity<PriceCheckApp>, cx: &mut App) {
     }
 }
 
-/// Closes one of the app's own windows -- the settings window, the tour's. `Window::remove_window`
-/// alone lets go of the window at once while `gpui_windows` hides and destroys it only later
-/// (`Drop for WindowsWindow`: `ShowWindowAsync`, then `DestroyWindow` from a task), so what Windows
-/// reports in between reaches a window GPUI no longer has, and GPUI logs each report as
-/// «window not found» at error level. The one every close of an active window sets off is its
-/// deactivation: `WM_ACTIVATE` comes synchronously with the hiding, but GPUI passes it on from a
-/// task of its own (`events.rs`'s `handle_activate_msg`). So the window is hidden first, while
-/// it's still GPUI's, and removed in a task spawned after that: GPUI runs foreground tasks in the
-/// order they're spawned (`executor.rs`: "they run in order on the main thread"), so the
+/// Opens the report window (`ui::report_view`) for `request` -- or brings the open one forward,
+/// which takes the request over unless it's sending a report or saying why one didn't go
+/// (`ReportView::take`) -- centred on the monitor the game is on, as big as the UI scale makes its
+/// content. The price panel steps aside either way, as it does for the settings window: while
+/// it's shown, its Esc hook takes the Esc the window's text box and the window itself answer.
+pub fn open_report(app: &Entity<PriceCheckApp>, request: report::Request, cx: &mut App) {
+    let open = cx
+        .windows()
+        .into_iter()
+        .find_map(|window| window.downcast::<ReportView>());
+    if let Some(handle) = open
+        && handle
+            .update(cx, |_, window, _| window.activate_window())
+            .is_ok()
+    {
+        handle
+            .update(cx, |view, window, cx| view.take(request, window, cx))
+            .ok();
+        log::info!("report window brought forward");
+        hide_panel(app, cx);
+        return;
+    }
+    // `gpui_windows` names a display by its monitor handle; one it doesn't list falls back to
+    // the primary display.
+    let display = game_window::game_monitor()
+        .map(DisplayId::new)
+        .filter(|&display| cx.find_display(display).is_some());
+    let scale = app.read(cx).settings.ui_scale;
+    let (width, height) = report_view::WINDOW_SIZE;
+    let (min_width, min_height) = report_view::WINDOW_MIN_SIZE;
+    let options = WindowOptions {
+        window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
+            display,
+            size(px(width * scale), px(height * scale)),
+            cx,
+        ))),
+        // Transparent: the view draws its own title bar and frame.
+        titlebar: Some(TitlebarOptions {
+            title: Some(report_view::window_title().into()),
+            appears_transparent: true,
+            ..Default::default()
+        }),
+        kind: WindowKind::Normal,
+        display_id: display,
+        window_min_size: Some(size(px(min_width * scale), px(min_height * scale))),
+        focus: true,
+        show: true,
+        ..Default::default()
+    };
+    let opened = cx.open_window(options, |window, cx| {
+        let app = app.clone();
+        cx.new(|cx| ReportView::new(app, request, window, cx))
+    });
+    match opened {
+        Ok(_) => {
+            log::info!("report window opened");
+            hide_panel(app, cx);
+        }
+        Err(err) => log::warn!("opening the report window failed: {err:#}"),
+    }
+}
+
+/// The price panel steps aside for the report window.
+fn hide_panel(app: &Entity<PriceCheckApp>, cx: &mut App) {
+    app.update(cx, |state, cx| {
+        state.visible = false;
+        cx.notify();
+    });
+}
+
+/// Closes one of the app's own windows -- the settings window, the report window, the tour's.
+/// `Window::remove_window` alone lets go of the window at once while `gpui_windows` hides and
+/// destroys it only later (`Drop for WindowsWindow`: `ShowWindowAsync`, then `DestroyWindow` from
+/// a task), so what Windows reports in between reaches a window GPUI no longer has, and GPUI logs
+/// each report as «window not found» at error level. The one every close of an active window sets
+/// off is its deactivation: `WM_ACTIVATE` comes synchronously with the hiding, but GPUI passes it
+/// on from a task of its own (`events.rs`'s `handle_activate_msg`). So the window is hidden first,
+/// while it's still GPUI's, and removed in a task spawned after that: GPUI runs foreground tasks
+/// in the order they're spawned (`executor.rs`: "they run in order on the main thread"), so the
 /// deactivation's report and the visibility's run first. Hidden and inactive, the window gets no
 /// paint and no input until GPUI destroys it. Both outside the update this is called from:
 /// `ShowWindow` sends its messages into GPUI's window procedure synchronously.
@@ -634,6 +701,10 @@ pub fn run() {
             let tray = build_tray(cx, &inner).expect("failed to create the tray icon");
             if let Some(requests) = requests {
                 serve_instance_requests(cx, &inner, requests);
+            }
+            // The last run crashed: its report window opens by itself, the crash attached.
+            if let Some(crash) = report::recent_crash() {
+                open_report(&inner, report::Request::crash(crash), cx);
             }
 
             cx.open_window(build_window_options(), |window, cx| {

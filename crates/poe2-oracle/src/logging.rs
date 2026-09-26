@@ -6,15 +6,21 @@
 //! Levels: this app's info and up -- its trade client's too, whose info lines are the trade API
 //! rate-limit audit trail -- and everyone else's warnings; `RUST_LOG`, when set, replaces them.
 //! A panic is logged before the default hook runs: without a console, the log is the only place
-//! it can be seen.
+//! it can be seen. It also leaves what it said for the next launch, which offers to report it
+//! ([`leave_crash`]).
 
+use std::backtrace::Backtrace;
 use std::fs::{self, File};
 use std::io::{self, Write};
+use std::panic::PanicHookInfo;
 
 use log::LevelFilter;
+use windows::Win32::Foundation::SYSTEMTIME;
 use windows::Win32::System::Console::{GetStdHandle, STD_ERROR_HANDLE};
+use windows::Win32::System::SystemInformation::{GetLocalTime, GetSystemTime};
 
 use crate::paths;
+use crate::report::Masker;
 
 /// This run's log, in `paths::logs_dir`.
 pub const LOG_FILE: &str = "poe2-oracle.log";
@@ -46,7 +52,9 @@ pub fn init() {
 
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
-        log::error!("{info}\n{}", std::backtrace::Backtrace::force_capture());
+        let backtrace = Backtrace::force_capture();
+        log::error!("{info}\n{backtrace}");
+        leave_crash(info, &backtrace);
         default_hook(info);
     }));
     log::info!("PoE2 Oracle {} started", env!("CARGO_PKG_VERSION"));
@@ -61,6 +69,44 @@ fn open_log_file() -> Option<File> {
     // Replaces the older previous log; fails harmlessly on the first run.
     let _ = fs::rename(&current, dir.join(PREVIOUS_LOG_FILE));
     File::create(current).ok()
+}
+
+/// Leaves what a panic said where the next launch finds it (`paths::crash_file`), to offer a
+/// report of it (`report::recent_crash`): the version, the time in UTC and on the player's clock,
+/// the thread, the message, where it happened and the backtrace -- with what would name the player
+/// masked (`report::Masker`), since the report is read by someone else. The last panic's replaces
+/// any earlier one's.
+fn leave_crash(info: &PanicHookInfo<'_>, backtrace: &Backtrace) {
+    let (utc, local) = unsafe { (GetSystemTime(), GetLocalTime()) };
+    let thread = std::thread::current();
+    let location = info
+        .location()
+        .map_or_else(|| "unknown".to_owned(), ToString::to_string);
+    let text = format!(
+        "PoE2 Oracle {}\ntime: {} UTC, {} local\nthread: {}\nmessage: {}\nlocation: {location}\n\n\
+         backtrace:\n{backtrace}\n",
+        env!("CARGO_PKG_VERSION"),
+        stamp(&utc),
+        stamp(&local),
+        thread.name().unwrap_or("unnamed"),
+        info.payload_as_str().unwrap_or("(not a text)"),
+    );
+    let path = paths::crash_file();
+    let left = path
+        .parent()
+        .map_or(Ok(()), fs::create_dir_all)
+        .and_then(|()| fs::write(&path, Masker::for_this_user().mask(&text)));
+    if let Err(err) = left {
+        log::error!("leaving the crash for the next launch failed: {err}");
+    }
+}
+
+/// `2026-09-26 14:05:03`.
+fn stamp(time: &SYSTEMTIME) -> String {
+    format!(
+        "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+        time.wYear, time.wMonth, time.wDay, time.wHour, time.wMinute, time.wSecond
+    )
 }
 
 /// A GUI-subsystem process has no stderr unless whoever started it redirected one.

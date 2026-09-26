@@ -13,9 +13,12 @@ create-missing = false
 default-theme = "coal"
 preferred-dark-theme = "coal"
 no-section-label = true
-git-repository-url = "https://github.com/mttzzz/poe2-oracle"
-edit-url-template = "https://github.com/mttzzz/poe2-oracle/edit/main/docs/guide/{path}"
-# Where .github/workflows/pages.yml publishes the book: https://mttzzz.github.io/poe2-oracle/guide/
-site-url = "/poe2-oracle/guide/"
+# Where the book is published: https://oracle.pushka.biz/guide/
+site-url = "/guide/"
 additional-css = ["theme/guide.css"]
 additional-js = ["theme/guide.js"]
+
+# Off: stock mdBook's search can't find Russian words -- its index and its query trimmer drop
+# Cyrillic -- and half of this book is Russian. The sidebar lists every page instead.
+[output.html.search]
+enable = false

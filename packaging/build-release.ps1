@@ -2,8 +2,8 @@
 <#
 .SYNOPSIS
   Builds a PoE2 Oracle release on Windows: target\release\poe2-oracle.exe, then
-  target\dist\PoE2-Oracle-Setup-<version>.exe, target\dist\SHA256SUMS and
-  target\dist\THIRD-PARTY-NOTICES.html.
+  target\dist\PoE2-Oracle-Setup-<version>.exe, target\dist\SHA256SUMS, target\dist\SHA256SUMS.sig
+  when a signing key is given, and target\dist\THIRD-PARTY-NOTICES.html.
 
 .DESCRIPTION
   Needs Rust with the MSVC toolchain and the Windows SDK: gpui compiles its shaders with the SDK's
@@ -13,10 +13,16 @@
   writes the third-party notices from about.toml and about.hbs; a missing one, or another version
   than the pinned one, is installed with `cargo install` first. The installer carries the notices
   and the two license texts next to the exe.
-  The build stops if a test build's update settings are on: POE2_ORACLE_RELEASES_URL in the
-  environment, or crates\auto-update's local-release-server feature (see LATEST_RELEASE_URL in
-  crates\auto-update\src\lib.rs). A release's updater asks this repository's GitHub releases only.
-  .github\workflows\release.yml runs this same script.
+  The build stops if a test build's service settings are on: POE2_ORACLE_API_BASE in the
+  environment, or oracle-protocol's dev-endpoints feature (see API_BASE in
+  crates\oracle-protocol\src\lib.rs). A release talks to https://oracle.pushka.biz only.
+  Installed apps take an update only when SHA256SUMS.sig is the release key's signature of
+  SHA256SUMS. With RELEASE_SIGNING_KEY set to the key's seed (the one line `release-sign keygen`
+  wrote), the script signs SHA256SUMS with crates\release-sign and checks the signature against
+  the public key the app carries, crates\auto-update\release-signing-key.pub. The seed stays out
+  of the environment of everything else the build runs. Without it the release is unsigned, which
+  the script warns about: installed apps refuse to update to it until it is signed.
+  .github\workflows\release.yml runs this same script, unsigned, and signs in a job of its own.
 
 .PARAMETER Tag
   The release tag being built (vX.Y.Z). The build stops unless it is "v" + the workspace version,
@@ -24,6 +30,10 @@
 
 .EXAMPLE
   powershell -NoProfile -ExecutionPolicy Bypass -File packaging\build-release.ps1
+
+.EXAMPLE
+  $env:RELEASE_SIGNING_KEY = Get-Content D:\keys\release-signing-key.txt
+  powershell -NoProfile -ExecutionPolicy Bypass -File packaging\build-release.ps1 -Tag v0.1.0
 #>
 [CmdletBinding()]
 param([string]$Tag)
@@ -91,12 +101,20 @@ function Install-CargoAbout {
 }
 
 $root = Split-Path -Parent $PSScriptRoot
+# Every build script and proc-macro of the app's dependency graph runs in this environment, so the
+# release key's seed leaves it at once; release-sign alone gets it back, and the caller's session
+# has it again at the end.
+$signingKey = $env:RELEASE_SIGNING_KEY
+Remove-Item Env:RELEASE_SIGNING_KEY -ErrorAction SilentlyContinue
+$unsigned = 'RELEASE_SIGNING_KEY is not set, so this release is UNSIGNED: target\dist gets no ' +
+    'SHA256SUMS.sig, and installed apps refuse to update to it. Set it and build again, or sign ' +
+    'SHA256SUMS alone: cargo run -p release-sign -- sign target\dist\SHA256SUMS --key-file <seed file>'
 Push-Location $root
 try {
-    # Read at build time into the updater (option_env!): a test release server's address left in
-    # this shell would ship in the exe.
-    if (Test-Path Env:POE2_ORACLE_RELEASES_URL) {
-        throw "POE2_ORACLE_RELEASES_URL is set to '$env:POE2_ORACLE_RELEASES_URL': a release asks GitHub. Remove it (Remove-Item Env:POE2_ORACLE_RELEASES_URL) and build again."
+    # Read at build time into the app (option_env!): a test service's address left in this shell
+    # would ship in the exe.
+    if (Test-Path Env:POE2_ORACLE_API_BASE) {
+        throw "POE2_ORACLE_API_BASE is set to '$env:POE2_ORACLE_API_BASE': a release talks to https://oracle.pushka.biz. Remove it (Remove-Item Env:POE2_ORACLE_API_BASE) and build again."
     }
     $metadata = (Invoke-Native cargo @('metadata', '--format-version', '1', '--no-deps', '--locked') |
         Out-String) | ConvertFrom-Json
@@ -104,18 +122,20 @@ try {
     if ($Tag -and $Tag -ne "v$version") {
         throw "Tag $Tag does not match the workspace version $version (root Cargo.toml)"
     }
-    # The features the release build gives auto-update, as cargo resolves them: `{f}` lists them
-    # after the package. local-release-server, on only in a test build, lets the updater take a
-    # release over plain http.
-    $updater = Invoke-Native cargo @('tree', '--locked', '-p', 'poe2-oracle', '-i', 'auto-update',
+    # The features the release build gives oracle-protocol, as cargo resolves them: `{f}` lists
+    # them after the package. dev-endpoints, on only in a test build, lets the app talk to a
+    # plain-http service.
+    $protocol = Invoke-Native cargo @('tree', '--locked', '-p', 'poe2-oracle', '-i', 'oracle-protocol',
         '-e', 'normal', '--prefix', 'none', '--format', '{p} {f}') |
-        Where-Object { $_ -like 'auto-update *' }
-    if (-not $updater) {
-        throw "cargo tree did not list auto-update, so its features are unknown"
+        Where-Object { $_ -like 'oracle-protocol *' }
+    if (-not $protocol) {
+        throw "cargo tree did not list oracle-protocol, so its features are unknown"
     }
-    if ($updater -match 'local-release-server') {
-        throw "auto-update is built with its test-only local-release-server feature: $updater"
+    if ($protocol -match 'dev-endpoints') {
+        throw "oracle-protocol is built with its test-only dev-endpoints feature: $protocol"
     }
+    # Said now too, while the long build can still be stopped to set the key.
+    if (-not $signingKey) { Write-Warning $unsigned }
 
     # Before the long build, so a cargo-about that can't be installed stops the release early.
     Install-CargoAbout
@@ -139,9 +159,31 @@ try {
 
     $installer = Join-Path $dist "PoE2-Oracle-Setup-$version.exe"
     $hash = (Get-FileHash -Algorithm SHA256 $installer).Hash.ToLowerInvariant()
+    $sums = Join-Path $dist 'SHA256SUMS'
     # sha256sum's text format with an LF line ending: what crates\auto-update parses.
-    [IO.File]::WriteAllText((Join-Path $dist 'SHA256SUMS'), "$hash  $(Split-Path -Leaf $installer)`n")
+    [IO.File]::WriteAllText($sums, "$hash  $(Split-Path -Leaf $installer)`n")
+    if ($signingKey) {
+        Invoke-Native cargo @('build', '-p', 'release-sign', '--release', '--locked')
+        $releaseSign = Join-Path $root 'target\release\release-sign.exe'
+        $env:RELEASE_SIGNING_KEY = $signingKey
+        try {
+            Invoke-Native $releaseSign @('sign', $sums, "$sums.sig")
+        } finally {
+            Remove-Item Env:RELEASE_SIGNING_KEY
+        }
+        # Signed with another key than the one the app carries, the release would be refused by
+        # every installed copy.
+        $publicKey = (Get-Content -Raw (Join-Path $root 'crates\auto-update\release-signing-key.pub')).Trim()
+        try {
+            Invoke-Native $releaseSign @('verify', $sums, "$sums.sig", $publicKey)
+        } catch {
+            Remove-Item "$sums.sig"
+            throw "RELEASE_SIGNING_KEY is not the release key: its public half isn't crates\auto-update\release-signing-key.pub, so installed apps would refuse this release."
+        }
+    }
     Get-ChildItem $dist | Format-Table Name, Length -AutoSize
+    if (-not $signingKey) { Write-Warning $unsigned }
 } finally {
     Pop-Location
+    if ($signingKey) { $env:RELEASE_SIGNING_KEY = $signingKey }
 }

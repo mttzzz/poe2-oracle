@@ -52,14 +52,16 @@ item-parser = { path = "../item-parser" }
 trade-client = { path = "../trade-client" }
 stat-filters = { path = "../stat-filters" }
 auto-update = { path = "../auto-update" }
+# The contract with the app's service at oracle.pushka.biz: where it is, and the report the report
+# window sends it (src/report.rs).
+oracle-protocol = { path = "../oracle-protocol" }
 # Everything the app reports goes through `log`'s macros (GPUI/gpui_wgpu's own device-lost/
 # surface/adapter-fallback warnings too), and `env_logger` writes it to the log file
 # (src/logging.rs) -- and to stderr when one is attached, so `RUST_LOG=debug` still surfaces
 # real diagnostics in a console.
 log = "0.4"
 env_logger = "0.11"
-# Query values of the GitHub issue form URLs a bug report opens (src/bug_report.rs). Already in
-# the tree through `url`.
+# Query values of the Craft of Exile link (src/craft_link.rs). Already in the tree through `url`.
 percent-encoding = "2"
 # Carries hotkey presses, tray-menu clicks, consumed Esc presses and foreground-window changes
 # from the OS callbacks that report them to the GPUI tasks that act on them, so nothing polls.
@@ -75,11 +77,15 @@ futures = "0.3"
 # The XP overlay's plates are drawn pixel by pixel (src/plate_art.rs) into the image buffer
 # GPUI's `RenderImage` takes. Already in the tree through GPUI; none of its codecs.
 image = { version = "0.25", default-features = false }
+# The report window's text box (src/text_area.rs) moves and deletes by grapheme and by word, as
+# Unicode segments them. Already in the tree through GPUI.
+unicode-segmentation = "1"
+# The diagnostics a report attaches are one zip, built in memory (src/report.rs,
+# src/diagnostics.rs), whose size rules are tested on every target. Deflate through flate2,
+# already in the tree; none of zip's other codecs.
+zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
-# The diagnostics report is one zip the player attaches to a bug report (src/diagnostics.rs).
-# Deflate through flate2, already in the tree; none of zip's other codecs.
-zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2"] }
 # Same major version gpui/gpui_windows pin in Zed's own workspace at this commit. Only the raw
 # Win32 APIs needed for src/platform/win32.rs (SetWindowLongPtrW/SetWindowPos and friends), the
 # `poe2_production_Config.ini` `[ACTION_KEYS]` reader (src/platform/game_config.rs, no raw
@@ -158,6 +164,11 @@ tray-icon = { version = "0.25", default-features = false }
 # message loop of its own. The WebView2 loader is linked statically on MSVC, so the shipped exe
 # needs no WebView2Loader.dll; the windows-gnu type-check build imports that DLL instead.
 webview2-com = "0.39"
+
+[features]
+# Test builds only: POE2_ORACLE_API_BASE may name a plain-http service, such as the lane's
+# http://poe2-oracle-main.lanes.internal, for reports and updates alike.
+dev-endpoints = ["oracle-protocol/dev-endpoints"]
 
 [build-dependencies]
 # build.rs embeds the app icon and VERSIONINFO into the exe: rc.exe on MSVC, mingw's windres on the

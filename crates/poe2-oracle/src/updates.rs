@@ -1,13 +1,14 @@
-//! The tray's update entry. It checks GitHub Releases through `auto_update` (on its own after
-//! launch when the player allows it, or on a click) and names a newer version when there is one.
-//! Clicking that installs it through the silent installer, which relaunches the app.
+//! The tray's update entry. It asks the app's web service (oracle.pushka.biz) for the latest
+//! release through `auto_update` (on its own after launch when the player allows it, or on a
+//! click) and names a newer version when there is one. Clicking that asks for the latest release
+//! again and installs it through the silent installer, which relaunches the app.
 
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 
-use auto_update::{UpdateInfo, Version};
+use auto_update::Version;
 use gpui::AsyncApp;
 use http_client::HttpClient;
 use tray_icon::menu::MenuItem;
@@ -23,7 +24,9 @@ enum State {
     Idle,
     /// A check or an install is running; the entry is disabled.
     Busy,
-    Available(UpdateInfo),
+    /// A newer version was found, this one; a click installs the latest release
+    /// ([`Updates::install`]).
+    Available(Version),
 }
 
 /// What the entry says, kept to say it again in another interface language ([`Updates::relabel`]).
@@ -86,7 +89,7 @@ impl Updates {
     }
 
     /// The automatic check after launch. It reports quietly: nothing new and failures leave the
-    /// entry as it is (a failure is only logged, e.g. while no public release exists).
+    /// entry as it is (a failure is only logged, e.g. while the service knows no release).
     pub fn check_after_launch(self: &Rc<Self>, cx: &mut AsyncApp) {
         let this = self.clone();
         cx.spawn(async move |cx| {
@@ -98,15 +101,15 @@ impl Updates {
         .detach();
     }
 
-    /// The entry was clicked: install the version it names, or check for one.
+    /// The entry was clicked: install the latest release when it offers one, or check for one.
     pub fn clicked(self: &Rc<Self>, cx: &mut AsyncApp) {
-        let available = match &*self.state.borrow() {
+        let offered = match &*self.state.borrow() {
             State::Busy => return,
-            State::Available(update) => Some(update.clone()),
+            State::Available(version) => Some(version.clone()),
             State::Idle => None,
         };
-        match available {
-            Some(update) => self.install(update, cx),
+        match offered {
+            Some(version) => self.install(version, cx),
             None => self.check(cx, true),
         }
     }
@@ -121,7 +124,7 @@ impl Updates {
             let (label, state) = match found {
                 Ok(Some(update)) => (
                     Label::Install(update.version.clone()),
-                    State::Available(update),
+                    State::Available(update.version),
                 ),
                 Ok(None) if manual => (Label::UpToDate, State::Idle),
                 Ok(None) => (Label::Check, State::Idle),
@@ -140,26 +143,53 @@ impl Updates {
         .detach();
     }
 
-    /// Downloads and verifies the installer, starts it silently, and quits so it can replace the
-    /// exe; the installer relaunches the app. A failed download leaves the offer standing.
-    fn install(self: &Rc<Self>, update: UpdateInfo, cx: &mut AsyncApp) {
-        self.set_busy(Label::Downloading(update.version.clone()));
+    /// Installs the latest release, whichever it is by now: asks the service for it again first --
+    /// it hands out the latest release's files only, so an offer from days ago may be gone, and
+    /// asking costs an empty `304` while nothing changed. Then downloads its installer and verifies
+    /// it against the release's signed SHA256SUMS, starts it silently, and quits so it can replace
+    /// the exe; the installer relaunches the app. A failure leaves the offer standing, and the next
+    /// click asks again.
+    fn install(self: &Rc<Self>, offered: Version, cx: &mut AsyncApp) {
+        self.set_busy(Label::Downloading(offered.clone()));
         let this = self.clone();
         cx.spawn(async move |cx| {
+            let found =
+                auto_update::check_for_update(&this.client, &this.current, &paths::updates_dir())
+                    .await;
+            let update = match found {
+                Ok(Some(update)) => update,
+                Ok(None) => {
+                    log::info!("{offered} was withdrawn: no release is newer than this version");
+                    this.settle(Label::UpToDate, State::Idle);
+                    return;
+                }
+                Err(err) => {
+                    log::warn!("checking before installing {offered} failed: {err:#}");
+                    this.settle(
+                        Label::InstallFailed(offered.clone()),
+                        State::Available(offered),
+                    );
+                    return;
+                }
+            };
+            let version = update.version.clone();
+            if version != offered {
+                log::info!("the latest release is {version} now, not the offered {offered}");
+                this.show(Label::Downloading(version.clone()));
+            }
             let client = this.client.clone();
-            let download = update.clone();
             let installer = cx
                 .background_executor()
                 .spawn(async move {
-                    auto_update::download_update(&client, &download, &paths::updates_dir()).await
+                    auto_update::download_update(&client, &update, &paths::updates_dir()).await
                 })
                 .await;
             match installer.and_then(|installer| auto_update::apply_update(&installer)) {
                 Ok(()) => cx.update(crate::app::quit),
                 Err(err) => {
-                    log::warn!("installing {} failed: {err:#}", update.version);
-                    let label = Label::InstallFailed(update.version.clone());
-                    this.settle(label, State::Available(update));
+                    log::warn!("installing {version} failed: {err:#}");
+                    let label = Label::InstallFailed(version.clone());
+                    this.settle(label, State::Available(version));
                 }
             }
         })

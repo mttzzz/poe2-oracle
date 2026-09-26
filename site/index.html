@@ -4,15 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PoE2 Oracle: price check overlay for Path of Exile 2</title>
-<meta name="description" content="Free, open-source Windows overlay for Path of Exile 2: point at an item, press Ctrl+E and see what it sells for on the official trade site.">
-<link rel="canonical" href="https://mttzzz.github.io/poe2-oracle/">
-<link rel="alternate" hreflang="en" href="https://mttzzz.github.io/poe2-oracle/">
-<link rel="alternate" hreflang="ru" href="https://mttzzz.github.io/poe2-oracle/ru/">
+<meta name="description" content="Free Windows overlay for Path of Exile 2: point at an item, press Ctrl+E and see what it sells for on the official trade site.">
+<link rel="canonical" href="https://oracle.pushka.biz/">
+<link rel="alternate" hreflang="en" href="https://oracle.pushka.biz/">
+<link rel="alternate" hreflang="ru" href="https://oracle.pushka.biz/ru/">
 <meta property="og:type" content="website">
 <meta property="og:title" content="PoE2 Oracle">
 <meta property="og:description" content="Price check for Path of Exile 2 on a hotkey. Free Windows overlay.">
-<meta property="og:url" content="https://mttzzz.github.io/poe2-oracle/">
-<meta property="og:image" content="https://mttzzz.github.io/poe2-oracle/images/en/og.jpg">
+<meta property="og:url" content="https://oracle.pushka.biz/">
+<meta property="og:image" content="https://oracle.pushka.biz/images/en/og.jpg">
 <link rel="icon" type="image/png" href="favicon.png">
 <link rel="stylesheet" href="style.css">
 </head>
@@ -26,7 +26,6 @@
       <ul class="topnav">
         <li><a href="#features">Features</a></li>
         <li><a href="guide/en/introduction.html">Guide</a></li>
-        <li><a href="https://github.com/mttzzz/poe2-oracle">GitHub</a></li>
         <li class="lang-switch" aria-label="Language">
           <span aria-current="page">EN</span>
           <a href="ru/" lang="ru" hreflang="ru" title="Русский">RU</a>
@@ -44,12 +43,14 @@
         <span class="keys"><kbd>Ctrl</kbd>+<kbd>E</kbd></span>, and a panel next to your inventory shows what similar items
         sell for on the official trade site.</p>
       <div class="actions">
-        <a class="button button-primary" href="https://github.com/mttzzz/poe2-oracle/releases/latest">Download for Windows</a>
+        <a class="button button-primary" href="download/latest">Download for Windows</a>
         <a class="button" href="guide/en/introduction.html">Read the guide</a>
       </div>
-      <p class="fineprint">Free and open source · Windows 10 and 11, 64-bit · English and Russian game clients</p>
+      <p class="fineprint">Free · Windows 10 and 11, 64-bit · English and Russian game clients</p>
+      <p class="fineprint">The installer isn't code-signed yet. If Windows says “Windows protected your
+        PC”, click <em>More info</em>, then <em>Run anyway</em>.</p>
       <figure class="shot">
-        <div data-oracle="hero" data-lang="en" data-fit data-alt="The PoE2 Oracle price panel with a rare helmet's filters and listings, a currency's market card and the XP overlay's lines on the game's HUD"></div>
+        <div data-oracle="hero" data-lang="en" data-fit data-alt="The PoE2 Oracle price panel with a rare helmet's filters and listings, a currency's market card and the XP overlay's line above the game's flask panel"></div>
       </figure>
     </div>
   </section>
@@ -57,8 +58,9 @@
   <section class="section" id="features">
     <div class="wrap">
       <h2>What it does</h2>
-      <p class="intro">PoE2 Oracle runs in the background and draws over the game only when you ask
-        it to. Prices need no account and no browser.</p>
+      <p class="intro">PoE2 Oracle runs in the background. The price panel opens over the game only
+        when you press the hotkey; the XP overlay sits on the game's own HUD and can be turned off in
+        the settings. Prices need no account and no browser.</p>
 
       <article class="feature">
         <div class="feature-text">
@@ -70,7 +72,8 @@
             <li>Searches the official trade site, the English or the Russian one to match your client</li>
             <li>Tiers, pseudo totals, weapon DPS and defences as filters</li>
             <li>Hover a listing to see it as the game's item tooltip, its modifiers compared with yours</li>
-            <li>A click copies the whisper to the seller; you send it yourself</li>
+            <li>For a seller who trades in person, a click copies the whisper; you send it yourself.
+              Instant Buyout listings, searched by default, need none</li>
           </ul>
         </div>
         <figure class="feature-media">
@@ -83,9 +86,10 @@
           <h3>Currency market</h3>
           <p>Currency, omens, runes, essences and everything else traded on the in-game Currency
             Exchange are priced from GGG's own record of the trades made on it: the value in divine,
-            exalted and chaos orbs for the last hour, a seven-day chart, hourly volume and what your
-            whole stack is worth. Unique items, and exchange items that haven't traded lately, show
-            poe2scout's price.</p>
+            exalted and chaos orbs from the latest hour of trading (up to three for a thinly traded
+            item), hourly volume and what your whole stack is worth, with poe2scout's seven-day chart
+            beside it. Unique items, and exchange items that haven't traded lately, show poe2scout's
+            price.</p>
         </div>
         <figure class="feature-media">
           <div data-oracle="market" data-lang="en" data-fit data-alt="The market card with a seven-day price chart for a currency item"></div>
@@ -95,9 +99,9 @@
       <article class="feature">
         <div class="feature-text">
           <h3>XP overlay</h3>
-          <p>On top of the game's own HUD: experience per hour and the time to the next level above
-            the flask panel, the time and experience of the current map next to your average map
-            time above the skill panel.</p>
+          <p>On top of the game's own HUD: how fast you level, in percent of a level per hour, and the
+            time to the next level above the flask panel; the time and experience of the current map
+            next to your average map time above the skill panel.</p>
         </div>
         <figure class="feature-media">
           <div data-oracle="xp" data-lang="en" data-fit data-alt="The XP overlay's lines above the game's flask and skill panels"></div>
@@ -119,12 +123,16 @@
       <ul class="also">
         <li><strong>Waystone marks</strong>Mark waystone modifiers as danger, caution or wanted and
           spot them on every waystone you check.</li>
-        <li><strong>Updates</strong>New versions come from the project's GitHub releases and are
-          installed only after their SHA-256 checksum matches.</li>
-        <li><strong>Problem reports</strong>One click saves a diagnostics report and opens a
-          GitHub form with the details filled in. The app sends nothing itself.</li>
-        <li><strong>Privacy</strong>No telemetry; signing in is optional. It talks only to the Path of
-          Exile trade site and GGG's server of pictures and exchange data, poe2scout and GitHub.
+        <li><strong>Updates</strong>A new version shows up in the menu of the tray icon; a click
+          installs it, and only once the release's signature and the installer's SHA-256 checksum
+          check out.</li>
+        <li><strong>Problem reports</strong>Write to the developer from the app itself: its report
+          window sends your text, with the item's text or a diagnostics report attached if you
+          choose. After a crash it opens by itself on the next start. No account needed.
+          <a href="guide/en/report.html">How it works</a></li>
+        <li><strong>Privacy</strong>No telemetry; signing in is optional. It talks to the Path of
+          Exile trade site, GGG's server of pictures and exchange data, poe2scout, and oracle.pushka.biz
+          for updates and the reports you send.
           <a href="guide/en/privacy.html">Details</a></li>
       </ul>
     </div>
@@ -146,10 +154,11 @@
         <div>
           <h2>Getting started</h2>
           <ol class="steps">
-            <li>Download <code>PoE2-Oracle-Setup-&lt;version&gt;.exe</code> from the
-              <a href="https://github.com/mttzzz/poe2-oracle/releases/latest">latest release</a>.</li>
-            <li>Run it. The installer is not code-signed yet: if Windows SmartScreen warns, click
-              <em>More info</em>, then <em>Run anyway</em>. No administrator rights are needed.</li>
+            <li>Download the <a href="download/latest">latest installer</a>,
+              <code>PoE2-Oracle-Setup-&lt;version&gt;.exe</code>.</li>
+            <li>Run it. The installer isn't code-signed yet: if Windows says “Windows protected your
+              PC”, click <em>More info</em>, then <em>Run anyway</em>. No administrator rights are
+              needed.</li>
             <li>In the game's graphics options, choose Windowed Fullscreen.</li>
             <li>Point at an item in the game and press <span class="keys"><kbd>Ctrl</kbd>+<kbd>E</kbd></span>.</li>
           </ol>
@@ -166,16 +175,14 @@
   <div class="wrap">
     <ul class="footer-links">
       <li><a href="guide/en/introduction.html">Guide</a></li>
-      <li><a href="https://github.com/mttzzz/poe2-oracle">Source code</a></li>
-      <li><a href="https://github.com/mttzzz/poe2-oracle/releases">Releases</a></li>
-      <li><a href="https://github.com/mttzzz/poe2-oracle/issues/new/choose">Report a problem</a></li>
+      <li><a href="report.html">Report a problem</a></li>
       <li><a href="ru/" lang="ru" hreflang="ru">По-русски</a></li>
     </ul>
     <p>PoE2 Oracle is a fan-made tool. This product isn't affiliated with or endorsed by Grinding
       Gear Games in any way. Path of Exile is a trademark of Grinding Gear Games.</p>
-    <p>PoE2 Oracle is licensed under <a href="https://github.com/mttzzz/poe2-oracle/blob/main/LICENSE-MIT">MIT</a>
-      or <a href="https://github.com/mttzzz/poe2-oracle/blob/main/LICENSE-APACHE">Apache-2.0</a>, at your
-      option. This site uses the Alegreya SC and Philosopher fonts under the SIL Open Font License 1.1
+    <p>PoE2 Oracle is licensed under <a href="LICENSE-MIT.txt">MIT</a> or
+      <a href="LICENSE-APACHE.txt">Apache-2.0</a>, at your option; both texts come with the app.
+      This site uses the Alegreya SC and Philosopher fonts under the SIL Open Font License 1.1
       (<a href="fonts/OFL-AlegreyaSC.txt">Alegreya SC</a>, <a href="fonts/OFL-Philosopher.txt">Philosopher</a>).</p>
   </div>
 </footer>

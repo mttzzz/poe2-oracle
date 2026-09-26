@@ -11,7 +11,7 @@
                 {
                     "label": "League",
                     "note": "Where prices are searched. Auto is the trade site's current league; your private leagues show up here once you sign in, in “Account”",
-                    "control": { "type": "select", "value": "Forbidden Rites" }
+                    "control": { "type": "select", "value": "Auto · Forbidden Rites" }
                 },
                 {
                     "label": "Game client language",
@@ -44,7 +44,7 @@
             "rows": [
                 {
                     "label": "Start with Windows",
-                    "control": { "type": "switch", "on": true }
+                    "control": { "type": "switch", "on": false }
                 },
                 {
                     "label": "Check for updates automatically",
