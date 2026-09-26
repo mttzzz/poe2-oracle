@@ -2,8 +2,9 @@
 //!
 //! One small server does four jobs:
 //! - it serves the site the way GitHub Pages served it: the landing pages from `site/` (English
-//!   at the root, Russian under `/ru/`), the player guide mdBook builds from `docs/guide` under
-//!   `/guide/`, and the guide's pictures under `/images/` ([`site`]);
+//!   at the root, Russian under `/ru/`), the player guide's two books built from `docs/guide`
+//!   under `/guide/en/` and `/guide/ru/`, and the guide's pictures under `/images/` and
+//!   `/guide/images/`; `/` and `/guide/` lead to the reader's language ([`site`]);
 //! - it takes the reports the app's report window and the site's form send
 //!   ([`oracle_protocol::Report`]) and passes each on twice: as an issue in the private GitHub
 //!   repository and as a Telegram message to the owner ([`reports`]);
@@ -58,9 +59,10 @@ pub struct Config {
     pub public_url: String,
     /// `SITE_DIR`: the landing pages, `site/` of the repository.
     pub site_dir: PathBuf,
-    /// `GUIDE_DIR`: the guide as `mdbook build docs/guide` writes it.
+    /// `GUIDE_DIR`: the guide's two books as `docs/guide/build.sh` writes them, in `en/` and `ru/`.
     pub guide_dir: PathBuf,
-    /// `IMAGES_DIR`: the guide's pictures, `docs/guide/src/images`.
+    /// `IMAGES_DIR`: the guide's pictures, `docs/guide/src/images`, which the landing pages show
+    /// from `/images/` and the books from `/guide/images/`.
     pub images_dir: PathBuf,
     /// `GITHUB_TOKEN`: the owner's fine-grained token for [`Config::github_repo`], with Issues
     /// read/write and Contents read.

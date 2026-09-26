@@ -1,20 +1,30 @@
 //! The site, laid out as GitHub Pages published it: the landing pages from `SITE_DIR` at the root
-//! (English, Russian under `/ru/`), the guide from `GUIDE_DIR` under `/guide/`, its pictures from
-//! `IMAGES_DIR` under `/images/`.
+//! (English, Russian under `/ru/`), the guide's two books from `GUIDE_DIR` under `/guide/en/` and
+//! `/guide/ru/`, and the guide's pictures from `IMAGES_DIR`: under `/images/` for the landing pages,
+//! and under `/guide/images/`, where the books' `../images/<lang>/` links lead.
 //!
 //! Paths resolve the way Pages resolved them, so the pages' relative links keep working: a
 //! directory is its `index.html`, a directory named without the trailing slash redirects to it
 //! (relative links in the page need it), and a directory without an `index.html` is a 404, as is
-//! any file or directory whose name starts with a dot. A missing page is answered with
-//! `SITE_DIR/404.html` when there is one. tower-http's `ServeFile` sends the files, with
-//! `ETag`/`Last-Modified`, conditional requests and ranges.
+//! any file or directory whose name starts with a dot. A missing page is answered with a 404 page
+//! when there is one: under `/guide/en/` and `/guide/ru/` the book's own, elsewhere
+//! `SITE_DIR/404.html`. tower-http's `ServeFile` sends the files, with `ETag`/`Last-Modified`,
+//! conditional requests and ranges.
+//!
+//! The ways in lead to the reader's language: `/` keeps an English reader and sends a Russian one
+//! on to `/ru/`, and `/guide/`, which has no page of its own, sends each reader to their book. The
+//! reader's language is the one they last picked on a language switch (the `lang` cookie the
+//! pages' script sets), else the first of the two their browser asks for (`Accept-Language`, which
+//! browsers fill from the system's languages), else English. A path that names its language is
+//! served as it is, whatever the reader's: that is how a link, or the switch itself, reaches the
+//! other language.
 
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
 use axum::body::Body;
 use axum::extract::{Request, State};
-use axum::http::{HeaderValue, Method, StatusCode, header};
+use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use percent_encoding::percent_decode_str;
 use tower_http::services::ServeFile;
@@ -25,6 +35,9 @@ use crate::App;
 const PAGE_CACHE: &str = "no-cache";
 /// Styles, scripts, fonts and pictures may wait a little, as they did on Pages.
 const ASSET_CACHE: &str = "public, max-age=600";
+/// What a way in's answer depends on ([`preferred`]): a cache must keep one per reader's headers,
+/// or it would send one reader on to another's language.
+const LANGUAGE_VARY: &str = "Accept-Language, Cookie";
 
 pub struct Site {
     site: PathBuf,
@@ -41,6 +54,35 @@ enum Target {
     Missing,
 }
 
+/// The two languages of the site and of the guide.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Language {
+    En,
+    Ru,
+}
+
+impl Language {
+    /// The language `tag` names, in any case: a cookie's value, or a language range's primary
+    /// subtag.
+    fn named(tag: &[u8]) -> Option<Language> {
+        if tag.eq_ignore_ascii_case(b"en") {
+            Some(Language::En)
+        } else if tag.eq_ignore_ascii_case(b"ru") {
+            Some(Language::Ru)
+        } else {
+            None
+        }
+    }
+
+    /// Its code, which names the directories of its pages: `/ru/`, `/guide/en/`.
+    fn code(self) -> &'static str {
+        match self {
+            Language::En => "en",
+            Language::Ru => "ru",
+        }
+    }
+}
+
 impl Site {
     pub fn new(site: PathBuf, guide: PathBuf, images: PathBuf) -> Site {
         Site {
@@ -51,8 +93,14 @@ impl Site {
     }
 
     /// The directory a request path's files come from, and the rest of the path under it.
+    /// `/guide/images` comes before `/guide`: the books' pictures are `IMAGES_DIR`'s, as the
+    /// landing pages' are.
     fn mount<'a>(&'a self, path: &'a str) -> (&'a Path, &'a str) {
-        for (prefix, root) in [("/guide", &self.guide), ("/images", &self.images)] {
+        for (prefix, root) in [
+            ("/guide/images", &self.images),
+            ("/guide", &self.guide),
+            ("/images", &self.images),
+        ] {
             if let Some(rest) = path.strip_prefix(prefix)
                 && (rest.is_empty() || rest.starts_with('/'))
             {
@@ -101,23 +149,135 @@ async fn resolve(root: &Path, path: &str) -> Target {
 
 /// Every path the API doesn't claim.
 pub async fn serve(State(app): State<Arc<App>>, request: Request) -> Response {
-    let path = request.uri().path().to_owned();
-    let (root, rest) = app.site.mount(&path);
+    let path = request.uri().path();
+    // `/` only for a page load: another method gets the page's 405, whatever the language.
+    let home = path == "/" && matches!(*request.method(), Method::GET | Method::HEAD);
+    let guide = matches!(path, "/guide" | "/guide/" | "/guide/index.html");
+    if !home && !guide {
+        return answer(&app.site, request).await;
+    }
+    let language = preferred(request.headers());
+    let location = if guide {
+        Some(format!("/guide/{}/", language.code()))
+    } else {
+        (language == Language::Ru).then(|| "/ru/".to_owned())
+    };
+    // A 302, not a 301: the way leads elsewhere for another reader, or after the next pick.
+    let mut response = match location {
+        Some(location) => redirect(StatusCode::FOUND, location, request.uri().query()),
+        None => answer(&app.site, request).await,
+    };
+    let headers = response.headers_mut();
+    headers.insert(header::VARY, HeaderValue::from_static(LANGUAGE_VARY));
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static(PAGE_CACHE));
+    response
+}
+
+/// `request` answered from the directories: the file its path names, the redirect of a directory
+/// named without its slash, or a 404.
+async fn answer(site: &Site, request: Request) -> Response {
+    let uri = request.uri().clone();
+    let (root, rest) = site.mount(uri.path());
     match resolve(root, rest).await {
         Target::File(file) => send(file, request).await,
-        Target::Directory => {
-            let location = match request.uri().query() {
-                Some(query) => format!("{path}/?{query}"),
-                None => format!("{path}/"),
-            };
-            (
-                StatusCode::MOVED_PERMANENTLY,
-                [(header::LOCATION, location)],
-            )
-                .into_response()
-        }
-        Target::Missing => not_found(&app.site, request.method()).await,
+        Target::Directory => redirect(
+            StatusCode::MOVED_PERMANENTLY,
+            format!("{}/", uri.path()),
+            uri.query(),
+        ),
+        Target::Missing => not_found(site, uri.path(), request.method()).await,
     }
+}
+
+/// A redirect to `location`, with the request's query kept.
+fn redirect(status: StatusCode, mut location: String, query: Option<&str>) -> Response {
+    if let Some(query) = query {
+        location.push('?');
+        location.push_str(query);
+    }
+    (status, [(header::LOCATION, location)]).into_response()
+}
+
+/// The language a request's reader prefers: the one they last picked on a language switch, else
+/// the first of the two their browser asks for, else English.
+fn preferred(headers: &HeaderMap) -> Language {
+    picked(headers)
+        .or_else(|| asked(headers))
+        .unwrap_or(Language::En)
+}
+
+/// The `lang` cookie: the language the reader last picked on a language switch. Only the pages'
+/// script sets it, and a value it doesn't write is no pick. Read as bytes: a cookie another page
+/// set may hold anything, and must not hide this one.
+fn picked(headers: &HeaderMap) -> Option<Language> {
+    headers
+        .get_all(header::COOKIE)
+        .iter()
+        .flat_map(|cookies| cookies.as_bytes().split(|&byte| byte == b';'))
+        .find_map(|cookie| {
+            let (name, value) = name_value(cookie)?;
+            if name != b"lang" {
+                return None;
+            }
+            // A value may come quoted (RFC 6265, 4.1.1).
+            let value = value
+                .strip_prefix(b"\"")
+                .and_then(|value| value.strip_suffix(b"\""))
+                .unwrap_or(value);
+            Language::named(value)
+        })
+}
+
+/// The first of the two languages the browser asks for: of the ranges naming them, the one it
+/// weighs highest, the earlier of equals. The region doesn't matter (`ru-RU` is `ru`); `q=0`
+/// refuses a language rather than asks for it; `*` names neither; and a range whose weight isn't
+/// one can't be ranked, so it is skipped.
+fn asked(headers: &HeaderMap) -> Option<Language> {
+    let ranges = headers
+        .get_all(header::ACCEPT_LANGUAGE)
+        .iter()
+        .flat_map(|ranges| ranges.as_bytes().split(|&byte| byte == b','));
+    let mut first: Option<(f32, Language)> = None;
+    for range in ranges {
+        let mut parts = range.split(|&byte| byte == b';');
+        let tag = parts.next().unwrap_or_default().trim_ascii();
+        let primary = tag
+            .split(|&byte| byte == b'-' || byte == b'_')
+            .next()
+            .unwrap_or_default();
+        let Some(language) = Language::named(primary) else {
+            continue;
+        };
+        let Some(weight) = weight(parts) else {
+            continue;
+        };
+        if weight > 0.0 && first.is_none_or(|(highest, _)| weight > highest) {
+            first = Some((weight, language));
+        }
+    }
+    first.map(|(_, language)| language)
+}
+
+/// A language range's weight, from its parameters (RFC 9110, 12.4.2): 1 without a `q`, `None`
+/// when its `q` isn't a number from 0 to 1.
+fn weight<'a>(mut parameters: impl Iterator<Item = &'a [u8]>) -> Option<f32> {
+    let Some(q) = parameters.find_map(|parameter| {
+        let (name, value) = name_value(parameter)?;
+        name.eq_ignore_ascii_case(b"q").then_some(value)
+    }) else {
+        return Some(1.0);
+    };
+    std::str::from_utf8(q)
+        .ok()?
+        .parse::<f32>()
+        .ok()
+        .filter(|q| (0.0..=1.0).contains(q))
+}
+
+/// `pair` split at its first `=`, both sides trimmed: a cookie, or a parameter.
+fn name_value(pair: &[u8]) -> Option<(&[u8], &[u8])> {
+    let equals = pair.iter().position(|&byte| byte == b'=')?;
+    Some((pair[..equals].trim_ascii(), pair[equals + 1..].trim_ascii()))
 }
 
 /// `file` as `ServeFile` sends it, with the site's caching and text charset.
@@ -156,9 +316,32 @@ async fn send(file: PathBuf, request: Request) -> Response {
     response
 }
 
-/// A 404, with the site's own 404 page when it has one.
-async fn not_found(site: &Site, method: &Method) -> Response {
-    let page = site.site.join("404.html");
+/// A 404 for the missing `path`, with a 404 page when there is one: under `/guide/en/` and
+/// `/guide/ru/` the book's own, in its language and with its sidebar, else the site's.
+async fn not_found(site: &Site, path: &str, method: &Method) -> Response {
+    if let Some(language) = book(path) {
+        let mut page = site.guide.join(language.code());
+        page.push("404.html");
+        if let Some(response) = page_404(page, method).await {
+            return response;
+        }
+    }
+    page_404(site.site.join("404.html"), method)
+        .await
+        .unwrap_or_else(|| StatusCode::NOT_FOUND.into_response())
+}
+
+/// The book a path is in: `/guide/ru/...` is in the Russian one.
+fn book(path: &str) -> Option<Language> {
+    let (code, _) = path.strip_prefix("/guide/")?.split_once('/')?;
+    [Language::En, Language::Ru]
+        .into_iter()
+        .find(|language| language.code() == code)
+}
+
+/// `page` sent as a 404, without the validators and ranges that belong to the page rather than to
+/// the missing path; `None` when it can't be sent.
+async fn page_404(page: PathBuf, method: &Method) -> Option<Response> {
     let method = if method == Method::HEAD {
         Method::HEAD
     } else {
@@ -171,7 +354,7 @@ async fn not_found(site: &Site, method: &Method) -> Response {
         .expect("a fixed request is valid");
     let mut response = match ServeFile::new(page).try_call(request).await {
         Ok(response) if response.status() == StatusCode::OK => response.map(Body::new),
-        _ => return StatusCode::NOT_FOUND.into_response(),
+        _ => return None,
     };
     *response.status_mut() = StatusCode::NOT_FOUND;
     let headers = response.headers_mut();
@@ -183,7 +366,7 @@ async fn not_found(site: &Site, method: &Method) -> Response {
         header::CONTENT_TYPE,
         HeaderValue::from_static("text/html; charset=utf-8"),
     );
-    response
+    Some(response)
 }
 
 /// tower-http's validators are strong, and stay so on a gzip or br body; a compressed body is a
@@ -255,6 +438,113 @@ mod tests {
             "/%ff",
         ] {
             assert_eq!(resolve(path, missing).await, Target::Missing, "{missing}");
+        }
+    }
+
+    /// The language [`preferred`] gives a request with `headers`, sent in this order.
+    fn preferred_for(headers: &[(header::HeaderName, &str)]) -> Language {
+        let mut map = HeaderMap::new();
+        for (name, value) in headers {
+            map.append(name, HeaderValue::from_bytes(value.as_bytes()).unwrap());
+        }
+        preferred(&map)
+    }
+
+    #[test]
+    fn a_language_picked_on_a_switch_beats_the_browsers() {
+        use Language::{En, Ru};
+        use header::{ACCEPT_LANGUAGE, COOKIE};
+
+        assert_eq!(
+            preferred_for(&[(COOKIE, "lang=ru"), (ACCEPT_LANGUAGE, "en-US,en;q=0.9")]),
+            Ru
+        );
+        assert_eq!(
+            preferred_for(&[(COOKIE, "lang=en"), (ACCEPT_LANGUAGE, "ru-RU,ru;q=0.9")]),
+            En
+        );
+        // Among other cookies however spaced, on any of several Cookie lines, next to a cookie
+        // that isn't ASCII, quoted.
+        for cookies in [
+            &[(COOKIE, "theme=dark;lang=ru ;  seen=1")][..],
+            &[(COOKIE, "theme=dark"), (COOKIE, " lang = ru ")],
+            &[(COOKIE, "имя=значение; lang=ru")],
+            &[(COOKIE, "lang=\"ru\"")],
+        ] {
+            let mut headers = cookies.to_vec();
+            headers.push((ACCEPT_LANGUAGE, "en"));
+            assert_eq!(preferred_for(&headers), Ru, "{cookies:?}");
+        }
+        // A value the switch doesn't write is no pick: the browser's language counts.
+        for cookie in ["lang=de", "lang=", "lang", "xlang=ru"] {
+            for (asked, language) in [("ru", Ru), ("en", En)] {
+                assert_eq!(
+                    preferred_for(&[(COOKIE, cookie), (ACCEPT_LANGUAGE, asked)]),
+                    language,
+                    "{cookie} {asked}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_browsers_first_language_of_the_two_counts() {
+        use Language::{En, Ru};
+        use header::ACCEPT_LANGUAGE;
+
+        for (asked, language) in [
+            ("ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7", Ru),
+            ("en-GB,en;q=0.9,ru;q=0.8", En),
+            // By weight, other languages aside, the header's order breaking ties.
+            ("en;q=0.5, ru;q=0.8", Ru),
+            ("de-DE, de;q=0.9, ru;q=0.3, en;q=0.2", Ru),
+            ("uk, en-US;q=0.5, ru;q=0.500", En),
+            ("ru, en", Ru),
+            ("en, ru", En),
+            // Any region or script, in any case.
+            ("RU-ua", Ru),
+            ("ru_RU", Ru),
+            ("sr-Latn-RS, ru-Cyrl-RU;q=0.4, en-Latn-US;q=0.3", Ru),
+            // `*` is any other language, neither of the two.
+            ("*, ru;q=0.5", Ru),
+            // A range that can't be read doesn't hide the next.
+            ("en;q=abc, ru;q=0.5", Ru),
+            ("ру-РУ, ru;q=0.5", Ru),
+            (",, ;q=1, ru ; q = 0.5 ,", Ru),
+        ] {
+            assert_eq!(
+                preferred_for(&[(ACCEPT_LANGUAGE, asked)]),
+                language,
+                "{asked}"
+            );
+        }
+        // Several Accept-Language lines are one list.
+        assert_eq!(
+            preferred_for(&[(ACCEPT_LANGUAGE, "de"), (ACCEPT_LANGUAGE, "ru")]),
+            Ru
+        );
+    }
+
+    #[test]
+    fn a_reader_asking_for_neither_gets_english() {
+        use header::ACCEPT_LANGUAGE;
+
+        assert_eq!(preferred_for(&[]), Language::En);
+        for asked in [
+            "*",
+            "de-DE,de;q=0.9,*;q=0.5",
+            // Rusyn.
+            "rue",
+            "ru;q=0",
+            "de, ru-RU;q=0",
+            "ru;q=2, ru;q=-1, ru;q=, ru;q=NaN, ru;q=inf",
+            "ру, ;;, =",
+        ] {
+            assert_eq!(
+                preferred_for(&[(ACCEPT_LANGUAGE, asked)]),
+                Language::En,
+                "{asked}"
+            );
         }
     }
 }

@@ -264,7 +264,12 @@ fn site(site: &Path, guide: &Path, images: &Path) {
     std::fs::write(site.join("404.html"), page("not here")).unwrap();
     std::fs::write(site.join("ui/panel.js"), "export const panel = 1;").unwrap();
     std::fs::write(site.join("LICENSE-MIT.txt"), "MIT License").unwrap();
-    std::fs::write(guide.join("index.html"), page("the guide")).unwrap();
+    // The guide's two books; only the Russian one has its own 404 page here.
+    std::fs::create_dir_all(guide.join("en")).unwrap();
+    std::fs::create_dir_all(guide.join("ru")).unwrap();
+    std::fs::write(guide.join("en/index.html"), page("the guide")).unwrap();
+    std::fs::write(guide.join("ru/index.html"), page("руководство")).unwrap();
+    std::fs::write(guide.join("ru/404.html"), page("нет такой страницы")).unwrap();
     std::fs::write(images.join("panel.png"), b"\x89PNG not really").unwrap();
 }
 
@@ -864,18 +869,14 @@ async fn the_site_is_served_from_its_directories() {
             .unwrap()
             .contains("русский")
     );
-    assert!(
-        service
-            .get("/guide/", &[])
-            .await
-            .text()
-            .await
-            .unwrap()
-            .contains("the guide")
-    );
+    for (book, text) in [("/guide/en/", "the guide"), ("/guide/ru/", "руководство")] {
+        let page = service.get(book, &[]).await;
+        assert_eq!(page.status(), StatusCode::OK, "{book}");
+        assert!(page.text().await.unwrap().contains(text), "{book}");
+    }
     for (path, target) in [
         ("/ru", "/ru/"),
-        ("/guide", "/guide/"),
+        ("/guide/ru", "/guide/ru/"),
         ("/ru?lang=1", "/ru/?lang=1"),
     ] {
         let moved = service.get(path, &[]).await;
@@ -884,6 +885,17 @@ async fn the_site_is_served_from_its_directories() {
     }
 
     let picture = service.get("/images/panel.png", &[]).await;
+    assert_eq!(
+        picture.headers()[header::CACHE_CONTROL],
+        "public, max-age=600"
+    );
+    assert_eq!(
+        picture.bytes().await.unwrap().as_ref(),
+        b"\x89PNG not really"
+    );
+    // The books link their pictures as `../images/`: the same files, the same way.
+    let picture = service.get("/guide/images/panel.png", &[]).await;
+    assert_eq!(picture.status(), StatusCode::OK);
     assert_eq!(
         picture.headers()[header::CACHE_CONTROL],
         "public, max-age=600"
@@ -913,7 +925,10 @@ async fn the_site_is_served_from_its_directories() {
         "/ui",
         "/nothing.html",
         "/guide/..%2Findex.html",
+        // The English book has no 404 page of its own here: the site's answers for it.
+        "/guide/en/missing.html",
         "/images/",
+        "/guide/images/",
     ] {
         let response = service.get(missing, &[]).await;
         assert_eq!(response.status(), StatusCode::NOT_FOUND, "{missing}");
@@ -922,8 +937,110 @@ async fn the_site_is_served_from_its_directories() {
             "{missing}"
         );
     }
+    // A book's missing page gets the book's own 404 page, in its language.
+    let missing = service.get("/guide/ru/missing.html", &[]).await;
+    assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+    let headers = missing.headers().clone();
+    assert_eq!(headers[header::CONTENT_TYPE], "text/html; charset=utf-8");
+    assert_eq!(headers[header::CACHE_CONTROL], "no-cache");
+    assert!(!headers.contains_key(header::ETAG));
+    assert!(!headers.contains_key(header::LAST_MODIFIED));
+    assert!(missing.text().await.unwrap().contains("нет такой страницы"));
     assert_eq!(
         service.get("/healthz", &[]).await.text().await.unwrap(),
         "ok"
     );
+}
+
+/// Whether `response` says it depends on the reader's language: a cache keeps one per
+/// Accept-Language and Cookie, and asks again before each use.
+fn follows_the_language(response: &reqwest::Response) -> bool {
+    let varies: Vec<String> = response
+        .headers()
+        .get_all(header::VARY)
+        .iter()
+        .flat_map(|value| value.to_str().unwrap().split(','))
+        .map(|name| name.trim().to_ascii_lowercase())
+        .collect();
+    ["accept-language", "cookie"]
+        .iter()
+        .all(|name| varies.iter().any(|varied| varied == name))
+        && response
+            .headers()
+            .get(header::CACHE_CONTROL)
+            .is_some_and(|value| value == "no-cache")
+}
+
+#[tokio::test]
+async fn the_ways_in_lead_to_the_readers_language() {
+    let service = start(false, false, true).await;
+    let russian = ("accept-language", "ru-RU,ru;q=0.9,en;q=0.8");
+
+    // A Russian browser goes on to the Russian landing page, with its query.
+    for (path, target) in [("/", "/ru/"), ("/?from=app", "/ru/?from=app")] {
+        let moved = service.get(path, &[russian]).await;
+        assert_eq!(moved.status(), StatusCode::FOUND, "{path}");
+        assert_eq!(moved.headers()[header::LOCATION], target, "{path}");
+        assert!(follows_the_language(&moved), "{path}");
+    }
+    let moved = service
+        .http
+        .head(format!("{}/", service.url))
+        .header("cookie", "lang=ru")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(moved.status(), StatusCode::FOUND);
+    assert_eq!(moved.headers()[header::LOCATION], "/ru/");
+    // English picked on a switch, or neither language asked for: the English page itself.
+    for headers in [&[russian, ("cookie", "lang=en")][..], &[][..]] {
+        let home = service.get("/", headers).await;
+        assert_eq!(home.status(), StatusCode::OK, "{headers:?}");
+        assert!(follows_the_language(&home), "{headers:?}");
+        assert!(
+            home.text().await.unwrap().contains("english"),
+            "{headers:?}"
+        );
+    }
+
+    // The guide has no page of its own: each reader goes on to their book, with the query.
+    for (path, headers, target) in [
+        ("/guide/", &[][..], "/guide/en/"),
+        ("/guide/", &[russian][..], "/guide/ru/"),
+        (
+            "/guide",
+            &[("cookie", "theme=dark; lang=ru"), ("accept-language", "en")][..],
+            "/guide/ru/",
+        ),
+        (
+            "/guide/index.html?search=vendor",
+            &[russian, ("cookie", "lang=en")][..],
+            "/guide/en/?search=vendor",
+        ),
+    ] {
+        let moved = service.get(path, headers).await;
+        assert_eq!(moved.status(), StatusCode::FOUND, "{path} {headers:?}");
+        assert_eq!(
+            moved.headers()[header::LOCATION],
+            target,
+            "{path} {headers:?}"
+        );
+        assert!(follows_the_language(&moved), "{path} {headers:?}");
+    }
+
+    // A path that names its language is served as it is, whatever the reader's.
+    for (path, headers, text) in [
+        ("/ru/", &[("cookie", "lang=en")][..], "русский"),
+        ("/index.html", &[russian][..], "english"),
+        ("/guide/en/", &[("cookie", "lang=ru")][..], "the guide"),
+        (
+            "/guide/ru/",
+            &[("accept-language", "en")][..],
+            "руководство",
+        ),
+    ] {
+        let page = service.get(path, headers).await;
+        assert_eq!(page.status(), StatusCode::OK, "{path}");
+        assert!(page.text().await.unwrap().contains(text), "{path}");
+    }
 }

@@ -22,3 +22,46 @@ kbd {
     line-height: 1.4;
     white-space: nowrap;
 }
+
+/* The header's language switch (guide.js), drawn as the site's (site/style.css, .lang-switch) in
+ * the reader's theme. mdBook's rem is 10px. */
+.lang-switch {
+    display: inline-flex;
+    gap: 0.4rem;
+    margin-inline-end: 0.5rem;
+    vertical-align: middle;
+    line-height: 1.6;
+}
+
+.lang-switch a,
+.lang-switch span {
+    padding: 0.16rem 0.8rem;
+    border: 1px solid var(--theme-hover);
+    border-radius: 3px;
+    font-size: 1.36rem;
+}
+
+.lang-switch a {
+    background: var(--theme-hover);
+    color: var(--fg);
+}
+
+.lang-switch a:hover {
+    color: var(--icons-hover);
+}
+
+.lang-switch span {
+    background: color-mix(in srgb, var(--links) 8%, var(--bg));
+    border-color: var(--links);
+    color: var(--links);
+}
+
+/* The title, a link back to the site (guide.js), keeps the look mdBook gives it. */
+.menu-title a {
+    color: inherit;
+    text-decoration: none;
+}
+
+.menu-title a:hover {
+    color: var(--icons-hover);
+}

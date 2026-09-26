@@ -33,8 +33,9 @@ COPY crates/oracle-web crates/oracle-web
 RUN find crates -name '*.rs' -exec touch {} + \
  && cargo build --release --locked -p oracle-web
 
-# The guide, built with a pinned mdBook checked against its release's sha256. The builder's image:
-# already pulled, and it has curl. lanes/dev.sh reads both pins from here.
+# The guide, a book per language that docs/guide/build.sh builds, with a pinned mdBook checked
+# against its release's sha256. The builder's image: already pulled, and it has curl. lanes/dev.sh
+# reads both pins from here.
 FROM ${RUST_IMAGE} AS guide
 ARG MDBOOK_VERSION=v0.5.4
 ARG MDBOOK_SHA256=3f28de05dafca9d0f2eab99c662116b0e37b89b1d96a08f8f430b9eeae958cd7
@@ -45,7 +46,7 @@ RUN archive="mdbook-${MDBOOK_VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
  && tar -xzf "/tmp/$archive" -C /usr/local/bin \
  && rm "/tmp/$archive"
 COPY docs/guide /docs/guide
-RUN mdbook build /docs/guide --dest-dir /guide
+RUN /docs/guide/build.sh /guide
 
 # glibc and libgcc for the binary, no shell, and a non-root user (65532). The server's TLS is rustls
 # with built-in root certificates: the image's CA bundle goes unused.

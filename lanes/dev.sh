@@ -4,10 +4,15 @@
 # `lane dev up` runs this in the dev pod (lanes/lane.toml, [dev]); http://<laneHost> then opens from
 # any machine on the LAN, laid out as in production:
 #
-#     /            site/: English, Russian under /ru/, the report form at /report.html
-#     /guide/      the mdBook guide built from docs/guide
-#     /images/     docs/guide/src/images
-#     /api/v1/...  reports and the latest release;  /download/...  the release proxy
+#     /                 site/: English, Russian under /ru/, the report form at /report.html
+#     /guide/en/, /guide/ru/
+#                       the guide, a book per language, built by docs/guide/build.sh
+#     /guide/images/    docs/guide/src/images, the books' pictures (/images/ too, for site/)
+#     /api/v1/...       reports and the latest release;  /download/...  the release proxy
+#
+# / and /guide/ pick the reader's language: the `lang` cookie that the language links on the site
+# and in the guide set, or else the browser's languages. / answers in English or redirects to /ru/,
+# /guide/ redirects to /guide/en/ or /guide/ru/.
 #
 # site/ and the images are read from the checkout, so an edit shows on the next reload. The guide
 # and the server are built once, at start: after editing docs/guide or the server's crates, run
@@ -39,7 +44,7 @@ if [[ ! -x $mdbook ]]; then
   mv "$work/mdbook-$version.partial" "$work/mdbook-$version"
 fi
 rm -rf "$work/guide"
-"$mdbook" build docs/guide --dest-dir "$PWD/$work/guide"
+MDBOOK=$mdbook docs/guide/build.sh "$PWD/$work/guide"
 
 # Dry, whatever the lane's Secret may hold. No REDIS_URL either: counters and rate limits live in
 # memory, and `lane dev restart` clears them. Behind the lane's proxies every visitor has the same

@@ -6,6 +6,8 @@ PoE2 Oracle is a free overlay for Path of Exile 2 on Windows. Point at an item i
 game, press <kbd>Ctrl</kbd>+<kbd>E</kbd>, and a panel next to your inventory shows what similar
 items sell for on the official trade site, with the item's modifiers as filters you can adjust.
 
+**[Download for Windows](../../download/latest)** · [Project site](../../)
+
 ## What it does
 
 - **[Price check](price-check.md).** Listings from the Path of Exile trade site, cheapest first.
@@ -44,6 +46,7 @@ items sell for on the official trade site, with the item's modifiers as filters 
 PoE2 Oracle is a fan-made tool. This product isn\'t affiliated with or endorsed by Grinding Gear
 Games in any way. Path of Exile is a trademark of Grinding Gear Games.
 
-PoE2 Oracle is licensed under the MIT or Apache 2.0 license, at your choice; both license texts are
-installed next to the program. Its item and modifier tables build on
+PoE2 Oracle is licensed under the [MIT](../../LICENSE-MIT.txt) or
+[Apache 2.0](../../LICENSE-APACHE.txt) license, at your choice; both license texts are installed
+next to the program. Its item and modifier tables build on
 [Exiled Exchange 2](https://github.com/Kvan7/Exiled-Exchange-2) (MIT).

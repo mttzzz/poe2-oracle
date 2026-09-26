@@ -68,7 +68,7 @@ crates/
   oracle-web/      the oracle.pushka.biz service: site, guide, reports, update proxy, daily digest
   release-sign/    signs a release's SHA256SUMS in CI
 packaging/         release script, NSIS installer, data table generators (packaging/data)
-docs/guide/        the user guide (mdBook), served by oracle-web under /guide/
+docs/guide/        the user guide: English and Russian mdBooks, served by oracle-web under /guide/
 site/              the landing pages and the report form, served by oracle-web
 deploy/            the service's Helm values and the Docker build's workspace trim
 lanes/             the Linux build container used by CI
@@ -248,13 +248,19 @@ cargo run -p poe2-oracle --example plate_art -- site/ui/img
 ## The web service
 
 `crates/oracle-web` is the service at oracle.pushka.biz. It serves the landing pages (`site/`), the
-guide (built from `docs/guide`) and its images; takes reports on `POST /api/v1/reports` and passes
-each one on to the maintainer, as an issue in this repository and a Telegram message; serves the
-latest release and its files from this private repository (`/api/v1/releases/latest`,
+guide (`docs/guide`, a book per language) and its images; takes reports on `POST /api/v1/reports`
+and passes each one on to the maintainer, as an issue in this repository and a Telegram message;
+serves the latest release and its files from this private repository (`/api/v1/releases/latest`,
 `/download/<tag>/<file>`, `/download/latest`); and posts a daily digest of downloads, update
 checks and reports. What the app and the service share is in `crates/oracle-protocol`: the
 service's address, the report and release types, and the report limits (`Report::check`, which
 both sides run).
+
+The site's root and `/guide/` open in the reader's language: the one in the `lang` cookie, which the
+language links on the site and in the guide set when clicked, or else the browser's
+`Accept-Language`. `/` answers in English or redirects to `/ru/`, and `/guide/` redirects to
+`/guide/en/` or `/guide/ru/`; a page's own address, such as `/ru/` or `/guide/en/install.html`,
+never redirects.
 
 It takes its settings from the environment, all optional:
 
@@ -263,8 +269,8 @@ It takes its settings from the environment, all optional:
 | `PORT` | `8080` | Listens on `0.0.0.0:PORT` |
 | `PUBLIC_URL` | `https://oracle.pushka.biz` | The public address, no trailing slash; the release answer's download links start with it |
 | `SITE_DIR` | `/app/site` | The landing pages (`site/`); a `404.html` there is the 404 page |
-| `GUIDE_DIR` | `/app/guide` | The built guide (`mdbook build docs/guide`), served under `/guide/` |
-| `IMAGES_DIR` | `/app/images` | `docs/guide/src/images`, served under `/images/` |
+| `GUIDE_DIR` | `/app/guide` | The built guide (`docs/guide/build.sh`): a book per language in `en/` and `ru/`, served under `/guide/en/` and `/guide/ru/`; each answers a missing page with its own `404.html` |
+| `IMAGES_DIR` | `/app/images` | `docs/guide/src/images`, served under `/images/` and `/guide/images/` |
 | `GITHUB_TOKEN` | — | A fine-grained token for this repository (Issues read and write, Contents read): files the report issues, reads the latest release and downloads its files. Unset: no issues are filed, and `/api/v1/releases/latest` and `/download` answer 503 |
 | `GITHUB_REPO` | `mttzzz/poe2-oracle` | The repository the issues and releases belong to |
 | `TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID` | — | The bot and the chat the reports and the digest go to; with either unset, nothing goes to Telegram |
@@ -275,11 +281,13 @@ The digest goes out at 09:00 Moscow time: the day before, against the same weekd
 
 To run the service without sending anything, leave `GITHUB_TOKEN` and `TELEGRAM_TOKEN` unset: every
 report is still checked, rate-limited and counted, then written to the log instead of sent, and
-answered with id 0. Build the guide with mdBook (the version the root `Dockerfile` pins as
-`MDBOOK_VERSION`), then run the service and open http://localhost:8080/:
+answered with id 0. Build the guide's two books with `docs/guide/build.sh` and mdBook, the version
+the root `Dockerfile` pins as `MDBOOK_VERSION` (`MDBOOK` names the binary if it isn't the `mdbook`
+on `PATH`); the script takes an absolute output directory. Then run the service and open
+http://localhost:8080/:
 
 ```sh
-mdbook build docs/guide --dest-dir target/guide
+docs/guide/build.sh "$PWD/target/guide"
 SITE_DIR=site GUIDE_DIR=target/guide IMAGES_DIR=docs/guide/src/images cargo run -p oracle-web
 ```
 
@@ -288,6 +296,12 @@ that address's `/download/`, so set the service's `PUBLIC_URL` to the same addre
 release's `SHA256SUMS` still has to be signed with the real release key. The maintainer's lane runs
 the service the same way, dry, with `lane dev up` (`lanes/dev.sh`; `lane dev restart` after
 editing the guide or the server).
+
+Each guide page has the same file name in both languages, `docs/guide/src/en/<page>.md` and
+`src/ru/<page>.md`, and each book lists its pages in its own `SUMMARY.md`: the language switch in
+the guide's header leads to the page of the same name in the other book. The pictures stay outside
+both books, in `docs/guide/src/images/<en|ru>/`; pages show them as `../images/<lang>/<name>`, which
+the service serves from `IMAGES_DIR` under `/guide/images/`.
 
 ### Deploying the service
 

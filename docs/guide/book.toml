@@ -1,9 +1,9 @@
+# The player guide is a book per language, English in src/en and Russian in src/ru, and this is
+# what they share. build.sh builds both and sets what differs per language through mdBook's
+# MDBOOK_ variables: book.src, book.language, book.description and output.html.site-url.
 [book]
 title = "PoE2 Oracle"
-description = "Player guide for PoE2 Oracle, a price-check overlay for Path of Exile 2 on Windows. English and Russian."
 authors = ["PoE2 Oracle contributors"]
-language = "en"
-src = "src"
 
 [build]
 # A page listed in SUMMARY.md but missing on disk fails the build instead of being created empty.
@@ -13,12 +13,11 @@ create-missing = false
 default-theme = "coal"
 preferred-dark-theme = "coal"
 no-section-label = true
-# Where the book is published: https://oracle.pushka.biz/guide/
-site-url = "/guide/"
 additional-css = ["theme/guide.css"]
 additional-js = ["theme/guide.js"]
 
-# Off: stock mdBook's search can't find Russian words -- its index and its query trimmer drop
-# Cyrillic -- and half of this book is Russian. The sidebar lists every page instead.
+# Off in both books: stock mdBook's search can't find Russian words -- its index and its query
+# trimmer drop Cyrillic -- and the English book alone having one would make the two books differ.
+# The sidebar lists every page instead.
 [output.html.search]
 enable = false
