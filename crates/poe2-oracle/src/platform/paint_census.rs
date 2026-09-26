@@ -4,13 +4,17 @@
 //!
 //! Measured 2026-09-26 on the test machine, the game behind another window and the cursor over
 //! it, the UI thread was woken 195 times a second -- 12 on 2026-09-24. The thread's counters say
-//! how often, not what for. A report says, for each window of the thread -- its handle, title and
-//! class, whether it's shown, its size -- per second over the last ten:
+//! how often, not what for. A report says, per second over the last ten, first what
+//! `gpui_windows`' vsync thread did (`vsync_park`): how many of the display's refreshes it waited
+//! for, how many times it slept instead -- how many of those a wake cut short -- and how much of
+//! the time it slept; nothing but zeros means the park isn't in. Then for each window of the UI
+//! thread -- its handle, title and class, whether it's shown, its size:
 //!
-//! - `asked`: the display refreshes' asks for a paint (`gpui_windows`' vsync thread, through
-//!   `redraw_filter`) and what the filter made of them: `passed` on to user32, which wakes the
-//!   thread for a `WM_PAINT`, or dropped as `hidden` or `gated` (a gated window's paint not due).
-//!   Windows shown and no asks at all would mean the vsync thread goes past the filter;
+//! - `asked`: the display refreshes' asks for a paint (the vsync thread, through `redraw_filter`)
+//!   and what the filter made of them: `passed` on to user32, which wakes the thread for a
+//!   `WM_PAINT`, or dropped as `hidden` (or minimized) or `gated` (a gated window's paint not
+//!   due). Windows shown and no asks at all would mean the vsync thread goes past the filter:
+//!   asleep, it still asks once a second at the least;
 //! - `paints`: the `WM_PAINT`s a gated window (`win32::Win32Overlay::gate_paints`) let through
 //!   `to GPUI`, and those it `swallowed`;
 //! - `gate`: what else reached a gated window's gate -- the pointer, the keyboard, moves, sizes,
@@ -26,7 +30,7 @@ use std::cmp::Reverse;
 use std::collections::HashMap;
 use std::ffi::c_void;
 use std::fmt::Write as _;
-use std::sync::{LazyLock, Mutex};
+use std::sync::{LazyLock, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -56,12 +60,36 @@ static ON: LazyLock<bool> = LazyLock::new(|| {
 /// The counts since the last report, by window handle value (0 for none) and what was counted.
 static COUNTS: LazyLock<Mutex<HashMap<(isize, Tally), u64>>> = LazyLock::new(Default::default);
 
+/// What the vsync thread did since the last report.
+static VSYNC: Mutex<Vsync> = Mutex::new(Vsync::NONE);
+
+/// What the vsync thread did (`vsync_park`).
+#[derive(Debug, Clone, Copy)]
+struct Vsync {
+    /// The display's refreshes it waited for.
+    refreshes: u64,
+    /// How many times it slept instead, and how many of those a wake cut short.
+    parks: u64,
+    woken: u64,
+    /// How long it slept in all.
+    parked: Duration,
+}
+
+impl Vsync {
+    const NONE: Vsync = Vsync {
+        refreshes: 0,
+        parks: 0,
+        woken: 0,
+        parked: Duration::ZERO,
+    };
+}
+
 /// What a display refresh's ask for a paint came to in `redraw_filter`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Ask {
     /// Handed on to user32.
     Passed,
-    /// Dropped: the window is hidden.
+    /// Dropped: the window is hidden or minimized.
     Hidden,
     /// Dropped: the window's paints are gated, and its next isn't due.
     Gated,
@@ -99,6 +127,29 @@ pub fn opened(hwnd: HWND, message: u32) {
     if *ON {
         count(hwnd.0 as isize, Tally::Gate(message));
     }
+}
+
+/// Counts a refresh of the display the vsync thread waited for.
+pub fn refreshed() {
+    if *ON {
+        vsync().refreshes += 1;
+    }
+}
+
+/// Counts a sleep of the vsync thread that lasted `slept`, cut short by a wake or not.
+pub fn parked(slept: Duration, woken: bool) {
+    if *ON {
+        let mut vsync = vsync();
+        vsync.parks += 1;
+        vsync.woken += u64::from(woken);
+        vsync.parked += slept;
+    }
+}
+
+fn vsync() -> MutexGuard<'static, Vsync> {
+    VSYNC
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 fn count(hwnd: isize, tally: Tally) {
@@ -156,21 +207,30 @@ fn report_forever() {
     loop {
         thread::sleep(REPORT_EVERY);
         let counts = std::mem::take(&mut *COUNTS.lock().unwrap_or_else(|p| p.into_inner()));
+        let vsync = std::mem::replace(&mut *vsync(), Vsync::NONE);
         let seconds = since.elapsed().as_secs_f64();
         since = Instant::now();
-        log::info!("{}", report(counts, seconds));
+        log::info!("{}", report(counts, vsync, seconds));
     }
 }
 
-/// The report of `counts` over `seconds`: a line per window, the busiest first.
-fn report(counts: HashMap<(isize, Tally), u64>, seconds: f64) -> String {
+/// The report of `vsync` and `counts` over `seconds`: a line per window, the busiest first.
+fn report(counts: HashMap<(isize, Tally), u64>, vsync: Vsync, seconds: f64) -> String {
     let mut windows: HashMap<isize, Vec<(Tally, u64)>> = HashMap::new();
     for ((hwnd, tally), count) in counts {
         windows.entry(hwnd).or_default().push((tally, count));
     }
     let mut windows: Vec<_> = windows.into_iter().collect();
     windows.sort_by_key(|(_, tallies)| Reverse(tallies.iter().map(|&(_, n)| n).sum::<u64>()));
-    let mut out = format!("paint census, per second over {seconds:.1} s:");
+    let per_second = |count: u64| count as f64 / seconds;
+    let mut out = format!(
+        "paint census, per second over {seconds:.1} s; the vsync thread: refreshes {:.1}, \
+         sleeps {:.1} ({:.1} cut short), asleep {:.1} % of the time:",
+        per_second(vsync.refreshes),
+        per_second(vsync.parks),
+        per_second(vsync.woken),
+        vsync.parked.as_secs_f64() / seconds * 100.0,
+    );
     if windows.is_empty() {
         out += " nothing";
     }
@@ -188,7 +248,7 @@ fn report(counts: HashMap<(isize, Tally), u64>, seconds: f64) -> String {
                 out += " ";
                 group = of;
             }
-            let _ = write!(out, "{what} {:.1}", count as f64 / seconds);
+            let _ = write!(out, "{what} {:.1}", per_second(count));
         }
     }
     out

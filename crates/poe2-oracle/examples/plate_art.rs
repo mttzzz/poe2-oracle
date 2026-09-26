@@ -1,7 +1,8 @@
 //! Draws the XP overlay's plates (`poe2_oracle::plate_art`) into the site's figures of the HUD
 //! (site/ui/xp.js): each plate's pixels where the app puts them on the test machine's 4K game, over
 //! the figure's part of the game and transparent elsewhere, so the site lays them on its capture of
-//! the HUD exactly as the app lays them on the game.
+//! the HUD exactly as the app lays them on the game -- painted from the same rects of one colour
+//! the app's windows paint as quads.
 //!
 //! ```text
 //! cargo run -p poe2-oracle --example plate_art -- site/ui/img
@@ -10,7 +11,7 @@
 use std::path::PathBuf;
 
 use anyhow::Context as _;
-use image::Rgba;
+use image::{Rgba, RgbaImage};
 use poe2_oracle::overlay_layout::{PhysicalRect, hud_rails};
 use poe2_oracle::plate_art::PlateArt;
 
@@ -47,10 +48,15 @@ fn main() -> anyhow::Result<()> {
             width: FIGURE_WIDTH,
             height: FIGURE_HEIGHT,
         };
-        let mut image = art.slice(figure).image;
-        // A slice is BGRA, as GPUI takes it; a PNG is RGBA.
-        for Rgba([b, _, r, _]) in image.pixels_mut() {
-            std::mem::swap(b, r);
+        let mut image = RgbaImage::new(FIGURE_WIDTH as u32, FIGURE_HEIGHT as u32);
+        for fill in art.slice(figure).fills {
+            let [_, r, g, b] = fill.colour.to_be_bytes();
+            let rect = fill.rect;
+            for y in rect.y..rect.y + rect.height {
+                for x in rect.x..rect.x + rect.width {
+                    image.put_pixel(x as u32, y as u32, Rgba([r, g, b, 255]));
+                }
+            }
         }
         let path = dir.join(format!("plate-{rail}.png"));
         image

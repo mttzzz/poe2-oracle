@@ -76,8 +76,9 @@ parking_lot = "0.12"
 # reqwest's read timeout can start its timer while GPUI's executors read. Already in the tree
 # through http_client.
 futures = "0.3"
-# The XP overlay's plates are drawn pixel by pixel (src/plate_art.rs) into the image buffer
-# GPUI's `RenderImage` takes. Already in the tree through GPUI; none of its codecs.
+# The windows' ornaments -- frame corners, diamonds, fading rules -- are rasterised pixel by pixel
+# (src/ui/ornament.rs) into the image buffer GPUI's `RenderImage` takes. Already in the tree
+# through GPUI; none of its codecs.
 image = { version = "0.25", default-features = false }
 # The report window's text box (src/text_area.rs) moves and deletes by grapheme and by word, as
 # Unicode segments them. Already in the tree through GPUI.

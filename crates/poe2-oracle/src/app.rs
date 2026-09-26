@@ -49,7 +49,9 @@ use crate::overlay_layout::{PanelResize, PanelWindow, PhysicalRect};
 use crate::platform::instance::{self, Request};
 use crate::platform::taskbar::{self, ButtonEvent, TaskbarButton};
 use crate::platform::win32::Win32Overlay;
-use crate::platform::{autostart, game_config, game_window, paint_census, redraw_filter};
+use crate::platform::{
+    autostart, game_config, game_window, paint_census, redraw_filter, vsync_park,
+};
 use crate::presence::{self, Shows, Step, Tries};
 use crate::price_check::{self, BootstrapState, PriceCheckApp};
 use crate::report;
@@ -891,8 +893,10 @@ pub fn run() {
     if closed_replaced {
         log::warn!("the copy this one replaces didn't quit in time and was closed");
     }
-    // Before GPUI starts: its vsync thread loads the `RedrawWindow` import once, before its loop.
+    // Before GPUI starts: its vsync thread loads the `RedrawWindow` and `DwmFlush` imports once,
+    // before its loop. The park on this thread, GPUI's UI thread, whose windows' shows wake it.
     redraw_filter::install();
+    vsync_park::install();
     // On this thread, GPUI's UI thread, and only with `POE2_ORACLE_PAINT_CENSUS=1`.
     paint_census::start();
     // Before anything reads a game table: the installed data pack's tables, when it's sound and

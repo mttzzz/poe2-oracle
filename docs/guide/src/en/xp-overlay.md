@@ -56,11 +56,13 @@ rate: it is back as it was when you play again.
 
 - Every two seconds PoE2 Oracle reads how full the experience bar is, straight from the screen, and
   reads the game's log (`Client.txt`) for level-ups, area changes and returns to character
-  selection. Started in the middle of a session, it reads back through the log with the time of
-  each line: your character's level, the map you are in or left, with its time so far, and how
-  long you have been in town or the hideout. Only a map already under way when the log's last
-  stretch it reads begins is left out, since its start isn't there. After a restart for an update
-  it doesn't start over: the rate, the time to the next level and the map timer go on as they were.
+  selection. While the game is behind another window, where no experience comes in, it looks at the
+  bar only every ten seconds, and two seconds after a look that finds it changed or can't read it.
+  Started in the middle of a session, it reads back through the log with the time of each line:
+  your character's level, the map you are in or left, with its time so far, and how long you have
+  been in town or the hideout. Only a map already under way when the log's last stretch it reads
+  begins is left out, since its start isn't there. After a restart for an update it doesn't start
+  over: the rate, the time to the next level and the map timer go on as they were.
 - The rate weighs recent play more. With **Rate smoothing** at 10 minutes, the default, play from
   10 minutes ago counts half as much as play now. Choose 5 minutes to see a change of farming
   sooner, or 20 or 30 for a steadier number.

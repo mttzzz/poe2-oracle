@@ -489,6 +489,27 @@ pub(crate) fn diamond(size: f32, color: u32) -> impl IntoElement {
     .size(rems_from_px(size))
 }
 
+/// [`diamond`] painted as quads, one to each run of equal pixels in a row, rather than as a
+/// sprite: the same pixels, since the renderer blends a quad as it blends a sprite's texel
+/// (`ui::ornament`). For a window that shows no image -- the XP overlay's plates -- whose sprite
+/// atlas would otherwise keep a texture page, 4 MiB at the least, for the diamond alone.
+pub(crate) fn quad_diamond(size: f32, color: u32) -> impl IntoElement {
+    canvas(
+        |_, _, _| {},
+        move |bounds, (), window, _| {
+            let scale = device_scale(window);
+            let rect = device_rect(bounds, scale);
+            paint_as_quads(
+                &ornament::diamond(rect, size, scale, color, false),
+                scale,
+                window,
+            );
+        },
+    )
+    .flex_none()
+    .size(rems_from_px(size))
+}
+
 /// A rule with a diamond at its centre, its lines fading out towards the ends, the three on one
 /// axis.
 pub(crate) fn ornament_rule(color: u32) -> impl IntoElement {
@@ -629,6 +650,37 @@ fn paint_sprite(placed: &Placed, scale: Scale, window: &mut Window, cx: &mut App
         0,
         false,
     );
+}
+
+/// `placed`'s pixels as quads, in one layer since none overlaps another: in each row a quad to a
+/// run of equal pixels, none for the clear ones.
+fn paint_as_quads(placed: &Placed, scale: Scale, window: &mut Window) {
+    let pixels = ornament::rasterize(&placed.sprite);
+    let shown = placed.shown;
+    let at = |x: i32, y: i32| {
+        pixels
+            .get_pixel((x - placed.rect.left) as u32, (y - placed.rect.top) as u32)
+            .0
+    };
+    window.paint_layer(logical_bounds(shown, scale), |window| {
+        for y in shown.top..shown.bottom {
+            let mut x = shown.left;
+            while x < shown.right {
+                let bgra = at(x, y);
+                let end = (x + 1..shown.right)
+                    .find(|&end| at(end, y) != bgra)
+                    .unwrap_or(shown.right);
+                let [b, g, r, a] = bgra.map(|channel| f32::from(channel) / 255.);
+                if a > 0. {
+                    window.paint_quad(fill(
+                        logical_bounds(DeviceRect::new(x, y, end, y + 1), scale),
+                        Rgba { r, g, b, a },
+                    ));
+                }
+                x = end;
+            }
+        }
+    });
 }
 
 /// A title bar's background: the game's bronze at the top fading into black.

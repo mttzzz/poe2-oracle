@@ -121,11 +121,12 @@ Things that save time:
   so copy them out before checking more.
 - `POE2_ORACLE_CLIENT_LOG=<file>` makes the app read that file instead of the game's `Client.txt`,
   so the XP overlay can be tested by appending lines to it.
-- `POE2_ORACLE_PAINT_CENSUS=1` logs, every 10 seconds, what woke the UI thread, window by window:
-  the display refreshes' asks for a paint and what the redraw filter did with them, the paints a
-  gated window let through or swallowed, what opened its paints, and the messages taken off the
-  thread's queue or sent from other threads, per second. For measuring idle cost; off, it only
-  reads a flag.
+- `POE2_ORACLE_PAINT_CENSUS=1` logs, every 10 seconds, how often GPUI's vsync thread waited for a
+  refresh of the display or slept instead, and for how much of the time it slept; then what woke
+  the UI thread, window by window: the display refreshes' asks for a paint and what the redraw
+  filter did with them, the paints a gated window let through or swallowed, what opened its paints,
+  and the messages taken off the thread's queue or sent from other threads, per second. For
+  measuring idle cost; off, it only reads a flag.
 - `POE2_ORACLE_API_BASE` is read at build time: the app then sends its reports and update checks to
   that address instead of `https://oracle.pushka.biz`, for testing against your own `oracle-web`
   (see [The web service](#the-web-service)). It must be https, without a trailing slash; a plain

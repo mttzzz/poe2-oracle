@@ -29,24 +29,37 @@
 //! sampler takes that reading, and reads no pixels itself. Otherwise the sampler's look decides,
 //! a single miss let pass: behind another window the game still shows a tooltip under the
 //! cursor, and its plate steps aside two to four seconds later, back within two once it goes.
-//! The price-check panel hides only a plate it covers, and the setting both
-//! ([`XpOverlay::set_cover`]). Their size is the game's, not the app's interface scale: at any
-//! game height a plate is its rail's width, and its words the HUD's.
+//! Out of the front, though, no experience comes in: the sampler looks at the bar only every ten
+//! seconds then, the tracker carrying its reading over the samples between, and at the next
+//! sample after a look that saw it change or couldn't read it (`XpTracker::unattended_look_due`).
+//! A minimised game is read nothing off, and a bar or a rail another window covers isn't copied
+//! at all (`xp_bar::shows_the_game`). The price-check panel hides only a plate it covers, and the
+//! setting both ([`XpOverlay::set_cover`]). Their size is the game's, not the app's interface
+//! scale: at any game height a plate is its rail's width, and its words the HUD's.
 //!
 //! An update's restart doesn't start the plates over: the app's old copy leaves its tracker
 //! ([`carry_over`]), and the new one carries on with it, the log's lines since taken up.
 //!
-//! Each plate is its own opaque window (a transparent `PopUp` background still tints the game
-//! behind it, see `Win32Overlay::set_shown`) that lets clicks through to the game -- the plates
-//! stand over the game's world. The gear is a window of its own at the level plate's right end,
-//! the one place that takes a click, and never the keyboard. The plates are drawn pixel by pixel
-//! in the HUD's own materials (`crate::plate_art`): the rails' cap molding along the top, a dark
-//! face, a thin seam where they sit on the rail; at its globe a plate runs on over the world to
-//! the globe's frame, and at its other end it curls down onto the tip of the game's volute. Each
-//! window shows its part of that art and is shaped to exactly its pixels (a window region), so
-//! nothing of the world shows between a plate and the HUD, and nothing of the HUD is covered.
-//! The values are in the HUD's cream, the words saying what they are muted, the rate in its
-//! gold, a small diamond between the parts.
+//! Each plate is its own window that lets clicks through to the game -- the plates stand over the
+//! game's world. The gear is a window of its own at the level plate's right end, the one place
+//! that takes a click, and never the keyboard. The plates are drawn pixel by pixel in the HUD's
+//! own materials (`crate::plate_art`): the rails' cap molding along the top, a dark face, a thin
+//! seam where they sit on the rail; at its globe a plate runs on over the world to the globe's
+//! frame, and at its other end it curls down onto the tip of the game's volute. Each window shows
+//! its part of that art and is shaped to exactly its pixels (a window region), so nothing of the
+//! world shows between a plate and the HUD, and nothing of the HUD is covered. The values are in
+//! the HUD's cream, the words saying what they are muted, the rate in its gold, a small diamond
+//! between the parts.
+//!
+//! A plate window keeps on the GPU only what it draws with. GPUI gives each window a sprite atlas
+//! of its own, whose texture pages are 1024 pixels square at the least: an image in it takes a
+//! 4 MiB page of colour, ClearType words another, grayscale words a 1 MiB page of coverage. So
+//! the art and the diamonds are quads, not images (`plate_art::Fill`, `style::quad_diamond`), and
+//! the window is transparent to GPUI -- which draws the words of any window that isn't opaque in
+//! grayscale, as the price panel's are -- yet opaque to Windows: GPUI's transparent backdrop
+//! would tint the game behind it (`Win32Overlay::set_shown`), so it's taken off again
+//! (`Win32Overlay::clear_backdrop`), and the art covers every pixel the window shows. That's 1 MiB
+//! of atlas a window, where an image and ClearType took 8.
 
 use std::fs;
 use std::io;
@@ -55,18 +68,17 @@ use std::time::Duration;
 
 use anyhow::Context as _;
 use gpui::{
-    App, AsyncApp, Bounds, Context, Div, Entity, Font, Global, Hsla, ImageSource, IntoElement,
-    MouseButton, MouseDownEvent, ObjectFit, Pixels, Render, RenderImage, SharedString, TextRun,
-    WeakEntity, Window, WindowBounds, WindowKind, WindowOptions, div, img, point, prelude::*, px,
-    rgb, size,
+    App, AsyncApp, Bounds, Context, Div, Entity, Font, Global, Hsla, IntoElement, MouseButton,
+    MouseDownEvent, Pixels, Render, SharedString, TextRun, WeakEntity, Window,
+    WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions, canvas, div, point,
+    prelude::*, px, rgb, size,
 };
-use image::Frame;
 use windows::Win32::System::SystemInformation::GetTickCount64;
 
 use crate::i18n::{self, Lang};
 use crate::overlay_layout::{PhysicalRect, hud_rails};
 use crate::paths;
-use crate::plate_art::{self, ArtSlice, PlateArt};
+use crate::plate_art::{self, ArtSlice, Fill, PlateArt};
 use crate::platform::client_log::{self, ClientLog};
 use crate::platform::game_window;
 use crate::platform::lip_watch::{LipReport, LipWatch};
@@ -75,13 +87,13 @@ use crate::platform::xp_bar::{self, BarSample, RailsSeen};
 use crate::price_check::PriceCheckApp;
 use crate::settings::Settings;
 use crate::ui::fonts;
-use crate::ui::style::{diamond, ease_hover, ease_state};
+use crate::ui::style::{ease_hover, ease_state, quad_diamond};
 use crate::ui::theme::{
     BASE_REM_SIZE, HUD_DIVIDER, HUD_GOLD, HUD_LABEL, HUD_TEXT, blend, rems_from_px,
 };
 use crate::xp_tracker::{
-    Activity, MapStatus, RunState, Word, Wording, XpStatus, XpTracker, level_parts, log_time,
-    map_words, parse_log_line, parse_timed_log_line,
+    Activity, BarLook, MapStatus, RunState, Word, Wording, XpStatus, XpTracker, level_parts,
+    log_time, map_words, parse_log_line, parse_timed_log_line,
 };
 
 const SAMPLE_INTERVAL: Duration = Duration::from_secs(2);
@@ -224,20 +236,21 @@ struct Arts {
     line: PhysicalRect,
 }
 
-/// A plate window's part of the art: where the window goes, what of it shows, and its pixels.
+/// A plate window's part of the art: where the window goes, what of it shows, and its pixels as
+/// rects of one colour, relative to the window, which it paints as quads ([`plate`]).
 struct Slice {
     rect: PhysicalRect,
     shown: Vec<PhysicalRect>,
-    image: Arc<RenderImage>,
+    fills: Arc<[Fill]>,
 }
 
 impl Slice {
     fn cut(art: &PlateArt, rect: PhysicalRect) -> Slice {
-        let ArtSlice { image, shown } = art.slice(rect);
+        let ArtSlice { fills, shown } = art.slice(rect);
         Slice {
             rect,
             shown,
-            image: Arc::new(RenderImage::new([Frame::new(image)])),
+            fills: fills.into(),
         }
     }
 }
@@ -265,13 +278,6 @@ impl Arts {
             gear: Slice::cut(&flask, gear),
             map: Slice::cut(&skill, skill.bounds),
             line,
-        }
-    }
-
-    /// Takes the pixels out of every window's sprite atlas, once they are drawn no more.
-    fn drop_images(self, cx: &mut App) {
-        for slice in [self.level, self.gear, self.map] {
-            cx.drop_image(slice.image, None);
         }
     }
 }
@@ -483,6 +489,9 @@ fn window_options() -> WindowOptions {
             size(px(230.), px(20.)),
         ))),
         titlebar: None,
+        // For GPUI only, whose words in a window that isn't opaque are grayscale: a 1 MiB atlas
+        // page, not ClearType's 4 MiB. Opaque to Windows once attached (`XpOverlay::attach`).
+        window_background: WindowBackgroundAppearance::Transparent,
         kind: WindowKind::PopUp,
         is_movable: false,
         focus: false,
@@ -551,7 +560,12 @@ async fn sample_forever(view: WeakEntity<XpOverlay>, cx: &mut AsyncApp) {
     loop {
         cx.background_executor().timer(SAMPLE_INTERVAL).await;
         // While the lip watcher watches, its looks read the bar and the rails: no blit here.
-        let Ok(read_pixels) = view.read_with(cx, |view, _| view.lips.is_none()) else {
+        // Otherwise the rails' lips every time, and the bar while the game is in front -- out of
+        // it, only when the tracker's reading is due a look (`XpTracker::unattended_look_due`).
+        let Ok((read_pixels, unattended)) = view.read_with(cx, |view, _| {
+            let unattended = view.tracker.unattended_look_due(uptime());
+            (view.lips.is_none(), unattended)
+        }) else {
             return;
         };
         let (history, carried, events, sample, still_open) = cx
@@ -574,7 +588,8 @@ async fn sample_forever(view: WeakEntity<XpOverlay>, cx: &mut AsyncApp) {
                     .as_mut()
                     .map(|log| log.poll(parse_log_line))
                     .unwrap_or_default();
-                (history, carried, events, xp_bar::sample(read_pixels), log)
+                let sample = xp_bar::sample(read_pixels, |in_front| in_front || unattended);
+                (history, carried, events, sample, log)
             })
             .await;
         log = still_open;
@@ -599,13 +614,16 @@ async fn sample_forever(view: WeakEntity<XpOverlay>, cx: &mut AsyncApp) {
                 view.tracker.on_log_event(event, at);
             }
             // The watcher's reading while it watches -- it may have stopped since the look above
-            // left the pixels to it, and then the tracker keeps its last reading this once.
-            let fill = if view.lips.is_some() {
-                view.watched_fill
-            } else {
-                sample.as_ref().and_then(|sample| sample.fill)
+            // left the pixels to it, and then the tracker carries its last reading this once.
+            let look = match &sample {
+                _ if view.lips.is_some() => {
+                    view.watched_fill.map_or(BarLook::Unreadable, BarLook::Read)
+                }
+                Some(sample) => sample.bar,
+                // No game, or a minimised one.
+                None => BarLook::Unreadable,
             };
-            view.tracker.on_sample(fill, at);
+            view.tracker.on_sample(look, at);
             let status = view.tracker.status();
             // A moved or rescaled game moves the plates and resizes their words.
             let place = |sample: &Option<BarSample>| {
@@ -709,17 +727,22 @@ impl XpOverlay {
             .into()
     }
 
-    /// Takes a plate's platform window once it exists: frameless, painting only in bursts
-    /// (`repaint`), and letting clicks through to the game -- but for the gear's, which takes
-    /// clicks and never the keyboard, so a click on it leaves the keyboard with the game.
+    /// Takes a plate's platform window once it exists: frameless, opaque to Windows -- GPUI took
+    /// it for transparent (`window_options`) -- painting only in bursts (`repaint`), and letting
+    /// clicks through to the game -- but for the gear's, which takes clicks and never the
+    /// keyboard, so a click on it leaves the keyboard with the game.
     fn attach(&mut self, plate: Plate, overlay: Win32Overlay, cx: &mut Context<Self>) {
         if let Err(err) = overlay.disable_dwm_frame() {
             log::warn!("{err:#}");
         }
-        // Spawned before the sync's first task, so the window is ready by the time it's shown.
+        // Deferred out of `render`, which calls this, since these calls may send the window
+        // messages; spawned before the sync's first task, so the window is ready by the time it's
+        // shown.
         cx.spawn(async move |_, _| {
-            if let Err(err) = overlay.remove_frame() {
-                log::warn!("{err:#}");
+            for done in [overlay.clear_backdrop(), overlay.remove_frame()] {
+                if let Err(err) = done {
+                    log::warn!("{err:#}");
+                }
             }
             let styled = match plate {
                 Plate::Level | Plate::Map => overlay.set_click_through(true),
@@ -767,9 +790,6 @@ impl XpOverlay {
         // Drawn again only when the game moves or resizes.
         let game = self.sample.as_ref().map(|sample| sample.client);
         if self.art.as_ref().map(|art| art.game) != game {
-            if let Some(old) = self.art.take() {
-                old.drop_images(cx);
-            }
             self.art = game.map(Arts::draw);
         }
         // The lip watcher follows the game while the overlay is on.
@@ -877,7 +897,7 @@ impl Render for XpOverlay {
         let (Some(sample), Some(art)) = (self.sample.clone(), self.art.as_ref()) else {
             return div().into_any_element();
         };
-        let (rect, image) = (art.level.rect, art.level.image.clone());
+        let (rect, fills) = (art.level.rect, art.level.fills.clone());
         window.set_rem_size(hud_rem_size(&sample));
         let font = plate_font(window);
         let (level, _) = split_gear(hud_rails(sample.client).flask);
@@ -894,7 +914,7 @@ impl Render for XpOverlay {
         let parts = self.level_fit.choose(key, wordings, room, &font, window);
         // The art runs on over the gap to the life globe; the words keep to the plate's run.
         let run = run_box(level, rect, window);
-        plate(image, rect, window)
+        plate(fills)
             .child(ease_state(
                 "playing",
                 !self.paused(),
@@ -921,7 +941,7 @@ impl Render for GearPlate {
         let (Some(sample), Some(art)) = (xp.sample.clone(), xp.art.as_ref()) else {
             return div().into_any_element();
         };
-        let (rect, image) = (art.gear.rect, art.gear.image.clone());
+        let (rect, fills) = (art.gear.rect, art.gear.fills.clone());
         window.set_rem_size(hud_rem_size(&sample));
         let app = xp.app.clone();
         let (_, square) = split_gear(hud_rails(sample.client).flask);
@@ -933,7 +953,7 @@ impl Render for GearPlate {
             .bottom(rems_from_px(3.))
             .w(rems_from_px(DIVIDER))
             .bg(rgb(HUD_DIVIDER));
-        plate(image, rect, window)
+        plate(fills)
             .child(
                 run_box(square, rect, window)
                     .justify_center()
@@ -963,7 +983,7 @@ impl Render for MapPlate {
         else {
             return div().into_any_element();
         };
-        let (rect, image) = (art.map.rect, art.map.image.clone());
+        let (rect, fills) = (art.map.rect, art.map.fills.clone());
         window.set_rem_size(hud_rem_size(&sample));
         let font = plate_font(window);
         let skill = hud_rails(sample.client).skill;
@@ -981,7 +1001,7 @@ impl Render for MapPlate {
         // over the gap to the mana globe; the words keep to the plate's run.
         let running = map.state == RunState::Running;
         let run = run_box(skill, rect, window);
-        plate(image, rect, window)
+        plate(fills)
             .child(ease_state("running", running, run, move |run, lit| {
                 run.child(words(parts.clone(), &font, Tones::at(lit)))
             }))
@@ -1069,18 +1089,35 @@ impl Tones {
     }
 }
 
-/// A plate window's root: its part of the plates' art (`Arts`), pixel for pixel -- `rect` is
-/// where the window is, in physical pixels, and the image as many pixels.
-fn plate(image: Arc<RenderImage>, rect: PhysicalRect, window: &Window) -> Div {
-    let logical = |length: i32| px(length as f32 / window.scale_factor());
+/// A plate window's root: its part of the plates' art (`Arts`), pixel for pixel -- `fills`
+/// relative to the window's top left corner, in physical pixels -- painted as quads: an image
+/// would take a texture page of the window's sprite atlas. One layer holds them all, the fills
+/// being apart, so each takes no search for what it's drawn over: a few hundred at 4K.
+fn plate(fills: Arc<[Fill]>) -> Div {
     div().relative().size_full().child(
-        img(ImageSource::Render(image))
-            .absolute()
-            .top_0()
-            .left_0()
-            .w(logical(rect.width))
-            .h(logical(rect.height))
-            .object_fit(ObjectFit::Fill),
+        canvas(
+            |_, _, _| {},
+            move |bounds, (), window, _| {
+                let scale = window.scale_factor();
+                let logical = |length: i32| px(length as f32 / scale);
+                window.paint_layer(bounds, |window| {
+                    for fill in fills.iter() {
+                        let rect = fill.rect;
+                        window.paint_quad(gpui::fill(
+                            Bounds::new(
+                                bounds.origin + point(logical(rect.x), logical(rect.y)),
+                                size(logical(rect.width), logical(rect.height)),
+                            ),
+                            rgb(fill.colour),
+                        ));
+                    }
+                });
+            },
+        )
+        .absolute()
+        .top_0()
+        .left_0()
+        .size_full(),
     )
 }
 
@@ -1116,7 +1153,7 @@ fn words(parts: Vec<Vec<Word>>, font: &Font, tones: Tones) -> Div {
         .whitespace_nowrap();
     for (index, part) in parts.into_iter().enumerate() {
         if index > 0 {
-            line = line.child(diamond(SEPARATOR_DIAMOND, tones.separator));
+            line = line.child(quad_diamond(SEPARATOR_DIAMOND, tones.separator));
         }
         line = line.child(
             div()

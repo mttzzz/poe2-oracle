@@ -1,6 +1,8 @@
 //! The XP overlay's plates as pixels (`ui::xp_overlay` shows them): each rail's plate and its
 //! ends, drawn pixel by pixel at the game's own resolution in the HUD's own materials, and exactly
-//! the pixels its windows show.
+//! the pixels its windows show -- as rects of one colour ([`ArtSlice::fills`]), which a window
+//! paints as quads: an image would cost each window a texture page of its own in GPUI's sprite
+//! atlas, 4 MiB at the least, for a few kilobytes of pixels.
 //!
 //! A plate is its rail's straight run (`overlay_layout::hud_rails`) -- the cap molding along its
 //! top, a face, a seam where it sits on the rail -- with an end at each side:
@@ -20,8 +22,6 @@
 //! height. A pixel's colour is the average of what it covers -- the rows exact at 4K, pairs of
 //! them averaged at 1080 -- and the ogee's pixels are supersampled 4x4, smooth inside; its outer
 //! edge is whole pixels, as a window region is, with the world past it.
-
-use image::{Rgba, RgbaImage};
 
 use crate::overlay_layout::{Globe, HudRails, PhysicalRect, meet_globe};
 
@@ -86,18 +86,27 @@ enum Side {
 pub struct PlateArt {
     /// The screen rect the pixels span.
     pub bounds: PhysicalRect,
-    /// BGRA, row by row, `bounds.width` a row.
-    bgra: Vec<u8>,
-    covered: Vec<bool>,
+    /// Each pixel's colour, `0xRRGGBB`, row by row, `bounds.width` a row; `None` where the plate
+    /// doesn't cover it.
+    pixels: Vec<Option<u32>>,
 }
 
 /// A window's part of a plate: its pixels, and the rects of them that show.
 pub struct ArtSlice {
-    /// The pixels, BGRA -- the byte order GPUI's `RenderImage` takes, in the `RgbaImage` it
-    /// takes -- transparent where nothing shows.
-    pub image: RgbaImage,
-    /// The parts that show, relative to the slice's top left corner: rows of equal runs merged.
+    /// The pixels, relative to the slice's top left corner, as few rects of one colour as a row's
+    /// runs of equal pixels make, each merged with the same run on the rows below it: a window
+    /// paints each as a quad, the ogee's a few hundred at 4K, the straight plate's one a row.
+    pub fills: Vec<Fill>,
+    /// The parts that show, the same way: rows of equal runs merged, whatever their colours.
     pub shown: Vec<PhysicalRect>,
+}
+
+/// Pixels of one colour.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Fill {
+    pub rect: PhysicalRect,
+    /// `0xRRGGBB`, opaque.
+    pub colour: u32,
 }
 
 impl PlateArt {
@@ -127,26 +136,56 @@ impl PlateArt {
     pub fn slice(&self, rect: PhysicalRect) -> ArtSlice {
         let width = rect.width.max(0);
         let height = rect.height.max(0);
-        let mut image = RgbaImage::new(width as u32, height as u32);
+        let mut fills = Vec::new();
+        // The runs of the row above, their fills still growing down.
+        let mut open: Vec<Fill> = Vec::new();
         let mut rows: Vec<Vec<(i32, i32)>> = Vec::with_capacity(height as usize);
         for row in 0..height {
-            let mut runs = Vec::new();
-            let mut start = None;
-            for col in 0..=width {
-                let covered = (col < width)
-                    .then(|| self.index(rect.x + col, rect.y + row))
-                    .flatten()
-                    .filter(|&i| self.covered[i]);
-                if let Some(i) = covered {
-                    let [b, g, r, a] = [0, 1, 2, 3].map(|c| self.bgra[i * 4 + c]);
-                    image.put_pixel(col as u32, row as u32, Rgba([b, g, r, a]));
-                    start.get_or_insert(col);
-                } else if let Some(from) = start.take() {
-                    runs.push((from, col));
+            let mut runs: Vec<(i32, i32, u32)> = Vec::new();
+            for col in 0..width {
+                let Some(colour) = self.pixel(rect.x + col, rect.y + row) else {
+                    continue;
+                };
+                match runs.last_mut() {
+                    Some((_, to, last)) if *to == col && *last == colour => *to += 1,
+                    _ => runs.push((col, col + 1, colour)),
                 }
             }
-            rows.push(runs);
+            let mut continued = Vec::with_capacity(runs.len());
+            for &(from, to, colour) in &runs {
+                let above = open.iter().position(|fill| {
+                    fill.colour == colour && fill.rect.x == from && fill.rect.width == to - from
+                });
+                continued.push(match above {
+                    Some(index) => {
+                        let mut fill = open.swap_remove(index);
+                        fill.rect.height += 1;
+                        fill
+                    }
+                    None => Fill {
+                        rect: PhysicalRect {
+                            x: from,
+                            y: row,
+                            width: to - from,
+                            height: 1,
+                        },
+                        colour,
+                    },
+                });
+            }
+            fills.append(&mut open);
+            open = continued;
+            // What shows: the covered runs, whatever their colours.
+            let mut covered: Vec<(i32, i32)> = Vec::new();
+            for &(from, to, _) in &runs {
+                match covered.last_mut() {
+                    Some((_, end)) if *end == from => *end = to,
+                    _ => covered.push((from, to)),
+                }
+            }
+            rows.push(covered);
         }
+        fills.append(&mut open);
         let mut shown = Vec::new();
         let mut first = 0;
         for row in 1..=rows.len() {
@@ -163,7 +202,12 @@ impl PlateArt {
             }
             first = row;
         }
-        ArtSlice { image, shown }
+        ArtSlice { fills, shown }
+    }
+
+    /// The colour of the pixel at `x`, `y` on screen, if the plate covers it.
+    fn pixel(&self, x: i32, y: i32) -> Option<u32> {
+        self.index(x, y).and_then(|i| self.pixels[i])
     }
 
     fn index(&self, x: i32, y: i32) -> Option<usize> {
@@ -195,9 +239,7 @@ fn build(plate: PhysicalRect, game_height: i32, globe: Globe, ogee: &Ogee, side:
     let rows: Vec<[f64; 3]> = (0..plate.height)
         .map(|row| row_colour(f64::from(row) / kv, f64::from(row + 1) / kv))
         .collect();
-    let size = (bounds.width * bounds.height) as usize;
-    let mut bgra = vec![0u8; size * 4];
-    let mut covered = vec![false; size];
+    let mut pixels = vec![None; (bounds.width * bounds.height) as usize];
     for y in bounds.y..bounds.y + bounds.height {
         let rel_y = y - plate.y;
         for x in bounds.x..bounds.x + bounds.width {
@@ -223,18 +265,13 @@ fn build(plate: PhysicalRect, game_height: i32, globe: Globe, ogee: &Ogee, side:
                     .flatten()
             };
             if let Some(colour) = colour {
-                let i = ((y - bounds.y) * bounds.width + (x - bounds.x)) as usize;
-                covered[i] = true;
-                let [r, g, b] = colour.map(|c| c.round().clamp(0.0, 255.0) as u8);
-                bgra[i * 4..i * 4 + 4].copy_from_slice(&[b, g, r, 255]);
+                let [r, g, b] = colour.map(|c| c.round().clamp(0.0, 255.0) as u32);
+                pixels[((y - bounds.y) * bounds.width + (x - bounds.x)) as usize] =
+                    Some((r << 16) | (g << 8) | b);
             }
         }
     }
-    PlateArt {
-        bounds,
-        bgra,
-        covered,
-    }
+    PlateArt { bounds, pixels }
 }
 
 /// The colour of an ogee pixel `out` columns past the plate's end and `row` rows below its top,
@@ -414,26 +451,18 @@ mod tests {
         (r << 16) | (g << 8) | b
     }
 
-    fn pixel(art: &PlateArt, x: i32, y: i32) -> Option<u32> {
-        let i = art.index(x, y)?;
-        art.covered[i].then(|| {
-            let [b, g, r, _] = [0, 1, 2, 3].map(|c| art.bgra[i * 4 + c]);
-            u32::from_be_bytes([0, r, g, b])
-        })
-    }
-
     #[test]
     fn at_4k_the_plate_wears_the_rails_cap_row_for_row_then_the_face_and_the_seam() {
         let rails = hud_rails(GAME_4K);
         let art = PlateArt::flask(&rails, 2160);
         let x = rails.flask.x + 200;
         for (row, &colour) in CAP.iter().enumerate() {
-            assert_eq!(pixel(&art, x, 1819 + row as i32), Some(colour), "row {row}");
+            assert_eq!(art.pixel(x, 1819 + row as i32), Some(colour), "row {row}");
         }
-        assert_eq!(pixel(&art, x, 1858), Some(SEAM));
-        assert_eq!(pixel(&art, x, 1829), Some(hex(face(10.5))));
+        assert_eq!(art.pixel(x, 1858), Some(SEAM));
+        assert_eq!(art.pixel(x, 1829), Some(hex(face(10.5))));
         // Past the plate, over the world between it and the life globe, the same rows.
-        assert_eq!(pixel(&art, rails.flask.x - 30, 1819), Some(CAP[0]));
+        assert_eq!(art.pixel(rails.flask.x - 30, 1819), Some(CAP[0]));
     }
 
     #[test]
@@ -445,7 +474,7 @@ mod tests {
         let reach = |y: i32| {
             (0..40)
                 .rev()
-                .find(|&d| pixel(&art, end + d, y).is_some())
+                .find(|&d| art.pixel(end + d, y).is_some())
                 .map_or(0, |d| d + 1)
         };
         // No square corner: the top row already rounds off a little past the end, and every row
@@ -461,7 +490,7 @@ mod tests {
         // Below the plate, the rail's end cap and the volute's crown stay the game's.
         for (row, from) in FLASK_OGEE.below.iter().enumerate() {
             let y = 1859 + row as i32;
-            let first = (0..40).find(|&d| pixel(&art, end + d, y).is_some());
+            let first = (0..40).find(|&d| art.pixel(end + d, y).is_some());
             assert!(
                 first.is_none_or(|d| f64::from(d) >= *from),
                 "row {y}: {first:?}"
@@ -469,15 +498,17 @@ mod tests {
         }
         // The outer edge is the cap's light bead; deeper in, the face.
         let luma = |c: u32| rgb(c)[0] * 0.299 + rgb(c)[1] * 0.587 + rgb(c)[2] * 0.114;
-        assert!(luma(pixel(&art, end + reach(1840) - 1, 1840).unwrap()) > 90.0);
-        assert_eq!(pixel(&art, end, 1850), Some(hex(face(31.5))));
+        assert!(luma(art.pixel(end + reach(1840) - 1, 1840).unwrap()) > 90.0);
+        assert_eq!(art.pixel(end, 1850), Some(hex(face(31.5))));
         // The skill plate's ogee faces the other way: on the crown's row, from past the crown to
         // short of the tip.
         let skill = PlateArt::skill(&rails, 2160);
-        let past = |d: i32| pixel(&skill, rails.skill.x - 1 - d, 1864).is_some();
+        let past = |d: i32| skill.pixel(rails.skill.x - 1 - d, 1864).is_some();
         assert!(!past(13) && past(14) && past(20) && !past(21));
         assert!(
-            pixel(&skill, rails.skill.x + rails.skill.width + 3, 1819).is_some(),
+            skill
+                .pixel(rails.skill.x + rails.skill.width + 3, 1819)
+                .is_some(),
             "the mana gap"
         );
     }
@@ -497,27 +528,73 @@ mod tests {
             let [r, g, bl] = [0, 1, 2].map(|i| ((a[i] + b[i]) / 2.0).round() as u32);
             (r << 16) | (g << 8) | bl
         };
-        assert_eq!(pixel(&art, x, rails.flask.y), Some(average(CAP[0], CAP[1])));
+        assert_eq!(art.pixel(x, rails.flask.y), Some(average(CAP[0], CAP[1])));
         assert_eq!(
-            pixel(&art, x, rails.flask.y + 4),
+            art.pixel(x, rails.flask.y + 4),
             Some(average(CAP[8], CAP[9]))
         );
     }
 
     #[test]
-    fn a_slice_shows_exactly_the_pixels_the_art_covers() {
-        let rails = hud_rails(GAME_4K);
-        let art = PlateArt::flask(&rails, 2160);
-        let slice = art.slice(art.bounds);
-        let mut shown = 0;
-        for r in &slice.shown {
-            shown += r.width * r.height;
-            for y in r.y..r.y + r.height {
-                for x in r.x..r.x + r.width {
-                    assert!(pixel(&art, art.bounds.x + x, art.bounds.y + y).is_some());
+    fn a_slice_paints_each_pixel_the_art_covers_once_in_its_colour_and_shows_just_those() {
+        for (width, height) in [(3840, 2160), (2560, 1440), (1920, 1080), (1280, 720)] {
+            let rails = hud_rails(PhysicalRect {
+                width,
+                height,
+                ..GAME_4K
+            });
+            for art in [
+                PlateArt::flask(&rails, height),
+                PlateArt::skill(&rails, height),
+            ] {
+                // The whole art, and two parts of it the way the windows cut theirs: one ending
+                // mid-plate and short of the ogee's last rows, the other the rest.
+                let whole = art.bounds;
+                let cut = whole.x + whole.width / 2;
+                let parts = [
+                    whole,
+                    PhysicalRect {
+                        width: cut - whole.x,
+                        height: whole.height - 3,
+                        ..whole
+                    },
+                    PhysicalRect {
+                        x: cut,
+                        width: whole.x + whole.width - cut,
+                        ..whole
+                    },
+                ];
+                for rect in parts {
+                    let slice = art.slice(rect);
+                    let at = |x: i32, y: i32| (y * rect.width + x) as usize;
+                    let mut painted = vec![None; at(0, rect.height)];
+                    for fill in &slice.fills {
+                        let r = fill.rect;
+                        for y in r.y..r.y + r.height {
+                            for x in r.x..r.x + r.width {
+                                assert_eq!(painted[at(x, y)], None, "{width}x{height} {x},{y}");
+                                painted[at(x, y)] = Some(fill.colour);
+                            }
+                        }
+                    }
+                    let mut shown = vec![false; at(0, rect.height)];
+                    for r in &slice.shown {
+                        for y in r.y..r.y + r.height {
+                            for x in r.x..r.x + r.width {
+                                assert!(!shown[at(x, y)], "{width}x{height} {x},{y}");
+                                shown[at(x, y)] = true;
+                            }
+                        }
+                    }
+                    for y in 0..rect.height {
+                        for x in 0..rect.width {
+                            let pixel = art.pixel(rect.x + x, rect.y + y);
+                            assert_eq!(painted[at(x, y)], pixel, "{width}x{height} {x},{y}");
+                            assert_eq!(shown[at(x, y)], pixel.is_some());
+                        }
+                    }
                 }
             }
         }
-        assert_eq!(shown as usize, art.covered.iter().filter(|&&c| c).count());
     }
 }

@@ -21,7 +21,8 @@
 //! A blit waits for the desktop's next composition and costs the app about a millisecond of CPU
 //! each. While the game is in front `platform::lip_watch` reads the lips and the bar off the
 //! duplicated desktop instead, and the sampler asks here only where the game is
-//! ([`sample`]'s `read_pixels`).
+//! ([`sample`]'s `read_pixels`); out of the front it asks for the bar only now and then
+//! (`xp_tracker::XpTracker::unattended_look_due`), since no experience comes in then.
 
 use windows::Win32::Foundation::{HWND, POINT};
 use windows::Win32::Graphics::Gdi::{
@@ -33,7 +34,7 @@ use windows::Win32::UI::WindowsAndMessaging::{GA_ROOT, GetAncestor, IsIconic, Wi
 
 use crate::overlay_layout::{PhysicalRect, hud_rails, rail_lip, rail_seen};
 use crate::platform::game_window;
-use crate::xp_tracker::{XpBarGeometry, read_fill};
+use crate::xp_tracker::{BarLook, XpBarGeometry, read_fill};
 
 /// One look at the game.
 #[derive(Debug, Clone)]
@@ -43,8 +44,8 @@ pub struct BarSample {
     pub client: PhysicalRect,
     /// The game window's DPI scale (1.0 at 96 DPI), for sizing the overlay's windows.
     pub dpi_scale: f64,
-    /// The fraction of the level the bar shows; `None` when it isn't readable, or wasn't read.
-    pub fill: Option<f64>,
+    /// The look at the bar: what it read, or `Skipped` when it wasn't asked for ([`sample`]).
+    pub bar: BarLook,
     /// Whether each plate's rail is on screen where the plate goes; `None` when not looked at.
     pub rails: Option<RailsSeen>,
 }
@@ -57,10 +58,11 @@ pub struct RailsSeen {
     pub skill: bool,
 }
 
-/// Looks at the game once: where it is, and with `read_pixels` its bar and rails too. `None`
-/// while there is no game window or it is minimized. Blocking GDI work when reading pixels (a
-/// readback of the composed screen), so call it off the UI thread.
-pub fn sample(read_pixels: bool) -> Option<BarSample> {
+/// Looks at the game once: where it is, and with `read_pixels` its rails too, and its bar if
+/// `bar` -- told whether the game is in front -- asks for it. `None` while there is no game
+/// window or it is minimized. Blocking GDI work when reading pixels (a readback of the composed
+/// screen), so call it off the UI thread.
+pub fn sample(read_pixels: bool, bar: impl FnOnce(bool) -> bool) -> Option<BarSample> {
     let hwnd = game_window::game_window()?;
     if unsafe { IsIconic(hwnd) }.as_bool() {
         return None;
@@ -71,15 +73,18 @@ pub fn sample(read_pixels: bool) -> Option<BarSample> {
         return Some(BarSample {
             client,
             dpi_scale,
-            fill: None,
+            bar: BarLook::Skipped,
             rails: None,
         });
     }
-    let geometry = XpBarGeometry::for_client(client);
-    let fill = geometry
-        .as_ref()
-        .filter(|geometry| shows_the_game(hwnd, geometry.capture))
-        .and_then(|geometry| read_screen(geometry.capture, |bgra| read_fill(geometry, bgra)));
+    let bar = if bar(game_window::in_front(hwnd)) {
+        XpBarGeometry::for_client(client)
+            .filter(|geometry| shows_the_game(hwnd, geometry.capture))
+            .and_then(|geometry| read_screen(geometry.capture, |bgra| read_fill(&geometry, bgra)))
+            .map_or(BarLook::Unreadable, BarLook::Read)
+    } else {
+        BarLook::Skipped
+    };
     let plates = hud_rails(client);
     // Like the bar: only pixels the game itself shows there count -- another program's light
     // line over a darker one would pass for a lip.
@@ -92,7 +97,7 @@ pub fn sample(read_pixels: bool) -> Option<BarSample> {
     Some(BarSample {
         client,
         dpi_scale,
-        fill,
+        bar,
         rails: Some(RailsSeen {
             flask: seen(plates.flask),
             skill: seen(plates.skill),

@@ -3,8 +3,9 @@
 // maintain. `#[cfg]`-gated (not unconditional) so an accidental native `cargo check`/`build`
 // without `--target x86_64-pc-windows-gnu` doesn't try to pull in and compile the Windows-only
 // `windows` crate against a non-Windows host. `game_config` is plain file parsing, and
-// `lip_schedule` and `paint_gate` the lip watcher's timing and the paint gates' bookkeeping
-// without a Windows call, so they build -- and their tests run -- everywhere.
+// `lip_schedule` and `paint_gate` the lip watcher's timing and the paint gates' bookkeeping --
+// with the vsync thread's sleeps -- without a Windows call, so they build -- and their tests
+// run -- everywhere.
 #[cfg(target_os = "windows")]
 pub mod autostart;
 #[cfg(target_os = "windows")]
@@ -36,6 +37,8 @@ pub mod redraw_filter;
 pub mod synth_input;
 #[cfg(target_os = "windows")]
 pub mod taskbar;
+#[cfg(target_os = "windows")]
+pub mod vsync_park;
 #[cfg(target_os = "windows")]
 pub mod win32;
 #[cfg(target_os = "windows")]

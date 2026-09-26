@@ -109,7 +109,8 @@ account page.
   rows along the top of the flask and skill panels' rails, where the plates stand. While the game
   is in front, and for two seconds after you switch away, the rails are looked at many times a
   second, so that a plate steps aside the moment a tooltip covers its rail, and the bar twice a
-  second; while the game is behind another window, both every two seconds; while it is minimised,
+  second; while the game is behind another window, the rails every two seconds and the bar every
+  ten, or two seconds after a look that finds it changed or can't read it; while it is minimised,
   not at all. Nothing of it is saved or sent.
 
 ## What it types into the game

@@ -13,7 +13,9 @@
 //! - [`XpTracker`]: the rate (levels per hour of play, over a window the settings pick), the time
 //!   to the next level, whether the player is playing or paused ([`Activity`]), and the current
 //!   or last map run ([`MapStatus`]): its time, its experience, and the average time of the maps
-//!   before it.
+//!   before it. With the game out of the front it asks for fewer looks at the bar
+//!   ([`XpTracker::unattended_look_due`]) and carries its reading over the samples between
+//!   ([`BarLook::Skipped`]).
 //! - [`Word`] and [`percent_words`], [`rate_words`], [`level_parts`], [`map_words`]: what the
 //!   overlay's plates say, word by word, in the interface language (`crate::i18n`), in full or in
 //!   the shorter [`Wording`] a rail too narrow for the full one gets.
@@ -459,6 +461,24 @@ const WRAP_DROP: f64 = 0.5;
 const BIG_GAIN: f64 = 0.05;
 /// How far apart a logged level-up and the bar's wrap may be and still be the same level-up.
 const LEVEL_UP_MATCH: Duration = Duration::from_secs(30);
+/// How often the bar is looked at while the game is out of the front, where no experience comes
+/// in without play: its last reading stands for it at the samples between ([`BarLook::Skipped`]).
+/// A change still shows within two looks -- the median filter's due, the second of them at the
+/// very next sample -- so a level-up's wrap, gained by minions left fighting, meets its log line
+/// well within `LEVEL_UP_MATCH`; and a reading is never near `REBASE_GAP` old.
+pub const UNATTENDED_LOOK_EVERY: Duration = Duration::from_secs(10);
+
+/// A sample's look at the bar ([`XpTracker::on_sample`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum BarLook {
+    /// It read as this fraction of the level ([`read_fill`]).
+    Read(f64),
+    /// It couldn't be read: nowhere on screen, covered, a screen without the HUD.
+    Unreadable,
+    /// It wasn't looked at, the game being out of the front ([`XpTracker::unattended_look_due`]):
+    /// it's taken to read as it did at the last look.
+    Skipped,
+}
 
 /// What the overlay shows.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -587,6 +607,11 @@ pub struct XpTracker {
     last_readable_at: Option<Duration>,
     /// The last filtered reading and when it was taken.
     last: Option<(Duration, f64)>,
+    /// When the bar was last looked at, and whether that look read it: what a skipped look
+    /// carries over ([`BarLook::Skipped`]). Not carried across an update's restart, whose new
+    /// copy looks afresh.
+    #[serde(skip)]
+    last_look: Option<(Duration, bool)>,
     /// The best filtered reading since the last rebase.
     best: f64,
     character: Option<String>,
@@ -761,13 +786,21 @@ impl XpTracker {
         }
     }
 
-    /// One look at the bar: `fraction` from [`read_fill`], `None` when it wasn't readable. `at`
-    /// is monotonic time since any fixed origin.
-    pub fn on_sample(&mut self, fraction: Option<f64>, at: Duration) {
+    /// One sample's look at the bar ([`BarLook`]). `at` is monotonic time since any fixed origin.
+    pub fn on_sample(&mut self, look: BarLook, at: Duration) {
         self.advance(at);
-        let Some(reading) = fraction else {
-            return;
+        let reading = match look {
+            BarLook::Read(reading) => reading,
+            BarLook::Unreadable => {
+                self.last_look = Some((at, false));
+                return;
+            }
+            BarLook::Skipped => {
+                self.carry_reading(at);
+                return;
+            }
         };
+        self.last_look = Some((at, true));
         if self
             .last_readable_at
             .is_some_and(|last| at.saturating_sub(last) > REBASE_GAP)
@@ -798,6 +831,30 @@ impl XpTracker {
         self.count(at.saturating_sub(last_at), gain);
         self.maps.credit(gain);
         self.last = Some((at, value));
+    }
+
+    /// A sample that didn't look at the bar: as a look reading what the last one did would have
+    /// gone -- nothing gained, the time since counted as play -- without a reading for the median
+    /// filter to weigh; after a look that couldn't read the bar, as unreadable still.
+    fn carry_reading(&mut self, at: Duration) {
+        if let (Some((_, true)), Some((last_at, value))) = (self.last_look, self.last) {
+            self.count(at.saturating_sub(last_at), 0.0);
+            self.last = Some((at, value));
+        }
+    }
+
+    /// Whether a sample at `at`, the game out of the front, should look at the bar: once
+    /// [`UNATTENDED_LOOK_EVERY`] has passed since the last look, and at every sample while there's
+    /// no reading to carry over -- no look yet, a look that couldn't read the bar, readings the
+    /// median filter has yet to make one of -- or the latest reading, not the one held, awaits the
+    /// next to confirm it.
+    pub fn unattended_look_due(&self, at: Duration) -> bool {
+        match (self.last_look, self.last, self.recent[1]) {
+            (Some((looked, true)), Some((_, held)), Some(latest)) if latest == held => {
+                at.saturating_sub(looked) >= UNATTENDED_LOOK_EVERY
+            }
+            _ => true,
+        }
     }
 
     /// Levels earned between the best reading so far and `value`, which becomes the new best --
@@ -1460,10 +1517,31 @@ mod tests {
     ) -> f64 {
         let mut t = start;
         for _ in 0..readings {
-            tracker.on_sample(fraction(t), Duration::from_secs_f64(t));
+            tracker.on_sample(reading(fraction(t)), Duration::from_secs_f64(t));
             t += 2.0;
         }
         t
+    }
+
+    /// A look at the bar that read `fill`, or couldn't read it.
+    fn reading(fill: Option<f64>) -> BarLook {
+        fill.map_or(BarLook::Unreadable, BarLook::Read)
+    }
+
+    /// A sample at `t` as the overlay takes one: a look at the bar, reading `fill`, while the game
+    /// is `in_front` or the tracker is due one; a skipped look otherwise. Whether it looked.
+    fn sample_at(tracker: &mut XpTracker, t: f64, in_front: bool, fill: Option<f64>) -> bool {
+        let at = Duration::from_secs_f64(t);
+        let looks = in_front || tracker.unattended_look_due(at);
+        tracker.on_sample(
+            if looks {
+                reading(fill)
+            } else {
+                BarLook::Skipped
+            },
+            at,
+        );
+        looks
     }
 
     /// The log's line for entering `name`, instance `seed`.
@@ -1557,6 +1635,107 @@ mod tests {
         assert_near(after.rate_per_hour, 0.10, 0.05);
         assert!(after.fraction.unwrap() < before.fraction.unwrap());
         assert!(after.time_to_level().unwrap() > before.time_to_level().unwrap());
+    }
+
+    #[test]
+    fn out_of_the_front_a_look_every_ten_seconds_reads_as_a_look_every_two() {
+        // One session twice over, looking at the bar at every sample and as the overlay does: ten
+        // minutes of mapping, seven with the game behind another window and the bar still where
+        // the game left it -- a pause once five minutes pass without a gain -- then ten minutes'
+        // more mapping.
+        let rate = 0.12 / 3600.0;
+        let mut every = XpTracker::new();
+        let mut due = XpTracker::new();
+        for tracker in [&mut every, &mut due] {
+            enter(tracker, "MapEpitaph", EPITAPH, 0.0);
+        }
+        let mut parked = None;
+        let mut unattended_looks = 0;
+        for step in 0..810 {
+            let t = f64::from(step) * 2.0;
+            let in_front = !(600.0..1_020.0).contains(&t);
+            let fill = if t < 600.0 {
+                as_read(0.2 + rate * t, t)
+            } else {
+                // The bar reads on as the last look before read it.
+                let parked = *parked.get_or_insert_with(|| every.recent[1].unwrap());
+                if in_front {
+                    as_read(parked + rate * (t - 1_020.0), t)
+                } else {
+                    parked
+                }
+            };
+            every.on_sample(BarLook::Read(fill), Duration::from_secs_f64(t));
+            if sample_at(&mut due, t, in_front, Some(fill)) && !in_front {
+                unattended_looks += 1;
+            }
+            assert_eq!(due.status(), every.status(), "at {t} s");
+            if t == 1_018.0 {
+                assert!(matches!(due.status().activity, Activity::Paused { .. }));
+            }
+        }
+        // 210 samples out of the front: a look at every fifth, and at the first few till the
+        // still bar's reading was confirmed.
+        assert!(unattended_looks <= 210 / 5 + 3, "{unattended_looks}");
+    }
+
+    #[test]
+    fn out_of_the_front_a_change_is_taken_at_the_sample_after_the_look_that_saw_it() {
+        let mut tracker = XpTracker::new();
+        let rate = 0.12 / 3600.0;
+        let mut t = play(&mut tracker, 0.0, 300, |t| Some(as_read(0.5 + rate * t, t)));
+        let held = tracker.status().fraction.unwrap();
+        // A minute behind another window, the bar still: a look every ten seconds.
+        let still_minute = |tracker: &mut XpTracker, t: &mut f64, fill: f64| {
+            let mut looks = 0;
+            for _ in 0..30 {
+                looks += usize::from(sample_at(tracker, *t, false, Some(fill)));
+                *t += 2.0;
+            }
+            looks
+        };
+        assert!(still_minute(&mut tracker, &mut t, held) <= 8);
+        // The character dies meanwhile, a tenth of the level lost: seen at the next look, taken
+        // at the sample after it, where the median filter has seen it twice.
+        let (died, dead) = (t, held - 0.1);
+        while tracker.status().fraction != Some(dead) {
+            sample_at(&mut tracker, t, false, Some(dead));
+            t += 2.0;
+            assert!(t - died <= 14.0, "not taken by {t} s");
+        }
+        // And the looks go back to one every ten seconds.
+        assert!(still_minute(&mut tracker, &mut t, dead) <= 7);
+    }
+
+    #[test]
+    fn a_skipped_look_carries_over_only_a_reading() {
+        let at = Duration::from_secs_f64;
+        assert!(
+            XpTracker::new().unattended_look_due(at(0.0)),
+            "nothing to carry yet"
+        );
+        let mut every = XpTracker::new();
+        let mut due = XpTracker::new();
+        for tracker in [&mut every, &mut due] {
+            play(tracker, 0.0, 10, |_| Some(0.5));
+            // The bar covered at the next look, by the window in front of the game.
+            tracker.on_sample(BarLook::Unreadable, at(20.0));
+        }
+        assert!(due.unattended_look_due(at(22.0)));
+        // Skipped looks after it count no play, as looks finding the bar covered still would.
+        for t in [22.0, 24.0, 26.0] {
+            every.on_sample(BarLook::Unreadable, at(t));
+            due.on_sample(BarLook::Skipped, at(t));
+        }
+        for tracker in [&mut every, &mut due] {
+            play(tracker, 28.0, 5, |_| Some(0.5));
+        }
+        assert_eq!(due.counted, every.counted);
+        assert_eq!(due.status(), every.status());
+        // After a look that read it, a skipped one counts the time since as play.
+        let counted = due.counted;
+        due.on_sample(BarLook::Skipped, at(38.0));
+        assert_eq!(due.counted, counted + Duration::from_secs(2));
     }
 
     /// Ten minutes of mapping at 12 % of a level per hour from `from`, starting at `start`

@@ -44,6 +44,7 @@ use windows::Win32::Graphics::Gdi::{
     CombineRgn, CreateRectRgn, DeleteObject, GetMonitorInfoW, InvalidateRect,
     MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow, RGN_OR, SetWindowRgn, ValidateRect,
 };
+use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
 use windows::Win32::System::SystemInformation::GetTickCount64;
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
@@ -61,10 +62,11 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WS_EX_NOACTIVATE, WS_EX_STATICEDGE, WS_EX_TRANSPARENT, WS_EX_WINDOWEDGE, WS_MAXIMIZEBOX,
     WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
 };
+use windows::core::{BOOL, s, w};
 
 use super::game_window::{client_rect_on_screen, dpi_to_scale};
-use super::paint_census;
-use super::paint_gate::{GateEvent, PaintGate};
+use super::paint_gate::{GateEvent, PaintGate, Wants};
+use super::{paint_census, vsync_park};
 use crate::overlay_layout::PhysicalRect;
 
 /// The windows whose procedure [`overlay_proc`] wraps, by the window's handle value: GPUI's own
@@ -84,17 +86,16 @@ struct Wrapped {
     min_size: Option<(f32, f32)>,
 }
 
-/// Whether `hwnd`'s next paint would go through to GPUI: any window but a
-/// [`Win32Overlay::gate_paints`] one outside its bursts and trickle. For
-/// `redraw_filter::filtered_redraw_window`, on `gpui_windows`' vsync thread.
-pub(super) fn paint_due(hwnd: HWND) -> bool {
-    let now = unsafe { GetTickCount64() };
+/// What `hwnd` wants of the display's refreshes at `now`: a paint at each, but for a
+/// [`Win32Overlay::gate_paints`] window outside its bursts. For `redraw_filter` and `vsync_park`,
+/// on `gpui_windows`' vsync thread.
+pub(super) fn wants(hwnd: HWND, now: u64) -> Wants {
     WRAPPED
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .get(&(hwnd.0 as isize))
         .and_then(|wrapped| wrapped.gate.as_ref())
-        .is_none_or(|gate| gate.due(now))
+        .map_or(Wants::EachRefresh, |gate| gate.wants(now))
 }
 
 /// `WM_MOUSELEAVE`, which the `windows` crate files under `Win32_UI_Controls`.
@@ -186,6 +187,62 @@ impl Win32Overlay {
             )
         }
         .context("DwmSetWindowAttribute(DWMWA_WINDOW_CORNER_PREFERENCE) failed")
+    }
+
+    /// Takes off the backdrop `gpui_windows` lays under a window whose background is
+    /// `WindowBackgroundAppearance::Transparent` -- the undocumented
+    /// `SetWindowCompositionAttribute`'s `ACCENT_ENABLE_TRANSPARENTGRADIENT`, which tints
+    /// whatever the window leaves uncovered ([`Self::set_shown`]) -- for the accent GPUI gives an
+    /// opaque window (`window.rs`'s `set_window_composition_attribute` with state 0). For a window
+    /// that's transparent only to GPUI -- which then draws its words in grayscale rather than
+    /// ClearType, into a smaller atlas page -- and draws every pixel it shows: the XP plates'.
+    pub fn clear_backdrop(&self) -> Result<()> {
+        /// `ACCENT_POLICY`, as `gpui_windows` passes it.
+        #[repr(C)]
+        struct AccentPolicy {
+            state: u32,
+            flags: u32,
+            gradient: u32,
+            animation: u32,
+        }
+        /// `WINDOWCOMPOSITIONATTRIBDATA`.
+        #[repr(C)]
+        struct Attribute {
+            kind: u32,
+            data: *mut core::ffi::c_void,
+            size: usize,
+        }
+        /// `WCA_ACCENT_POLICY`.
+        const ACCENT_POLICY: u32 = 0x13;
+        type SetWindowCompositionAttribute =
+            unsafe extern "system" fn(HWND, *mut Attribute) -> BOOL;
+        let user32 = unsafe { GetModuleHandleW(w!("user32.dll")) }.context("GetModuleHandleW")?;
+        let Some(set) = (unsafe { GetProcAddress(user32, s!("SetWindowCompositionAttribute")) })
+        else {
+            bail!("user32 has no SetWindowCompositionAttribute");
+        };
+        // SAFETY: its signature, as `gpui_windows` declares it.
+        let set = unsafe {
+            std::mem::transmute::<unsafe extern "system" fn() -> isize, SetWindowCompositionAttribute>(
+                set,
+            )
+        };
+        // `ACCENT_DISABLED`, flags and all as GPUI sets it for an opaque window.
+        let mut accent = AccentPolicy {
+            state: 0,
+            flags: 2,
+            gradient: 0,
+            animation: 0,
+        };
+        let mut attribute = Attribute {
+            kind: ACCENT_POLICY,
+            data: (&raw mut accent).cast(),
+            size: size_of::<AccentPolicy>(),
+        };
+        if !unsafe { set(self.hwnd, &mut attribute) }.as_bool() {
+            bail!("SetWindowCompositionAttribute(ACCENT_DISABLED) failed");
+        }
+        Ok(())
     }
 
     /// Makes the whole window client area. `gpui_windows` creates `WindowKind::PopUp` with
@@ -388,8 +445,8 @@ impl Win32Overlay {
     /// `begin_vsync_thread`), so each visible one would be drawn 60 to 165 times a second whether
     /// or not it has anything new -- the XP overlay's plates are up all the while the game is
     /// played, for words that change every few seconds -- and would wake the UI thread as often;
-    /// `redraw_filter`, installed at start, keeps the refreshes from even asking outside a burst.
-    /// Bursts of `PAINT_BURST`.
+    /// `redraw_filter`, installed at start, keeps the refreshes from even asking outside a burst,
+    /// and `vsync_park` lets them sleep while no window wants one. Bursts of `PAINT_BURST`.
     pub fn gate_paints(&self) -> Result<()> {
         self.gate_paints_for(PAINT_BURST)
     }
@@ -400,7 +457,10 @@ impl Win32Overlay {
     pub fn gate_paints_for(&self, burst: Duration) -> Result<()> {
         let now = unsafe { GetTickCount64() };
         let burst_ms = burst.as_millis() as u64;
-        self.wrap(|wrapped| wrapped.gate = Some(PaintGate::new(burst_ms, now)))
+        self.wrap(|wrapped| wrapped.gate = Some(PaintGate::new(burst_ms, now)))?;
+        // It's in a burst: the vsync thread may be asleep.
+        vsync_park::wake();
+        Ok(())
     }
 
     /// Opens a burst of a [`Self::gate_paints`] window's paints, and asks for the first: what it
@@ -417,6 +477,7 @@ impl Win32Overlay {
         if gated {
             paint_census::opened(self.hwnd, paint_census::BY_APP);
             let _ = unsafe { InvalidateRect(Some(self.hwnd), None, false) };
+            vsync_park::wake();
         }
     }
 
@@ -612,16 +673,18 @@ unsafe extern "system" fn overlay_proc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
-    let (gpui_proc, no_activate, gated, swallowed, min_size) = {
+    let (gpui_proc, no_activate, gated, swallowed, opened, min_size) = {
         let mut wrapped = WRAPPED
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         let Some(entry) = wrapped.get_mut(&(hwnd.0 as isize)) else {
             return unsafe { DefWindowProcW(hwnd, message, wparam, lparam) };
         };
-        // Whether the gate took the message: a paint, or an event for its bursts.
+        // Whether the gate took the message: a paint, or an event for its bursts -- which opened
+        // one unless it was a hide.
         let mut gated = false;
         let mut swallowed = false;
+        let mut opened = false;
         if let Some(gate) = entry.gate.as_mut() {
             let now = unsafe { GetTickCount64() };
             if message == WM_PAINT {
@@ -630,6 +693,7 @@ unsafe extern "system" fn overlay_proc(
             } else if let Some(event) = gate_event(message, wparam, lparam) {
                 gate.note(event, now);
                 gated = true;
+                opened = event != GateEvent::Hidden;
             }
         }
         (
@@ -637,6 +701,7 @@ unsafe extern "system" fn overlay_proc(
             entry.no_activate,
             gated,
             swallowed,
+            opened,
             entry.min_size,
         )
     };
@@ -644,6 +709,10 @@ unsafe extern "system" fn overlay_proc(
         paint_census::painted(hwnd, !swallowed);
     } else if gated {
         paint_census::opened(hwnd, message);
+    }
+    if opened {
+        // The burst wants the display's refreshes, and the vsync thread may be asleep.
+        vsync_park::wake();
     }
     if message == WM_MOUSEACTIVATE && no_activate {
         return LRESULT(MA_NOACTIVATE as isize);
