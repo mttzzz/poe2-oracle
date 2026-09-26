@@ -65,7 +65,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::{BOOL, s, w};
 
 use super::game_window::{client_rect_on_screen, dpi_to_scale};
-use super::paint_gate::{GateEvent, PaintGate, Wants};
+use super::paint_gate::{self, GateEvent, PaintGate, Wants};
 use super::{paint_census, vsync_park};
 use crate::overlay_layout::PhysicalRect;
 
@@ -440,7 +440,8 @@ impl Win32Overlay {
     /// Lets GPUI paint the window only while what it shows may be changing
     /// (`platform::paint_gate`): while it has the keyboard, and for a burst once the app says what
     /// it shows has changed ([`Self::open_paints`]), once it's moved, resized or shown, or the
-    /// pointer or a key did something on it -- else a paint once a trickle. `gpui_windows`
+    /// pointer or a key did something on it -- else a paint once a safety net, five seconds
+    /// (`paint_gate::SAFETY_NET_MS`), in case something changed that nobody said. `gpui_windows`
     /// invalidates every window of the app on each refresh of the display (`platform.rs`'s
     /// `begin_vsync_thread`), so each visible one would be drawn 60 to 165 times a second whether
     /// or not it has anything new -- the XP overlay's plates are up all the while the game is
@@ -448,16 +449,20 @@ impl Win32Overlay {
     /// `redraw_filter`, installed at start, keeps the refreshes from even asking outside a burst,
     /// and `vsync_park` lets them sleep while no window wants one. Bursts of `PAINT_BURST`.
     pub fn gate_paints(&self) -> Result<()> {
-        self.gate_paints_for(PAINT_BURST)
+        self.gate_paints_for(
+            PAINT_BURST,
+            Duration::from_millis(paint_gate::SAFETY_NET_MS),
+        )
     }
 
-    /// [`Self::gate_paints`] with bursts `burst` long: for a window whose content goes on
-    /// changing a while after what set it off -- the price panel's items' icons come in after
-    /// its listings.
-    pub fn gate_paints_for(&self, burst: Duration) -> Result<()> {
+    /// [`Self::gate_paints`] with bursts `burst` long and a safety net `safety_net` long -- a
+    /// whole part of `paint_gate::SAFETY_NET_MS`: for a window whose content goes on changing a
+    /// while after what set it off, and in part without a word to it -- the price panel's
+    /// listings' tooltips draw their items' art as it comes in.
+    pub fn gate_paints_for(&self, burst: Duration, safety_net: Duration) -> Result<()> {
         let now = unsafe { GetTickCount64() };
-        let burst_ms = burst.as_millis() as u64;
-        self.wrap(|wrapped| wrapped.gate = Some(PaintGate::new(burst_ms, now)))?;
+        let gate = PaintGate::new(burst.as_millis() as u64, safety_net.as_millis() as u64, now);
+        self.wrap(|wrapped| wrapped.gate = Some(gate))?;
         // It's in a burst: the vsync thread may be asleep.
         vsync_park::wake();
         Ok(())

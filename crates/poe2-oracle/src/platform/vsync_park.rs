@@ -10,13 +10,14 @@
 //!
 //! So this executable's import of `DwmFlush` is pointed at [`parked_dwm_flush`] too. On the vsync
 //! thread it waits for the refresh as before while a shown window wants a paint at each -- one
-//! whose paints aren't gated, or a gated one in a burst or with the keyboard -- or a trickle's
-//! paint no refresh has asked for yet; otherwise it sleeps until the first trickle comes due, a
-//! second at the most (`paint_gate::vsync`), and the refresh's asks go out as it wakes. Whatever
-//! makes a window want paints wakes it at once: a gate that opens ([`wake`], from `win32`'s
-//! gates), and a window of the UI thread shown or restored (a WinEvent hook on that thread). GPUI
-//! checks for a lost Direct3D device before each refresh's asks, so a device lost meanwhile is
-//! still found before anything is drawn.
+//! whose paints aren't gated, or a gated one in a burst or with the keyboard -- or a safety net's
+//! paint no refresh has asked for yet; otherwise it sleeps until the first safety net's paint
+//! comes due, five seconds apart for the quiet plates, and with no window shown five seconds at
+//! the most (`paint_gate::vsync`); the refresh's asks go out as it wakes. Whatever makes a window
+//! want paints wakes it at once: a gate that opens ([`wake`], from `win32`'s gates), and a window
+//! of the UI thread shown or restored (a WinEvent hook on that thread). GPUI checks for a lost
+//! Direct3D device before each refresh's asks, so a device lost meanwhile is still found before
+//! anything is drawn.
 //!
 //! [`install`] runs on the UI thread before GPUI starts, as `redraw_filter::install` does and for
 //! the same reason -- the vsync thread may read the import slot once, before its loop -- and needs
@@ -26,7 +27,6 @@ use std::cell::RefCell;
 use std::ffi::c_void;
 use std::sync::LazyLock;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::time::Instant;
 
 use anyhow::{Result, bail, ensure};
 use windows::Win32::Foundation::{HANDLE, HWND, S_OK, WAIT_OBJECT_0};
@@ -234,15 +234,15 @@ fn park(asks: &Asks) -> bool {
     else {
         return false;
     };
-    let slept = Instant::now();
-    // At most `paint_gate::MAX_PARK_MS`.
+    // One and a half safety nets at the most (`paint_gate::vsync`).
     let timeout = until.saturating_sub(now) as u32;
+    paint_census::parking();
     let woken =
         unsafe { WaitForSingleObject(HANDLE(event as *mut c_void), timeout) } == WAIT_OBJECT_0;
     // The wakes so far are taken -- what they woke for is seen by the refresh this sleep ends in
     // -- and the next sets the event again.
     WOKEN.swap(false, Ordering::AcqRel);
-    paint_census::parked(slept.elapsed(), woken);
+    paint_census::parked(woken);
     true
 }
 

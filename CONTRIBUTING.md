@@ -127,6 +127,10 @@ Things that save time:
   filter did with them, the paints a gated window let through or swallowed, what opened its paints,
   and the messages taken off the thread's queue or sent from other threads, per second. For
   measuring idle cost; off, it only reads a flag.
+- `POE2_ORACLE_D3D_THREADING=1` leaves the graphics driver its own threads for the app's Direct3D
+  devices (GPUI's and the XP overlay's lip watcher's), which the app otherwise asks the driver not
+  to run (`src/platform/d3d_threading.rs`). For comparing the idle cost of the two; the log's
+  `d3d threading:` line says which one a run has.
 - `POE2_ORACLE_API_BASE` is read at build time: the app then sends its reports and update checks to
   that address instead of `https://oracle.pushka.biz`, for testing against your own `oracle-web`
   (see [The web service](#the-web-service)). It must be https, without a trailing slash; a plain

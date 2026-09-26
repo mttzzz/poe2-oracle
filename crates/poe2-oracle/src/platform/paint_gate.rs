@@ -6,22 +6,28 @@
 //! 165 times a second, and each ask it hands on wakes the UI thread -- whether or not the window
 //! has anything new to draw. A gated window takes them only while what it shows may be changing:
 //! while it has the keyboard, and for a burst once it changed -- the app said so, or it was moved,
-//! resized or shown -- or the pointer or a key did something on it; otherwise once a trickle, so
-//! whatever made it dirty unforeseen still shows within one and a half trickles
-//! ([`TRICKLE_MS`]). A pointer at rest on it keeps nothing going: a hover's look and a tooltip
-//! come within a burst of the last move.
+//! resized or shown -- or the pointer or a key did something on it. A pointer at rest on it keeps
+//! nothing going: a hover's look and a tooltip come within a burst of the last move.
 //!
-//! Every gate's trickle ticks on one clock ([`trickle_after`]), so the quiet windows' paints fall
-//! on the same refreshes. In between, with no shown window that wants a paint at each refresh,
-//! the vsync thread sleeps ([`vsync`]): the XP overlay's three plates, up the whole time the game
-//! is played, wake it twice a second instead of at every refresh.
+//! Otherwise a paint goes through once a safety net ([`SAFETY_NET_MS`], five seconds; the price
+//! panel keeps a shorter one), so a change nobody told the gate of still shows within one and a
+//! half. GPUI draws a window only once something in it changed, so the safety net's paint of one
+//! with nothing new draws nothing: it costs the UI thread the wake alone. Every gate's safety net
+//! ticks on one clock ([`safety_net_after`]), so the quiet windows' paints fall on the same
+//! refreshes. In between, with no shown window that wants a paint at each refresh, the vsync
+//! thread sleeps till the next of them ([`vsync`]): the XP overlay's three plates, up the whole
+//! time the game is played, wake it once in five seconds while what they say stays the same.
 
-/// A trickle, in milliseconds: how often a gated window's paint goes through outside a burst.
-pub const TRICKLE_MS: u64 = 500;
+/// A safety net, in milliseconds: how often a gated window's paint goes through outside its
+/// bursts, whatever it shows -- the first half a safety net or more after the last paint. A gate
+/// with a shorter one ([`PaintGate::new`]) takes a whole part of this one, a half or a tenth, so
+/// every tick of this one is a tick of its too.
+pub const SAFETY_NET_MS: u64 = 5_000;
 
-/// The longest the vsync thread sleeps with no trickle to wake for, in milliseconds: it bounds a
-/// wake that never came.
-pub const MAX_PARK_MS: u64 = 1_000;
+/// The longest the vsync thread sleeps with no window shown, in milliseconds: it bounds a wake
+/// that never came -- a window shown without the thread being told. A shown window's next safety
+/// net's paint ends a sleep in time on its own.
+pub const MAX_PARK_MS: u64 = SAFETY_NET_MS;
 
 /// What happened to a gated window, as far as its paints go.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,20 +48,29 @@ pub enum GateEvent {
 pub struct PaintGate {
     /// How long a burst lasts.
     burst_ms: u64,
+    /// Its safety net: how often a paint goes through outside the bursts.
+    safety_net_ms: u64,
     /// Until when paints go through, the last burst's end.
     open_until: u64,
-    /// When the last paint went through: the trickle's next comes half a trickle or more after it.
+    /// When the last paint went through: the safety net's next comes half a safety net or more
+    /// after it.
     last_passed: u64,
     /// The window has the keyboard.
     active: bool,
 }
 
 impl PaintGate {
-    /// A gate whose bursts last `burst_ms`, in a burst from `now`: the window is new, and drawn
-    /// once shown.
-    pub fn new(burst_ms: u64, now: u64) -> PaintGate {
+    /// A gate whose bursts last `burst_ms` and whose safety net is `safety_net_ms` --
+    /// [`SAFETY_NET_MS`] or a whole part of it -- in a burst from `now`: the window is new, and
+    /// drawn once shown.
+    pub fn new(burst_ms: u64, safety_net_ms: u64, now: u64) -> PaintGate {
+        debug_assert!(
+            safety_net_ms > 0 && SAFETY_NET_MS.is_multiple_of(safety_net_ms),
+            "a gate's safety net is a whole part of SAFETY_NET_MS"
+        );
         PaintGate {
             burst_ms,
+            safety_net_ms,
             open_until: now + burst_ms,
             last_passed: 0,
             active: false,
@@ -72,13 +87,14 @@ impl PaintGate {
         if self.active || now < self.open_until {
             Wants::EachRefresh
         } else {
-            Wants::Trickle {
-                at: trickle_after(self.last_passed),
+            Wants::SafetyNet {
+                at: safety_net_after(self.last_passed, self.safety_net_ms),
+                every: self.safety_net_ms,
             }
         }
     }
 
-    /// Takes a paint at `now`: whether it goes through to GPUI. One that does is the trickle's
+    /// Takes a paint at `now`: whether it goes through to GPUI. One that does is the safety net's
     /// last.
     pub fn paint(&mut self, now: u64) -> bool {
         let due = self.due(now);
@@ -110,8 +126,8 @@ pub enum Wants {
     /// A paint at each: its paints aren't gated, or go through all the while -- it has the
     /// keyboard, or is in a burst.
     EachRefresh,
-    /// Its trickle's paint, from `at` on.
-    Trickle { at: u64 },
+    /// Its safety net's paint, from `at` on: a safety net `every` milliseconds long.
+    SafetyNet { at: u64, every: u64 },
 }
 
 impl Wants {
@@ -119,7 +135,7 @@ impl Wants {
     pub fn due(self, now: u64) -> bool {
         match self {
             Wants::EachRefresh => true,
-            Wants::Trickle { at } => now >= at,
+            Wants::SafetyNet { at, .. } => now >= at,
         }
     }
 }
@@ -136,8 +152,9 @@ pub enum Vsync {
 /// What the vsync thread does next, at `now`. `windows` are what each window its last refresh
 /// asked for a paint, at `asked`, wanted of the refreshes then: `None` for one hidden or
 /// minimized -- what changed since wakes the thread (`vsync_park`). It refreshes while one of them
-/// wants a paint at each refresh, or a trickle's paint that no refresh has asked for since it came
-/// due; otherwise it sleeps until the first trickle comes due, [`MAX_PARK_MS`] at the most. A
+/// wants a paint at each refresh, or a safety net's paint that no refresh has asked for since it
+/// came due; otherwise it sleeps until the first safety net's paint comes due, however far off --
+/// up to one and a half safety nets after a burst -- and with none shown, [`MAX_PARK_MS`]. A
 /// refresh that asked no window at all says nothing of what's shown -- there's no window yet, or
 /// its asks go past `redraw_filter` -- so it refreshes.
 pub fn vsync(windows: impl IntoIterator<Item = Option<Wants>>, asked: u64, now: u64) -> Vsync {
@@ -145,64 +162,85 @@ pub fn vsync(windows: impl IntoIterator<Item = Option<Wants>>, asked: u64, now: 
     if windows.peek().is_none() {
         return Vsync::Refresh;
     }
-    let mut until = now + MAX_PARK_MS;
+    let mut until: Option<u64> = None;
     for wants in windows.flatten() {
         let next = match wants {
             Wants::EachRefresh => return Vsync::Refresh,
-            Wants::Trickle { at } if at > now => at,
-            Wants::Trickle { at } if asked < at => return Vsync::Refresh,
-            // Asked for since it came due, its paint is on its way to the window: the trickle's
-            // next comes after that one, which goes through now at the earliest.
-            Wants::Trickle { .. } => trickle_after(now),
+            Wants::SafetyNet { at, .. } if at > now => at,
+            Wants::SafetyNet { at, .. } if asked < at => return Vsync::Refresh,
+            // Asked for since it came due, its paint is on its way to the window: the safety
+            // net's next comes after that one, which goes through now at the earliest.
+            Wants::SafetyNet { every, .. } => safety_net_after(now, every),
         };
-        until = until.min(next);
+        until = Some(until.map_or(next, |until| until.min(next)));
     }
-    Vsync::Park { until }
+    Vsync::Park {
+        until: until.unwrap_or(now + MAX_PARK_MS),
+    }
 }
 
-/// When the trickle lets a paint through after one at `painted`: at the first tick of its clock --
-/// every [`TRICKLE_MS`] of `GetTickCount64`, the same for every gate -- half a trickle or more
-/// on, so a paint that just went through, a burst's last, isn't followed by another for nothing.
-fn trickle_after(painted: u64) -> u64 {
-    (painted + TRICKLE_MS / 2).div_ceil(TRICKLE_MS) * TRICKLE_MS
+/// When a safety net `every` milliseconds long lets a paint through after one at `painted`: at
+/// the first tick of its clock -- every `every` of `GetTickCount64`, the same clock for every
+/// gate -- half a safety net or more on, so a paint that just went through, a burst's last, isn't
+/// followed by another for nothing.
+fn safety_net_after(painted: u64, every: u64) -> u64 {
+    (painted + every / 2).div_ceil(every) * every
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    const BURST: u64 = 400;
+    /// The price panel's safety net, a tenth of the others'.
+    const PANEL_NET: u64 = SAFETY_NET_MS / 10;
 
-    /// A gate whose opening burst and first trickle are long past at `now`, the last paint
-    /// through at `now` too: quiet from here.
-    fn settled(burst_ms: u64, now: u64) -> PaintGate {
-        let mut gate = PaintGate::new(burst_ms, 0);
+    /// A gated window whose opening burst is long past at `now`, its last paint through at `now`
+    /// too: quiet from here.
+    fn quiet(burst_ms: u64, safety_net_ms: u64, now: u64) -> PaintGate {
+        let mut gate = PaintGate::new(burst_ms, safety_net_ms, 0);
         assert!(gate.paint(now));
         gate
     }
 
-    #[test]
-    fn a_quiet_window_paints_once_a_trickle() {
-        let mut gate = settled(BURST, 10_000);
-        // A 60 Hz display's asks until the trickle is due.
-        assert!((1..32).all(|frame| !gate.due(10_000 + frame * 16)));
-        assert!(gate.paint(10_000 + TRICKLE_MS));
-        assert!(!gate.paint(10_000 + TRICKLE_MS + 16));
+    /// An XP plate, quiet since `now`.
+    fn plate(now: u64) -> PaintGate {
+        quiet(400, SAFETY_NET_MS, now)
+    }
+
+    /// The price panel, quiet since `now`.
+    fn panel(now: u64) -> PaintGate {
+        quiet(2_000, PANEL_NET, now)
+    }
+
+    /// From when `wants` lets the window's next paint through; `None` for each refresh's.
+    fn next_paint(wants: Wants) -> Option<u64> {
+        match wants {
+            Wants::EachRefresh => None,
+            Wants::SafetyNet { at, .. } => Some(at),
+        }
     }
 
     #[test]
-    fn asks_that_are_turned_down_leave_the_trickle_alone() {
-        let mut gate = settled(BURST, 10_000);
-        for frame in 1..30 {
-            assert!(!gate.paint(10_000 + frame * 16));
+    fn a_quiet_window_paints_once_a_safety_net() {
+        let mut plate = plate(10_000);
+        // A 60 Hz display's asks until its safety net's paint is due.
+        assert!((1..SAFETY_NET_MS / 16).all(|frame| !plate.due(10_000 + frame * 16)));
+        assert!(plate.paint(10_000 + SAFETY_NET_MS));
+        assert!(!plate.paint(10_000 + SAFETY_NET_MS + 16));
+    }
+
+    #[test]
+    fn asks_that_are_turned_down_leave_the_safety_net_alone() {
+        let mut plate = plate(10_000);
+        for frame in 1..SAFETY_NET_MS / 16 {
+            assert!(!plate.paint(10_000 + frame * 16));
         }
-        assert!(gate.paint(10_000 + TRICKLE_MS));
+        assert!(plate.paint(10_000 + SAFETY_NET_MS));
     }
 
     #[test]
     fn a_change_lets_every_paint_through_for_the_windows_own_burst() {
-        let mut plate = settled(BURST, 10_000);
-        let mut panel = settled(2_000, 10_000);
+        let (mut plate, mut panel) = (plate(10_000), panel(10_000));
         plate.note(GateEvent::Changed, 10_100);
         panel.note(GateEvent::Changed, 10_100);
         assert!(plate.paint(10_116) && plate.paint(10_132) && plate.paint(10_499));
@@ -213,101 +251,147 @@ mod tests {
 
     #[test]
     fn the_pointer_keeps_it_painting_a_burst_past_its_last_move_and_no_longer() {
-        let mut gate = settled(BURST, 10_000);
-        gate.note(GateEvent::Input, 10_100);
-        gate.note(GateEvent::Input, 10_300);
-        assert!(gate.paint(10_699));
+        let mut plate = plate(10_000);
+        plate.note(GateEvent::Input, 10_100);
+        plate.note(GateEvent::Input, 10_300);
+        assert!(plate.paint(10_699));
         // At rest on the window since.
-        assert!(!gate.due(10_700 + 1));
+        assert!(!plate.due(10_700 + 1));
     }
 
     #[test]
     fn the_keyboard_keeps_it_painting_until_it_goes() {
-        let mut gate = settled(BURST, 10_000);
-        gate.note(GateEvent::Activated(true), 10_100);
-        assert!(gate.paint(20_000));
-        gate.note(GateEvent::Activated(false), 20_000);
-        assert!(gate.paint(20_399));
-        assert!(!gate.due(20_400 + 1));
+        let mut plate = plate(10_000);
+        plate.note(GateEvent::Activated(true), 10_100);
+        // Long past the burst the focus opened, still every refresh's paint.
+        assert!((0..600).all(|frame| plate.paint(10_600 + frame * 16)));
+        plate.note(GateEvent::Activated(false), 20_200);
+        assert!(plate.paint(20_599));
+        assert!(!plate.due(20_600 + 1));
     }
 
     #[test]
     fn hiding_ends_a_focus_whose_loss_never_came() {
-        let mut gate = settled(BURST, 10_000);
-        gate.note(GateEvent::Activated(true), 10_100);
-        assert!(gate.paint(10_450));
-        gate.note(GateEvent::Hidden, 10_460);
-        assert!(!gate.due(10_600));
+        let mut plate = plate(10_000);
+        plate.note(GateEvent::Activated(true), 10_100);
+        assert!(plate.paint(10_450));
+        plate.note(GateEvent::Hidden, 10_460);
+        assert!(!plate.due(10_600));
     }
 
     #[test]
-    fn quiet_windows_trickle_on_the_same_ticks() {
-        // Their last paints went through at different times of the same trickle.
-        let plates = [10_010, 10_120, 10_250].map(|painted| settled(BURST, painted));
-        let tick = Wants::Trickle { at: 10_500 };
-        assert!(plates.iter().all(|plate| plate.wants(10_300) == tick));
+    fn quiet_windows_paint_on_the_same_ticks() {
+        // Their last paints went through at different times before the same tick.
+        let plates = [10_010, 11_200, 12_400].map(plate);
+        assert!(
+            plates
+                .iter()
+                .all(|plate| next_paint(plate.wants(12_500)) == Some(15_000))
+        );
+        // The panel's safety net is a part of theirs: that tick is one of its own too.
+        assert_eq!(next_paint(panel(14_600).wants(14_700)), Some(15_000));
     }
 
     #[test]
-    fn a_trickle_paint_comes_half_a_trickle_or_more_after_the_last() {
-        // Painted just past half a trickle before a tick: the tick after it.
-        let gate = settled(BURST, 10_251);
-        assert!(!gate.due(10_500) && !gate.due(10_999));
-        assert!(gate.due(11_000));
+    fn a_safety_net_paint_comes_half_a_safety_net_or_more_after_the_last() {
+        // Painted less than half a safety net before a tick: the tick after it.
+        let plate = plate(12_501);
+        assert!(!plate.due(15_000) && !plate.due(19_999));
+        assert!(plate.due(20_000));
     }
 
     #[test]
     fn a_window_that_wants_each_refresh_keeps_the_vsync_thread_going() {
         let windows = [
             None,
-            Some(Wants::Trickle { at: 10_500 }),
+            Some(plate(10_000).wants(10_016)),
             Some(Wants::EachRefresh),
         ];
         assert_eq!(vsync(windows, 10_000, 10_016), Vsync::Refresh);
     }
 
     #[test]
-    fn quiet_windows_let_it_sleep_until_the_first_trickle() {
+    fn quiet_windows_let_it_sleep_until_the_first_safety_net() {
         let windows = [
-            Some(Wants::Trickle { at: 11_000 }),
+            Some(Wants::SafetyNet {
+                at: 20_000,
+                every: SAFETY_NET_MS,
+            }),
             None,
-            Some(Wants::Trickle { at: 10_500 }),
+            Some(Wants::SafetyNet {
+                at: 15_000,
+                every: SAFETY_NET_MS,
+            }),
         ];
         assert_eq!(
-            vsync(windows, 10_016, 10_020),
-            Vsync::Park { until: 10_500 }
+            vsync(windows, 12_016, 12_020),
+            Vsync::Park { until: 15_000 }
         );
     }
 
     #[test]
-    fn one_wake_a_trickle_serves_every_quiet_window() {
-        let mut plates = [10_010, 10_120, 10_250].map(|painted| settled(BURST, painted));
+    fn it_sleeps_all_the_way_to_the_next_paint_due() {
+        // A burst's last paint went through less than half a safety net before a tick: nothing is
+        // due for nearly one and a half safety nets.
+        let plate = plate(12_501);
+        assert_eq!(
+            vsync([Some(plate.wants(12_520))], 12_516, 12_520),
+            Vsync::Park { until: 20_000 }
+        );
+    }
+
+    #[test]
+    fn one_wake_a_safety_net_serves_every_quiet_window() {
+        let mut plates = [10_010, 11_200, 12_400].map(plate);
         let shown =
             |plates: &[PaintGate; 3], now| plates.clone().map(|plate| Some(plate.wants(now)));
         assert_eq!(
-            vsync(shown(&plates, 10_260), 10_260, 10_260),
-            Vsync::Park { until: 10_500 }
+            vsync(shown(&plates, 12_500), 12_500, 12_500),
+            Vsync::Park { until: 15_000 }
         );
         // Woken at the tick, the thread asked for their paints, which are yet to come: asleep
         // till the next.
-        assert!(plates.iter().all(|plate| plate.due(10_500)));
+        assert!(plates.iter().all(|plate| plate.due(15_000)));
         assert_eq!(
-            vsync(shown(&plates, 10_501), 10_500, 10_501),
-            Vsync::Park { until: 11_000 }
+            vsync(shown(&plates, 15_001), 15_000, 15_001),
+            Vsync::Park { until: 20_000 }
         );
         for plate in &mut plates {
-            assert!(plate.paint(10_502));
+            assert!(plate.paint(15_002));
         }
         assert_eq!(
-            vsync(shown(&plates, 10_503), 10_500, 10_503),
-            Vsync::Park { until: 11_000 }
+            vsync(shown(&plates, 15_003), 15_000, 15_003),
+            Vsync::Park { until: 20_000 }
         );
     }
 
     #[test]
-    fn a_trickle_due_since_the_last_ask_brings_a_refresh() {
-        let plate = Some(Wants::Trickle { at: 10_500 });
-        assert_eq!(vsync([plate], 10_490, 10_505), Vsync::Refresh);
+    fn a_shorter_safety_net_wakes_it_on_its_own_ticks() {
+        // The panel up by the plates: asked for at its tick, its paint is on its way, and the
+        // thread sleeps till its next tick, well before the plates'.
+        let windows = [
+            Some(Wants::SafetyNet {
+                at: 12_500,
+                every: PANEL_NET,
+            }),
+            Some(Wants::SafetyNet {
+                at: 15_000,
+                every: SAFETY_NET_MS,
+            }),
+        ];
+        assert_eq!(
+            vsync(windows, 12_500, 12_501),
+            Vsync::Park { until: 13_000 }
+        );
+    }
+
+    #[test]
+    fn a_safety_net_due_since_the_last_ask_brings_a_refresh() {
+        let plate = Some(Wants::SafetyNet {
+            at: 15_000,
+            every: SAFETY_NET_MS,
+        });
+        assert_eq!(vsync([plate], 14_990, 15_005), Vsync::Refresh);
     }
 
     #[test]

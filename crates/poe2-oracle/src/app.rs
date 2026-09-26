@@ -50,7 +50,7 @@ use crate::platform::instance::{self, Request};
 use crate::platform::taskbar::{self, ButtonEvent, TaskbarButton};
 use crate::platform::win32::Win32Overlay;
 use crate::platform::{
-    autostart, game_config, game_window, paint_census, redraw_filter, vsync_park,
+    autostart, d3d_threading, game_config, game_window, paint_census, redraw_filter, vsync_park,
 };
 use crate::presence::{self, Shows, Step, Tries};
 use crate::price_check::{self, BootstrapState, PriceCheckApp};
@@ -76,10 +76,17 @@ const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/
 /// an upload included: reports go through a client of their own (`report::send`).
 const READ_TIMEOUT: Duration = Duration::from_secs(30);
 /// How long the price panel's paints all go through once it changed, was shown or the player
-/// touched it -- then once a trickle till the next (`Win32Overlay::gate_paints_for`): past its
-/// transitions, and its listings' icons coming in after them. Left up while the player is
-/// elsewhere, it was drawn at every refresh of the display for nothing new.
+/// touched it -- then one a safety net till the next (`PANEL_SAFETY_NET`,
+/// `Win32Overlay::gate_paints_for`): past its transitions, and its listings' icons coming in after
+/// them. Left up while the player is elsewhere, it was drawn at every refresh of the display for
+/// nothing new.
 const PANEL_PAINT_BURST: Duration = Duration::from_secs(2);
+/// How often the price panel's paint goes through outside its bursts: a tenth of the other gated
+/// windows' safety net (`paint_gate::SAFETY_NET_MS`). A listing's tooltip draws its item's art as
+/// it comes in, which tells the tooltip's own view and not the panel's, whose changes open its
+/// bursts (`sync_window`): a picture that came in after a burst still shows within this and a
+/// half. Hidden, the panel isn't asked for paints at all, and it shows only while it's used.
+const PANEL_SAFETY_NET: Duration = Duration::from_millis(500);
 
 /// Wraps `Entity<PriceCheckApp>` with the platform-window state that has to follow it: the
 /// `Win32Overlay` handle (resolved once the real platform window exists), what was last applied to
@@ -141,7 +148,7 @@ impl PriceCheckRoot {
                     if let Err(err) = overlay.set_no_activate() {
                         log::warn!("{err:#}");
                     }
-                    if let Err(err) = overlay.gate_paints_for(PANEL_PAINT_BURST) {
+                    if let Err(err) = overlay.gate_paints_for(PANEL_PAINT_BURST, PANEL_SAFETY_NET) {
                         log::warn!("{err:#}");
                     }
                 })
@@ -897,6 +904,9 @@ pub fn run() {
     // before its loop. The park on this thread, GPUI's UI thread, whose windows' shows wake it.
     redraw_filter::install();
     vsync_park::install();
+    // Before GPUI starts too: it makes its Direct3D device while the application is built, and
+    // that device, like the lip watcher's, goes without the graphics driver's threads.
+    d3d_threading::install();
     // On this thread, GPUI's UI thread, and only with `POE2_ORACLE_PAINT_CENSUS=1`.
     paint_census::start();
     // Before anything reads a game table: the installed data pack's tables, when it's sound and

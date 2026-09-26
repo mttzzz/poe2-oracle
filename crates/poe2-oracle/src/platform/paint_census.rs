@@ -14,7 +14,7 @@
 //!   and what the filter made of them: `passed` on to user32, which wakes the thread for a
 //!   `WM_PAINT`, or dropped as `hidden` (or minimized) or `gated` (a gated window's paint not
 //!   due). Windows shown and no asks at all would mean the vsync thread goes past the filter:
-//!   asleep, it still asks once a second at the least;
+//!   asleep, it still asks at each safety net's tick, five seconds apart;
 //! - `paints`: the `WM_PAINT`s a gated window (`win32::Win32Overlay::gate_paints`) let through
 //!   `to GPUI`, and those it `swallowed`;
 //! - `gate`: what else reached a gated window's gate -- the pointer, the keyboard, moves, sizes,
@@ -68,11 +68,16 @@ static VSYNC: Mutex<Vsync> = Mutex::new(Vsync::NONE);
 struct Vsync {
     /// The display's refreshes it waited for.
     refreshes: u64,
-    /// How many times it slept instead, and how many of those a wake cut short.
+    /// How many times it slept instead -- sleeps that ended -- and how many of those a wake cut
+    /// short.
     parks: u64,
     woken: u64,
     /// How long it slept in all.
     parked: Duration,
+    /// Since when it sleeps, if it does. A sleep lasts up to one and a half safety nets, seven
+    /// and a half seconds, and may run on past a report: each report counts the part of it in its
+    /// own time.
+    asleep_since: Option<Instant>,
 }
 
 impl Vsync {
@@ -81,6 +86,7 @@ impl Vsync {
         parks: 0,
         woken: 0,
         parked: Duration::ZERO,
+        asleep_since: None,
     };
 }
 
@@ -136,13 +142,22 @@ pub fn refreshed() {
     }
 }
 
-/// Counts a sleep of the vsync thread that lasted `slept`, cut short by a wake or not.
-pub fn parked(slept: Duration, woken: bool) {
+/// Counts a sleep of the vsync thread beginning.
+pub fn parking() {
+    if *ON {
+        vsync().asleep_since = Some(Instant::now());
+    }
+}
+
+/// Counts the vsync thread's sleep ending, cut short by a wake or not.
+pub fn parked(woken: bool) {
     if *ON {
         let mut vsync = vsync();
         vsync.parks += 1;
         vsync.woken += u64::from(woken);
-        vsync.parked += slept;
+        if let Some(since) = vsync.asleep_since.take() {
+            vsync.parked += since.elapsed();
+        }
     }
 }
 
@@ -207,9 +222,19 @@ fn report_forever() {
     loop {
         thread::sleep(REPORT_EVERY);
         let counts = std::mem::take(&mut *COUNTS.lock().unwrap_or_else(|p| p.into_inner()));
-        let vsync = std::mem::replace(&mut *vsync(), Vsync::NONE);
-        let seconds = since.elapsed().as_secs_f64();
-        since = Instant::now();
+        let (vsync, now) = {
+            let mut current = vsync();
+            let now = Instant::now();
+            let mut taken = std::mem::replace(&mut *current, Vsync::NONE);
+            // A sleep under way: the part of it so far is this report's, the rest the next's.
+            if let Some(asleep) = taken.asleep_since {
+                taken.parked += now - asleep;
+                current.asleep_since = Some(now);
+            }
+            (taken, now)
+        };
+        let seconds = (now - since).as_secs_f64();
+        since = now;
         log::info!("{}", report(counts, vsync, seconds));
     }
 }

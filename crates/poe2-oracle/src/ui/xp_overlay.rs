@@ -85,7 +85,7 @@ use crate::platform::lip_watch::{LipReport, LipWatch};
 use crate::platform::win32::Win32Overlay;
 use crate::platform::xp_bar::{self, BarSample, RailsSeen};
 use crate::price_check::PriceCheckApp;
-use crate::settings::Settings;
+use crate::settings::{InterfaceLanguage, Settings};
 use crate::ui::fonts;
 use crate::ui::style::{ease_hover, ease_state, quad_diamond};
 use crate::ui::theme::{
@@ -124,6 +124,9 @@ pub struct XpOverlayOptions {
     pub show_percent: bool,
     pub map_timer: bool,
     pub rate_window_minutes: u16,
+    /// The interface language the player picked, which the plates are worded in (`i18n::lang`):
+    /// another has them worded anew at once.
+    pub language: InterfaceLanguage,
 }
 
 impl XpOverlayOptions {
@@ -132,6 +135,7 @@ impl XpOverlayOptions {
             show_percent: settings.xp_show_percent,
             map_timer: settings.xp_map_timer,
             rate_window_minutes: settings.xp_rate_window_minutes,
+            language: settings.interface_language,
         }
     }
 }
@@ -298,6 +302,9 @@ pub struct XpOverlay {
     map: PlateWindow,
     /// The plates' pixels, for the place and size of the game they were drawn for.
     art: Option<Arts>,
+    /// What the plates said when they were last drawn anew ([`XpOverlay::redraw`]); `None` before
+    /// the first time.
+    drawn: Option<Shown>,
     /// The level plate's wording: paused, rated, with the percent, in what language and room.
     level_fit: Fit<(bool, bool, bool, Lang, Pixels)>,
     /// The sampler's look at the rails, every two seconds.
@@ -328,12 +335,25 @@ pub struct MapPlate {
     fit: Fit<(RunState, bool, Lang, Pixels)>,
 }
 
-/// What the plates say ([`XpOverlay::shown`]): a new sample redraws them only when it changes.
-#[derive(PartialEq)]
+/// What the plates say ([`XpOverlay::shown`]), and in which language -- which picks their face
+/// too: a plate is drawn anew only when its part of this changes.
 struct Shown {
+    lang: Lang,
     level: Vec<Vec<Vec<Word>>>,
     playing: bool,
     map: Option<(Vec<Vec<Vec<Word>>>, RunState)>,
+}
+
+impl Shown {
+    /// Whether the level plate, and the map plate, say otherwise in `self` than in `drawn`. The
+    /// map's words dim with a pause too, and lose the average.
+    fn differs(&self, drawn: &Shown) -> (bool, bool) {
+        let reworded = self.lang != drawn.lang;
+        (
+            reworded || self.level != drawn.level || self.playing != drawn.playing,
+            reworded || self.map != drawn.map,
+        )
+    }
 }
 
 /// Which of a plate's wordings -- longest first -- it shows, and in what state. The choice sticks
@@ -408,6 +428,7 @@ pub fn open(
                 gear: PlateWindow::default(),
                 map: PlateWindow::default(),
                 art: None,
+                drawn: None,
                 level_fit: Fit::default(),
                 rails: RailPresence::new(),
                 lip_watch,
@@ -642,12 +663,9 @@ async fn sample_forever(view: WeakEntity<XpOverlay>, cx: &mut AsyncApp) {
             }
             view.sample = sample;
             // The status moves on with every sample -- a pause's length, a rate's last digits --
-            // but the plates are redrawn only when what they say changes, or where.
-            let shown = view.shown();
+            // but a plate is drawn anew only when what it says changes, or where.
             view.status = status;
-            if moved || view.shown() != shown {
-                view.repaint(cx);
-            }
+            view.redraw(moved, cx);
             view.sync_windows(cx);
         });
     }
@@ -660,7 +678,8 @@ impl XpOverlay {
         self.sync_windows(cx);
     }
 
-    /// Takes over the player's saved options: what to show, the rate's averaging window.
+    /// Takes over the player's saved options: what to show, the rate's averaging window, the
+    /// language the plates are worded in.
     pub fn set_options(&mut self, options: XpOverlayOptions, cx: &mut Context<Self>) {
         if options == self.options {
             return;
@@ -668,14 +687,15 @@ impl XpOverlay {
         self.tracker.set_rate_window(options.rate_window_minutes);
         self.options = options;
         self.status = self.tracker.status();
-        self.repaint(cx);
+        self.redraw(false, cx);
         self.sync_windows(cx);
     }
 
-    /// What the plates say, as far as drawing them goes: their words, whether the level plate
-    /// shows play or a pause, and whether the map is still being run.
+    /// What the plates say, as far as drawing them goes: their words and their language, whether
+    /// the level plate shows play or a pause, and whether the map is still being run.
     fn shown(&self) -> Shown {
         Shown {
+            lang: i18n::lang(),
             level: self.level_wordings(),
             playing: !self.paused(),
             map: self
@@ -684,12 +704,27 @@ impl XpOverlay {
         }
     }
 
-    /// Redraws the plates, whose words or art changed: their windows paint only in bursts
-    /// (`Win32Overlay::gate_paints`), so each opens one as its view is notified.
-    fn repaint(&mut self, cx: &mut Context<Self>) {
+    /// Draws anew the plates that say otherwise than when they were last drawn -- every one once
+    /// the game `moved` or was rescaled, which moves their art and resizes their words. Their
+    /// windows paint only while what they show may change (`Win32Overlay::gate_paints`), so each
+    /// plate drawn anew opens its window's paints, and the others' stay shut: the map's clock
+    /// running on redraws neither the level plate nor the gear. The notice reaches every plate's
+    /// view -- each reads this one -- and a window whose paints stay shut draws its unchanged
+    /// plate once more at its next safety net's paint.
+    fn redraw(&mut self, moved: bool, cx: &mut Context<Self>) {
+        let shown = self.shown();
+        let (level, map) = match &self.drawn {
+            Some(drawn) if !moved => shown.differs(drawn),
+            _ => (true, true),
+        };
+        let gear = moved || self.drawn.is_none();
+        if !(level || map || gear) {
+            return;
+        }
+        self.drawn = Some(shown);
         cx.notify();
-        for window in [&self.level, &self.gear, &self.map] {
-            if let Some(overlay) = window.overlay {
+        for (window, changed) in [(&self.level, level), (&self.gear, gear), (&self.map, map)] {
+            if changed && let Some(overlay) = window.overlay {
                 overlay.open_paints();
             }
         }
@@ -728,7 +763,7 @@ impl XpOverlay {
     }
 
     /// Takes a plate's platform window once it exists: frameless, opaque to Windows -- GPUI took
-    /// it for transparent (`window_options`) -- painting only in bursts (`repaint`), and letting
+    /// it for transparent (`window_options`) -- painting only in bursts (`redraw`), and letting
     /// clicks through to the game -- but for the gear's, which takes clicks and never the
     /// keyboard, so a click on it leaves the keyboard with the game.
     fn attach(&mut self, plate: Plate, overlay: Win32Overlay, cx: &mut Context<Self>) {
