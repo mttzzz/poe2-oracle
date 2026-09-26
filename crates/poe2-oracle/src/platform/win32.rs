@@ -29,6 +29,7 @@
 
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
+use std::time::Duration;
 
 use anyhow::{Context as _, Result, bail};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -47,18 +48,23 @@ use windows::Win32::System::SystemInformation::GetTickCount64;
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CallWindowProcW, DefWindowProcW, GWL_EXSTYLE, GWL_STYLE, GWLP_WNDPROC, GetCursorPos,
-    GetForegroundWindow, GetWindowLongPtrW, GetWindowRect, HWND_NOTOPMOST, HWND_TOPMOST, IsIconic,
-    IsZoomed, MA_NOACTIVATE, MINMAXINFO, SW_HIDE, SW_SHOWNOACTIVATE, SWP_FRAMECHANGED,
-    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetForegroundWindow, SetWindowLongPtrW,
-    SetWindowPos, ShowWindow, WM_DPICHANGED, WM_GETMINMAXINFO, WM_LBUTTONDOWN, WM_LBUTTONUP,
-    WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCDESTROY, WM_PAINT, WM_SHOWWINDOW, WM_SIZE,
-    WM_WINDOWPOSCHANGED, WNDPROC, WS_CAPTION, WS_EX_CLIENTEDGE, WS_EX_DLGMODALFRAME, WS_EX_LAYERED,
+    CallWindowProcW, DM_POINTERHITTEST, DefWindowProcW, GWL_EXSTYLE, GWL_STYLE, GWLP_WNDPROC,
+    GetCursorPos, GetForegroundWindow, GetWindowLongPtrW, GetWindowRect, HWND_NOTOPMOST,
+    HWND_TOPMOST, IsIconic, IsZoomed, MA_NOACTIVATE, MINMAXINFO, SW_HIDE, SW_SHOWNOACTIVATE,
+    SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW,
+    SendMessageW, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos, ShowWindow, WA_INACTIVE,
+    WINDOWPOS, WM_ACTIVATE, WM_CHAR, WM_DPICHANGED, WM_GETMINMAXINFO, WM_KEYDOWN, WM_KEYUP,
+    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEHWHEEL,
+    WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCDESTROY, WM_PAINT, WM_RBUTTONDOWN, WM_RBUTTONUP,
+    WM_SHOWWINDOW, WM_SIZE, WM_SYSKEYDOWN, WM_SYSKEYUP, WM_WINDOWPOSCHANGED, WM_XBUTTONDOWN,
+    WM_XBUTTONUP, WNDPROC, WS_CAPTION, WS_EX_CLIENTEDGE, WS_EX_DLGMODALFRAME, WS_EX_LAYERED,
     WS_EX_NOACTIVATE, WS_EX_STATICEDGE, WS_EX_TRANSPARENT, WS_EX_WINDOWEDGE, WS_MAXIMIZEBOX,
     WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
 };
 
 use super::game_window::{client_rect_on_screen, dpi_to_scale};
+use super::paint_census;
+use super::paint_gate::{GateEvent, PaintGate};
 use crate::overlay_layout::PhysicalRect;
 
 /// The windows whose procedure [`overlay_proc`] wraps, by the window's handle value: GPUI's own
@@ -76,20 +82,6 @@ struct Wrapped {
     /// The least client area the player can size the window to, in pixels at 96 DPI
     /// ([`Win32Overlay::set_min_size`]).
     min_size: Option<(f32, f32)>,
-}
-
-/// When a gated window's paints last went through to GPUI, and until when they all do; ticks of
-/// `GetTickCount64`, milliseconds.
-struct PaintGate {
-    open_until: u64,
-    last_passed: u64,
-}
-
-impl PaintGate {
-    /// Whether a paint at `now` goes through: within a burst, or a trickle's worth after the last.
-    fn due(&self, now: u64) -> bool {
-        now < self.open_until || now.saturating_sub(self.last_passed) >= PAINT_TRICKLE_MS
-    }
 }
 
 /// Whether `hwnd`'s next paint would go through to GPUI: any window but a
@@ -110,10 +102,7 @@ const WM_MOUSELEAVE: u32 = 0x02A3;
 
 /// How long a gated window's paints go through once a burst opens: well past its transitions,
 /// 120 ms (`ui::style::TRANSITION`).
-const PAINT_BURST_MS: u64 = 400;
-/// How often a gated window's paint goes through outside a burst: whatever made its view dirty
-/// unforeseen still shows within this.
-const PAINT_TRICKLE_MS: u64 = 500;
+const PAINT_BURST: Duration = Duration::from_millis(400);
 
 /// A raw Win32 handle to a single GPUI window. `Copy`: it's a plain handle, and deferred window
 /// operations (see [`Win32Overlay::set_bounds`]) need to carry it into a spawned task.
@@ -311,6 +300,36 @@ impl Win32Overlay {
         let _ = unsafe { ShowWindow(self.hwnd, command) };
     }
 
+    /// Takes a hidden window down to a single device pixel, where it stays -- out of sight --
+    /// until [`Self::set_bounds`] gives it its size back before it shows again: `gpui_windows`
+    /// keeps a window's swapchain (three buffers) and its paths' two textures (one of four
+    /// samples a pixel) at the window's size, 32 bytes a device pixel, shown or not -- 61 MiB for
+    /// the price panel's 922x2160 on the test machine (32 rem at a UI scale of 0.9 and 200 %, the
+    /// game's height). It keeps its place, so it stays on its monitor, at that monitor's DPI.
+    /// Deferred like [`Self::set_bounds`]: `SetWindowPos` sends `WM_SIZE` synchronously, on which
+    /// GPUI resizes the swapchain and makes the textures anew (`events.rs`'s `handle_size_msg`).
+    ///
+    /// The window is then drawn once at that size, as a hidden window otherwise never is:
+    /// Direct3D 11 frees a released texture only once its device context next flushes, which a
+    /// present does (`ID3D11DeviceContext::Flush`), and an idle app may present nothing for a
+    /// long while. GPUI draws on `WM_PAINT` without asking whether the window is shown.
+    pub fn shrink(&self) -> Result<()> {
+        unsafe {
+            SetWindowPos(
+                self.hwnd,
+                None,
+                0,
+                0,
+                1,
+                1,
+                SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE,
+            )
+        }
+        .context("SetWindowPos(1x1) failed")?;
+        unsafe { SendMessageW(self.hwnd, WM_PAINT, None, None) };
+        Ok(())
+    }
+
     /// Shows only `shown` of the window -- rects relative to its top left corner -- and lets the
     /// game show everywhere else: a window region, which DWM clips the window's composition to. A
     /// transparent GPUI background won't do, it tints what's behind it ([`Self::set_shown`]).
@@ -361,22 +380,27 @@ impl Win32Overlay {
         Ok(())
     }
 
-    /// Lets GPUI paint the window only in bursts: once the app says what it shows has changed
-    /// ([`Self::open_paints`]), while the mouse is on it, and once moved, resized or shown --
-    /// else a paint once each `PAINT_TRICKLE_MS`. `gpui_windows` invalidates every window of the
-    /// app on each refresh of the display (`platform.rs`'s `begin_vsync_thread`), so each
-    /// visible one would be drawn 60 to 165 times a second whether or not it has anything new --
-    /// the XP overlay's plates are up all the while the game is played, for words that change
-    /// every few seconds -- and would wake the UI thread as often; `redraw_filter`, installed at
-    /// start, keeps the refreshes from even asking outside a burst.
+    /// Lets GPUI paint the window only while what it shows may be changing
+    /// (`platform::paint_gate`): while it has the keyboard, and for a burst once the app says what
+    /// it shows has changed ([`Self::open_paints`]), once it's moved, resized or shown, or the
+    /// pointer or a key did something on it -- else a paint once a trickle. `gpui_windows`
+    /// invalidates every window of the app on each refresh of the display (`platform.rs`'s
+    /// `begin_vsync_thread`), so each visible one would be drawn 60 to 165 times a second whether
+    /// or not it has anything new -- the XP overlay's plates are up all the while the game is
+    /// played, for words that change every few seconds -- and would wake the UI thread as often;
+    /// `redraw_filter`, installed at start, keeps the refreshes from even asking outside a burst.
+    /// Bursts of `PAINT_BURST`.
     pub fn gate_paints(&self) -> Result<()> {
+        self.gate_paints_for(PAINT_BURST)
+    }
+
+    /// [`Self::gate_paints`] with bursts `burst` long: for a window whose content goes on
+    /// changing a while after what set it off -- the price panel's items' icons come in after
+    /// its listings.
+    pub fn gate_paints_for(&self, burst: Duration) -> Result<()> {
         let now = unsafe { GetTickCount64() };
-        self.wrap(|wrapped| {
-            wrapped.gate = Some(PaintGate {
-                open_until: now + PAINT_BURST_MS,
-                last_passed: 0,
-            });
-        })
+        let burst_ms = burst.as_millis() as u64;
+        self.wrap(|wrapped| wrapped.gate = Some(PaintGate::new(burst_ms, now)))
     }
 
     /// Opens a burst of a [`Self::gate_paints`] window's paints, and asks for the first: what it
@@ -388,9 +412,10 @@ impl Win32Overlay {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .get_mut(&(self.hwnd.0 as isize))
             .and_then(|wrapped| wrapped.gate.as_mut())
-            .map(|gate| gate.open_until = now + PAINT_BURST_MS)
+            .map(|gate| gate.note(GateEvent::Changed, now))
             .is_some();
         if gated {
+            paint_census::opened(self.hwnd, paint_census::BY_APP);
             let _ = unsafe { InvalidateRect(Some(self.hwnd), None, false) };
         }
     }
@@ -546,9 +571,37 @@ fn set_min_track_size(hwnd: HWND, info: &mut MINMAXINFO, (width, height): (f32, 
     };
 }
 
+/// What `message` means for a [`Win32Overlay::gate_paints`] window's paints, if anything.
+fn gate_event(message: u32, wparam: WPARAM, lparam: LPARAM) -> Option<GateEvent> {
+    Some(match message {
+        // A touchpad's gestures come through DirectManipulation, whose events GPUI takes in as it
+        // draws (`events.rs`'s `draw_window`): its hit test starts them.
+        WM_MOUSEMOVE | WM_MOUSELEAVE | WM_MOUSEWHEEL | WM_MOUSEHWHEEL | WM_LBUTTONDOWN
+        | WM_LBUTTONUP | WM_RBUTTONDOWN | WM_RBUTTONUP | WM_MBUTTONDOWN | WM_MBUTTONUP
+        | WM_XBUTTONDOWN | WM_XBUTTONUP | DM_POINTERHITTEST | WM_KEYDOWN | WM_KEYUP
+        | WM_SYSKEYDOWN | WM_SYSKEYUP | WM_CHAR => GateEvent::Input,
+        WM_ACTIVATE => GateEvent::Activated((wparam.0 & 0xFFFF) as u32 != WA_INACTIVE),
+        WM_SIZE | WM_DPICHANGED => GateEvent::Changed,
+        WM_SHOWWINDOW if wparam.0 != 0 => GateEvent::Changed,
+        WM_SHOWWINDOW => GateEvent::Hidden,
+        WM_WINDOWPOSCHANGED => {
+            // SAFETY: a `WM_WINDOWPOSCHANGED`'s `lparam` points at the `WINDOWPOS` it reports.
+            let flags = unsafe { (*(lparam.0 as *const WINDOWPOS)).flags };
+            // Only its place among the other windows changed: nothing of it is drawn anew.
+            let restacked = flags.contains(SWP_NOMOVE | SWP_NOSIZE)
+                && (flags.0 & (SWP_SHOWWINDOW | SWP_FRAMECHANGED).0) == 0;
+            if restacked {
+                return None;
+            }
+            GateEvent::Changed
+        }
+        _ => return None,
+    })
+}
+
 /// The window procedure [`Win32Overlay::wrap`] puts in front of GPUI's: `MA_NOACTIVATE` for a
 /// [`Win32Overlay::set_no_activate`] window, and a [`Win32Overlay::gate_paints`] window's paints
-/// only in bursts -- a paint outside one is marked done, and the display's next refresh asks
+/// only while they're due -- one that isn't is marked done, and the display's next refresh asks
 /// again, unless `redraw_filter` drops that refresh's ask. Everything else goes to GPUI's
 /// procedure, the registry unlocked first: GPUI's may send messages to another wrapped window of
 /// the app. GPUI's answer to `WM_GETMINMAXINFO` then gets a [`Win32Overlay::set_min_size`]
@@ -559,38 +612,39 @@ unsafe extern "system" fn overlay_proc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
-    let (gpui_proc, no_activate, swallowed, min_size) = {
+    let (gpui_proc, no_activate, gated, swallowed, min_size) = {
         let mut wrapped = WRAPPED
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         let Some(entry) = wrapped.get_mut(&(hwnd.0 as isize)) else {
             return unsafe { DefWindowProcW(hwnd, message, wparam, lparam) };
         };
+        // Whether the gate took the message: a paint, or an event for its bursts.
+        let mut gated = false;
         let mut swallowed = false;
         if let Some(gate) = entry.gate.as_mut() {
             let now = unsafe { GetTickCount64() };
-            match message {
-                WM_PAINT => {
-                    if gate.due(now) {
-                        gate.last_passed = now;
-                    } else {
-                        swallowed = true;
-                    }
-                }
-                WM_MOUSEMOVE | WM_MOUSELEAVE | WM_MOUSEWHEEL | WM_LBUTTONDOWN | WM_LBUTTONUP
-                | WM_SIZE | WM_WINDOWPOSCHANGED | WM_SHOWWINDOW | WM_DPICHANGED => {
-                    gate.open_until = now + PAINT_BURST_MS;
-                }
-                _ => {}
+            if message == WM_PAINT {
+                swallowed = !gate.paint(now);
+                gated = true;
+            } else if let Some(event) = gate_event(message, wparam, lparam) {
+                gate.note(event, now);
+                gated = true;
             }
         }
         (
             entry.gpui_proc,
             entry.no_activate,
+            gated,
             swallowed,
             entry.min_size,
         )
     };
+    if gated && message == WM_PAINT {
+        paint_census::painted(hwnd, !swallowed);
+    } else if gated {
+        paint_census::opened(hwnd, message);
+    }
     if message == WM_MOUSEACTIVATE && no_activate {
         return LRESULT(MA_NOACTIVATE as isize);
     }

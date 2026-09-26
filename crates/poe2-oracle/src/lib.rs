@@ -14,6 +14,7 @@ pub mod overlay_layout;
 pub mod paths;
 pub mod plate_art;
 pub mod platform;
+pub mod presence;
 pub mod quick_action;
 pub mod relative_time;
 pub mod roll_slider;
@@ -23,6 +24,9 @@ pub mod text_area;
 pub mod tour;
 pub mod update_rules;
 pub mod xp_tracker;
+// The windows' look: its palette and the ornaments' pixels build everywhere, for their tests and
+// `examples/ornaments.rs`; the windows themselves only on Windows (`ui/mod.rs`).
+pub mod ui;
 // The app side of reporting, whose rules its tests check on every target; only Windows sends.
 #[cfg(any(target_os = "windows", test))]
 pub mod report;
@@ -43,7 +47,5 @@ pub mod logging;
 pub mod login;
 #[cfg(target_os = "windows")]
 pub mod price_check;
-#[cfg(target_os = "windows")]
-pub mod ui;
 #[cfg(target_os = "windows")]
 pub mod updates;

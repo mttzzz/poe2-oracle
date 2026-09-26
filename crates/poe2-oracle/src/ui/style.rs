@@ -1,7 +1,6 @@
 //! The game-styled look the windows share, drawn by the app itself -- no game art: the double
-//! gold frame with corner ornaments of the game's tooltips and inventory ([`game_frame`]; a bar
-//! too low for them has a diamond at each end, [`bar_frame`]), rules with a diamond at their
-//! centre ([`ornament_rule`], [`section_heading`]), headings in the game's
+//! gold frame with corner ornaments of the game's tooltips and inventory ([`game_frame`]), rules
+//! with a diamond at their centre ([`ornament_rule`], [`section_heading`]), headings in the game's
 //! face ([`heading`], the faces in `ui::fonts`), a warm gradient on title bars
 //! ([`title_gradient`]), VibeTools' three neutral black shadows by height, and restrained motion:
 //! every hover and state change eases over [`TRANSITION`] ([`ease_hover`], [`ease_state`]), a
@@ -10,20 +9,27 @@
 //! tooltips -- live here too.
 //!
 //! Sizes are rems (`theme::rems_from_px`): in the price panel and the overlays they follow the
-//! player's UI scale, elsewhere a rem is 16 px. Hairlines, shadows and glows stay in pixels.
+//! player's UI scale, elsewhere a rem is 16 px. Hairlines, shadows and glows stay in pixels. The
+//! ornaments -- frames, diamonds, rules -- land on exact device pixels: `ui::ornament` places and
+//! rasterises them, this paints its parts.
 
 use std::rc::Rc;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    Anchor, Animation, AnimationElement, AnimationExt as _, AnyView, App, Background, BorderStyle,
-    Bounds, BoxShadow, Div, ElementId, Font, FontWeight, Hsla, MouseButton, MouseDownEvent,
-    PathBuilder, Pixels, Point, Rgba, SharedString, Stateful, TextRun, Window, anchored, canvas,
-    deferred, div, fill, hsla, linear_color_stop, linear_gradient, outline, point, prelude::*, px,
-    rgb, size,
+    Anchor, Animation, AnimationElement, AnimationExt as _, AnyView, App, Background, Bounds,
+    BoxShadow, Corners, Div, ElementId, Font, FontWeight, Global, Hsla, MouseButton,
+    MouseDownEvent, Pixels, RenderImage, Rgba, SharedString, Stateful, TextRun, Window, anchored,
+    canvas, deferred, div, fill, hsla, linear_color_stop, linear_gradient, point, prelude::*, px,
+    rgb,
 };
+use image::Frame;
 
 use crate::ui::fonts::NameFont;
+use crate::ui::ornament::{
+    self, DeviceRect, FrameMetrics, Line, Placed, RULE_DIAMOND, Scale, SpriteCache,
+};
 use crate::ui::theme::{
     BASE_REM_SIZE, BG_BUTTON_HOVER, BG_CARD, BG_FIELD, BG_MENU, BG_TITLE, BORDER_CARD,
     BORDER_FIELD, BORDER_GOLD, BORDER_ROW, GOLD, GOLD_LIGHT, KEY_TOP, PLATE_BOTTOM, PLATE_TOP,
@@ -48,13 +54,8 @@ pub(crate) const CONTROL_RADIUS: f32 = 4.;
 /// A control's height in a window; the panel's are shorter.
 pub(crate) const CONTROL_HEIGHT: f32 = 30.;
 
-/// The frame's inner line: this far inside the outer one, px, at this share of the gold.
-const FRAME_GAP: f32 = 3.;
-const FRAME_INNER_OPACITY: f32 = 0.3;
-/// A frame corner's gold arms run this far along each edge, px.
-const FRAME_ARM: f32 = 26.;
-/// Half the diagonal of a frame corner's diamond, px: its tips rest on the outer lines.
-const FRAME_DIAMOND: f32 = 4.;
+/// A group heading's diamond, px across.
+const HEADING_DIAMOND: f32 = 6.;
 
 /// The gold glow at full hover: its strength and reach, px.
 const GLOW_OPACITY: f32 = 0.35;
@@ -439,15 +440,17 @@ fn rise_in<E: Styled + IntoElement + 'static>(
     )
 }
 
-/// The game's double gold frame over a window, panel or dialog: a line on the edge, a fainter
-/// one just inside it, and at each corner a gold diamond with arms fading along the edges. Lay it
-/// last, absolutely over the whole surface; it only draws and takes no clicks. A window drawing
-/// it needs Windows 11's rounded corners off (`Win32Overlay::disable_dwm_frame`), or they cut
-/// the corner diamonds.
+/// The game's double gold frame over a window, panel or dialog, in exact device pixels
+/// (`ui::ornament`): a dim gold line on the edge, a fainter one [`ornament::FRAME_GAP`] inside
+/// it, and at each corner the outer line bright gold, fading along both edges, round a diamond set
+/// on the inner line's corner -- its inner tips where the inner line begins, its outer tips on the
+/// outer line. Lay it last, absolutely over the whole surface; it only draws and takes no clicks.
+/// A window drawing it needs Windows 11's rounded corners off (`Win32Overlay::disable_dwm_frame`),
+/// or they cut the corners.
 pub(crate) fn game_frame() -> impl IntoElement {
     canvas(
         |_, _, _| {},
-        |bounds, (), window, _| paint_frame(bounds, window),
+        |bounds, (), window, cx| paint_frame(bounds, window, cx),
     )
     .absolute()
     .top_0()
@@ -455,112 +458,52 @@ pub(crate) fn game_frame() -> impl IntoElement {
     .size_full()
 }
 
-fn paint_frame(bounds: Bounds<Pixels>, window: &mut Window) {
-    let unit = window.rem_size() / px(BASE_REM_SIZE);
-    window.paint_quad(outline(bounds, rgb(BORDER_GOLD), BorderStyle::Solid));
-    window.paint_quad(outline(
-        bounds.inset(px(FRAME_GAP * unit)),
-        alpha(GOLD, FRAME_INNER_OPACITY),
-        BorderStyle::Solid,
-    ));
-    let arm = px(FRAME_ARM * unit);
-    let half = px(FRAME_DIAMOND * unit);
-    for (corner, sx, sy) in [
-        (bounds.origin, 1., 1.),
-        (bounds.top_right(), -1., 1.),
-        (bounds.bottom_left(), 1., -1.),
-        (bounds.bottom_right(), -1., -1.),
-    ] {
-        paint_corner(corner, (sx, sy), arm, half, window);
+fn paint_frame(bounds: Bounds<Pixels>, window: &mut Window, cx: &mut App) {
+    let scale = device_scale(window);
+    let parts = ornament::frame(device_rect(bounds, scale), FrameMetrics::new(scale));
+    for line in &parts.lines {
+        paint_line(line, scale, window);
+    }
+    for corner in &parts.corners {
+        paint_sprite(corner, scale, window, cx);
     }
 }
 
-/// One frame corner at `corner`, its arms running along `direction`'s signs.
-fn paint_corner(
-    corner: Point<Pixels>,
-    (sx, sy): (f32, f32),
-    arm: Pixels,
-    half: Pixels,
-    window: &mut Window,
-) {
-    let hairline = px(1.);
-    let reach = arm - half * 2.;
-    let (arm_x, line_x) = if sx > 0. {
-        (corner.x + half * 2., corner.x)
-    } else {
-        (corner.x - arm, corner.x - hairline)
-    };
-    let (arm_y, line_y) = if sy > 0. {
-        (corner.y + half * 2., corner.y)
-    } else {
-        (corner.y - arm, corner.y - hairline)
-    };
-    // Each arm fades from the diamond outwards: CSS angles, 90 is left to right, 180 top down.
-    let fading = |angle: f32| {
-        linear_gradient(
-            angle,
-            linear_color_stop(rgb(GOLD), 0.),
-            linear_color_stop(alpha(GOLD, 0.), 1.),
-        )
-    };
-    window.paint_quad(fill(
-        Bounds::new(point(arm_x, line_y), size(reach, hairline)),
-        fading(if sx > 0. { 90. } else { 270. }),
-    ));
-    window.paint_quad(fill(
-        Bounds::new(point(line_x, arm_y), size(hairline, reach)),
-        fading(if sy > 0. { 180. } else { 0. }),
-    ));
-    let center = point(corner.x + half * sx, corner.y + half * sy);
-    paint_diamond(center, half, rgb(GOLD), window);
-    paint_diamond(center, half * 0.4, rgb(BG_TITLE), window);
-}
-
-fn paint_diamond(
-    center: Point<Pixels>,
-    half: Pixels,
-    color: impl Into<Background>,
-    window: &mut Window,
-) {
-    let mut path = PathBuilder::fill();
-    path.move_to(point(center.x, center.y - half));
-    path.line_to(point(center.x + half, center.y));
-    path.line_to(point(center.x, center.y + half));
-    path.line_to(point(center.x - half, center.y));
-    path.close();
-    if let Ok(path) = path.build() {
-        window.paint_path(path, color);
-    }
-}
-
-/// A small diamond `size` px across: the ornament at the heart of rules and frame corners.
+/// A small diamond `size` px across, odd in device pixels and on their grid: the mark of a menu's
+/// current choice, a title bar's, the tour's steps.
 pub(crate) fn diamond(size: f32, color: u32) -> impl IntoElement {
     canvas(
         |_, _, _| {},
-        move |bounds, (), window, _| {
-            paint_diamond(bounds.center(), bounds.size.width / 2., rgb(color), window);
+        move |bounds, (), window, cx| {
+            let scale = device_scale(window);
+            let rect = device_rect(bounds, scale);
+            paint_sprite(
+                &ornament::diamond(rect, size, scale, color, false),
+                scale,
+                window,
+                cx,
+            );
         },
     )
     .flex_none()
     .size(rems_from_px(size))
 }
 
-/// A rule with a diamond at its centre, its lines fading out towards the ends.
+/// A rule with a diamond at its centre, its lines fading out towards the ends, the three on one
+/// axis.
 pub(crate) fn ornament_rule(color: u32) -> impl IntoElement {
-    let line = |angle: f32| {
-        div().flex_1().h(px(1.)).bg(linear_gradient(
-            angle,
-            linear_color_stop(alpha(color, 0.), 0.),
-            linear_color_stop(rgb(color), 1.),
-        ))
-    };
-    div()
-        .flex()
-        .items_center()
-        .gap(rems_from_px(6.))
-        .child(line(90.))
-        .child(diamond(7., GOLD))
-        .child(line(270.))
+    canvas(
+        |_, _, _| {},
+        move |bounds, (), window, cx| {
+            let scale = device_scale(window);
+            let parts = ornament::rule(device_rect(bounds, scale), scale, color, GOLD);
+            for part in parts.iter().flatten() {
+                paint_sprite(part, scale, window, cx);
+            }
+        },
+    )
+    .w_full()
+    .h(rems_from_px(RULE_DIAMOND))
 }
 
 /// A `div` in the game's heading `face` (`ui::fonts`).
@@ -569,13 +512,40 @@ pub(crate) fn heading(face: &NameFont) -> Div {
 }
 
 /// A group's heading: a small diamond, the name in capitals in the heading face, and a rule
-/// fading out to the right.
+/// fading out to the right. The diamond and the rule each stand as tall as the row, so they
+/// share its axis.
 pub(crate) fn section_heading(face: &NameFont, title: &str) -> Div {
+    let mark = canvas(
+        |_, _, _| {},
+        |bounds, (), window, cx| {
+            let scale = device_scale(window);
+            let rect = device_rect(bounds, scale);
+            paint_sprite(
+                &ornament::diamond(rect, HEADING_DIAMOND, scale, GOLD, true),
+                scale,
+                window,
+                cx,
+            );
+        },
+    )
+    .flex_none()
+    .w(rems_from_px(HEADING_DIAMOND));
+    let rule = canvas(
+        |_, _, _| {},
+        |bounds, (), window, cx| {
+            let scale = device_scale(window);
+            let rect = device_rect(bounds, scale);
+            if let Some(line) = ornament::fading_line(rect, scale, BORDER_GOLD, false) {
+                paint_sprite(&line, scale, window, cx);
+            }
+        },
+    )
+    .flex_1();
     div()
         .flex()
-        .items_center()
+        .items_stretch()
         .gap(rems_from_px(7.))
-        .child(diamond(6., GOLD))
+        .child(mark)
         .child(
             heading(face)
                 .flex_none()
@@ -583,11 +553,82 @@ pub(crate) fn section_heading(face: &NameFont, title: &str) -> Div {
                 .text_color(rgb(GOLD))
                 .child(title.to_uppercase()),
         )
-        .child(div().flex_1().h(px(1.)).bg(linear_gradient(
-            90.,
-            linear_color_stop(rgb(BORDER_GOLD), 0.),
-            linear_color_stop(alpha(BORDER_GOLD, 0.), 1.),
-        )))
+        .child(rule)
+}
+
+/// The ornaments' sprites as GPUI images, each built on first use at its device geometry and
+/// kept while in use (`ornament::SpriteCache`); one pushed out is freed from every window's
+/// sprite atlas once the frame being drawn is done.
+#[derive(Default)]
+struct Ornaments(SpriteCache<Arc<RenderImage>>);
+
+impl Global for Ornaments {}
+
+/// How the app's px land on `window`'s device pixels.
+fn device_scale(window: &Window) -> Scale {
+    Scale {
+        device: window.scale_factor(),
+        unit: window.rem_size() / px(BASE_REM_SIZE),
+    }
+}
+
+/// `bounds` -- a layout's, on the device grid already -- in device pixels.
+fn device_rect(bounds: Bounds<Pixels>, scale: Scale) -> DeviceRect {
+    let device = |logical: Pixels| scale.device(f32::from(logical));
+    DeviceRect::new(
+        device(bounds.left()),
+        device(bounds.top()),
+        device(bounds.right()),
+        device(bounds.bottom()),
+    )
+}
+
+/// `rect` as the logical bounds GPUI snaps back to exactly its device pixels.
+fn logical_bounds(rect: DeviceRect, scale: Scale) -> Bounds<Pixels> {
+    let logical = |device: i32| px(scale.logical(device));
+    Bounds::from_corners(
+        point(logical(rect.left), logical(rect.top)),
+        point(logical(rect.right), logical(rect.bottom)),
+    )
+}
+
+fn paint_line(line: &Line, scale: Scale, window: &mut Window) {
+    if line.rect.is_empty() {
+        return;
+    }
+    let channel = |shift: u32| ((line.color >> shift) & 0xff) as f32 / 255.;
+    let color = Rgba {
+        r: channel(16),
+        g: channel(8),
+        b: channel(0),
+        a: f32::from(line.alpha) / 255.,
+    };
+    window.paint_quad(fill(logical_bounds(line.rect, scale), color));
+}
+
+fn paint_sprite(placed: &Placed, scale: Scale, window: &mut Window, cx: &mut App) {
+    if placed.shown.is_empty() {
+        return;
+    }
+    let (image, pushed_out) = cx
+        .default_global::<Ornaments>()
+        .0
+        .get(placed.sprite, |sprite| {
+            Arc::new(RenderImage::new([Frame::new(ornament::rasterize(sprite))]))
+        });
+    if let Some(old) = pushed_out {
+        // After this frame, which may still hold its atlas tile.
+        cx.defer(move |cx| cx.drop_image(old, None));
+    }
+    // Only an atlas that can't grow fails, and then nothing could draw it.
+    let _ = window.paint_image(
+        logical_bounds(placed.shown, scale),
+        logical_bounds(placed.rect, scale),
+        Corners::default(),
+        image,
+        0,
+        false,
+    );
 }
 
 /// A title bar's background: the game's bronze at the top fading into black.
@@ -599,9 +640,33 @@ pub(crate) fn title_gradient() -> Background {
     )
 }
 
-/// A title bar's button -- `⚙`, `×` -- as tall as the bar. Under the pointer nothing fills it --
-/// a fill would run into the window's frame -- only its glyph lights up gold, a soft gold light
-/// behind it.
+/// A framed window's title bar, px tall: under the frame's top lines, a line of content
+/// [`TITLE_LINE`] tall centred between the frame's inner line and the bar's own bottom rule,
+/// which leaves it exactly clear of the frame's keep-out ([`ornament::FRAME_CLEAR`]) and as far
+/// from the rule.
+pub(crate) const TITLE_BAR_HEIGHT: f32 = 40.;
+/// The tallest a title bar's content may be: a compact select, a title button's glyph.
+pub(crate) const TITLE_LINE: f32 = 22.;
+
+/// A title bar at the top of a framed window, [`TITLE_BAR_HEIGHT`] tall: the bronze under the
+/// frame's top lines, a gold rule at its bottom, and its row of content centred below the frame's
+/// inner line. Its ends are the caller's to keep clear of the frame's sides.
+pub(crate) fn title_bar() -> Div {
+    div()
+        .flex()
+        .flex_none()
+        .items_center()
+        .h(rems_from_px(TITLE_BAR_HEIGHT))
+        .pt(rems_from_px(ornament::FRAME_GAP + 1.))
+        .bg(title_gradient())
+        .border_b_1()
+        .border_color(rgb(BORDER_GOLD))
+}
+
+/// A title bar's button -- `⚙`, `×` -- as tall as the bar, its glyph centred in a [`TITLE_LINE`]
+/// circle: a button `width` wide at the bar's end keeps that circle `(width - TITLE_LINE) / 2` from
+/// the frame. Under the pointer nothing fills it -- a fill would run into the window's frame --
+/// only its glyph lights up gold, a soft gold light behind it.
 pub(crate) fn title_button(
     key: impl Into<ElementId>,
     glyph: &'static str,
@@ -626,7 +691,7 @@ pub(crate) fn title_button(
                 .flex()
                 .items_center()
                 .justify_center()
-                .size(rems_from_px(24.))
+                .size(rems_from_px(TITLE_LINE))
                 .rounded_full()
                 .shadow(glow(GOLD, hover))
                 .text_color(rgb(blend(TEXT_DIM, GOLD_LIGHT, hover)))
@@ -983,7 +1048,8 @@ pub(crate) fn menu_list(
         .relative()
         .flex()
         .flex_col()
-        .p(rems_from_px(5.))
+        // Its rows, and their light under the pointer, clear of the frame's keep-out.
+        .p(rems_from_px(ornament::FRAME_CLEAR))
         .bg(rgb(BG_MENU))
         .shadow(popup_shadow())
         .occlude()
@@ -1394,7 +1460,7 @@ impl Render for GameHint {
                 .gap(rems_from_px(3.))
                 .w(width)
                 .px(rems_from_px(HINT_PADDING_X))
-                .py(rems_from_px(9.))
+                .py(rems_from_px(ornament::FRAME_CLEAR))
                 .bg(rgb(BG_MENU))
                 .shadow(tooltip_shadow())
                 .text_size(rems_from_px(HINT_TEXT_SIZE))

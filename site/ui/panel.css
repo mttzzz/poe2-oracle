@@ -18,6 +18,7 @@
     --p7: round(calc(7 * var(--u)), var(--dp));
     --p8: round(calc(8 * var(--u)), var(--dp));
     --p10: round(calc(10 * var(--u)), var(--dp));
+    --p11: round(calc(11 * var(--u)), var(--dp));
     --p12: round(calc(12 * var(--u)), var(--dp));
     --p13: round(calc(13 * var(--u)), var(--dp));
     --p14: round(calc(14 * var(--u)), var(--dp));
@@ -27,9 +28,9 @@
     --p23: round(calc(23 * var(--u)), var(--dp));
     --p24: round(calc(24 * var(--u)), var(--dp));
     --p30: round(calc(30 * var(--u)), var(--dp));
-    --p32: round(calc(32 * var(--u)), var(--dp));
     --p34: round(calc(34 * var(--u)), var(--dp));
     --p36: round(calc(36 * var(--u)), var(--dp));
+    --p40: round(calc(40 * var(--u)), var(--dp));
     --p48: round(calc(48 * var(--u)), var(--dp));
     --p52: round(calc(52 * var(--u)), var(--dp));
     --p100: round(calc(100 * var(--u)), var(--dp));
@@ -147,13 +148,15 @@
     flex: 0 1 auto;
 }
 
-/* The title bar: the league select, the divine rate, the ⚙ and the ×. */
+/* The title bar: the league select, the divine rate, the ⚙ and the ×, centred between the frame's
+   inner line and the bar's rule, the select's edge and the ×'s circle clear of the frame's 11 px
+   keep-out (style.rs `title_bar`, ornament.rs `FRAME_CLEAR`). */
 .oui-panel-title {
     display: flex;
     flex: none;
     align-items: center;
-    height: var(--p32);
-    padding-left: var(--p8);
+    height: var(--p40);
+    padding: var(--p5) var(--p5) 0 var(--p11);
     border-bottom: 1px solid var(--border-gold);
 }
 
@@ -206,11 +209,13 @@
     height: calc(16 * var(--u));
 }
 
+/* The app scrolls it, its rows stopping at the frame's keep-out. */
 .oui-panel-scroll {
     display: flex;
     flex: 1;
     flex-direction: column;
     min-height: 0;
+    margin-bottom: var(--p11);
 }
 
 /* The nameplate: a banner tinted with the name's colour, fading to the plate's bronze-black. */
@@ -270,11 +275,11 @@
     padding: 0 var(--p16) var(--p2);
 }
 
-/* Everything under the nameplate. */
+/* Everything under the nameplate, the last row resting 14 px above the panel's edge. */
 .oui-panel-body {
     display: flex;
     flex-direction: column;
-    padding: 0 var(--p12) var(--p14);
+    padding: 0 var(--p12) var(--p3);
 }
 
 .oui-panel-chips {

@@ -1,6 +1,7 @@
 //! The running PoE2 client's window geometry, the cursor, and focus hand-back -- everything the
 //! price-check panel's EE2-style placement (`crate::overlay_layout`), its dragging and its focus
-//! handling need from outside this process.
+//! handling need from outside this process -- and which window is in front, reported as it
+//! changes, which the hotkey and the XP overlay's lip watcher follow.
 //!
 //! The game window is found by its title, `"Path of Exile 2"`, the same way EE2 attaches its
 //! overlay (`OverlayController.attachByTitle`, `main/src/windowing/GameWindow.ts`); the title is
@@ -11,7 +12,7 @@
 //! All coordinates are physical pixels: `app::run` opts the process into per-monitor-v2 DPI
 //! awareness before any window exists.
 
-use std::sync::LazyLock;
+use std::sync::Mutex;
 
 use anyhow::{Result, bail};
 use windows::Win32::Foundation::{HWND, POINT, RECT};
@@ -23,19 +24,19 @@ use windows::Win32::UI::Accessibility::{HWINEVENTHOOK, SetWinEventHook};
 use windows::Win32::UI::HiDpi::{GetDpiForMonitor, GetDpiForWindow, MDT_EFFECTIVE_DPI};
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON};
 use windows::Win32::UI::WindowsAndMessaging::{
-    EVENT_SYSTEM_FOREGROUND, FindWindowW, GA_ROOT, GetAncestor, GetClientRect, GetCursorPos,
-    GetForegroundWindow, GetSystemMetrics, GetWindowThreadProcessId, SM_SWAPBUTTON,
-    SetForegroundWindow, WINEVENT_OUTOFCONTEXT, WindowFromPoint,
+    EVENT_SYSTEM_FOREGROUND, FindWindowW, GetClientRect, GetCursorPos, GetForegroundWindow,
+    GetSystemMetrics, GetWindowThreadProcessId, IsIconic, SM_SWAPBUTTON, SetForegroundWindow,
+    WINEVENT_OUTOFCONTEXT,
 };
 use windows::core::{PCWSTR, w};
 
 use crate::overlay_layout::{self, PanelPositions, PanelSide, PhysicalRect};
 
-/// The kind of each new foreground window; the receiving end is [`watch_foreground`]'s.
-static FOREGROUND_CHANGES: LazyLock<(
-    async_channel::Sender<Foreground>,
-    async_channel::Receiver<Foreground>,
-)> = LazyLock::new(async_channel::unbounded);
+/// Those told of each new foreground window's kind: a channel for each [`watch_foreground`].
+static FOREGROUND_WATCHERS: Mutex<Vec<async_channel::Sender<Foreground>>> = Mutex::new(Vec::new());
+/// Whether the WinEvent hook behind [`watch_foreground`] is in: from its first success on, for as
+/// long as the process lasts.
+static FOREGROUND_HOOKED: Mutex<bool> = Mutex::new(false);
 
 /// Physical cursor position, or `None` if the call fails (secure desktop, e.g. UAC prompt).
 fn cursor_pos() -> Option<(i32, i32)> {
@@ -49,18 +50,10 @@ pub fn cursor_x() -> Option<i32> {
     cursor_pos().map(|(x, _)| x)
 }
 
-/// Whether the player is at the game `game`: it's in front, or the cursor is over it -- the game
-/// shows its tooltips under the cursor even while another window has the keyboard (seen live
-/// 2026-09-24). Click-through windows over it, the XP overlay's plates, are passed over, as by the
-/// mouse.
-pub fn attended(game: HWND) -> bool {
-    if unsafe { GetForegroundWindow() } == game {
-        return true;
-    }
-    cursor_pos().is_some_and(|(x, y)| {
-        let under = unsafe { WindowFromPoint(POINT { x, y }) };
-        !under.is_invalid() && unsafe { GetAncestor(under, GA_ROOT) } == game
-    })
+/// Whether the game `game` is the foreground window, and not minimised.
+pub fn in_front(game: HWND) -> bool {
+    let front = unsafe { GetForegroundWindow() };
+    front == game && !unsafe { IsIconic(game) }.as_bool()
 }
 
 /// Whether the primary mouse button is held: the left one, or the right one for a player who
@@ -315,25 +308,36 @@ fn classify(window: HWND) -> Foreground {
 }
 
 /// Reports every change of the foreground window, in any process, on the returned channel, so
-/// the hotkey follows the game without polling. Call once, from a thread that pumps messages
-/// (GPUI's main thread): an out-of-context WinEvent hook is called from that thread's message
-/// loop. The hook lasts as long as the process.
+/// the hotkey and the XP overlay's lip watcher follow the game without polling; each call gets
+/// a channel of its own. Call from a thread that pumps messages (GPUI's main thread): the first
+/// call puts in an out-of-context WinEvent hook, which is called from that thread's message loop
+/// and lasts as long as the process.
 pub fn watch_foreground() -> Result<async_channel::Receiver<Foreground>> {
-    let changes = FOREGROUND_CHANGES.1.clone();
-    let hook = unsafe {
-        SetWinEventHook(
-            EVENT_SYSTEM_FOREGROUND,
-            EVENT_SYSTEM_FOREGROUND,
-            None,
-            Some(on_foreground_change),
-            0,
-            0,
-            WINEVENT_OUTOFCONTEXT,
-        )
-    };
-    if hook.is_invalid() {
-        bail!("SetWinEventHook(EVENT_SYSTEM_FOREGROUND) failed");
+    let mut hooked = FOREGROUND_HOOKED
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if !*hooked {
+        let hook = unsafe {
+            SetWinEventHook(
+                EVENT_SYSTEM_FOREGROUND,
+                EVENT_SYSTEM_FOREGROUND,
+                None,
+                Some(on_foreground_change),
+                0,
+                0,
+                WINEVENT_OUTOFCONTEXT,
+            )
+        };
+        if hook.is_invalid() {
+            bail!("SetWinEventHook(EVENT_SYSTEM_FOREGROUND) failed");
+        }
+        *hooked = true;
     }
+    let (watcher, changes) = async_channel::unbounded();
+    FOREGROUND_WATCHERS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .push(watcher);
     Ok(changes)
 }
 
@@ -349,5 +353,10 @@ unsafe extern "system" fn on_foreground_change(
     _thread: u32,
     _time: u32,
 ) {
-    let _ = FOREGROUND_CHANGES.0.try_send(classify(window));
+    let foreground = classify(window);
+    // A watcher whose receiving end is gone is let go.
+    FOREGROUND_WATCHERS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .retain(|watcher| watcher.try_send(foreground).is_ok());
 }

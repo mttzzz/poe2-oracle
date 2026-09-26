@@ -488,6 +488,13 @@ fn versions(first: bool, app: Option<&str>, data: Option<u64>) -> String {
     format!("event: versions\n{retry}data: {data}")
 }
 
+/// The one event of a stream the service has no place for: the `versions` event announcing `app`
+/// and `data`, with a `retry` of a minute.
+fn refusal(app: Option<&str>, data: Option<u64>) -> String {
+    let data = json!({ "app": app, "data": data });
+    format!("event: versions\nretry: 60000\ndata: {data}")
+}
+
 /// Waits until GitHub has been asked for the releases `count` times.
 async fn listed(github: &StandIn, count: usize) {
     for _ in 0..500 {
@@ -1172,42 +1179,66 @@ async fn the_event_stream_tells_the_versions_and_each_new_release() {
     );
 }
 
+/// A stream from `client` that the service keeps, its first event read: the versions the service
+/// starts with, and a `retry` of 15 s.
+async fn kept(service: &Service, client: &str) -> Events {
+    let mut events = Events::of(service.events(client).await);
+    assert_eq!(
+        events.next().await.unwrap(),
+        versions(true, Some("0.1.0"), Some(2026092601))
+    );
+    events
+}
+
+/// A stream from `client` that the service has no place for: it tells the versions the service
+/// starts with, with a `retry` of a minute, and ends.
+async fn refused(service: &Service, client: &str) {
+    let mut events = Events::of(service.events(client).await);
+    assert_eq!(
+        events.next().await.unwrap(),
+        refusal(Some("0.1.0"), Some(2026092601))
+    );
+    assert_eq!(events.next().await, None, "a refused stream ends at once");
+}
+
 #[tokio::test]
-async fn streams_are_capped_per_address_and_in_all() {
+async fn streams_past_the_caps_get_the_versions_and_end() {
     let service = start_tuned(|config| {
         config.event_streams = STREAMS_PER_CLIENT + 2;
     })
     .await;
     let mut open = Vec::new();
     for _ in 0..STREAMS_PER_CLIENT {
-        open.push(Events::of(service.events("203.0.113.40").await));
+        open.push(kept(&service, "203.0.113.40").await);
     }
-    let refused = service.events("203.0.113.40").await;
-    assert_eq!(refused.status(), StatusCode::TOO_MANY_REQUESTS);
-    assert_eq!(refused.headers()[header::RETRY_AFTER], "60");
-    // Another address, while the service has room.
+    // Past the address's cap. A refused stream gives no place back when it ends: the address is
+    // still at its cap.
+    refused(&service, "203.0.113.40").await;
+    refused(&service, "203.0.113.40").await;
+    // Nor does it take one: another address gets the service's last two.
     for _ in 0..2 {
-        open.push(Events::of(service.events("203.0.113.41").await));
+        open.push(kept(&service, "203.0.113.41").await);
     }
-    let refused = service.events("203.0.113.42").await;
-    assert_eq!(refused.status(), StatusCode::SERVICE_UNAVAILABLE);
-    assert_eq!(refused.headers()[header::RETRY_AFTER], "60");
+    refused(&service, "203.0.113.42").await;
 
-    // A stream whose app has gone gives its place back.
+    // A stream whose app has gone gives its place back, to one stream.
     drop(open.remove(0));
     let started = Instant::now();
     loop {
-        let stream = service.events("203.0.113.42").await;
-        if stream.status() == StatusCode::OK {
+        let mut events = Events::of(service.events("203.0.113.42").await);
+        let first = events.next().await.unwrap();
+        if first == versions(true, Some("0.1.0"), Some(2026092601)) {
+            open.push(events);
             break;
         }
-        assert_eq!(stream.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(first, refusal(Some("0.1.0"), Some(2026092601)));
         assert!(
             started.elapsed() < Duration::from_secs(5),
             "the closed stream's place is still taken"
         );
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
+    refused(&service, "203.0.113.43").await;
 }
 
 #[tokio::test]

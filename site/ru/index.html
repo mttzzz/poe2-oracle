@@ -4,18 +4,19 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PoE2 Oracle — цены и опыт в Path of Exile 2</title>
-<meta name="description" content="Бесплатная программа для Path of Exile 2 под Windows: цена предмета по Ctrl+E с официального сайта торговли и оверлей опыта прямо в интерфейсе игры — скорость прокачки, время до уровня и таймер карты.">
+<meta name="description" content="Бесплатная нативная программа для Path of Exile 2 под Windows: цена предмета по Ctrl+E с официального сайта торговли и оверлей опыта прямо в интерфейсе игры. Один лёгкий процесс без браузера внутри, интерфейс рисует видеокарта.">
 <link rel="canonical" href="https://oracle.pushka.biz/ru/">
 <link rel="alternate" hreflang="en" href="https://oracle.pushka.biz/">
 <link rel="alternate" hreflang="ru" href="https://oracle.pushka.biz/ru/">
 <link rel="alternate" hreflang="x-default" href="https://oracle.pushka.biz/">
 <meta property="og:type" content="website">
 <meta property="og:title" content="PoE2 Oracle">
-<meta property="og:description" content="Проверка цены по горячей клавише и оверлей опыта в интерфейсе игры. Бесплатно, для Windows.">
+<meta property="og:description" content="Нативная, быстрая и лёгкая: проверка цены по горячей клавише и оверлей опыта в интерфейсе игры. Бесплатно, для Windows.">
 <meta property="og:url" content="https://oracle.pushka.biz/ru/">
 <meta property="og:image" content="https://oracle.pushka.biz/images/ru/og.jpg">
 <link rel="icon" type="image/png" href="../favicon.png">
 <link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="../ui/bench.css">
 </head>
 <body>
 <a class="skip-link" href="#main">К содержанию</a>
@@ -38,11 +39,18 @@
 <main id="main">
   <section class="hero">
     <div class="wrap">
-      <h1>PoE2 Oracle</h1>
-      <p class="lead">Проверка цен и отслеживание опыта в Path of Exile 2. Наведите курсор на предмет и
-        нажмите <span class="keys"><kbd>Ctrl</kbd>+<kbd>E</kbd></span> — рядом с инвентарём откроется панель с ценами
-        официального сайта торговли. А прямо в интерфейсе игры, над панелями флаконов и умений, видно,
-        как быстро вы качаетесь, сколько осталось до следующего уровня и сколько идёт текущая карта.</p>
+      <p class="hero-name">PoE2 Oracle</p>
+      <h1>Нативная, быстрая и лёгкая</h1>
+      <p class="lead">Проверка цены по <span class="keys"><kbd>Ctrl</kbd>+<kbd>E</kbd></span> и оверлей
+        опыта в интерфейсе Path of Exile 2 — в одной нативной программе для Windows, без браузера
+        внутри. Интерфейс рисует видеокарта через Direct3D 11.</p>
+      <ul class="proof">
+        <li><b data-bench="memory"></b> памяти в диспетчере задач</li>
+        <li><b data-bench="processes"></b> процесс — и ни одного вспомогательного</li>
+        <li><b data-bench="ready"></b> от запуска до готовности</li>
+        <li><b data-bench="item_text"></b> на чтение предмета из игры</li>
+      </ul>
+      <p class="proof-more"><a href="#fast">Сравнение с другими программами проверки цен</a></p>
       <div class="actions">
         <a class="button button-primary" href="../download/latest">Скачать для Windows</a>
         <a class="button" href="../guide/ru/introduction.html">Читать руководство</a>
@@ -53,6 +61,58 @@
       <figure class="shot">
         <div data-oracle="hero" data-lang="ru" data-fit data-alt="Панель цены PoE2 Oracle с фильтрами и лотами редкого шлема, карточка рынка валюты и обе плашки оверлея опыта — над панелями флаконов и умений игры"></div>
       </figure>
+    </div>
+  </section>
+
+  <section class="section section-alt" id="fast">
+    <div class="wrap">
+      <h2>Быстрая и лёгкая</h2>
+      <p class="intro">PoE2 Oracle — нативная программа для Windows, написанная на Rust, без Electron и
+        без браузера внутри. Это один процесс: панели и оверлеи рисует видеокарта через Direct3D 11 — на
+        GPUI, фреймворке интерфейса из редактора кода Zed, — а текст рисует DirectWrite. Единственный
+        браузер, который программа открывает, — необязательное окно входа на pathofexile.com: это
+        WebView2 самой Windows, и закрывается он вместе с окном.</p>
+      <p class="intro">Пока вы играете, память остаётся игре: в диспетчере задач программа — один
+        процесс примерно на <span data-bench="memory"></span>. Рядом с ней ничего не запускается, и
+        доустанавливать ничего не нужно.</p>
+
+      <h3 class="fast-heading">Рядом с другими программами проверки цен</h3>
+      <figure class="bench">
+        <div data-bench-chart></div>
+        <figcaption><span data-bench="measured">Замер</span> на одном ПК: Core i7-13700KF, 32 ГБ
+          оперативной памяти, GeForce RTX 4090, Windows 11, два монитора 4K с масштабом 200 %; Path of
+          Exile 2 запущена в фоне, программы простаивают. Память — это столбец «Память» диспетчера задач
+          (частный рабочий набор), сложенный по всем процессам программы; процессор в простое — в
+          процентах одного логического ядра, а их у этого ПК 24.
+          <a href="../guide/ru/performance.html">Как мерили и все остальные числа</a></figcaption>
+      </figure>
+      <div class="bench-notes">
+        <p><span data-bench="lower"></span> Exiled Exchange 2 отключает аппаратное ускорение и рисует
+          процессором, поэтому видеопамять не занимает; внутриигровой оверлей Overwolf работает в
+          процессе самой игры и в замер не попал.</p>
+        <p>PoE Overlay II работает только на Overwolf, поэтому процессы Overwolf засчитаны ему.
+          Запущенный ярлыком с рабочего стола, он сам открыл главное окно — с двумя анимированными
+          рекламными баннерами и предложением перейти на Premium, чтобы их убрать. Пока это окно
+          открыто, встроенный браузер Overwolf всё время его перерисовывает и занимает больше целого
+          ядра процессора; со свёрнутым окном памяти нужно примерно вдвое меньше.</p>
+      </div>
+
+      <h3 class="fast-heading">Быстро запускается и быстро оценивает</h3>
+      <ul class="facts">
+        <li><b data-bench="ready"></b> от запуска до готовности оценивать предметы</li>
+        <li><b data-bench="item_text"></b> от команды копирования, которую программа посылает игре, до
+          текста предмета</li>
+        <li><b data-bench="processing"></b> на разбор предмета, его фильтры и показ панели</li>
+        <li><b data-bench="exchange"></b> на цену валюты и других товаров биржи или повтор недавнего
+          поиска — по уже загруженным данным</li>
+        <li><b data-bench="listings"></b> на поиск с лотами, из них
+          <span data-bench="listings_trade_site"></span> — ожидание двух ответов pathofexile.com</li>
+        <li><b data-bench="installer"></b> весит установщик, а сама программа — один exe примерно на
+          <span data-bench="exe"></span>; отдельно ставить ничего не нужно: ни .NET, ни Visual C++, ни
+          Chromium</li>
+      </ul>
+      <p class="fineprint facts-note">Время — по журналу PoE2 Oracle <span data-bench="version"></span> на
+        том же ПК, <span data-bench="facts_measured"></span>; одно число — медиана по проверкам цены.</p>
     </div>
   </section>
 
@@ -218,5 +278,6 @@
 </footer>
 <script type="module" src="../lang.js"></script>
 <script type="module" src="../ui/oracle-ui.js"></script>
+<script type="module" src="../ui/bench.js"></script>
 </body>
 </html>

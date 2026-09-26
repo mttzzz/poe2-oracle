@@ -963,7 +963,9 @@ impl Screen {
 
     /// Brings the platform window in line with the layout: its rect, and shown or hidden.
     /// Deferred like every such call (`Win32Overlay::set_bounds`). Shown again, it gets its rect
-    /// again too, which puts it back above any topmost window that rose meanwhile.
+    /// again too, which puts it back above any topmost window that rose meanwhile -- and its size:
+    /// hidden, at a stop another window draws, it waits at a pixel (`Win32Overlay::shrink`), since
+    /// at 32 bytes a device pixel the XP line's spotlight over a 4K game takes 253 MiB.
     fn place(&mut self, cx: &mut Context<Self>) {
         let Some(overlay) = self.overlay else {
             return;
@@ -987,6 +989,11 @@ impl Screen {
             }
             if let Some(shown) = show {
                 overlay.set_shown(shown);
+            }
+            if show == Some(false)
+                && let Err(err) = overlay.shrink()
+            {
+                log::warn!("{err:#}");
             }
         })
         .detach();

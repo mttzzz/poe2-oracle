@@ -80,8 +80,9 @@ The first public release.
   without a gain) that plate dims to the level percentage alone. Above the skill panel a map timer
   with the map's experience and the session's average map time. The plates are drawn pixel by
   pixel in the HUD's own molding and colours, take the HUD's size, let clicks through to the game
-  but for the ⚙, step aside the moment a game tooltip covers their rail, and say as much as they
-  have room for.
+  but for the ⚙, step aside the moment a game tooltip covers their rail while the game is in
+  front (within a few seconds while it's behind another window), and say as much as they have
+  room for.
 - **Quick actions:** up to 12 hotkeys that type a chat command (`/hideout` is preset and waits for
   its key; `@last thanks` answers whoever whispered last) or paste a stash search string.
 - **Settings window:** league, client language, hotkeys, quick actions, default sellers, seller
@@ -134,15 +135,19 @@ The first public release.
   reads items with), is downloaded at once and used only after the Ed25519 signature on its
   release's `SHA256SUMS` checks out against the public key built into the app and the file matches
   its SHA-256 there. It goes in once none of the app's windows is open (price panel, settings,
-  report window, sign-in window, tour): the installer runs silently and restarts the app, or the app
-  restarts itself to load the pack. After the restart a plate at the bottom right of the game's
-  screen says "PoE2 Oracle updated to X.Y.Z" or "Game data updated" for 8 seconds, without taking
-  the keyboard; × closes it, a click elsewhere on it opens the settings. A dropped connection comes
-  back by itself, and at once when Windows says the internet is back (Windows 10 2004 and later); a
-  failed download is retried later, quietly. The settings show the version, the game data's
-  version and what the updater is doing, with **Check now**. Turned off, the app doesn't connect
-  to oracle.pushka.biz for updates; only the reports you send go there. Pre-releases are never
-  offered.
+  report window, sign-in window, tour) and no price check or quick action is putting the clipboard
+  back: the installer runs silently and restarts the app, or the app restarts itself to load the
+  pack. After the restart a plate at the bottom right of the game's screen says "PoE2 Oracle
+  updated to X.Y.Z" or "Game data updated" for 8 seconds, without taking the keyboard; × closes it,
+  a click elsewhere on it opens the settings. The XP overlay carries on through the restart with
+  its rate, time to level and map timer. A dropped connection comes back by itself, and at once
+  when Windows says the internet is back (Windows 10 2004 and later); a failed download is retried
+  later, quietly. A downloaded update that can't be started (an antivirus blocking the installer)
+  isn't downloaded again: only its start is retried, a minute and then two minutes later, and
+  after the third failure that version waits for the next launch. The settings show the version,
+  the game data's version and what the updater is doing, with **Check now**. Turned off, the app
+  doesn't connect to oracle.pushka.biz for updates; only the reports you send go there.
+  Pre-releases are never offered.
 - **Game data between app releases:** the tables the app reads items with -- the ways the client
   prints a stat that the trade catalog lacks (English and Russian), the mod tiers, the Currency
   Exchange items, and items' English names, art and bases -- are built into the app and also come

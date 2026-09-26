@@ -12,10 +12,11 @@
 //!
 //! So this executable's own import of `RedrawWindow` -- its slot in the import address table,
 //! which every call from the executable goes through, `gpui_windows`' included -- is pointed at
-//! [`filtered_redraw_window`]: it drops exactly that call for a gated window whose next paint
-//! isn't due, and hands every other call to user32's. Nothing outside this process changes. If the
-//! import isn't there (another linker laid the imports out otherwise), the gate works alone, at
-//! the wake-ups' cost.
+//! [`filtered_redraw_window`]: it drops exactly that call for a hidden window, which draws
+//! nothing for it -- the price panel is hidden but for the moments it's used -- and for a gated
+//! window whose next paint isn't due, and hands every other call to user32's. Nothing outside
+//! this process changes. If the import isn't there (another linker laid the imports out
+//! otherwise), the gate works alone, at the wake-ups' cost.
 //!
 //! [`install`] runs before GPUI starts. The vsync thread reads the slot once, before its loop --
 //! the release build keeps the function's address in a register from then on
@@ -40,8 +41,10 @@ use windows::Win32::System::SystemServices::{
     IMAGE_DOS_HEADER, IMAGE_DOS_SIGNATURE, IMAGE_IMPORT_BY_NAME, IMAGE_IMPORT_DESCRIPTOR,
     IMAGE_NT_SIGNATURE, IMAGE_ORDINAL_FLAG64,
 };
+use windows::Win32::UI::WindowsAndMessaging::IsWindowVisible;
 use windows::core::{BOOL, PCWSTR};
 
+use crate::platform::paint_census::{self, Ask};
 use crate::platform::win32;
 
 type RedrawWindowFn =
@@ -62,24 +65,33 @@ static INSTALLED: LazyLock<bool> = LazyLock::new(|| match point_import_at_filter
     }
 });
 
-/// Filters the display refreshes' invalidations of gated windows from now on; whether it could.
-/// Call before GPUI starts (see the module's doc).
+/// Filters the display refreshes' invalidations of hidden and gated windows from now on;
+/// whether it could. Call before GPUI starts (see the module's doc).
 pub fn install() -> bool {
     *INSTALLED
 }
 
 /// Stands in for `RedrawWindow` in this executable: `gpui_windows`' per-refresh invalidation --
-/// the whole window, nothing else asked for -- of a gated window whose paint isn't due is dropped
-/// as done; anything else goes to user32.
+/// the whole window, nothing else asked for -- of a hidden window, or of a gated one whose paint
+/// isn't due, is dropped as done; anything else goes to user32.
 unsafe extern "system" fn filtered_redraw_window(
     hwnd: HWND,
     update: *const RECT,
     region: HRGN,
     flags: REDRAW_WINDOW_FLAGS,
 ) -> BOOL {
-    if flags == RDW_INVALIDATE && update.is_null() && region.is_invalid() && !win32::paint_due(hwnd)
-    {
-        return BOOL::from(true);
+    if flags == RDW_INVALIDATE && update.is_null() && region.is_invalid() {
+        let ask = if !unsafe { IsWindowVisible(hwnd) }.as_bool() {
+            Ask::Hidden
+        } else if !win32::paint_due(hwnd) {
+            Ask::Gated
+        } else {
+            Ask::Passed
+        };
+        paint_census::asked(hwnd, ask);
+        if ask != Ask::Passed {
+            return BOOL::from(true);
+        }
     }
     // SAFETY: stored before the slot was pointed here: user32's `RedrawWindow`, which has this
     // signature.

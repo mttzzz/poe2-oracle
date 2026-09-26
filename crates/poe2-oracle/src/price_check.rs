@@ -490,6 +490,9 @@ pub struct PriceCheckApp {
     pub roll_drag: Option<usize>,
     pub search: SearchState,
     pub visible: bool,
+    /// A hotkey's price check or quick action is under way, until the player's own clipboard is
+    /// back: an update's restart waits for it (`updates`).
+    pub hotkey_busy: bool,
     /// The title bar's league menu is open (`ui::panel::title_bar`).
     pub league_menu: bool,
     /// The profile select's menu is open (`ui::panel::results`).
@@ -590,6 +593,7 @@ impl PriceCheckApp {
             roll_drag: None,
             search: SearchState::NotSearched,
             visible: false,
+            hotkey_busy: false,
             league_menu: false,
             profile_menu: false,
             priced_by_market: false,
@@ -1994,17 +1998,25 @@ pub fn register_hotkeys(cx: &mut App, view: Entity<PriceCheckApp>) -> Result<()>
             let Some(view) = weak.upgrade() else {
                 return;
             };
-            match view.read_with(cx, |state, _| state.pressed(event.id())) {
-                Some(Pressed::PriceCheck) => run_price_check(&view, cx).await,
-                Some(Pressed::QuickAction(action)) => {
+            let Some(pressed) = view.read_with(cx, |state, _| state.pressed(event.id())) else {
+                continue;
+            };
+            view.update(cx, |state, _| state.hotkey_busy = true);
+            match pressed {
+                Pressed::PriceCheck => run_price_check(&view, cx).await,
+                Pressed::QuickAction(action) => {
                     run_quick_action(action, cx).await;
                     // Presses that queued up meanwhile are dropped, as EE2's `restoreShortly`
                     // drops an action while the last one's clipboard is still out: a mashed key
                     // must not flood the chat -- the game disconnects for too many actions.
                     while presses.try_recv().is_ok() {}
                 }
-                None => {}
             }
+            // The clipboard is the player's again: a restart held for it may go.
+            view.update(cx, |state, cx| {
+                state.hotkey_busy = false;
+                cx.notify();
+            });
         }
     })
     .detach();

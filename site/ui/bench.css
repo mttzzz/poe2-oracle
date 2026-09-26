@@ -1,0 +1,255 @@
+/*
+ * PoE2 Oracle next to other price checkers (bench.js): a table whose memory column is a bar chart,
+ * in the site's colours (style.css). On a phone each row becomes a card: the app, its bar, then
+ * processes, idle CPU and GPU memory side by side under their labels.
+ */
+
+.bench {
+    margin: 1rem 0 0;
+    padding: 1.25rem 1.5rem 1.1rem;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg);
+}
+
+.bench figcaption {
+    margin-top: 0.9rem;
+    padding-top: 0.9rem;
+    border-top: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+.bench-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Said by a screen reader; the figure's heading says it on screen. */
+.bench-table caption {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+.bench-table th,
+.bench-table td {
+    padding: 0.8rem 0.75rem;
+    text-align: left;
+    vertical-align: middle;
+}
+
+.bench-table thead th {
+    padding-top: 0;
+    padding-bottom: 0.6rem;
+    border-bottom: 1px solid var(--border-gold);
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    font-weight: 600;
+    line-height: 1.3;
+    vertical-align: bottom;
+}
+
+.bench-table thead th:nth-child(1) {
+    width: 23%;
+}
+
+.bench-table thead th:nth-child(3) {
+    width: 12%;
+}
+
+.bench-table thead th:nth-child(4),
+.bench-table thead th:nth-child(5) {
+    width: 11%;
+    text-align: right;
+}
+
+.bench-row + .bench-row {
+    border-top: 1px solid var(--border);
+}
+
+/* A second state of the same app stays with its first. */
+.bench-row + .bench-again {
+    border-top: 0;
+}
+
+.bench-again > * {
+    padding-top: 0.2rem;
+}
+
+.bench-ours {
+    background: rgba(208, 145, 59, 0.07);
+}
+
+.bench-app {
+    font-weight: 400;
+    line-height: 1.35;
+}
+
+.bench-name {
+    display: block;
+    color: var(--text);
+    font-weight: 600;
+}
+
+.bench-ours .bench-name {
+    color: var(--gold);
+}
+
+.bench-again .bench-name {
+    color: var(--text-dim);
+    font-weight: 400;
+}
+
+.bench-version {
+    color: var(--text-dim);
+    font-weight: 400;
+}
+
+.bench-stack,
+.bench-state {
+    display: block;
+    font-size: 0.85rem;
+}
+
+.bench-stack {
+    color: var(--text-muted);
+}
+
+.bench-state {
+    color: var(--text-dim);
+}
+
+.bench-track {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+/* The bar's length is the app's share of the most memory, of the room its value leaves. */
+.bench-bar {
+    flex: none;
+    width: calc((100% - 5.5rem) * var(--share));
+    min-width: 3px;
+    height: 1rem;
+    border-radius: 2px;
+    background: #4b4b53;
+}
+
+.bench-ours .bench-bar {
+    background: linear-gradient(var(--gold-bright), var(--gold));
+}
+
+.bench-value {
+    color: var(--text);
+    white-space: nowrap;
+}
+
+.bench-ours .bench-value {
+    color: var(--gold-bright);
+    font-weight: 600;
+}
+
+.bench-ratio {
+    display: block;
+    margin-top: 0.1rem;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    white-space: nowrap;
+}
+
+.bench-processes {
+    white-space: nowrap;
+}
+
+.bench-pips {
+    display: inline-flex;
+    gap: 3px;
+    margin-right: 0.45rem;
+    vertical-align: 0.05em;
+}
+
+.bench-pips i {
+    width: 0.4rem;
+    height: 0.4rem;
+    border-radius: 1px;
+    background: #5f5f68;
+}
+
+.bench-ours .bench-pips i {
+    background: var(--gold);
+}
+
+.bench-number {
+    white-space: nowrap;
+}
+
+.bench-table td.bench-number {
+    text-align: right;
+}
+
+@media (max-width: 52rem) {
+    .bench {
+        padding: 0.25rem 0.5rem 0.9rem;
+    }
+
+    .bench figcaption {
+        margin-top: 0.25rem;
+        padding: 0.9rem 0.5rem 0;
+    }
+
+    .bench-table,
+    .bench-table tbody {
+        display: block;
+    }
+
+    /* The labels move into each card (data-label); the header stays for screen readers. */
+    .bench-table thead {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+    }
+
+    .bench-table tr {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0.5rem 0.75rem;
+        padding: 0.9rem 0.5rem;
+    }
+
+    .bench-table th,
+    .bench-table td,
+    .bench-again > * {
+        display: block;
+        padding: 0;
+    }
+
+    .bench-app,
+    .bench-memory {
+        grid-column: 1 / -1;
+    }
+
+    .bench-table td[data-label]::before {
+        content: attr(data-label);
+        display: block;
+        margin-bottom: 0.1rem;
+        color: var(--text-muted);
+        font-size: 0.8rem;
+        white-space: normal;
+    }
+
+    .bench-table td.bench-number {
+        text-align: left;
+    }
+
+    .bench-row + .bench-again {
+        padding-top: 0.25rem;
+    }
+}

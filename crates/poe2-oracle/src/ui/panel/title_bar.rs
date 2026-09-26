@@ -13,14 +13,14 @@ use crate::price_check::PriceCheckApp;
 use crate::tour::Stop;
 use crate::tr;
 use crate::ui::hint as hints;
-use crate::ui::style::{menu_row, select, title_button, title_gradient};
-use crate::ui::theme::{BORDER_GOLD, TEXT_DIM, rems_from_px};
+use crate::ui::ornament::FRAME_CLEAR;
+use crate::ui::style::{TITLE_LINE, menu_row, select, title_bar, title_button};
+use crate::ui::theme::{TEXT_DIM, rems_from_px};
 use crate::ui::tour;
 
 use super::format::currency_img;
 use super::menu::render_menu;
 
-const TITLE_HEIGHT: f32 = 32.;
 /// Width of the title bar's ⚙ and ×.
 const BUTTON_WIDTH: f32 = 34.;
 /// The league menu is at least this wide, so «Авто · <league>» (`Auto · <league>`) fits on one
@@ -36,15 +36,10 @@ pub(super) fn render_title_bar(
     window: &Window,
     cx: &Context<PriceCheckApp>,
 ) -> impl IntoElement {
-    div()
-        .flex()
-        .flex_none()
-        .items_center()
-        .h(rems_from_px(TITLE_HEIGHT))
-        .pl(rems_from_px(8.))
-        .bg(title_gradient())
-        .border_b_1()
-        .border_color(rgb(BORDER_GOLD))
+    // The select's edge and the ×'s circle clear of the frame's keep-out.
+    title_bar()
+        .pl(rems_from_px(FRAME_CLEAR))
+        .pr(rems_from_px(FRAME_CLEAR - (BUTTON_WIDTH - TITLE_LINE) / 2.))
         .child(tour::spot(
             Stop::PanelLeague,
             render_league_select(state, window, cx),

@@ -1,0 +1,67 @@
+{
+    "about": "PoE2 Oracle next to other price checkers, and its own speed and size: every number the landing pages (site/index.html, site/ru/index.html) show about them, drawn by site/ui/bench.js. apps[].states[]: processes counts an app's processes; memory is Task Manager's Memory column (the private working set) summed over them, and gpu their dedicated GPU memory, both in MB of 1024 x 1024 bytes; cpu is idle CPU in % of one logical core. facts: PoE2 Oracle's start-up and price check timings from its log (medians; exchange_range_ms is a range) and its sizes in bytes. Static text repeats some of them and changes with them: the guide's tables and notes, docs/guide/src/{en,ru}/performance.md, which also hold the method, the PC and the caveats, and the opening paragraph of README.md and README.ru.md (about 50 MB, 0.27 s, 2.8 to 13 times the memory).",
+    "apps": [
+        {
+            "id": "oracle",
+            "name": "PoE2 Oracle",
+            "version": "0.1.0",
+            "stack": { "en": "Rust, GPUI on Direct3D 11", "ru": "Rust, GPUI на Direct3D 11" },
+            "measured": "2026-09-26",
+            "states": [
+                { "processes": 1, "memory": 49.9, "cpu": 0.71, "gpu": 159.6 }
+            ]
+        },
+        {
+            "id": "ee2",
+            "name": "Exiled Exchange 2",
+            "version": "0.16.7",
+            "stack": "Electron",
+            "measured": "2026-09-26",
+            "states": [
+                { "processes": 4, "memory": 138.3, "cpu": 0.09, "gpu": 0.0 }
+            ]
+        },
+        {
+            "id": "sidekick",
+            "name": "Sidekick",
+            "version": "2026.9.2",
+            "stack": { "en": ".NET and WebView2", "ru": ".NET и WebView2" },
+            "measured": "2026-09-26",
+            "states": [
+                {
+                    "label": { "en": "ready to work", "ru": "готов к работе" },
+                    "processes": 7, "memory": 267.0, "cpu": 0.40, "gpu": 75.3
+                }
+            ]
+        },
+        {
+            "id": "poe-overlay-2",
+            "name": "PoE Overlay II",
+            "version": "1.67.0",
+            "stack": "Overwolf 0.310.1.1",
+            "measured": "2026-09-26",
+            "states": [
+                {
+                    "label": { "en": "main window open", "ru": "главное окно открыто" },
+                    "processes": 9, "memory": 663.0, "cpu": 109.69, "gpu": 38.0
+                },
+                {
+                    "label": { "en": "main window minimized", "ru": "главное окно свёрнуто" },
+                    "processes": 8, "memory": 349.7, "cpu": 1.87, "gpu": 38.0
+                }
+            ]
+        }
+    ],
+    "facts": {
+        "version": "0.1.0",
+        "measured": "2026-09-26",
+        "ready_s": 0.27,
+        "item_text_ms": 12,
+        "processing_ms": 6,
+        "exchange_range_ms": [0, 16],
+        "listings_s": 0.64,
+        "listings_trade_site_s": 0.61,
+        "installer_bytes": 7268475,
+        "exe_bytes": 28299776
+    }
+}

@@ -23,14 +23,18 @@
 //! that order, so a level-up line is in before the wrap on the bar it explains. A plate shows
 //! while its rail is seen where it goes (`overlay_layout::rail_seen`): not over a tooltip, a
 //! loading screen, a full-screen panel, another program, or a HUD laid out otherwise. While the
-//! player is at the game -- it's in front, or the cursor is over it -- the lips are watched frame
-//! by frame (`platform::lip_watch`), so a plate steps aside the moment a tooltip covers its rail
-//! and comes back the moment it goes, and the bar is read off the same frames every half second:
-//! the sampler takes that reading, and reads no pixels itself. Otherwise the sampler's look
-//! decides, a single miss let pass. The price-check panel hides only a plate it
-//! covers, and the setting both ([`XpOverlay::set_cover`]). Their size is the game's, not the
-//! app's interface scale: at any game height a plate is its rail's width, and its words the
-//! HUD's.
+//! game is in front and not minimised, and a moment after, the lips are watched frame by frame
+//! (`platform::lip_watch`), so a plate steps aside the moment a tooltip covers its rail and comes
+//! back the moment it goes, and the bar is read off the same frames every half second: the
+//! sampler takes that reading, and reads no pixels itself. Otherwise the sampler's look decides,
+//! a single miss let pass: behind another window the game still shows a tooltip under the
+//! cursor, and its plate steps aside two to four seconds later, back within two once it goes.
+//! The price-check panel hides only a plate it covers, and the setting both
+//! ([`XpOverlay::set_cover`]). Their size is the game's, not the app's interface scale: at any
+//! game height a plate is its rail's width, and its words the HUD's.
+//!
+//! An update's restart doesn't start the plates over: the app's old copy leaves its tracker
+//! ([`carry_over`]), and the new one carries on with it, the log's lines since taken up.
 //!
 //! Each plate is its own opaque window (a transparent `PopUp` background still tints the game
 //! behind it, see `Win32Overlay::set_shown`) that lets clicks through to the game -- the plates
@@ -44,9 +48,12 @@
 //! The values are in the HUD's cream, the words saying what they are muted, the rate in its
 //! gold, a small diamond between the parts.
 
+use std::fs;
+use std::io;
 use std::sync::Arc;
 use std::time::Duration;
 
+use anyhow::Context as _;
 use gpui::{
     App, AsyncApp, Bounds, Context, Div, Entity, Font, Global, Hsla, ImageSource, IntoElement,
     MouseButton, MouseDownEvent, ObjectFit, Pixels, Render, RenderImage, SharedString, TextRun,
@@ -58,8 +65,10 @@ use windows::Win32::System::SystemInformation::GetTickCount64;
 
 use crate::i18n::{self, Lang};
 use crate::overlay_layout::{PhysicalRect, hud_rails};
+use crate::paths;
 use crate::plate_art::{self, ArtSlice, PlateArt};
 use crate::platform::client_log::{self, ClientLog};
+use crate::platform::game_window;
 use crate::platform::lip_watch::{LipReport, LipWatch};
 use crate::platform::win32::Win32Overlay;
 use crate::platform::xp_bar::{self, BarSample, RailsSeen};
@@ -129,6 +138,11 @@ pub struct XpCover {
 pub struct XpLineOnScreen(pub Option<PhysicalRect>);
 
 impl Global for XpLineOnScreen {}
+
+/// The overlay while it's open, for [`carry_over`].
+struct Tracking(WeakEntity<XpOverlay>);
+
+impl Global for Tracking {}
 
 #[derive(Clone, Copy)]
 enum Plate {
@@ -282,7 +296,7 @@ pub struct XpOverlay {
     level_fit: Fit<(bool, bool, bool, Lang, Pixels)>,
     /// The sampler's look at the rails, every two seconds.
     rails: RailPresence,
-    /// The frame-by-frame look at the rails and the bar while the player is at the game
+    /// The frame-by-frame look at the rails and the bar while the game is in front
     /// (`platform::lip_watch`): its handle, `None` if its thread couldn't start; the game it was
     /// last given; and what it saw last -- the rails, `None` while it isn't watching, and the
     /// bar's fill, which the sampler takes instead of reading the screen itself.
@@ -398,6 +412,7 @@ pub fn open(
         })
     })?;
     let view = window.entity(cx)?;
+    cx.set_global(Tracking(view.downgrade()));
     let xp = view.clone();
     cx.open_window(window_options(), |window, cx| {
         window.set_window_title("PoE2 Oracle — gear");
@@ -435,6 +450,27 @@ pub fn open(
             }
         })
         .detach();
+        // The watcher watches only while the game is in front: it's told of each new foreground
+        // window, and polls for none.
+        match game_window::watch_foreground() {
+            Ok(changes) => {
+                let weak = view.downgrade();
+                cx.spawn(async move |cx| {
+                    while let Ok(foreground) = changes.recv().await {
+                        let Some(view) = weak.upgrade() else {
+                            return;
+                        };
+                        view.update(cx, |view, _| {
+                            if let Some(watch) = &view.lip_watch {
+                                watch.foreground(foreground);
+                            }
+                        });
+                    }
+                })
+                .detach();
+            }
+            Err(err) => log::warn!("{err:#}"),
+        }
     }
     Ok(view)
 }
@@ -462,6 +498,53 @@ fn uptime() -> Duration {
     Duration::from_millis(unsafe { GetTickCount64() })
 }
 
+/// Leaves the tracker for the app's copy an update's restart starts, which carries on with it
+/// (`XpTracker::carried`): the rate, the time to the level and the map runs go on where they were
+/// instead of starting over. Call right before quitting for the update; without the overlay open,
+/// there's nothing to leave.
+pub fn carry_over(cx: &App) {
+    let Some(view) = cx
+        .try_global::<Tracking>()
+        .and_then(|open| open.0.upgrade())
+    else {
+        return;
+    };
+    let path = paths::xp_carry_file();
+    let written = view
+        .read(cx)
+        .tracker
+        .carry()
+        .context("writing the XP tracker")
+        .and_then(|json| {
+            if let Some(dir) = path.parent() {
+                fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
+            }
+            fs::write(&path, json).with_context(|| format!("writing {}", path.display()))
+        });
+    match written {
+        Ok(()) => log::info!("xp: the tracker left for the next start to carry on with"),
+        Err(err) => log::warn!("leaving the XP tracker for the next start failed: {err:#}"),
+    }
+}
+
+/// The tracker the app's last copy left ([`carry_over`]), taken: read and deleted, so it's
+/// carried on with once at most.
+fn take_carried() -> Option<Vec<u8>> {
+    let path = paths::xp_carry_file();
+    let json = match fs::read(&path) {
+        Ok(json) => Some(json),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return None,
+        Err(err) => {
+            log::warn!("reading {} failed: {err}", path.display());
+            None
+        }
+    };
+    if let Err(err) = fs::remove_file(&path) {
+        log::warn!("deleting {} failed: {err}", path.display());
+    }
+    json
+}
+
 /// Feeds the tracker until the window closes.
 async fn sample_forever(view: WeakEntity<XpOverlay>, cx: &mut AsyncApp) {
     let mut log: Option<ClientLog> = None;
@@ -471,11 +554,12 @@ async fn sample_forever(view: WeakEntity<XpOverlay>, cx: &mut AsyncApp) {
         let Ok(read_pixels) = view.read_with(cx, |view, _| view.lips.is_none()) else {
             return;
         };
-        let (history, events, sample, still_open) = cx
+        let (history, carried, events, sample, still_open) = cx
             .background_executor()
             .spawn(async move {
                 let mut log = log;
                 let mut history = Vec::new();
+                let mut carried = None;
                 // Retried every sample until the game runs: the log is found through its process.
                 if log.is_none()
                     && let Some((opened, replayed)) =
@@ -483,12 +567,14 @@ async fn sample_forever(view: WeakEntity<XpOverlay>, cx: &mut AsyncApp) {
                 {
                     log = Some(opened);
                     history = replayed;
+                    // What an update's restart left, carried on with instead of the tail alone.
+                    carried = take_carried();
                 }
                 let events = log
                     .as_mut()
                     .map(|log| log.poll(parse_log_line))
                     .unwrap_or_default();
-                (history, events, xp_bar::sample(read_pixels), log)
+                (history, carried, events, xp_bar::sample(read_pixels), log)
             })
             .await;
         log = still_open;
@@ -500,7 +586,15 @@ async fn sample_forever(view: WeakEntity<XpOverlay>, cx: &mut AsyncApp) {
             let history = history
                 .into_iter()
                 .map(|(tick, event)| (log_time(tick, at), event));
-            view.tracker.restore(history, at);
+            match carried.and_then(|json| XpTracker::carried(&json, at)) {
+                Some(mut tracker) => {
+                    log::info!("xp: carrying on with the tracker from before the restart");
+                    tracker.set_rate_window(view.options.rate_window_minutes);
+                    tracker.catch_up(history, at);
+                    view.tracker = tracker;
+                }
+                None => view.tracker.restore(history, at),
+            }
             for event in events {
                 view.tracker.on_log_event(event, at);
             }
@@ -690,8 +784,8 @@ impl XpOverlay {
         let clear = |rect: &PhysicalRect| {
             !cover.off && cover.panel.is_none_or(|panel| !panel.intersects(rect))
         };
-        // While the player is at the game the watcher's frame-by-frame look decides; otherwise
-        // the sampler's. The level plate also shows while the tour spotlights it: the tour's dim
+        // While the game is in front the watcher's frame-by-frame look decides; otherwise the
+        // sampler's. The level plate also shows while the tour spotlights it: the tour's dim
         // covers the lip until its hole is cut around the plate.
         let seen = self.lips.unwrap_or(RailsSeen {
             flask: self.rails.flask(),

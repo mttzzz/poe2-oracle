@@ -1,14 +1,16 @@
 //! What the updater (`crate::updates`) goes by, apart from Windows and GPUI. The app's service
 //! announces the latest app and game data versions ([`Versions`]); [`next_fetch`] says which
 //! update to fetch -- the app's first -- and [`Showing::quiet`] whether a fetched one may restart
-//! the app now: only while none of its windows is up, so a restart never closes one under the
-//! player.
+//! the app now: only while none of its windows is up and no hotkey's work is under way, so a
+//! restart never closes one under the player or cuts one short.
 //!
 //! Before the restart the updater leaves a [`Marker`] in the app's data folder. The next start
 //! takes it ([`Marker::take`]) and reads what came of the update ([`Marker::outcome`]): a plate
 //! says it was updated -- or, when the version didn't change after all (the installer failed, the
 //! pack wasn't loaded), that version is left alone for the rest of the run, instead of restarting
-//! into the same failure again and again. A failed fetch is tried again after [`retry_delay`].
+//! into the same failure again and again. A failure is tried again later ([`Failures`]): a fetch
+//! after a wait that doubles, and a start -- the update kept fetched -- only a few times before
+//! its version, too, is left alone until the next launch.
 
 use std::fs;
 use std::io;
@@ -84,7 +86,8 @@ pub fn still_wanted(ready: &Target, latest: &Versions) -> bool {
     }
 }
 
-/// The app's windows that are up, any of which an update's restart would close under the player.
+/// What an update's restart would cut short: the app's windows that are up, any of which it would
+/// close under the player, and a hotkey's work under way.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Showing {
     /// The price panel.
@@ -97,10 +100,14 @@ pub struct Showing {
     pub sign_in: bool,
     /// The tour, under way: its cards over the game or the app's windows.
     pub tour: bool,
+    /// A hotkey's price check or quick action, under way: the restart would drop it before the
+    /// player's own clipboard is back, and their key press with it.
+    pub hotkey: bool,
 }
 
 impl Showing {
-    /// Whether a fetched update may restart the app now: none of its windows is up.
+    /// Whether a fetched update may restart the app now: none of its windows is up, and no
+    /// hotkey's work is under way.
     pub fn quiet(&self) -> bool {
         let Showing {
             panel,
@@ -108,20 +115,87 @@ impl Showing {
             report,
             sign_in,
             tour,
+            hotkey,
         } = *self;
-        !(panel || settings || report || sign_in || tour)
+        !(panel || settings || report || sign_in || tour || hotkey)
     }
 }
 
-/// How long after its `failures`-th failure in a row a fetch is tried again: a minute, doubling
-/// up to an hour.
-pub fn retry_delay(failures: u32) -> Duration {
+/// How long after its `failures`-th failure in a row a fetch -- or a start -- is tried again: a
+/// minute, doubling up to an hour.
+fn retry_delay(failures: u32) -> Duration {
     const FIRST: Duration = Duration::from_secs(60);
     const LONGEST: Duration = Duration::from_secs(60 * 60);
     let doublings = failures.saturating_sub(1);
     FIRST
         .saturating_mul(1u32.checked_shl(doublings).unwrap_or(u32::MAX))
         .min(LONGEST)
+}
+
+/// How many times a fetched update may fail to start -- the installer, or the app's new copy for
+/// a pack -- before its version is left alone until the next launch, as one that didn't take is
+/// ([`Outcome::Failed`]).
+pub const MAX_FAILED_STARTS: u32 = 3;
+
+/// When a fetched update whose start failed is started again ([`Failures::start_failed`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Retry {
+    /// After this wait, the update kept fetched.
+    After(Duration),
+    /// At the next launch: its version is left alone for the rest of the run.
+    NextLaunch,
+}
+
+/// The updater's failures, and when each is tried again. A fetch that fails waits a minute,
+/// doubling up to an hour, and one that brings its update ends the run of them. A fetched update
+/// that fails to start -- an antivirus holding the installer back, a data folder the marker can't
+/// be written to -- keeps its file, and only the start is tried again, after waits of its own
+/// counted per version for the whole run: fetching that version again doesn't reset them, and
+/// after [`MAX_FAILED_STARTS`] the version is left alone. A failure that lasts never downloads the
+/// update over and over.
+#[derive(Debug, Default)]
+pub struct Failures {
+    /// Failed fetches in a row.
+    fetches: u32,
+    /// Failed starts, per version, this run.
+    starts: Vec<(Target, u32)>,
+}
+
+impl Failures {
+    /// A fetch failed: how long until the next.
+    pub fn fetch_failed(&mut self) -> Duration {
+        self.fetches = self.fetches.saturating_add(1);
+        retry_delay(self.fetches)
+    }
+
+    /// A fetch brought its update, or nothing is left to fetch: the next failed fetch waits a
+    /// minute again. Failed starts stay counted.
+    pub fn fetches_over(&mut self) {
+        self.fetches = 0;
+    }
+
+    /// Starting `target`'s fetched update failed: when to start it again.
+    pub fn start_failed(&mut self, target: &Target) -> Retry {
+        let failed = match self
+            .starts
+            .iter_mut()
+            .find(|(started, _)| started == target)
+        {
+            Some((_, failed)) => {
+                *failed = failed.saturating_add(1);
+                *failed
+            }
+            None => {
+                self.starts.push((target.clone(), 1));
+                1
+            }
+        };
+        if failed >= MAX_FAILED_STARTS {
+            Retry::NextLaunch
+        } else {
+            Retry::After(retry_delay(failed))
+        }
+    }
 }
 
 /// What an update leaves for the next start, in the app's data folder: what it replaced, and from
@@ -420,19 +494,22 @@ mod tests {
     }
 
     #[test]
-    fn a_restart_waits_until_no_window_is_up() {
+    fn a_restart_waits_until_no_window_is_up_nor_a_hotkeys_work() {
         assert!(Showing::default().quiet());
-        let windows: [fn(&mut Showing); 5] = [
+        let holds: [fn(&mut Showing); 6] = [
             |showing| showing.panel = true,
             |showing| showing.settings = true,
             |showing| showing.report = true,
             |showing| showing.sign_in = true,
             |showing| showing.tour = true,
+            // A price check polling the clipboard before its panel shows, or a quick action
+            // waiting to put the player's clipboard back, which shows nothing at all.
+            |showing| showing.hotkey = true,
         ];
-        for (index, show) in windows.iter().enumerate() {
+        for (index, hold) in holds.iter().enumerate() {
             let mut showing = Showing::default();
-            show(&mut showing);
-            assert!(!showing.quiet(), "window {index} alone holds the restart");
+            hold(&mut showing);
+            assert!(!showing.quiet(), "{index} alone holds the restart");
         }
     }
 
@@ -447,6 +524,47 @@ mod tests {
         assert_eq!(minutes(7), 60);
         assert_eq!(minutes(40), 60, "no overflow past 32 doublings");
         assert_eq!(minutes(u32::MAX), 60);
+    }
+
+    fn minutes(count: u64) -> Duration {
+        Duration::from_secs(count * 60)
+    }
+
+    #[test]
+    fn a_failed_start_waits_on_its_own_through_a_fetch_again() {
+        let app = Target::App(version("0.1.1"));
+        let mut failures = Failures::default();
+        // Two downloads fail, the third brings the installer.
+        assert_eq!(failures.fetch_failed(), minutes(1));
+        assert_eq!(failures.fetch_failed(), minutes(2));
+        failures.fetches_over();
+        // An antivirus stops the installer: only the start goes again, a minute on.
+        assert_eq!(failures.start_failed(&app), Retry::After(minutes(1)));
+        // Fetched again -- the setting turned off and on, the release withdrawn and back -- it
+        // still counts as the version's second failed start, while a fetch's wait starts over.
+        failures.fetches_over();
+        assert_eq!(failures.start_failed(&app), Retry::After(minutes(2)));
+        assert_eq!(failures.fetch_failed(), minutes(1));
+    }
+
+    #[test]
+    fn a_version_that_wont_start_is_left_alone_after_three_tries() {
+        let app = Target::App(version("0.1.1"));
+        let data = Target::Data(DATA + 1);
+        let mut failures = Failures::default();
+        assert_eq!(failures.start_failed(&app), Retry::After(minutes(1)));
+        assert_eq!(
+            failures.start_failed(&data),
+            Retry::After(minutes(1)),
+            "each version counts its own"
+        );
+        assert_eq!(failures.start_failed(&app), Retry::After(minutes(2)));
+        assert_eq!(failures.start_failed(&app), Retry::NextLaunch);
+        assert_eq!(
+            failures.start_failed(&Target::App(version("0.1.2"))),
+            Retry::After(minutes(1)),
+            "a newer release gets tries of its own"
+        );
     }
 
     #[test]

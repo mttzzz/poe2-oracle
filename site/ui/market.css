@@ -13,17 +13,19 @@
     --mk2: round(calc(2 * var(--u)), var(--mk-dp));
     --mk3: round(calc(3 * var(--u)), var(--mk-dp));
     --mk4: round(calc(4 * var(--u)), var(--mk-dp));
+    --mk5: round(calc(5 * var(--u)), var(--mk-dp));
     --mk6: round(calc(6 * var(--u)), var(--mk-dp));
     --mk7: round(calc(7 * var(--u)), var(--mk-dp));
     --mk8: round(calc(8 * var(--u)), var(--mk-dp));
     --mk10: round(calc(10 * var(--u)), var(--mk-dp));
+    --mk11: round(calc(11 * var(--u)), var(--mk-dp));
     --mk12: round(calc(12 * var(--u)), var(--mk-dp));
     --mk14: round(calc(14 * var(--u)), var(--mk-dp));
     --mk16: round(calc(16 * var(--u)), var(--mk-dp));
     --mk22: round(calc(22 * var(--u)), var(--mk-dp));
     --mk24: round(calc(24 * var(--u)), var(--mk-dp));
-    --mk32: round(calc(32 * var(--u)), var(--mk-dp));
     --mk34: round(calc(34 * var(--u)), var(--mk-dp));
+    --mk40: round(calc(40 * var(--u)), var(--mk-dp));
     --mk48: round(calc(48 * var(--u)), var(--mk-dp));
     /* A line of text is its size times the panel's 1.35, on whole device pixels. */
     --mk-lh12: round(calc(12 * var(--u) * 1.35), var(--mk-dp));
@@ -64,12 +66,14 @@
 
 /* --- The title bar: the league, the divine rate, the gear and the × --------------------------- */
 
+/* Centred between the frame's inner line and the bar's rule, the select's edge and the ×'s circle
+   clear of the frame's 11 px keep-out (style.rs `title_bar`, ornament.rs `FRAME_CLEAR`). */
 .oui-market-title {
     display: flex;
     flex: none;
     align-items: center;
-    height: var(--mk32);
-    padding-left: var(--mk8);
+    height: var(--mk40);
+    padding: var(--mk5) var(--mk5) 0 var(--mk11);
     border-bottom: 1px solid var(--border-gold);
 }
 

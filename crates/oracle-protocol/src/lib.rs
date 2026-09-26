@@ -359,7 +359,8 @@ pub fn installer_asset(version: &str) -> String {
 /// The service's event stream: `text/event-stream`, no authentication. The first
 /// [`VERSIONS_EVENT`] event comes right after connecting and the next whenever a version changes;
 /// in between, a comment line (`: ping`) every [`EVENTS_PING_SECS`] seconds keeps proxies from
-/// closing the idle connection and tells the app it is still alive.
+/// closing the idle connection and tells the app it is still alive. A connection the service has
+/// no place for gets the first event alone, with `retry: 60000`, and the stream ends there.
 pub const EVENTS_PATH: &str = "/api/v1/events";
 /// The name of the event whose data is a [`Versions`] JSON.
 pub const VERSIONS_EVENT: &str = "versions";

@@ -10,10 +10,16 @@
 //! site's files are.
 //!
 //! A stream holds its connection for as long as the app runs, so the streams are capped: at most
-//! [`PER_CLIENT`] from one client address ([`limits::client_key`]), more answered 429, and at most
-//! [`AT_ONCE`] in all, more answered 503, both with `Retry-After`. When the service stops taking
-//! connections, every stream ends at once rather than hold up the shutdown: the app reconnects, and
-//! the gateway sends it to the pod taking over.
+//! [`PER_CLIENT`] from one client address ([`limits::client_key`]) and at most [`AT_ONCE`] in all.
+//! A stream past either cap gets no place, yet still the news: one event with the versions the
+//! service knows now (none while it knows none) and `retry: 60000`, then the stream ends, with no
+//! ping, and counts as no stream opened ([`Stat::EventStream`]). The app takes the versions and
+//! reconnects on its backoff, which only a connection that brought versions and stayed up for a
+//! ping interval starts over. A refused one never does, so a refused app asks again after about 5,
+//! 10, 20, 40, 80 and 160 s, then every 5 min (each ±20 %), and hears of a release at most about
+//! 6 min after the apps holding a stream. When the service stops taking connections, every stream
+//! ends at once rather than hold up the shutdown: the app reconnects, and the gateway sends it to
+//! the pod taking over.
 
 use std::collections::HashMap;
 use std::convert::Infallible;
@@ -22,7 +28,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::extract::{ConnectInfo, Request, State};
-use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use futures_util::stream::{self, Stream};
@@ -36,10 +41,13 @@ use tracing::{info, warn};
 use crate::stats::{self, Stat};
 use crate::{App, limits};
 
-/// The most streams one client address holds at once: a household's PCs, and the streams of
-/// connections that died without a word -- the service hears of those only when the gateway gives
-/// up on them, which can take minutes.
-pub const PER_CLIENT: usize = 8;
+/// The most streams one client address holds at once: a computer club, an office or a dorm behind
+/// one address, or a carrier's NAT, which puts hundreds of subscribers behind one; and the streams
+/// of connections that died without a word -- the service hears of those only when the gateway
+/// gives up on them, which can take minutes. A client past it loses only the push: it gets the
+/// versions each time it asks, on its backoff. The cap keeps one address -- a script, a stuck
+/// client -- from taking every place: it holds under 2 % of [`AT_ONCE`].
+pub const PER_CLIENT: usize = 64;
 /// The most streams at once, unless tests say otherwise ([`crate::Config::event_streams`]).
 /// Measured on the release build in the dev lane, an idle stream takes 18.6 KiB of the process's
 /// memory (its connection's buffers, task, timer and request span), with one worker thread or
@@ -51,10 +59,11 @@ pub const AT_ONCE: usize = 4000;
 /// The open files kept for everything but the streams: the listener, the site's files, other
 /// requests, and the calls to GitHub, Telegram and Redis.
 const OTHER_FILES: u64 = 256;
-/// How long a refused client is told to wait.
-const RETRY_AFTER_SECS: u64 = 60;
 /// The reconnection delay the first event suggests.
 const RECONNECT: Duration = Duration::from_millis(15_000);
+/// The reconnection delay a refused stream's event suggests to clients that reconnect the way
+/// browsers do. The app goes by its backoff.
+const REFUSED_RECONNECT: Duration = Duration::from_secs(60);
 
 /// The open streams, counted per client address.
 pub struct Streams {
@@ -144,7 +153,8 @@ fn file_room() -> usize {
         .unwrap_or(usize::MAX)
 }
 
-/// `GET /api/v1/events`: the event stream, or 429 or 503 while the streams are at their most.
+/// `GET /api/v1/events`: the event stream, or while the streams are at their most, the versions
+/// alone ([`refusal`]).
 pub async fn follow(State(app): State<Arc<App>>, request: Request) -> Response {
     let peer = request
         .extensions()
@@ -153,19 +163,18 @@ pub async fn follow(State(app): State<Arc<App>>, request: Request) -> Response {
     let client = limits::client_key(request.headers(), peer);
     let place = match app.streams.admit(client) {
         Ok(place) => place,
-        Err(Full::Client) => {
-            info!("event stream refused: its address holds {PER_CLIENT} already");
-            return refused(
-                StatusCode::TOO_MANY_REQUESTS,
-                "too many update streams from this address",
-            );
-        }
-        Err(Full::Service) => {
-            warn!(
-                at_once = app.streams.at_once,
-                "event stream refused: the service holds its most"
-            );
-            return refused(StatusCode::SERVICE_UNAVAILABLE, "too many update streams");
+        Err(full) => {
+            match full {
+                Full::Client => {
+                    info!("event stream refused: its address holds {PER_CLIENT} already");
+                }
+                Full::Service => warn!(
+                    at_once = app.streams.at_once,
+                    "event stream refused: the service holds its most"
+                ),
+            }
+            let versions = app.releases.versions().borrow().clone();
+            return Sse::new(refusal(versions)).into_response();
         }
     };
     stats::count(&app, Stat::EventStream);
@@ -211,28 +220,60 @@ fn events(
     )
 }
 
-fn refused(status: StatusCode, why: &str) -> Response {
-    (
-        status,
-        [(header::RETRY_AFTER, HeaderValue::from(RETRY_AFTER_SECS))],
-        format!("{why}; try again in {RETRY_AFTER_SECS} s"),
-    )
-        .into_response()
+/// A refused stream: one event with `versions`, the latest the service knows -- none while it
+/// knows none -- and `retry:` at [`REFUSED_RECONNECT`], then the end. No place, no ping.
+fn refusal(versions: Option<Versions>) -> impl Stream<Item = Result<Event, Infallible>> {
+    let event = match versions {
+        Some(versions) => Event::default()
+            .event(VERSIONS_EVENT)
+            .retry(REFUSED_RECONNECT)
+            .json_data(versions)
+            .expect("versions serialize"),
+        None => Event::default().retry(REFUSED_RECONNECT),
+    };
+    stream::iter([Ok(event)])
 }
 
 #[cfg(test)]
 mod tests {
     use axum::body::Body;
+    use axum::http::{HeaderValue, StatusCode, header};
     use http_body_util::BodyExt as _;
-    use tokio::time::Instant;
+    use tokio::time::{Instant, timeout};
 
     use super::*;
-    use crate::Config;
+    use crate::{Config, moscow};
 
     /// The next piece of `body` the service writes, as text.
     async fn next(body: &mut Body) -> String {
         let frame = body.frame().await.expect("the stream goes on").unwrap();
         String::from_utf8(frame.into_data().unwrap().to_vec()).unwrap()
+    }
+
+    /// All `response` writes, once it has ended -- at once: the test fails after a second.
+    async fn whole(response: Response) -> String {
+        let body = timeout(Duration::from_secs(1), response.into_body().collect())
+            .await
+            .expect("the stream ends at once")
+            .unwrap()
+            .to_bytes();
+        String::from_utf8(body.to_vec()).unwrap()
+    }
+
+    /// A request for the stream from `client`, as the gateway forwards it.
+    fn from(client: &str) -> Request {
+        let mut request = Request::new(Body::empty());
+        request
+            .headers_mut()
+            .insert("x-forwarded-for", HeaderValue::from_str(client).unwrap());
+        request
+    }
+
+    /// The streams opened today, as the morning digest counts them.
+    async fn counted_today(app: &App) -> u64 {
+        let now = moscow::now();
+        let key = format!("oracle:stat:event_stream:{}", moscow::Day::of(now));
+        app.store.values(&[key], now).await.unwrap()[0]
     }
 
     #[tokio::test(start_paused = true)]
@@ -252,5 +293,75 @@ mod tests {
             assert_eq!(next(&mut body).await, ": ping\n\n");
             assert_eq!(start.elapsed(), Duration::from_secs(25 * pings));
         }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_stream_past_a_cap_gets_the_versions_and_ends_holding_no_place() {
+        // A dry run: the service knows at once that it offers no release.
+        let app = App::new(Config {
+            event_streams: PER_CLIENT + 1,
+            ..Config::default()
+        })
+        .unwrap();
+        let mut held = Vec::new();
+        for _ in 0..PER_CLIENT {
+            held.push(follow(State(app.clone()), from("203.0.113.1")).await);
+        }
+        // Past the address's cap; then, the last place taken by another address, past the
+        // service's.
+        let past_address = follow(State(app.clone()), from("203.0.113.1")).await;
+        held.push(follow(State(app.clone()), from("203.0.113.2")).await);
+        let past_service = follow(State(app.clone()), from("203.0.113.3")).await;
+        for refused in [past_address, past_service] {
+            assert_eq!(refused.status(), StatusCode::OK);
+            assert_eq!(refused.headers()[header::CONTENT_TYPE], "text/event-stream");
+            assert_eq!(
+                whole(refused).await,
+                "event: versions\nretry: 60000\ndata: {\"app\":null,\"data\":null}\n\n"
+            );
+        }
+        {
+            let open = app.streams.open.lock();
+            assert_eq!(open.total, PER_CLIENT + 1);
+            assert_eq!(
+                open.by_client,
+                HashMap::from([
+                    ("203.0.113.1".to_owned(), PER_CLIENT),
+                    ("203.0.113.2".to_owned(), 1),
+                ])
+            );
+        }
+        // The counts are made in the background: in once the runtime has nothing else to do.
+        tokio::time::sleep(Duration::from_millis(1)).await;
+        assert_eq!(
+            counted_today(&app).await,
+            PER_CLIENT as u64 + 1,
+            "a refused stream counts as none"
+        );
+
+        drop(held);
+        let open = app.streams.open.lock();
+        assert_eq!(open.total, 0);
+        assert!(open.by_client.is_empty());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_refused_stream_ends_at_once_while_the_versions_are_unknown() {
+        // A token, and no listing yet: the service doesn't know the versions, and the stream with
+        // the place waits for them.
+        let app = App::new(Config {
+            github_token: Some("token".to_owned()),
+            event_streams: 1,
+            ..Config::default()
+        })
+        .unwrap();
+        let _held = follow(State(app.clone()), from("203.0.113.1")).await;
+        let refused = timeout(
+            Duration::from_secs(1),
+            follow(State(app), from("203.0.113.2")),
+        )
+        .await
+        .expect("answered at once");
+        assert_eq!(whole(refused).await, "retry: 60000\n\n");
     }
 }

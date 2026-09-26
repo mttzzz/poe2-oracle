@@ -17,10 +17,14 @@
 //! - [`Word`] and [`percent_words`], [`rate_words`], [`level_parts`], [`map_words`]: what the
 //!   overlay's plates say, word by word, in the interface language (`crate::i18n`), in full or in
 //!   the shorter [`Wording`] a rail too narrow for the full one gets.
+//! - [`XpTracker::carry`], [`XpTracker::carried`] and [`XpTracker::catch_up`]: the tracker across
+//!   an update's restart, so the plates carry on where they were instead of starting over.
 
 use std::borrow::Cow;
 use std::ops::{Range, RangeInclusive};
 use std::time::Duration;
+
+use serde::{Deserialize, Serialize};
 
 use crate::overlay_layout::PhysicalRect;
 use crate::{i18n, tr};
@@ -571,7 +575,12 @@ impl Default for HalfLife {
 /// A logout resets everything but the rate window, since the next character may be a different
 /// one. The log says so in two lines: the scene goes `(unknown)`, and an area line follows -- the
 /// login's -- before the scene is named again; a scene named first was only a moment's blank.
-#[derive(Debug, Default)]
+///
+/// An update's restart carries the tracker over as JSON, into the app's next version
+/// ([`Self::carry`]): a field whose meaning changes takes a new name, so that version starts
+/// afresh rather than misread this one's.
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct XpTracker {
     /// The two readings before the latest, oldest first, for the median filter.
     recent: [Option<f64>; 2],
@@ -599,6 +608,7 @@ pub struct XpTracker {
     /// with.
     weighted_gain: f64,
     weighted_secs: f64,
+    #[serde(skip)]
     half_life: HalfLife,
     /// All play counted, unweighted.
     counted: Duration,
@@ -877,6 +887,53 @@ impl XpTracker {
     }
 }
 
+// --- Across an update's restart -----------------------------------------------------------------
+
+/// How long after its last call a tracker an update's restart left ([`XpTracker::carry`]) is
+/// carried on with: the app's new copy takes it up within seconds -- the installer's or the
+/// relaunch's wait for the old one to quit, then the first sample -- and one left longer ago is
+/// from some other run.
+const CARRY_FOR: Duration = Duration::from_secs(2 * 60);
+
+impl XpTracker {
+    /// The tracker as JSON, for the app's new copy an update's restart starts to carry on with
+    /// ([`Self::carried`]): the rate, the map runs, the bar's last readings -- all but the rate
+    /// window, which is the settings'.
+    pub fn carry(&self) -> serde_json::Result<Vec<u8>> {
+        serde_json::to_vec(self)
+    }
+
+    /// The tracker [`Self::carry`] left before an update's restart, taken up at `at` to carry on
+    /// with instead of starting over from the log's tail ([`Self::restore`]); [`Self::catch_up`]
+    /// takes what the tail says since. `None` for JSON that isn't a tracker as this version keeps
+    /// one, and for one whose last call was over [`CARRY_FOR`] before `at` -- or after it, on a
+    /// clock that has started over since, with Windows.
+    pub fn carried(json: &[u8], at: Duration) -> Option<XpTracker> {
+        let tracker: XpTracker = serde_json::from_slice(json)
+            .inspect_err(|err| log::info!("xp: the tracker carried over isn't readable: {err}"))
+            .ok()?;
+        let age = at.checked_sub(tracker.clock?)?;
+        (age <= CARRY_FOR).then_some(tracker)
+    }
+
+    /// Takes up the lines of the log's tail (`history`, each at the time it was written, as for
+    /// [`Self::restore`]) that came after the tracker's last call -- while the app restarted --
+    /// as they would have come live, then moves the clock to `at`. The earlier ones it has seen.
+    pub fn catch_up(
+        &mut self,
+        history: impl IntoIterator<Item = (Duration, LogEvent)>,
+        at: Duration,
+    ) {
+        let seen = self.clock;
+        for (when, event) in history {
+            if seen.is_none_or(|seen| when > seen) {
+                self.on_log_event(event, when.min(at));
+            }
+        }
+        self.advance(at);
+    }
+}
+
 // --- Map runs -----------------------------------------------------------------------------------
 
 /// A map the character left stays the run they may portal back into this long, and is the last
@@ -885,7 +942,7 @@ impl XpTracker {
 const LAST_MAP_AFTER: Duration = Duration::from_secs(5 * 60);
 
 /// Where the character is, as far as the current map run goes.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 enum Whereabouts {
     /// Somewhere no run counts: before the first map, in an area entered from a town that isn't
     /// one of the run's (a campaign zone through a waypoint), or in an ascendancy trial.
@@ -900,7 +957,8 @@ enum Whereabouts {
 }
 
 /// One map instance and the side areas entered from it.
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct MapRun {
     seed: u64,
     /// The side areas that joined the run, by area id and seed.
@@ -934,7 +992,8 @@ impl MapRun {
 }
 
 /// The map runs since the last login, as far back as the log's tail read at start goes.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct MapRuns {
     current: Option<MapRun>,
     whereabouts: Whereabouts,
@@ -2065,6 +2124,128 @@ mod tests {
         let early = Duration::from_millis(60_000);
         assert!(log_time(Some(144_087_359), early) <= early);
         assert_eq!(log_time(None, now), now);
+    }
+
+    /// `tracker` across an update's restart as the overlay carries it: to JSON and back, taken up
+    /// at `at` seconds and caught up on the log's `tail` -- `None` if it isn't taken up.
+    fn restarted(tracker: &XpTracker, tail: &[(Duration, LogEvent)], at: f64) -> Option<XpTracker> {
+        let at = Duration::from_secs_f64(at);
+        let mut carried = XpTracker::carried(&tracker.carry().unwrap(), at)?;
+        carried.catch_up(tail.to_vec(), at);
+        Some(carried)
+    }
+
+    #[test]
+    fn an_update_restart_carries_the_rate_and_the_map_runs_on() {
+        let s = Duration::from_secs;
+        let rate = 0.12 / 3600.0;
+        // A map, the hideout, and ten minutes into the next map when the app restarts for an
+        // update, 22 s after its last look at the bar; the log's tail shows it all.
+        let mut tracker = XpTracker::new();
+        enter(&mut tracker, "MapBluff", 17, 0.0);
+        let (t, reached) = map_for_ten_minutes(&mut tracker, 0.0, 0.2);
+        enter(&mut tracker, "HideoutCanal", 1, t);
+        enter(&mut tracker, "MapEpitaph", EPITAPH, t + 20.0);
+        let (end, reached) = map_for_ten_minutes(&mut tracker, t + 20.0, reached);
+        let tail = [
+            (s(0), area("MapBluff", 17)),
+            (s(600), area("HideoutCanal", 1)),
+            (s(620), area("MapEpitaph", EPITAPH)),
+        ];
+        let restart = end + 20.0;
+        let fraction = |t: f64| Some(as_read(reached + rate * (t - end), t));
+
+        // Carried on: the rate is the one before, the finished map still averaged, and the
+        // map's clock and experience ran on through the restart.
+        let mut carried = restarted(&tracker, &tail, restart).expect("taken up");
+        let last = play(&mut carried, restart, 30, fraction) - 2.0;
+        let status = carried.status();
+        assert_near(status.rate_per_hour, 0.12, 0.05);
+        let map = status.map.unwrap();
+        assert_eq!(
+            (map.time, map.state, map.finished, map.average),
+            (s(678), RunState::Running, 1, Some(s(600)))
+        );
+        assert_near(Some(map.gained), rate * (last - 620.0), 0.1);
+
+        // Started over from the log's tail instead: no rate for the first two minutes of play,
+        // the first map untimed, and nothing of what the map gave before the restart.
+        let mut restored = XpTracker::new();
+        restored.restore(tail, Duration::from_secs_f64(restart));
+        play(&mut restored, restart, 30, fraction);
+        let status = restored.status();
+        assert_eq!(status.rate_per_hour, None);
+        let map = status.map.unwrap();
+        assert_eq!((map.finished, map.average), (0, None));
+        assert!(map.gained < 0.005, "{}", map.gained);
+    }
+
+    #[test]
+    fn a_carried_tracker_takes_up_what_the_log_said_during_the_restart() {
+        let s = Duration::from_secs;
+        let mut tracker = XpTracker::new();
+        enter(&mut tracker, "MapEpitaph", EPITAPH, 0.0);
+        map_for_ten_minutes(&mut tracker, 0.0, 0.2);
+        // The last look at the bar at 598 s; the character went back to the hideout at 605 s,
+        // while the app restarted, and the new copy took the tracker up at 615 s.
+        let tail = [
+            (s(0), area("MapEpitaph", EPITAPH)),
+            (s(605), area("HideoutCanal", 1)),
+        ];
+        let status = restarted(&tracker, &tail, 615.0).unwrap().status();
+        assert_eq!(
+            status.activity,
+            Activity::Paused {
+                since: s(605),
+                elapsed: s(10),
+            }
+        );
+        let map = status.map.unwrap();
+        assert_eq!(
+            (map.time, map.state, map.finished),
+            (s(605), RunState::Waiting, 0)
+        );
+        assert_near(status.rate_per_hour, 0.12, 0.05);
+
+        // Logged out and in again meanwhile, maybe as another character: all starts over.
+        let tail = [
+            (s(0), area("MapEpitaph", EPITAPH)),
+            (s(602), LogEvent::SceneLost),
+            (s(610), area("HideoutCanal", 1)),
+        ];
+        let status = restarted(&tracker, &tail, 615.0).unwrap().status();
+        assert_eq!((status.rate_per_hour, status.map), (None, None));
+    }
+
+    #[test]
+    fn only_a_fresh_carry_of_a_tracker_as_this_version_keeps_one_is_taken_up() {
+        let at = Duration::from_secs;
+        let mut tracker = XpTracker::new();
+        // The last look at the bar at 118 s.
+        play(&mut tracker, 0.0, 60, |t| Some(as_read(0.3, t)));
+        let json = tracker.carry().unwrap();
+        assert!(
+            XpTracker::carried(&json, at(118 + 120)).is_some(),
+            "two minutes on"
+        );
+        assert!(
+            XpTracker::carried(&json, at(118 + 121)).is_none(),
+            "from some other run"
+        );
+        assert!(
+            XpTracker::carried(&json, at(60)).is_none(),
+            "Windows restarted since: its clock started over"
+        );
+        // Another version's tracker, with a field this one doesn't keep, isn't misread; nor is a
+        // file cut short.
+        let mut other: serde_json::Value = serde_json::from_slice(&json).unwrap();
+        other["rested_bonus"] = serde_json::json!(0.5);
+        let other = serde_json::to_vec(&other).unwrap();
+        assert!(XpTracker::carried(&other, at(130)).is_none());
+        assert!(XpTracker::carried(&json[..json.len() / 2], at(130)).is_none());
+        // A tracker never told anything has nothing to carry on with.
+        let untold = XpTracker::new().carry().unwrap();
+        assert!(XpTracker::carried(&untold, at(130)).is_none());
     }
 
     #[test]

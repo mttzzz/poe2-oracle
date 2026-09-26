@@ -59,7 +59,8 @@ rate: it is back as it was when you play again.
   selection. Started in the middle of a session, it reads back through the log with the time of
   each line: your character's level, the map you are in or left, with its time so far, and how
   long you have been in town or the hideout. Only a map already under way when the log's last
-  stretch it reads begins is left out, since its start isn't there.
+  stretch it reads begins is left out, since its start isn't there. After a restart for an update
+  it doesn't start over: the rate, the time to the next level and the map timer go on as they were.
 - The rate weighs recent play more. With **Rate smoothing** at 10 minutes, the default, play from
   10 minutes ago counts half as much as play now. Choose 5 minutes to see a change of farming
   sooner, or 20 or 30 for a steadier number.
@@ -87,6 +88,7 @@ rate: it is back as it was when you play again.
 - The plates are the size of the game's HUD at the game's resolution; the **Interface scale**
   setting does not change them. They let clicks through to the game, all but the ⚙, and the price
   panel hides one only while the panel stands over it: dragged there, or wide enough to reach it by
-  itself (a 4:3 or 5:4 game window, a large **Interface scale**). A plate steps aside the moment a
-  tooltip, the chat or another part of the game's interface covers its rail, and is back the moment
-  it goes.
+  itself (a 4:3 or 5:4 game window, a large **Interface scale**). While the game is in front, a
+  plate steps aside the moment a tooltip, the chat or another part of the game's interface covers
+  its rail, and is back the moment it goes. Behind another window the game still shows a tooltip
+  under the pointer; a plate then steps aside within four seconds, and is back within two.

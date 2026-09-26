@@ -6,10 +6,13 @@
 //!
 //! A fetched update goes in at once -- the installer replaces the app and starts it again; a pack
 //! takes a restart of the app (`instance::relaunch`) -- but never while one of the app's windows
-//! is up (`update_rules::Showing`): the restart waits for them to close. It leaves a marker for
-//! the next start (`update_rules::Marker`), which says on a plate over the game that the update
-//! went in (`ui::toast`). A failed fetch is tried again later, quietly (`update_rules::retry_delay`);
-//! a version whose update didn't take is left alone until the next launch.
+//! is up or a hotkey's work is under way (`update_rules::Showing`): the restart waits for them to
+//! be over. It leaves a marker for the next start (`update_rules::Marker`), which says on a plate
+//! over the game that the update went in (`ui::toast`), and the XP overlay's tracker, which the
+//! next start carries on with (`ui::xp_overlay::carry_over`). A failed fetch is tried again later,
+//! quietly; a failed start -- the update kept fetched -- a few times, after waits of its own
+//! (`update_rules::Failures`). A version whose update didn't take, or wouldn't start, is left
+//! alone until the next launch.
 //!
 //! The connection starts a few seconds after launch, once the trade catalogs are in, and comes
 //! back by itself when it drops: after its backoff, or at once when Windows says the Internet is
@@ -39,8 +42,8 @@ use crate::platform::network::{self, NetworkWatch};
 use crate::price_check::{BootstrapState, PriceCheckApp};
 use crate::tr;
 use crate::ui::report_view::ReportView;
-use crate::ui::{toast, tour};
-use crate::update_rules::{self, Marker, Outcome, Showing, Target};
+use crate::ui::{toast, tour, xp_overlay};
+use crate::update_rules::{self, Failures, Marker, Outcome, Retry, Showing, Target};
 
 /// How long after launch the connection starts, at the earliest: the price catalogs load first,
 /// since they matter more.
@@ -149,11 +152,14 @@ struct Updater {
     restarting: bool,
     /// The last failure, until something newer happens.
     failure: Option<(Target, String)>,
-    /// Failed fetches in a row, for the retry's wait.
-    failures: u32,
+    /// The failed fetches in a row, and the failed starts of each version.
+    failures: Failures,
     retry: Option<Task<()>>,
-    /// Versions whose update the last run found didn't take, or whose pack this app refused:
-    /// fetched again only at the next launch.
+    /// The wait before the fetched update is started again, after its start failed: it holds the
+    /// restart until it's over.
+    start_retry: Option<Task<()>>,
+    /// Versions whose update the last run found didn't take, whose pack this app refused, or
+    /// whose fetched update wouldn't start: fetched again only at the next launch.
     left_alone: Vec<Target>,
     _subscriptions: Vec<Subscription>,
 }
@@ -212,8 +218,8 @@ pub fn init(app: &Entity<PriceCheckApp>, cx: &mut App) {
     .detach();
 }
 
-/// «Проверить сейчас»: the connection's wait for its next attempt ends at once, and a fetch that
-/// failed goes again now.
+/// «Проверить сейчас»: the connection's wait for its next attempt ends at once, a fetch that
+/// failed goes again now, and a start that failed as soon as the app's windows let it.
 pub fn check_now(cx: &mut App) {
     if let Some(updater) = cx.try_global::<Running>().map(|running| running.0.clone()) {
         updater.update(cx, |updater, cx| updater.check_now(cx));
@@ -240,7 +246,8 @@ impl Updater {
         cx: &mut Context<Self>,
     ) -> Updater {
         let this = cx.weak_entity();
-        // A fetched update waits for the app's windows: each of these may be the last to close.
+        // A fetched update waits for the app's windows and a hotkey's work: each of these may say
+        // the last of them is over.
         let subscriptions = vec![
             cx.observe(app, |updater, app, cx| updater.app_changed(&app, cx)),
             cx.observe_global::<Login>(|updater, cx| updater.try_apply(cx)),
@@ -261,8 +268,9 @@ impl Updater {
             ready: None,
             restarting: false,
             failure: None,
-            failures: 0,
+            failures: Failures::default(),
             retry: None,
+            start_retry: None,
             left_alone: Vec::new(),
             _subscriptions: subscriptions,
         }
@@ -280,7 +288,8 @@ impl Updater {
         self.publish(cx);
     }
 
-    /// The app changed: the setting may have been turned on or off, and a window closed.
+    /// The app changed: the setting may have been turned on or off, a window closed, or a
+    /// hotkey's work ended.
     fn app_changed(&mut self, app: &Entity<PriceCheckApp>, cx: &mut Context<Self>) {
         let on = app.read(cx).settings.check_updates;
         if on != self.on {
@@ -346,7 +355,8 @@ impl Updater {
         self.fetching = None;
         self.ready = None;
         self.retry = None;
-        self.failures = 0;
+        self.start_retry = None;
+        self.failures.fetches_over();
         self.failure = self
             .failure
             .take()
@@ -390,6 +400,7 @@ impl Updater {
             self.link = LinkState::Connecting;
         }
         self.retry = None;
+        self.start_retry = None;
         self.consider(cx);
         self.publish(cx);
     }
@@ -430,14 +441,14 @@ impl Updater {
                         self.fetch(target, cx);
                     }
                 }
-                // Nothing to fetch: a failure of what's no longer announced is over.
+                // Nothing to fetch: a failure of what's no longer announced is over -- not the
+                // failed start of the update still waiting, nor one of a version left alone.
                 None => {
                     self.retry = None;
-                    self.failures = 0;
-                    self.failure = self
-                        .failure
-                        .take()
-                        .filter(|(target, _)| self.left_alone.contains(target));
+                    self.failures.fetches_over();
+                    self.failure = self.failure.take().filter(|(target, _)| {
+                        self.left_alone.contains(target) || ready.as_ref() == Some(target)
+                    });
                 }
             }
         }
@@ -482,7 +493,7 @@ impl Updater {
                         log::warn!("{err:#}");
                     }
                 }
-                self.failures = 0;
+                self.failures.fetches_over();
                 self.failure = None;
                 self.ready = Some(ready);
             }
@@ -495,8 +506,7 @@ impl Updater {
                 self.left_alone.push(target);
             }
             Err(FetchError::Failed(err)) => {
-                self.failures += 1;
-                let delay = update_rules::retry_delay(self.failures);
+                let delay = self.failures.fetch_failed();
                 log::warn!(
                     "fetching {} failed, trying again in {} min: {err:#}",
                     describe(&target),
@@ -522,10 +532,11 @@ impl Updater {
         }));
     }
 
-    /// Installs the fetched update when none of the app's windows is up; otherwise it waits for
-    /// the next of them to close.
+    /// Installs the fetched update when none of the app's windows is up and no hotkey's work is
+    /// under way, and not before a failed start's wait is over; otherwise it waits for the next of
+    /// them to end.
     fn try_apply(&mut self, cx: &mut Context<Self>) {
-        if self.ready.is_none() || self.restarting {
+        if self.ready.is_none() || self.restarting || self.start_retry.is_some() {
             return;
         }
         let Some(app) = self.app.upgrade() else {
@@ -548,24 +559,68 @@ impl Updater {
             Ok(()) => {
                 log::info!("restarting for {}", describe(&target));
                 self.restarting = true;
+                xp_overlay::carry_over(cx);
                 crate::app::quit(cx);
             }
             Err(err) => {
-                let _ = std::fs::remove_file(&marker_file);
-                self.fetched(target, Err(FetchError::Failed(err)), cx);
+                // An installer that never ran can't have taken. A pack is installed for the next
+                // start already, which says so (`fetched`).
+                if let Ready::App { .. } = ready {
+                    let _ = std::fs::remove_file(&marker_file);
+                }
+                self.start_failed(ready, err, cx);
             }
         }
     }
 
-    /// Says what the updater does to the settings window, when that changed.
+    /// Starting the fetched update `ready` failed: it stays fetched, and only the start goes
+    /// again, after a wait of its own -- or, once its version has failed to start
+    /// [`update_rules::MAX_FAILED_STARTS`] times, not before the next launch.
+    fn start_failed(&mut self, ready: Ready, err: anyhow::Error, cx: &mut Context<Self>) {
+        let target = ready.target();
+        self.failure = Some((target.clone(), reason(&err)));
+        match self.failures.start_failed(&target) {
+            Retry::After(delay) => {
+                log::warn!(
+                    "starting {} failed, trying again in {} min: {err:#}",
+                    describe(&target),
+                    delay.as_secs() / 60
+                );
+                self.ready = Some(ready);
+                self.start_retry = Some(cx.spawn(async move |this, cx| {
+                    cx.background_executor().timer(delay).await;
+                    this.update(cx, |updater, cx| {
+                        updater.start_retry = None;
+                        updater.try_apply(cx);
+                        updater.publish(cx);
+                    })
+                    .ok();
+                }));
+            }
+            Retry::NextLaunch => {
+                log::warn!(
+                    "starting {} failed again: {err:#} -- left alone until the next launch",
+                    describe(&target)
+                );
+                self.left_alone.push(target);
+            }
+        }
+        self.consider(cx);
+        self.publish(cx);
+    }
+
+    /// Says what the updater does to the settings window, when that changed. A failed start
+    /// shows over the update it keeps waiting.
     fn publish(&self, cx: &mut Context<Self>) {
-        let work = match (&self.fetching, &self.ready, &self.failure) {
-            (Some((target, _)), _, _) => Some(Work::Fetching(target.clone())),
-            (None, Some(ready), _) => Some(Work::Waiting(ready.target())),
-            (None, None, Some((target, reason))) => {
+        let ready = self.ready.as_ref().map(Ready::target);
+        let work = match (&self.fetching, &self.failure) {
+            (Some((target, _)), _) => Some(Work::Fetching(target.clone())),
+            (None, Some((target, reason)))
+                if ready.as_ref().is_none_or(|ready| ready == target) =>
+            {
                 Some(Work::Failed(target.clone(), reason.clone()))
             }
-            (None, None, None) => None,
+            (None, _) => ready.map(Work::Waiting),
         };
         let status = UpdateStatus {
             on: self.on,
@@ -642,7 +697,7 @@ async fn fetch_data(
         .await
 }
 
-/// The app's windows that are up.
+/// The app's windows that are up, and whether a hotkey's work is under way.
 fn showing(app: &Entity<PriceCheckApp>, cx: &App) -> Showing {
     let state = app.read(cx);
     Showing {
@@ -654,6 +709,7 @@ fn showing(app: &Entity<PriceCheckApp>, cx: &App) -> Showing {
             .any(|window| window.downcast::<ReportView>().is_some()),
         sign_in: cx.try_global::<Login>().is_some_and(Login::is_open),
         tour: tour::under_way(cx),
+        hotkey: state.hotkey_busy,
     }
 }
 

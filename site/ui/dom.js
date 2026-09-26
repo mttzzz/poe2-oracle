@@ -37,11 +37,18 @@ export const ornamentRule = (color) =>
 /** A group's heading: a small diamond, the name in capitals, a rule fading to the right. */
 export const sectionHeading = (title) => h("div", "oui-heading", diamond(6), h("span", null, title));
 
-/** The game's double gold frame, laid over a surface that is `position: relative`. */
+/**
+ * The game's double gold frame, laid over a surface that is `position: relative`: its lengths
+ * round to this page's device pixels (--dp), as the app's round to its screen's.
+ */
 export const gameFrame = () =>
     h(
         "div",
-        { class: "oui-frame", "aria-hidden": "true" },
+        {
+            class: "oui-frame",
+            "aria-hidden": "true",
+            "--dp": `${1 / (window.devicePixelRatio || 1)}px`,
+        },
         ["tl", "tr", "bl", "br"].map((corner) => h("span", `oui-corner oui-corner--${corner}`)),
     );
 

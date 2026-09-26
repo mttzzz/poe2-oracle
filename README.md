@@ -2,16 +2,21 @@
 
 **English** · [Русский](README.ru.md)
 
-PoE2 Oracle is a price checker and XP tracker for Path of Exile 2 on Windows. Hover an item in the
-game and press `Ctrl+E`: a panel opens next to your inventory with the item's stats as search
-filters and the cheapest current listings from the official trade site. Currency and other Currency
-Exchange items are priced from GGG's own hourly record of the trades made on the exchange; poe2scout
-adds a chart of the week and prices uniques and exchange items that haven't traded lately. An XP
-overlay right on the game's HUD, above the flask and skill panels, shows how fast you level, how
-long until the next level and how long the current map has run. It is a native
-Windows program written in Rust with
-[GPUI](https://github.com/zed-industries/zed/tree/main/crates/gpui), without Electron or Overwolf;
-only signing in to pathofexile.com opens a page in Windows' own Edge component (WebView2).
+PoE2 Oracle is a price checker and XP tracker for Path of Exile 2 on Windows: native, fast and
+light. It is written in Rust with [GPUI](https://github.com/zed-industries/zed/tree/main/crates/gpui)
+and its interface is drawn by the graphics card through Direct3D 11, with no Electron, browser or
+Overwolf inside; only signing in to pathofexile.com opens a page in Windows' own Edge component
+(WebView2). In Task Manager it is one process of about 50 MB, and it is ready to price 0.27 s after
+it starts. Measured next to it on the same PC, Exiled Exchange 2, Sidekick and PoE Overlay II took
+2.8 to 13 times as much memory
+([how it was measured](https://oracle.pushka.biz/guide/en/performance.html)).
+
+Hover an item in the game and press `Ctrl+E`: a panel opens next to your inventory with the item's
+stats as search filters and the cheapest current listings from the official trade site. Currency
+and other Currency Exchange items are priced from GGG's own hourly record of the trades made on the
+exchange; poe2scout adds a chart of the week and prices uniques and exchange items that haven't
+traded lately. An XP overlay right on the game's HUD, above the flask and skill panels, shows how
+fast you level, how long until the next level and how long the current map has run.
 
 The game has had a price check of its own since patch 0.5 (<kbd>Shift</kbd>+<kbd>Alt</kbd>+click):
 it opens the in-game market, in town or your hideout, with every modifier of the item as a filter.

@@ -20,10 +20,11 @@
 //! and so does the button's «Закрыть окно» ([`serve_presence`]).
 
 use std::sync::Arc;
-use std::time::Duration;
+use std::sync::atomic::{AtomicIsize, Ordering};
+use std::time::{Duration, Instant};
 
 use gpui::{
-    App, Bounds, Context, DisplayId, Entity, Focusable, IntoElement, Render, TitlebarOptions,
+    App, Bounds, Context, DisplayId, Entity, Focusable, IntoElement, Render, Task, TitlebarOptions,
     Window, WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions, div, point,
     prelude::*, px, size,
 };
@@ -32,9 +33,11 @@ use http_client::HttpClient;
 use reqwest_client::ReqwestClient;
 use tray_icon::menu::{Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem};
 use tray_icon::{Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
+use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::HiDpi::{
     DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, SetProcessDpiAwarenessContext,
 };
+use windows::Win32::UI::WindowsAndMessaging::KillTimer;
 
 use crate::brand;
 use crate::diagnostics;
@@ -42,11 +45,12 @@ use crate::i18n::{self, Lang};
 use crate::launch::{Knock, Launch};
 use crate::logging;
 use crate::login;
-use crate::overlay_layout::PhysicalRect;
+use crate::overlay_layout::{PanelResize, PanelWindow, PhysicalRect};
 use crate::platform::instance::{self, Request};
 use crate::platform::taskbar::{self, ButtonEvent, TaskbarButton};
 use crate::platform::win32::Win32Overlay;
-use crate::platform::{autostart, game_config, game_window, redraw_filter};
+use crate::platform::{autostart, game_config, game_window, paint_census, redraw_filter};
+use crate::presence::{self, Shows, Step, Tries};
 use crate::price_check::{self, BootstrapState, PriceCheckApp};
 use crate::report;
 use crate::session::{self, SessionHttpClient};
@@ -69,6 +73,11 @@ const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/
 /// (2.7 MB) -- isn't cut short. Until the answer begins, though, it runs from the request's start,
 /// an upload included: reports go through a client of their own (`report::send`).
 const READ_TIMEOUT: Duration = Duration::from_secs(30);
+/// How long the price panel's paints all go through once it changed, was shown or the player
+/// touched it -- then once a trickle till the next (`Win32Overlay::gate_paints_for`): past its
+/// transitions, and its listings' icons coming in after them. Left up while the player is
+/// elsewhere, it was drawn at every refresh of the display for nothing new.
+const PANEL_PAINT_BURST: Duration = Duration::from_secs(2);
 
 /// Wraps `Entity<PriceCheckApp>` with the platform-window state that has to follow it: the
 /// `Win32Overlay` handle (resolved once the real platform window exists), what was last applied to
@@ -79,7 +88,8 @@ struct PriceCheckRoot {
     /// Last applied click-through bit; `None` until the first sync so it always applies once
     /// (`Win32Overlay` can't read the bit back).
     last_click_through: Option<bool>,
-    last_bounds: Option<PhysicalRect>,
+    /// The window's size and place: the panel's rect while shown, a pixel while hidden.
+    size: PanelWindow,
     /// Last applied OS-window visibility; `None` until the first sync.
     last_shown: Option<bool>,
     /// EE2's inventory-side placement, used until the first check picks its own, and the UI
@@ -87,14 +97,13 @@ struct PriceCheckRoot {
     default_bounds: Option<PhysicalRect>,
     default_bounds_scale: Option<f32>,
     was_visible: bool,
-    /// The notification-area icon, made the first time `Settings::app_icon` asks for it and
-    /// hidden while it doesn't; the taskbar button, while it asks for one (`sync_presence`).
-    tray: Option<Tray>,
-    taskbar: Option<TaskbarButton>,
-    /// Where the app shows itself as of the last change `sync_presence` made, and whether one is
-    /// under way.
-    app_icon: AppIcon,
+    /// The tray icon and the taskbar button (`sync_presence`).
+    presence: Presence,
+    /// A change `sync_presence` makes is under way; how the last ones went, and the wait for the
+    /// next try once one fell short.
     presence_changing: bool,
+    presence_tries: Tries,
+    presence_retry: Option<Task<()>>,
     /// The hotkey and the interface language the tray was last worded for; `None` until the first
     /// sync, and for a new tray.
     tray_words: Option<(Hotkey, Lang)>,
@@ -121,12 +130,16 @@ impl PriceCheckRoot {
                 // with the game (`set_no_activate`): its checkboxes, chips and buttons act on
                 // the panel, and a game that loses focus makes other overlays react (PoE Overlay
                 // II opens its Session Recap). Only a bound input takes the keyboard, when it's
-                // clicked into (`ui::panel::filters`).
+                // clicked into (`ui::panel::filters`). It paints only while it may be changing
+                // (`gate_paints_for`): `sync_window` says when it does.
                 cx.spawn(async move |_, _| {
                     if let Err(err) = overlay.remove_frame() {
                         log::warn!("{err:#}");
                     }
                     if let Err(err) = overlay.set_no_activate() {
+                        log::warn!("{err:#}");
+                    }
+                    if let Err(err) = overlay.gate_paints_for(PANEL_PAINT_BURST) {
                         log::warn!("{err:#}");
                     }
                 })
@@ -167,27 +180,25 @@ impl PriceCheckRoot {
         let want_click_through = !visible;
         let click_through =
             (self.last_click_through != Some(want_click_through)).then_some(want_click_through);
-        let wanted_bounds = placement.or(self.default_bounds);
-        let bounds = if wanted_bounds != self.last_bounds {
-            wanted_bounds
-        } else {
-            None
-        };
         // Shown only when the player asked (`visible`): for an item, or for why there is none yet
         // (the catalog loading, or its first load failed -- `run_price_check`).
         let want_shown = visible;
         let shown = (self.last_shown != Some(want_shown)).then_some(want_shown);
+        // In place before it shows, down to a pixel once hidden (`PanelWindow`).
+        let (size, resize) = self.size.next(visible, placement.or(self.default_bounds));
         // Not while the settings window is what took over: it has the focus the player gave it.
         let focus_game = self.was_visible && !visible && !settings_open && overlay.is_foreground();
 
         self.last_click_through = Some(want_click_through);
-        if bounds.is_some() {
-            self.last_bounds = bounds;
-        }
+        self.size = size;
         self.last_shown = Some(want_shown);
         self.was_visible = visible;
 
-        if click_through.is_none() && bounds.is_none() && shown.is_none() && !focus_game {
+        // Each change of the panel's state, and each frame it draws, lets its paints through a
+        // while longer: its transitions run, its icons come in, and then it's left alone.
+        overlay.open_paints();
+
+        if click_through.is_none() && resize.is_none() && shown.is_none() && !focus_game {
             return;
         }
         // One foreground task, applied in this order so the window is already in place and
@@ -195,18 +206,34 @@ impl PriceCheckRoot {
         // `render`/an `observe` callback, and `SetWindowPos`/`ShowWindow` send `WM_SIZE`/
         // `WM_SHOWWINDOW` synchronously into GPUI's own window state.
         cx.spawn(async move |_, _| {
+            let start = Instant::now();
             if let Some(enabled) = click_through
                 && let Err(err) = overlay.set_click_through(enabled)
             {
                 log::warn!("set_click_through({enabled}) failed: {err:?}");
             }
-            if let Some(rect) = bounds
+            if let Some(PanelResize::Place(rect)) = resize
                 && let Err(err) = overlay.set_bounds(rect)
             {
                 log::warn!("{err:#}");
             }
+            let placed = start.elapsed();
             if let Some(shown) = shown {
                 overlay.set_shown(shown);
+            }
+            // Back from a pixel -- a new swapchain and textures -- and GPUI's first frame, which
+            // `WM_SHOWWINDOW` draws.
+            if shown == Some(true) {
+                log::debug!(
+                    "price panel placed in {placed:?}, drawn and shown in {:?}",
+                    start.elapsed()
+                );
+            }
+            // Once out of sight: its one-pixel frame shows nothing.
+            if resize == Some(PanelResize::Shrink)
+                && let Err(err) = overlay.shrink()
+            {
+                log::warn!("{err:#}");
             }
             if focus_game {
                 game_window::focus_game();
@@ -216,52 +243,40 @@ impl PriceCheckRoot {
     }
 
     /// Shows the app where `Settings::app_icon` says -- the tray icon, the taskbar button or both
-    /// -- once the player changes it. Spawned, and all of it done outside any update: this runs
-    /// inside `render`/an `observe` callback, and the button takes an open settings window over or
-    /// gives it back (`TaskbarButton::show`), sending GPUI's procedure messages. What is wanted
-    /// shows before what isn't goes, so the app never disappears; a change made meanwhile follows
-    /// once this one is done.
+    /// -- once the player changes it (`Presence::settle`). Spawned, and all of it done outside any
+    /// update: this runs inside `render`/an `observe` callback, and the button takes an open
+    /// settings window over or gives it back (`TaskbarButton::show`), sending GPUI's procedure
+    /// messages. A change made meanwhile follows once this one is done.
     ///
-    /// The tray icon, once made, is only hidden and shown again: Windows remembers whether the
-    /// player keeps it by the clock or under the ^ arrow by the icon's number within the run,
-    /// which a new icon wouldn't have.
+    /// What can't show is tried again after a wait (`presence::Tries`), and meanwhile what showed
+    /// stays: the app never disappears.
     fn sync_presence(&mut self, cx: &mut Context<Self>) {
         let wanted = self.inner.read(cx).settings.app_icon;
-        if wanted == self.app_icon || self.presence_changing {
+        if self.presence_changing
+            || self.presence.shows() == Shows::wanted(wanted)
+            || !self.presence_tries.due(wanted)
+        {
             return;
         }
         self.presence_changing = true;
         cx.spawn(async move |this, cx| {
-            let Ok((mut tray, mut button, hotkey)) = this.update(cx, |root, cx| {
+            let Ok((mut presence, mut tries, hotkey)) = this.update(cx, |root, cx| {
                 let hotkey = root.inner.read(cx).settings.hotkey;
-                (root.tray.take(), root.taskbar.take(), hotkey)
+                (
+                    std::mem::take(&mut root.presence),
+                    std::mem::take(&mut root.presence_tries),
+                    hotkey,
+                )
             }) else {
                 return;
             };
-            if wanted.tray() {
-                match &mut tray {
-                    Some(tray) => tray.show(true),
-                    None => tray = new_tray(hotkey),
-                }
-            }
-            if wanted.taskbar() && button.is_none() {
-                button = new_button();
-            }
-            if !wanted.tray()
-                && let Some(tray) = &mut tray
-            {
-                tray.show(false);
-            }
-            if !wanted.taskbar()
-                && let Some(button) = button.take()
-            {
-                button.remove();
-            }
+            let shows = presence.settle(wanted, hotkey, &mut tries);
+            let wait = tries.ended(wanted, shows);
             this.update(cx, |root, cx| {
-                root.tray = tray;
-                root.taskbar = button;
-                root.app_icon = wanted;
+                root.presence = presence;
+                root.presence_tries = tries;
                 root.presence_changing = false;
+                root.presence_retry = wait.map(|wait| Self::retry_presence(wait, cx));
                 root.tray_words = None;
                 root.sync_presence(cx);
                 root.sync_tray(cx);
@@ -271,6 +286,19 @@ impl PriceCheckRoot {
         .detach();
     }
 
+    /// `sync_presence` once `wait` is over: the wait after a change fell short (`Tries::ended`).
+    fn retry_presence(wait: Duration, cx: &mut Context<Self>) -> Task<()> {
+        cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(wait).await;
+            this.update(cx, |root, cx| {
+                root.presence_retry = None;
+                root.presence_tries.waited();
+                root.sync_presence(cx);
+            })
+            .ok();
+        })
+    }
+
     /// Words the tray in the interface language and names the current hotkey in its tooltip --
     /// the only place it's shown besides the panel's own hint.
     fn sync_tray(&mut self, cx: &mut Context<Self>) {
@@ -278,7 +306,7 @@ impl PriceCheckRoot {
         if self.tray_words == Some(words) {
             return;
         }
-        if let Some(tray) = &self.tray {
+        if let Some(tray) = &self.presence.tray {
             tray.word(words.0);
         }
         self.tray_words = Some(words);
@@ -388,6 +416,29 @@ fn tray_tooltip(hotkey: Hotkey) -> String {
 const TRAY_SETTINGS: &str = "settings";
 const TRAY_QUIT: &str = "quit";
 
+/// `tray-icon`'s timer on the icon's hidden window that looks every 15 ms whether the pointer has
+/// left the icon, to report its leaving: its id in `tray-icon` 0.25 (`WM_USER_LEAVE_TIMER_ID`).
+/// The crate sets it at each move of the pointer over the icon and stops it only from a look that
+/// still has a move in hand, and its first look with the pointer still on the icon uses the move
+/// up: a pointer that then leaves without another move over the icon -- up into the icon's menu,
+/// which opens right above it -- leaves the timer waking the UI thread about 64 times a second for
+/// the rest of the run. The app has no use for the leaving, so [`serve_presence`] stops the timer
+/// at each move, right after the crate sets it.
+const TRAY_LEAVE_TIMER: usize = 6007;
+
+/// The tray icon's hidden window, for [`stop_tray_leave_timer`]; 0 until the icon exists. A run
+/// makes one at most (`Presence::tray`).
+static TRAY_WINDOW: AtomicIsize = AtomicIsize::new(0);
+
+/// Stops [`TRAY_LEAVE_TIMER`]. On GPUI's main thread, which runs the tray's hidden window.
+fn stop_tray_leave_timer() {
+    let window = TRAY_WINDOW.load(Ordering::Relaxed);
+    if window != 0 {
+        // Fails harmlessly while no such timer runs.
+        let _ = unsafe { KillTimer(Some(HWND(window as *mut _)), TRAY_LEAVE_TIMER) };
+    }
+}
+
 /// The notification-area icon and its menu's entries, kept to word them again in another
 /// interface language ([`Tray::word`]). Dropping it takes the icon away.
 struct Tray {
@@ -416,6 +467,7 @@ impl Tray {
             .with_menu(Box::new(menu))
             .with_menu_on_left_click(false)
             .build()?;
+        TRAY_WINDOW.store(icon.window_handle() as isize, Ordering::Relaxed);
         let tray = Tray {
             icon,
             settings,
@@ -436,29 +488,72 @@ impl Tray {
     }
 
     /// Shows the icon in the notification area, or hides it there.
-    fn show(&mut self, shown: bool) {
-        if self.shown == shown {
-            return;
+    fn show(&mut self, shown: bool) -> anyhow::Result<()> {
+        if self.shown != shown {
+            self.icon.set_visible(shown)?;
+            self.shown = shown;
         }
-        match self.icon.set_visible(shown) {
-            Ok(()) => self.shown = shown,
-            Err(err) => log::warn!("showing the tray icon ({shown}) failed: {err:#}"),
-        }
+        Ok(())
     }
 }
 
-/// A new tray icon; the app runs on without one it can't make.
-fn new_tray(hotkey: Hotkey) -> Option<Tray> {
-    Tray::new(hotkey)
-        .inspect_err(|err| log::warn!("the tray icon is unavailable: {err:#}"))
-        .ok()
+/// Where the app shows itself: its tray icon and its taskbar button.
+#[derive(Default)]
+struct Presence {
+    /// Made the first time it's to show, and only hidden and shown again after that: Windows
+    /// remembers whether the player keeps it by the clock or under the ^ arrow by the icon's
+    /// number within the run, which a new icon wouldn't have.
+    tray: Option<Tray>,
+    /// While it shows.
+    button: Option<TaskbarButton>,
 }
 
-/// A new taskbar button; the app runs on without one it can't make.
-fn new_button() -> Option<TaskbarButton> {
-    TaskbarButton::show()
-        .inspect_err(|err| log::warn!("the taskbar button is unavailable: {err:#}"))
-        .ok()
+impl Presence {
+    fn shows(&self) -> Shows {
+        Shows {
+            tray: self.tray.as_ref().is_some_and(|tray| tray.shown),
+            button: self.button.is_some(),
+        }
+    }
+
+    /// Shows the app where `wanted` says, as far as it can (`presence::settle`), and gives what
+    /// shows then. On GPUI's main thread and, once its windows are open, outside any update
+    /// (`TaskbarButton::show`). Each kind of failure is logged once, not with every try
+    /// (`Tries::news`).
+    fn settle(&mut self, wanted: AppIcon, hotkey: Hotkey, tries: &mut Tries) -> Shows {
+        presence::settle(wanted, self.shows(), |step| {
+            let taken = self.take(step, hotkey);
+            if tries.news(step, taken.is_ok()) {
+                match &taken {
+                    Ok(()) => log::info!("{step} worked after all"),
+                    Err(err) => log::warn!("{step} failed: {err:#}"),
+                }
+            }
+            taken.is_ok()
+        })
+    }
+
+    /// Takes `step`; a new tray icon names `hotkey` in its tooltip.
+    fn take(&mut self, step: Step, hotkey: Hotkey) -> anyhow::Result<()> {
+        match step {
+            Step::ShowTray => match &mut self.tray {
+                Some(tray) => tray.show(true)?,
+                None => self.tray = Some(Tray::new(hotkey)?),
+            },
+            Step::ShowButton => self.button = Some(TaskbarButton::show()?),
+            Step::HideTray => {
+                if let Some(tray) = &mut self.tray {
+                    tray.show(false)?;
+                }
+            }
+            Step::RemoveButton => {
+                if let Some(button) = self.button.take() {
+                    button.remove();
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 /// What the player asks through the tray icon or the taskbar button.
@@ -487,17 +582,19 @@ fn serve_presence(cx: &mut App, app: &Entity<PriceCheckApp>) {
         let _ = menu_ask.try_send(asked);
     }));
     // A left click opens the settings once the button is let go; presses, double clicks and the
-    // pointer's moves over the icon wake nothing.
+    // pointer's moves over the icon wake nothing -- each move's timer stopped as it's set
+    // (`TRAY_LEAVE_TIMER`), the handler called right after, on the same thread.
     let icon_ask = ask.clone();
-    TrayIconEvent::set_event_handler(Some(move |event: TrayIconEvent| {
-        if let TrayIconEvent::Click {
+    TrayIconEvent::set_event_handler(Some(move |event: TrayIconEvent| match event {
+        TrayIconEvent::Click {
             button: MouseButton::Left,
             button_state: MouseButtonState::Up,
             ..
-        } = event
-        {
+        } => {
             let _ = icon_ask.try_send(Ask::Settings);
         }
+        TrayIconEvent::Move { .. } => stop_tray_leave_timer(),
+        _ => {}
     }));
     let button_events = taskbar::events();
     cx.spawn(async move |_| {
@@ -796,6 +893,8 @@ pub fn run() {
     }
     // Before GPUI starts: its vsync thread loads the `RedrawWindow` import once, before its loop.
     redraw_filter::install();
+    // On this thread, GPUI's UI thread, and only with `POE2_ORACLE_PAINT_CENSUS=1`.
+    paint_census::start();
     // Before anything reads a game table: the installed data pack's tables, when it's sound and
     // newer than the built-in ones (`data_pack`).
     crate::data_pack::activate();
@@ -841,14 +940,17 @@ pub fn run() {
             price_check::register_hotkeys(cx, inner.clone())
                 .expect("failed to set up the price-check hotkey and Esc hook");
             // Before any window opens: the settings and report windows open under the taskbar
-            // button while it shows, and a failure to show either only costs that one.
+            // button while it shows. When the player's choice can't show, the other one stands in
+            // until a later try shows it (`sync_presence`).
             serve_presence(cx, &inner);
             let (app_icon, hotkey) = {
                 let settings = &inner.read(cx).settings;
                 (settings.app_icon, settings.hotkey)
             };
-            let tray = app_icon.tray().then(|| new_tray(hotkey)).flatten();
-            let taskbar = app_icon.taskbar().then(new_button).flatten();
+            let mut presence = Presence::default();
+            let mut presence_tries = Tries::default();
+            let shows = presence.settle(app_icon, hotkey, &mut presence_tries);
+            let presence_wait = presence_tries.ended(app_icon, shows);
             if let Some(requests) = requests {
                 serve_instance_requests(cx, &inner, requests);
             }
@@ -889,19 +991,21 @@ pub fn run() {
                         },
                     )
                     .detach();
+                    let presence_retry =
+                        presence_wait.map(|wait| PriceCheckRoot::retry_presence(wait, cx));
                     PriceCheckRoot {
                         inner,
                         overlay: None,
                         last_click_through: None,
-                        last_bounds: None,
+                        size: PanelWindow::Opened,
                         last_shown: None,
                         default_bounds: None,
                         default_bounds_scale: None,
                         was_visible: false,
-                        tray,
-                        taskbar,
-                        app_icon,
+                        presence,
                         presence_changing: false,
+                        presence_tries,
+                        presence_retry,
                         tray_words: None,
                         xp: None,
                         xp_opening: false,

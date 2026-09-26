@@ -197,61 +197,84 @@
 }
 
 /*
- * The game's double gold frame: a line on the edge, a fainter one 3 px inside, and at each corner
- * a gold diamond with arms fading along the edges. Laid last, over the whole surface.
+ * The game's double gold frame, as the app draws it (crates/poe2-oracle/src/ui/ornament.rs): a
+ * dim gold line on the edge, a fainter one 4 px inside it, and at each corner the outer line
+ * bright gold, fading into the dim along both edges within 26 px, round a diamond set on the
+ * inner line's corner -- its inner tips where the inner line begins, its outer tips on the outer
+ * line, a dark core at its heart. Laid last, over the whole surface; nothing a drawing puts inside
+ * it comes within 11 px of its edge -- the inner line and 6 px of the surface's own background,
+ * the app's keep-out (`FRAME_CLEAR`). Its lengths are whole device pixels, rounded as the app's are
+ * (--dp is one, gameFrame sets it), and it is a layer of its own, which the browser puts on the
+ * device-pixel grid even where the drawing around it isn't: at a capture's scale it lands on the
+ * capture's pixels.
  */
 .oui-frame {
+    /* A hairline -- one px in whole device pixels, halves down, as GPUI draws a 1 px border --,
+       the inner line's inset, a corner's reach; the diamond's centre -- the inner line's corner
+       -- and its size, from the outer line's inner edge to as far past the inner line; its core,
+       a gold rim of whole pixels round it. */
+    --fl: round(calc(1px - 0.001px), var(--dp, 1px));
+    --fg: round(calc(4 * var(--u)), var(--dp, 1px));
+    --fa: round(calc(26 * var(--u)), var(--dp, 1px));
+    --fc: calc(var(--fg) + var(--fl) / 2);
+    --fd: calc(2 * var(--fg) - var(--fl));
+    --fk: calc(var(--fd) - 2 * round(calc(0.3 * var(--fd)), var(--dp, 1px)));
     position: absolute;
     inset: 0;
-    border: 1px solid var(--border-gold);
+    border: var(--fl) solid var(--border-gold);
     pointer-events: none;
+    will-change: transform;
 }
 
 .oui-frame::before {
     content: "";
     position: absolute;
-    inset: calc(3 * var(--u) - 1px);
-    border: 1px solid rgb(208 145 59 / 0.3);
+    inset: calc(var(--fg) - var(--fl));
+    /* 30 % of the gold: the app's alpha byte, 77. */
+    border: var(--fl) solid #d0913b4d;
 }
 
+/* A corner: the outer line's gold, bright up to the diamond's outer tips, then fading into the
+   frame's own by the corner's last pixel. */
 .oui-corner {
     position: absolute;
-    width: calc(26 * var(--u));
-    height: calc(26 * var(--u));
+    width: var(--fa);
+    height: var(--fa);
     background:
-        linear-gradient(90deg, var(--gold), transparent) no-repeat
-            calc(8 * var(--u)) 0 / calc(18 * var(--u)) 1px,
-        linear-gradient(180deg, var(--gold), transparent) no-repeat
-            0 calc(8 * var(--u)) / 1px calc(18 * var(--u));
+        linear-gradient(90deg, var(--gold) var(--fc), var(--border-gold) calc(100% - var(--dp, 1px) / 2))
+            0 0 / 100% var(--fl) no-repeat,
+        linear-gradient(180deg, var(--gold) var(--fc), var(--border-gold) calc(100% - var(--dp, 1px) / 2))
+            0 0 / var(--fl) 100% no-repeat;
 }
 
+/* The diamond and its core, --fd and --fk across, centred on the inner line's corner over the
+   inner line's start: each a box on the device-pixel grid cut to a diamond, as the app rasterises
+   one -- a square turned 45° would land between pixels. */
 .oui-corner::before,
 .oui-corner::after {
     content: "";
     position: absolute;
-    transform: rotate(45deg);
+    left: calc(var(--fc) - var(--size) / 2);
+    top: calc(var(--fc) - var(--size) / 2);
+    width: var(--size);
+    height: var(--size);
+    clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
 }
 
 .oui-corner::before {
-    left: calc(4 * var(--u) - 2.83 * var(--u));
-    top: calc(4 * var(--u) - 2.83 * var(--u));
-    width: calc(5.66 * var(--u));
-    height: calc(5.66 * var(--u));
+    --size: var(--fd);
     background: var(--gold);
 }
 
 .oui-corner::after {
-    left: calc(4 * var(--u) - 1.13 * var(--u));
-    top: calc(4 * var(--u) - 1.13 * var(--u));
-    width: calc(2.26 * var(--u));
-    height: calc(2.26 * var(--u));
+    --size: var(--fk);
     background: var(--bg-title);
 }
 
-.oui-corner--tl { left: -1px; top: -1px; }
-.oui-corner--tr { right: -1px; top: -1px; transform: scaleX(-1); }
-.oui-corner--bl { left: -1px; bottom: -1px; transform: scaleY(-1); }
-.oui-corner--br { right: -1px; bottom: -1px; transform: scale(-1, -1); }
+.oui-corner--tl { left: calc(-1 * var(--fl)); top: calc(-1 * var(--fl)); }
+.oui-corner--tr { right: calc(-1 * var(--fl)); top: calc(-1 * var(--fl)); transform: scaleX(-1); }
+.oui-corner--bl { left: calc(-1 * var(--fl)); bottom: calc(-1 * var(--fl)); transform: scaleY(-1); }
+.oui-corner--br { right: calc(-1 * var(--fl)); bottom: calc(-1 * var(--fl)); transform: scale(-1, -1); }
 
 /* A title bar: the game's bronze fading into black. */
 .oui-titlebar {

@@ -10,3 +10,4 @@
 - [Troubleshooting and FAQ](troubleshooting.md)
 - [Reporting a problem](report.md)
 - [Privacy](privacy.md)
+- [Performance](performance.md)

@@ -525,6 +525,63 @@ impl PanelPositions {
     }
 }
 
+/// The price panel's window as it's sized (`app::PriceCheckRoot::sync_window`): at the panel's
+/// rect while it's shown, a single device pixel while it's hidden -- `gpui_windows` keeps a
+/// window's swapchain and its paths' textures at its size, shown or not, 32 bytes a device pixel:
+/// 61 MiB for the test machine's 922x2160 panel -- and at its rect again before it shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PanelWindow {
+    /// As opened: the placeholder size, never placed.
+    Opened,
+    /// At this rect.
+    Placed(PhysicalRect),
+    /// Down to a pixel while hidden; where it goes back to when it shows, unless the panel says
+    /// where by then.
+    Shrunk(PhysicalRect),
+}
+
+/// What [`PanelWindow::next`] does to the window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PanelResize {
+    /// Place and size it at this rect: before it shows, so its first frame is drawn at it.
+    Place(PhysicalRect),
+    /// Take it down to a pixel: once it's hidden.
+    Shrink,
+}
+
+impl PanelWindow {
+    /// The window's next state for a panel `shown` or not, where `wanted` says it goes -- if
+    /// anything says -- and what to do to the window to get there. Shown, it goes to `wanted`, or
+    /// back where it was. Hidden, it goes down to a pixel as soon as it has somewhere to come back
+    /// to, and stays there, however the place it's wanted at changes, until it shows.
+    pub fn next(
+        self,
+        shown: bool,
+        wanted: Option<PhysicalRect>,
+    ) -> (PanelWindow, Option<PanelResize>) {
+        use PanelWindow::{Opened, Placed, Shrunk};
+        if shown {
+            let rect = wanted.or(match self {
+                Opened => None,
+                Placed(rect) | Shrunk(rect) => Some(rect),
+            });
+            return match rect {
+                Some(rect) if self != Placed(rect) => {
+                    (Placed(rect), Some(PanelResize::Place(rect)))
+                }
+                _ => (self, None),
+            };
+        }
+        match (self, wanted) {
+            (Opened, None) => (Opened, None),
+            (Opened | Placed(_), Some(rect)) | (Placed(rect), None) => {
+                (Shrunk(rect), Some(PanelResize::Shrink))
+            }
+            (Shrunk(rect), wanted) => (Shrunk(wanted.unwrap_or(rect)), None),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -955,6 +1012,76 @@ mod tests {
         assert_eq!(
             positions.rect(PanelSide::Stash, GAME_4K, GAME_4K, 2.0).x,
             2400
+        );
+    }
+
+    fn inventory_side() -> PhysicalRect {
+        panel_rect(GAME_4K, PanelSide::Inventory, 2.0)
+    }
+
+    fn stash_side() -> PhysicalRect {
+        panel_rect(GAME_4K, PanelSide::Stash, 2.0)
+    }
+
+    #[test]
+    fn a_hidden_panel_waits_at_a_pixel_and_is_placed_before_it_shows() {
+        let (window, resize) = PanelWindow::Opened.next(false, Some(inventory_side()));
+        assert_eq!(resize, Some(PanelResize::Shrink), "opened hidden");
+        let (window, resize) = window.next(true, Some(inventory_side()));
+        assert_eq!(
+            resize,
+            Some(PanelResize::Place(inventory_side())),
+            "a check shows it"
+        );
+        assert_eq!(
+            window.next(true, Some(inventory_side())),
+            (window, None),
+            "shown still"
+        );
+        let (_, resize) = window.next(false, Some(inventory_side()));
+        assert_eq!(resize, Some(PanelResize::Shrink), "closed");
+    }
+
+    #[test]
+    fn a_hidden_panel_is_resized_only_as_it_shows() {
+        let (hidden, _) = PanelWindow::Placed(inventory_side()).next(false, None);
+        // The next check's side, a new UI scale: nothing while it's hidden.
+        let (hidden, resize) = hidden.next(false, Some(stash_side()));
+        assert_eq!(resize, None);
+        assert_eq!(
+            hidden.next(true, Some(stash_side())).1,
+            Some(PanelResize::Place(stash_side()))
+        );
+    }
+
+    #[test]
+    fn a_panel_nothing_places_shows_where_it_was_and_never_at_a_pixel() {
+        let (hidden, _) = PanelWindow::Placed(stash_side()).next(false, None);
+        assert_eq!(
+            hidden.next(true, None).1,
+            Some(PanelResize::Place(stash_side()))
+        );
+        // Never placed, nowhere to go: it's left as opened, shown or not.
+        for shown in [false, true] {
+            assert_eq!(
+                PanelWindow::Opened.next(shown, None),
+                (PanelWindow::Opened, None)
+            );
+        }
+    }
+
+    #[test]
+    fn a_shown_panel_follows_a_drag() {
+        let dragged = PhysicalRect {
+            x: 1200,
+            ..inventory_side()
+        };
+        assert_eq!(
+            PanelWindow::Placed(inventory_side()).next(true, Some(dragged)),
+            (
+                PanelWindow::Placed(dragged),
+                Some(PanelResize::Place(dragged))
+            )
         );
     }
 }

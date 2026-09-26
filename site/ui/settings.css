@@ -36,12 +36,14 @@
     width: calc-size(fit-content, round(up, size, var(--u)));
 }
 
-/* The title bar: ◆ PoE2 Oracle · Settings, and × as tall as the bar. */
+/* The title bar: ◆ PoE2 Oracle · Settings, and × as tall as the bar, centred between the frame's
+   inner line and the bar's rule (style.rs `title_bar`). */
 .oui-settings-titlebar {
     display: flex;
     flex: none;
     align-items: center;
     height: calc(40 * var(--u));
+    padding-top: calc(5 * var(--u));
     border-bottom: 1px solid var(--border-gold);
 }
 
@@ -98,20 +100,21 @@
     background: var(--bg-sidebar);
 }
 
+/* Its rows, and their light, clear of the frame's 11 px keep-out (ornament.rs `FRAME_CLEAR`). */
 .oui-settings-nav {
     position: relative;
     display: flex;
     flex: none;
     flex-direction: column;
     gap: calc(2 * var(--u));
-    padding: calc(18 * var(--u)) calc(10 * var(--u)) 0;
+    padding: calc(18 * var(--u)) calc(11 * var(--u)) 0;
 }
 
 .oui-settings-marker {
     position: absolute;
     top: calc((18 + 40 * var(--at, 0)) * var(--u));
-    right: calc(10 * var(--u));
-    left: calc(10 * var(--u));
+    right: calc(11 * var(--u));
+    left: calc(11 * var(--u));
     height: calc(38 * var(--u));
     border-radius: calc(6 * var(--u));
     background: linear-gradient(90deg, rgb(208 145 59 / 0.16), rgb(208 145 59 / 0.02));
@@ -205,15 +208,17 @@
     height: calc(7 * var(--u));
 }
 
-/* The section's groups. The app scrolls them; a drawing shows what fits. */
+/* The section's groups. The app scrolls them, stopping at the frame's keep-out; a drawing shows
+   what fits. */
 .oui-settings-page {
     display: flex;
     flex: 1;
     flex-direction: column;
     gap: calc(22 * var(--u));
     min-height: 0;
+    margin-bottom: calc(11 * var(--u));
     overflow: hidden;
-    padding: calc(4 * var(--u)) calc(36 * var(--u)) calc(28 * var(--u));
+    padding: calc(4 * var(--u)) calc(36 * var(--u)) calc(17 * var(--u));
 }
 
 .oui-settings-group {

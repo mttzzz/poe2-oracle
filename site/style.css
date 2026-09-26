@@ -229,8 +229,18 @@ kbd {
 }
 
 .hero h1 {
-    margin: 0 0 0.75rem;
-    font-size: clamp(2.5rem, 6vw, 4rem);
+    margin: 0 0 1rem;
+    font-size: clamp(2.25rem, 6vw, 3.75rem);
+}
+
+/* The app's name above the claim. */
+.hero-name {
+    margin: 0 0 0.4rem;
+    color: var(--text-dim);
+    font-family: var(--display);
+    font-weight: var(--display-weight);
+    font-size: 1.4rem;
+    letter-spacing: 0.02em;
 }
 
 .hero .lead {
@@ -238,6 +248,49 @@ kbd {
     margin: 0 auto 2rem;
     color: var(--text-dim);
     font-size: 1.2rem;
+}
+
+/* Measured numbers under the lead, filled in from ui/data/bench.json by ui/bench.js, as are the
+   "Fast and light" section's. */
+.proof {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.75rem;
+    max-width: 52rem;
+    margin: 0 auto 0.9rem;
+    padding: 0;
+    list-style: none;
+}
+
+.proof li {
+    padding: 0.85rem 0.75rem 0.95rem;
+    border: 1px solid var(--border-gold);
+    border-radius: 4px;
+    background: rgba(6, 6, 7, 0.5);
+    color: var(--text-dim);
+    font-size: 0.9rem;
+    line-height: 1.35;
+}
+
+.proof b,
+.facts b {
+    display: block;
+    min-height: 1.15em;
+    color: var(--gold-bright);
+    font-weight: 700;
+    line-height: 1.15;
+    font-variant-numeric: lining-nums;
+    white-space: nowrap;
+}
+
+.proof b {
+    margin-bottom: 0.3rem;
+    font-size: 1.9rem;
+}
+
+.proof-more {
+    margin: 0 0 2rem;
+    font-size: 0.95rem;
 }
 
 .actions {
@@ -336,6 +389,52 @@ kbd {
 .section > .wrap > p.intro {
     max-width: 48rem;
     color: var(--text-dim);
+}
+
+/* Fast and light: the comparison (ui/bench.css), its notes, and the timings and sizes. */
+
+.fast-heading {
+    margin-top: 3rem;
+}
+
+.bench-notes {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(22rem, 100%), 1fr));
+    gap: 0.75rem 2.5rem;
+    margin-top: 1.25rem;
+    color: var(--text-dim);
+    font-size: 0.95rem;
+}
+
+.bench-notes p {
+    margin: 0;
+}
+
+.facts {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1rem;
+    margin: 1rem 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.facts li {
+    padding: 1rem 1.25rem 1.1rem;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg-control);
+    color: var(--text-dim);
+    line-height: 1.45;
+}
+
+.facts b {
+    margin-bottom: 0.35rem;
+    font-size: 1.6rem;
+}
+
+.facts-note {
+    margin: 1rem 0 0;
 }
 
 .feature {
@@ -648,5 +747,30 @@ button.button:disabled {
 
     .section {
         padding: 3rem 0;
+    }
+
+    .facts {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 40rem) {
+    .proof {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.5rem;
+    }
+
+    .proof li {
+        padding: 0.6rem 0.5rem 0.7rem;
+        font-size: 0.85rem;
+    }
+
+    .proof b {
+        margin-bottom: 0.15rem;
+        font-size: 1.6rem;
+    }
+
+    .facts {
+        grid-template-columns: minmax(0, 1fr);
     }
 }

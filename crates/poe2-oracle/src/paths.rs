@@ -1,11 +1,11 @@
 //! Where the app keeps its files, all in `directories`' per-user folders for "poe2-oracle": the
 //! settings in the roaming config folder (`%APPDATA%\poe2-oracle\config`), the log, the kept item
-//! texts, the last crash, the last update's marker, the sign-in window's browser profile and the
-//! installed game data pack in the local data folder (`%LOCALAPPDATA%\poe2-oracle\data`), and
-//! whatever can be fetched again -- trade catalogs, exchange and poe2scout prices, downloaded
-//! updates -- in the local cache folder (`%LOCALAPPDATA%\poe2-oracle\cache`). Without a home
-//! folder (never on a real Windows profile) the data and cache fall back to the temp folder, and
-//! settings aren't kept.
+//! texts, the last crash, the last update's marker and the XP overlay's tracker it carried over,
+//! the sign-in window's browser profile and the installed game data pack in the local data folder
+//! (`%LOCALAPPDATA%\poe2-oracle\data`), and whatever can be fetched again -- trade catalogs,
+//! exchange and poe2scout prices, downloaded updates -- in the local cache folder
+//! (`%LOCALAPPDATA%\poe2-oracle\cache`). Without a home folder (never on a real Windows profile)
+//! the data and cache fall back to the temp folder, and settings aren't kept.
 
 use std::path::PathBuf;
 use std::sync::LazyLock;
@@ -36,6 +36,12 @@ pub fn updates_dir() -> PathBuf {
 /// start has said so.
 pub fn update_marker_file() -> PathBuf {
     data_dir().join("last-update.json")
+}
+
+/// The XP overlay's tracker as an update's restart left it, until the next start has carried on
+/// with it (`ui::xp_overlay::carry_over`).
+pub fn xp_carry_file() -> PathBuf {
+    data_dir().join("xp-carry.json")
 }
 
 /// Item texts the parser rejected or couldn't fully read (and every checked text while

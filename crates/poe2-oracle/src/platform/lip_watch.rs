@@ -8,12 +8,15 @@
 //! desktop comes through DXGI desktop duplication instead: Windows hands over each frame it
 //! composes as a texture, the lips' few rows are copied out of it on the GPU, and only those rows
 //! are read back -- the bar's too, every `BAR_EVERY`, so that the sampler needs no blit at all
-//! while this watches. The watching runs on a thread of its own, while the player is at the game
-//! -- it's in front, or the cursor is over it: the game shows its tooltips under the cursor
-//! whatever has the keyboard -- and a moment after; otherwise the duplication is released and
-//! [`LipReport::Idle`] leaves the plates and the bar to the sampler's slower look.
+//! while this watches. The watching runs on a thread of its own while the game is in front and
+//! not minimised, and a moment after (`platform::lip_schedule`, which paces the looks too). The
+//! thread learns of the foreground from Windows' reports, handed on by the overlay
+//! ([`LipWatch::foreground`]), and asks nothing while it doesn't watch: it sleeps till told
+//! otherwise. Once it stops, the duplication and its Direct3D device are let go -- their video
+//! memory and the graphics driver's threads with them -- and [`LipReport::Idle`] leaves the
+//! plates and the bar to the sampler's slower look.
 
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, TryRecvError};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, Result, bail};
@@ -34,35 +37,17 @@ use windows::Win32::Graphics::Dxgi::{
 };
 use windows::Win32::System::SystemInformation::GetTickCount;
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetLastInputInfo, LASTINPUTINFO};
+use windows::Win32::UI::WindowsAndMessaging::IsIconic;
 use windows::core::Interface;
 
 use crate::overlay_layout::{PhysicalRect, hud_rails, rail_lip, rail_seen};
-use crate::platform::game_window;
+use crate::platform::game_window::{self, Foreground};
+use crate::platform::lip_schedule::{WhenToWatch, look_wait};
 use crate::platform::xp_bar::{RailsSeen, shows_the_game};
 use crate::xp_tracker::{XpBarGeometry, read_fill};
 
-/// How often the watcher looks at what to watch and at the player while it isn't watching.
-const IDLE_POLL: Duration = Duration::from_millis(250);
-/// How often it looks at the player while it watches, and finds the game's window again (the game
-/// restarted, say).
-const ATTENTION_POLL: Duration = Duration::from_millis(100);
-const FIND_GAME_EVERY: Duration = Duration::from_secs(1);
-/// How long it keeps watching once the player has left the game -- neither in front nor under
-/// the cursor: the tooltip they left goes a moment later, and its plate should come back then.
-const LINGER: Duration = Duration::from_secs(2);
-/// How long it waits for a frame before looking at what to watch again: a still desktop sends
-/// none.
+/// How long it waits for a frame before looking at its orders again: a still desktop sends none.
 const FRAME_WAIT_MS: u32 = 100;
-/// The least time between two looks at the desktop: while the player moves the mouse or presses
-/// keys -- a tooltip comes or goes only then -- and once they've been still for `STILL_AFTER`.
-/// The game presents far more often: a look at each of its frames cost 4 % of a core, measured
-/// 2026-09-24 on the test machine at 77 frames a second.
-const LOOK_INTERVAL: Duration = Duration::from_millis(25);
-const STILL_LOOK_INTERVAL: Duration = Duration::from_millis(250);
-const STILL_AFTER: Duration = Duration::from_secs(1);
-/// How long it waits after the desktop couldn't be duplicated -- the secure desktop of a UAC
-/// prompt, another program's exclusive fullscreen -- before it tries again.
-const RETRY_AFTER: Duration = Duration::from_secs(3);
 /// How often a look reads the experience bar too: the sampler takes a reading every two seconds,
 /// and a reading this old is as good as its own.
 const BAR_EVERY: Duration = Duration::from_millis(500);
@@ -74,82 +59,117 @@ pub enum LipReport {
     /// and the fill the bar showed when last read (`xp_tracker::read_fill`), `None` when it was
     /// covered or unreadable. Sent at the first look and whenever either changes.
     Seen { rails: RailsSeen, fill: Option<f64> },
-    /// Not watching -- the player isn't at the game, there is no game to watch, or the desktop
-    /// can't be duplicated -- so the sampler's look decides.
+    /// Not watching -- the game isn't in front, there is no game to watch, or the desktop can't
+    /// be duplicated -- so the sampler's look decides.
     Idle,
 }
 
-/// The watching thread's handle: it watches the rails of the game it was last given.
+/// The watching thread's handle: it watches the rails of the game it was last given, while the
+/// game is in front.
 pub struct LipWatch {
-    games: Sender<Option<PhysicalRect>>,
+    orders: Sender<Order>,
+}
+
+/// What the watching thread is told.
+enum Order {
+    /// The client area of the game to watch the rails of, or none.
+    Game(Option<PhysicalRect>),
+    /// A new foreground window, of this kind.
+    Foreground(Foreground),
 }
 
 impl LipWatch {
     /// Starts the watching thread, which reports on the returned channel and ends once the
     /// handle is dropped.
     pub fn start() -> Result<(LipWatch, async_channel::Receiver<LipReport>)> {
-        let (games, targets) = mpsc::channel();
-        let (reports, received) = async_channel::unbounded();
+        let (orders, received) = mpsc::channel();
+        let (reports, reported) = async_channel::unbounded();
         std::thread::Builder::new()
             .name("lip-watch".into())
-            .spawn(move || watch(&targets, &reports))
+            .spawn(move || watch(&received, &reports))
             .context("starting the lip watcher")?;
-        Ok((LipWatch { games }, received))
+        Ok((LipWatch { orders }, reported))
     }
 
     /// Watches the rails of a game whose client area is `game`, or nothing.
     pub fn watch(&self, game: Option<PhysicalRect>) {
-        let _ = self.games.send(game);
+        let _ = self.orders.send(Order::Game(game));
+    }
+
+    /// Takes Windows' report of a new foreground window (`game_window::watch_foreground`): the
+    /// watching follows the game to the front and away from it.
+    pub fn foreground(&self, foreground: Foreground) {
+        let _ = self.orders.send(Order::Foreground(foreground));
     }
 }
 
-fn watch(targets: &Receiver<Option<PhysicalRect>>, reports: &async_channel::Sender<LipReport>) {
+fn watch(orders: &Receiver<Order>, reports: &async_channel::Sender<LipReport>) {
+    let mut when = WhenToWatch::default();
     let mut game = None;
+    // The game's window, found anew with each order and each settle: whether it's in front, and
+    // whether it shows the bar.
+    let mut window: Option<HWND> = None;
     let mut duplication: Option<Duplication> = None;
     // What was reported last: `None` for `Idle`, and before the first report.
     let mut reported: Option<(RailsSeen, Option<f64>)> = None;
     // The bar's fill as last read, while watching.
     let mut fill: Option<f64> = None;
-    let mut retry_at = Instant::now();
     let mut last_error = String::new();
     // The first duplication of the run is logged, as a sign in the diagnostics report that the
     // fast look works; each later one, on every return to the game, only at debug.
     let mut announced = false;
-    // The game's window and when it was last found; when the player was last looked for at it,
-    // and last found there.
-    let mut window: Option<HWND> = None;
-    let mut found_at: Option<Instant> = None;
-    let mut looked_at: Option<Instant> = None;
-    let mut attended_at: Option<Instant> = None;
     loop {
         let now = Instant::now();
-        if found_at.is_none_or(|at| now - at >= FIND_GAME_EVERY) {
+        if when.settle_due(now) {
             window = game_window::game_window();
-            found_at = Some(now);
+            when.asked(window.is_some_and(game_window::in_front), now);
         }
-        if looked_at.is_none_or(|at| now - at >= ATTENTION_POLL) {
-            looked_at = Some(now);
-            if window.is_some_and(game_window::attended) {
-                attended_at = Some(now);
+        let order = if when.watching(now) {
+            match orders.try_recv() {
+                Ok(order) => Some(order),
+                Err(TryRecvError::Empty) => None,
+                Err(TryRecvError::Disconnected) => return,
             }
-        }
-        let watching =
-            game.is_some() && now >= retry_at && attended_at.is_some_and(|at| now - at < LINGER);
-        let wait = if watching { Duration::ZERO } else { IDLE_POLL };
-        match targets.recv_timeout(wait) {
-            Ok(target) => {
-                game = target;
-                continue;
+        } else {
+            // Nothing to look at: the duplication and its device go, and the thread sleeps till
+            // an order comes, or the watching may start by itself.
+            if duplication.take().is_some() {
+                log::debug!("lip watch: the duplication let go");
             }
-            Err(RecvTimeoutError::Disconnected) => return,
-            Err(RecvTimeoutError::Timeout) => {}
-        }
-        let Some(client) = game.filter(|_| watching) else {
-            duplication = None;
             fill = None;
             if reported.take().is_some() {
                 let _ = reports.try_send(LipReport::Idle);
             }
+            let received = match when.idle_wait(now) {
+                Some(wait) => orders.recv_timeout(wait),
+                None => orders.recv().map_err(RecvTimeoutError::from),
+            };
+            match received {
+                Ok(order) => Some(order),
+                Err(RecvTimeoutError::Timeout) => continue,
+                Err(RecvTimeoutError::Disconnected) => return,
+            }
+        };
+        if let Some(order) = order {
+            let now = Instant::now();
+            window = game_window::game_window();
+            match order {
+                Order::Game(target) => {
+                    game = target;
+                    when.given(game.is_some());
+                    when.asked(window.is_some_and(game_window::in_front), now);
+                }
+                // The report names the new foreground window, which `GetForegroundWindow` may not
+                // yet while it's delivered: the settle asks that.
+                Order::Foreground(foreground) => {
+                    let front = foreground == Foreground::Game
+                        && window.is_some_and(|window| !unsafe { IsIconic(window) }.as_bool());
+                    when.reported(front, now);
+                }
+            }
+            continue;
+        }
+        let Some(client) = game else {
             continue;
         };
         let lips = {
@@ -186,7 +206,7 @@ fn watch(targets: &Receiver<Option<PhysicalRect>>, reports: &async_channel::Send
                         log::warn!("lip watch: {error}");
                         last_error = error;
                     }
-                    retry_at = Instant::now() + RETRY_AFTER;
+                    when.failed(Instant::now());
                     continue;
                 }
             }
@@ -218,7 +238,8 @@ fn watch(targets: &Receiver<Option<PhysicalRect>>, reports: &async_channel::Send
     }
 }
 
-/// The duplication of the monitor the game is on, and what reading its lips and bar takes.
+/// The duplication of the monitor the game is on, and what reading its lips and bar takes: a
+/// Direct3D device of its own, let go with it.
 struct Duplication {
     /// The monitor's area of the desktop, physical pixels.
     monitor: PhysicalRect,
@@ -511,6 +532,18 @@ impl Duplication {
     }
 }
 
+impl Drop for Duplication {
+    /// Direct3D destroys what's let go only once nothing on its context holds it: cleared and
+    /// flushed first, the device goes with the last reference -- its video memory, the frame's,
+    /// and the graphics driver's threads that served it -- not some time later.
+    fn drop(&mut self) {
+        unsafe {
+            self.context.ClearState();
+            self.context.Flush();
+        }
+    }
+}
+
 /// Puts `height` rows of `width` pixels, from row `top` down, of a mapped texture's `data` into
 /// `rows`, tightly packed.
 ///
@@ -534,35 +567,30 @@ unsafe fn gather(
     }
 }
 
-/// Waits until the next look after the one at `last` is due: `LOOK_INTERVAL` after it while the
-/// player moves the mouse or presses keys, anywhere in the session -- a tooltip comes or goes only
-/// then -- and `STILL_LOOK_INTERVAL` after it once they've been still a while, unless they move
-/// meanwhile: input is looked for every `LOOK_INTERVAL`, and the first ends the wait.
+/// Waits until the next look after the one at `last` is due (`lip_schedule::look_wait`): soon
+/// while the player moves the mouse or presses keys, anywhere in the session -- a tooltip comes
+/// or goes only then -- and later once they've kept still, unless they move meanwhile.
 fn wait_for_look(last: Instant) {
     loop {
-        let since = last.elapsed();
-        let due = if moved_lately() {
-            LOOK_INTERVAL
-        } else {
-            STILL_LOOK_INTERVAL
-        };
-        if since >= due {
+        let wait = look_wait(last.elapsed(), still_for());
+        if wait.is_zero() {
             return;
         }
-        std::thread::sleep((due - since).min(LOOK_INTERVAL));
+        std::thread::sleep(wait);
     }
 }
 
-/// Whether the player moved the mouse or pressed a key within `STILL_AFTER`.
-fn moved_lately() -> bool {
+/// How long the player has kept still: no mouse or key input anywhere in the session. Zero if
+/// Windows can't say, as if they had just moved.
+fn still_for() -> Duration {
     let mut last = LASTINPUTINFO {
         cbSize: size_of::<LASTINPUTINFO>() as u32,
         dwTime: 0,
     };
     if !unsafe { GetLastInputInfo(&mut last) }.as_bool() {
-        return true;
+        return Duration::ZERO;
     }
     // Both on the 32-bit millisecond tick, which wraps every 49.7 days.
     let still = unsafe { GetTickCount() }.wrapping_sub(last.dwTime);
-    Duration::from_millis(u64::from(still)) < STILL_AFTER
+    Duration::from_millis(u64::from(still))
 }

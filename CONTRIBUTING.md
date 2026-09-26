@@ -121,6 +121,11 @@ Things that save time:
   so copy them out before checking more.
 - `POE2_ORACLE_CLIENT_LOG=<file>` makes the app read that file instead of the game's `Client.txt`,
   so the XP overlay can be tested by appending lines to it.
+- `POE2_ORACLE_PAINT_CENSUS=1` logs, every 10 seconds, what woke the UI thread, window by window:
+  the display refreshes' asks for a paint and what the redraw filter did with them, the paints a
+  gated window let through or swallowed, what opened its paints, and the messages taken off the
+  thread's queue or sent from other threads, per second. For measuring idle cost; off, it only
+  reads a flag.
 - `POE2_ORACLE_API_BASE` is read at build time: the app then sends its reports and update checks to
   that address instead of `https://oracle.pushka.biz`, for testing against your own `oracle-web`
   (see [The web service](#the-web-service)). It must be https, without a trailing slash; a plain
@@ -318,9 +323,11 @@ GitHub the last list's ETag, so an unchanged list costs no rate limit. Of the pu
 semver precedence, and the data pack, the `data-<N>` tag with the highest N; a release of one kind
 never stands for the other. `GET /api/v1/events` is a Server-Sent Events stream: a `versions` event
 with both versions (`{"app":"0.1.1","data":2026092601}`) as soon as the app connects and again
-whenever either changes, and a `: ping` comment after 25 s of silence. One address may hold 8
-streams at once and the service 4000 in all (about 23 KiB of memory each); past either, it answers
-429 or 503 with `Retry-After`. When the service shuts down, the streams end, and the apps reconnect.
+whenever either changes, and a `: ping` comment after 25 s of silence. One address may hold 64
+streams at once and the service 4000 in all (about 23 KiB of memory each). A stream past either
+gets no place, only the `versions` event with `retry: 60000`, and ends at once; the app then asks
+again on its backoff, which grows to 5 min. When the service shuts down, the streams end, and the
+apps reconnect.
 
 The site's root and `/guide/` open in the reader's language: the one in the `lang` cookie, which the
 language links on the site and in the guide set when clicked, or else the browser's

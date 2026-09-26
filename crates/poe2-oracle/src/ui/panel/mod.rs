@@ -46,6 +46,7 @@ use crate::tour::{Host, Stop};
 use crate::tr;
 use crate::ui::fonts;
 use crate::ui::hint as hints;
+use crate::ui::ornament::FRAME_CLEAR;
 use crate::ui::style::{ButtonKind, appear, button, game_frame, ornament_rule};
 use crate::ui::theme::{
     BG_PANEL, BORDER_GOLD, CONTENT_PADDING, TEXT, TEXT_DIM, TEXT_WARNING, rems_from_px,
@@ -138,12 +139,14 @@ fn render_item(
     cx: &Context<PriceCheckApp>,
 ) -> impl IntoElement {
     let searched = !matches!(state.search, SearchState::NotSearched);
+    // Scrolled rows stop at the frame's keep-out, and the last one rests 14 px above the edge.
     div()
         .id("price-check-scroll")
         .flex()
         .flex_col()
         .flex_1()
         .min_h_0()
+        .mb(rems_from_px(FRAME_CLEAR))
         .overflow_y_scroll()
         .child(render_nameplate(item, state.trade_site(), cx))
         .child(
@@ -151,7 +154,7 @@ fn render_item(
                 .flex()
                 .flex_col()
                 .px(rems_from_px(CONTENT_PADDING))
-                .pb(rems_from_px(14.))
+                .pb(rems_from_px(14. - FRAME_CLEAR))
                 .child(render_chips(state, item, cx))
                 .map(|this| {
                     if state.priced_by_market {

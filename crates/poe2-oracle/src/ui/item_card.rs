@@ -21,6 +21,7 @@ use trade_client::{ItemFrame, ListedItem, ListedMod, ModKind, TradeSite, ValueCo
 
 use crate::tr;
 use crate::ui::fonts::{self, NameFont};
+use crate::ui::ornament::FRAME_CLEAR;
 use crate::ui::panel::format::currency_img;
 use crate::ui::style::{game_frame, switch_in, tooltip_shadow};
 use crate::ui::theme::{
@@ -41,6 +42,9 @@ const SIDE_COLUMN: f32 = 34.;
 const SIDE_TEXT: f32 = 11.;
 /// The currency icon in the seller's price note.
 const NOTE_ICON: f32 = 14.;
+/// The room around the header's and the body's content, px -- the frame's keep-out on the card's
+/// edges, this much where the two meet at the header's rule.
+const PADDING: f32 = 6.;
 
 /// How a mod stands against the search that found the listing.
 pub(crate) enum ModMark {
@@ -282,8 +286,9 @@ pub(crate) fn render_item_card(card: &ItemCard, window: &Window) -> impl IntoEle
                 div()
                     .flex()
                     .flex_col()
-                    .px(rems_from_px(8.))
-                    .py(rems_from_px(6.))
+                    .px(rems_from_px(FRAME_CLEAR))
+                    .pt(rems_from_px(PADDING))
+                    .pb(rems_from_px(FRAME_CLEAR))
                     .children(card.sections.iter().enumerate().map(|(index, lines)| {
                         div()
                             .flex()
@@ -305,8 +310,9 @@ fn render_header(card: &ItemCard) -> impl IntoElement {
         .flex()
         .items_center()
         .gap(rems_from_px(8.))
-        .px(rems_from_px(8.))
-        .py(rems_from_px(6.))
+        .px(rems_from_px(FRAME_CLEAR))
+        .pt(rems_from_px(FRAME_CLEAR))
+        .pb(rems_from_px(PADDING))
         .bg(linear_gradient(
             180.,
             linear_color_stop(rgb(blend(BG_ITEM_CARD, card.color, BANNER_TINT)), 0.),

@@ -58,10 +58,11 @@ use crate::tour::{Host, Stop};
 use crate::tr;
 use crate::tr_n;
 use crate::ui::fonts::{self, NameFont};
+use crate::ui::ornament::FRAME_CLEAR;
 use crate::ui::style::{
     ButtonKind, CARD_RADIUS, TRANSITION, alpha, appear, button, card, diamond, ease, ease_hover,
     ease_state, game_frame, heading, icon_button, keycaps, link, menu, ornament_rule, recorder,
-    section_heading, segmented, select, stepper, switch, switch_in, title_button, title_gradient,
+    section_heading, segmented, select, stepper, switch, switch_in, title_bar, title_button,
 };
 use crate::ui::text_field::{Committed, TextField};
 use crate::ui::theme::{
@@ -78,7 +79,6 @@ use crate::updates::{self, LinkState, UpdateStatus, Work};
 pub(crate) const WINDOW_SIZE: (f32, f32) = (1100., 720.);
 pub(crate) const WINDOW_MIN_SIZE: (f32, f32) = (900., 600.);
 
-const TITLE_HEIGHT: f32 = 40.;
 const SIDEBAR_WIDTH: f32 = 216.;
 /// The sidebar's list: where it starts, its rows and the gap between them.
 const NAV_TOP: f32 = 18.;
@@ -896,14 +896,7 @@ impl SettingsView {
     }
 
     fn render_title_bar(&self, face: &'static NameFont, cx: &Context<Self>) -> impl IntoElement {
-        div()
-            .flex()
-            .flex_none()
-            .items_center()
-            .h(rems_from_px(TITLE_HEIGHT))
-            .bg(title_gradient())
-            .border_b_1()
-            .border_color(rgb(BORDER_GOLD))
+        title_bar()
             .child(
                 div()
                     .flex()
@@ -941,8 +934,8 @@ impl SettingsView {
         let (from, to) = (self.marker_from, self.marker_to);
         let marker = div()
             .absolute()
-            .left(rems_from_px(10.))
-            .right(rems_from_px(10.))
+            .left(rems_from_px(FRAME_CLEAR))
+            .right(rems_from_px(FRAME_CLEAR))
             .h(rems_from_px(NAV_ITEM_HEIGHT))
             .rounded(rems_from_px(6.))
             .bg(linear_gradient(
@@ -980,7 +973,8 @@ impl SettingsView {
                     .flex()
                     .flex_col()
                     .gap(rems_from_px(NAV_GAP))
-                    .px(rems_from_px(10.))
+                    // Its rows, and their light under the pointer, clear of the frame's keep-out.
+                    .px(rems_from_px(FRAME_CLEAR))
                     .pt(rems_from_px(NAV_TOP))
                     .child(marker)
                     .children(Section::ALL.map(|section| self.render_nav_item(section, face, cx))),
@@ -1130,14 +1124,17 @@ impl SettingsView {
                             ),
                     )
                     .child(
+                        // Scrolled rows stop at the frame's keep-out, and the last one rests
+                        // 28 px above the edge.
                         div()
                             .id(("section-body", section.index()))
                             .flex_1()
                             .min_h_0()
+                            .mb(rems_from_px(FRAME_CLEAR))
                             .overflow_y_scroll()
                             .px(rems_from_px(CONTENT_INSET))
                             .pt(rems_from_px(4.))
-                            .pb(rems_from_px(28.))
+                            .pb(rems_from_px(28. - FRAME_CLEAR))
                             .child(body),
                     ),
             ))

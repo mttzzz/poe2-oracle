@@ -39,13 +39,13 @@ use crate::tr;
 use crate::ui::fonts::{self, NameFont};
 use crate::ui::style::{
     ButtonKind, alpha, appear, button, diamond, ease_hover, game_frame, heading, link, segmented,
-    switch, title_button, title_gradient,
+    switch, title_bar, title_button,
 };
 use crate::ui::text_area::{TextArea, TextAreaEvent};
 use crate::ui::text_field::{Committed, TextField};
 use crate::ui::theme::{
-    BASE_REM_SIZE, BG_PANEL, BORDER_GOLD, GOLD, GOLD_LIGHT, TEXT, TEXT_DIM, TEXT_MUTED,
-    TEXT_WARNING, rems_from_px,
+    BASE_REM_SIZE, BG_PANEL, GOLD, GOLD_LIGHT, TEXT, TEXT_DIM, TEXT_MUTED, TEXT_WARNING,
+    rems_from_px,
 };
 
 /// The window's size at 100 % UI scale -- room for the text box at its tallest -- and the least
@@ -54,7 +54,6 @@ use crate::ui::theme::{
 pub(crate) const WINDOW_SIZE: (f32, f32) = (620., 720.);
 pub(crate) const WINDOW_MIN_SIZE: (f32, f32) = (520., 560.);
 
-const TITLE_HEIGHT: f32 = 40.;
 /// Inset of the window's content from its edges, and the gap between the form's parts.
 const INSET: f32 = 20.;
 const GAP: f32 = 14.;
@@ -362,14 +361,7 @@ impl ReportView {
     }
 
     fn render_title_bar(&self, face: &'static NameFont, cx: &Context<Self>) -> impl IntoElement {
-        div()
-            .flex()
-            .flex_none()
-            .items_center()
-            .h(rems_from_px(TITLE_HEIGHT))
-            .bg(title_gradient())
-            .border_b_1()
-            .border_color(rgb(BORDER_GOLD))
+        title_bar()
             .child(
                 div()
                     .flex()

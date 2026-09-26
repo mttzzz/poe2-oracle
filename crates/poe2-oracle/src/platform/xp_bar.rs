@@ -19,8 +19,8 @@
 //! game.
 //!
 //! A blit waits for the desktop's next composition and costs the app about a millisecond of CPU
-//! each. While the player is at the game `platform::lip_watch` reads the lips and the bar off
-//! the duplicated desktop instead, and the sampler asks here only where the game is
+//! each. While the game is in front `platform::lip_watch` reads the lips and the bar off the
+//! duplicated desktop instead, and the sampler asks here only where the game is
 //! ([`sample`]'s `read_pixels`).
 
 use windows::Win32::Foundation::{HWND, POINT};

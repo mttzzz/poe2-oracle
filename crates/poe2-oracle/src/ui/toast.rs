@@ -18,7 +18,10 @@ use crate::platform::game_window;
 use crate::platform::win32::Win32Overlay;
 use crate::price_check::PriceCheckApp;
 use crate::ui::fonts;
-use crate::ui::style::{appear, diamond, game_frame, heading, title_button, title_gradient};
+use crate::ui::ornament::FRAME_CLEAR;
+use crate::ui::style::{
+    TITLE_LINE, appear, diamond, game_frame, heading, title_button, title_gradient,
+};
 use crate::ui::theme::{BASE_REM_SIZE, GOLD, GOLD_LIGHT, rems_from_px};
 
 /// How long the plate stays.
@@ -27,8 +30,8 @@ const SHOWN_FOR: Duration = Duration::from_secs(8);
 const WIDTH: f32 = 380.;
 const HEIGHT: f32 = 52.;
 const MARGIN: f32 = 16.;
-/// The width of its ×.
-const CLOSE_WIDTH: f32 = 40.;
+/// The width of its ×: its circle clear of the frame's keep-out either side.
+const CLOSE_WIDTH: f32 = TITLE_LINE + 2. * FRAME_CLEAR;
 
 struct Toast {
     text: SharedString,

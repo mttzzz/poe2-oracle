@@ -2,8 +2,9 @@
 // in practice for this workstation's testing setup), so there is no Linux platform module to
 // maintain. `#[cfg]`-gated (not unconditional) so an accidental native `cargo check`/`build`
 // without `--target x86_64-pc-windows-gnu` doesn't try to pull in and compile the Windows-only
-// `windows` crate against a non-Windows host. `game_config` is plain file parsing, so it builds
-// -- and its tests run -- everywhere.
+// `windows` crate against a non-Windows host. `game_config` is plain file parsing, and
+// `lip_schedule` and `paint_gate` the lip watcher's timing and the paint gates' bookkeeping
+// without a Windows call, so they build -- and their tests run -- everywhere.
 #[cfg(target_os = "windows")]
 pub mod autostart;
 #[cfg(target_os = "windows")]
@@ -19,12 +20,16 @@ pub mod game_config;
 pub mod game_window;
 #[cfg(target_os = "windows")]
 pub mod instance;
+pub mod lip_schedule;
 #[cfg(target_os = "windows")]
 pub mod lip_watch;
 #[cfg(target_os = "windows")]
 pub mod login_window;
 #[cfg(target_os = "windows")]
 pub mod network;
+#[cfg(target_os = "windows")]
+pub mod paint_census;
+pub mod paint_gate;
 #[cfg(target_os = "windows")]
 pub mod redraw_filter;
 #[cfg(target_os = "windows")]

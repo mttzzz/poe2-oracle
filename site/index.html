@@ -4,18 +4,19 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PoE2 Oracle: price check and XP tracker for Path of Exile 2</title>
-<meta name="description" content="Free Windows app for Path of Exile 2: press Ctrl+E on an item to see what it sells for on the official trade site, and track your XP right on the game's HUD: levelling speed, time to the next level and a map timer.">
+<meta name="description" content="Free, native Windows app for Path of Exile 2: press Ctrl+E on an item to see what it sells for on the official trade site, and track your XP right on the game's HUD. One light process with no browser inside; the graphics card draws its interface.">
 <link rel="canonical" href="https://oracle.pushka.biz/">
 <link rel="alternate" hreflang="en" href="https://oracle.pushka.biz/">
 <link rel="alternate" hreflang="ru" href="https://oracle.pushka.biz/ru/">
 <link rel="alternate" hreflang="x-default" href="https://oracle.pushka.biz/">
 <meta property="og:type" content="website">
 <meta property="og:title" content="PoE2 Oracle">
-<meta property="og:description" content="Price check on a hotkey and an XP overlay on the game's HUD. Free, for Windows.">
+<meta property="og:description" content="Native, fast and light: price check on a hotkey and an XP overlay on the game's HUD. Free, for Windows.">
 <meta property="og:url" content="https://oracle.pushka.biz/">
 <meta property="og:image" content="https://oracle.pushka.biz/images/en/og.jpg">
 <link rel="icon" type="image/png" href="favicon.png">
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="ui/bench.css">
 </head>
 <body>
 <a class="skip-link" href="#main">Skip to content</a>
@@ -38,11 +39,18 @@
 <main id="main">
   <section class="hero">
     <div class="wrap">
-      <h1>PoE2 Oracle</h1>
-      <p class="lead">Price check and XP tracking for Path of Exile 2. Point at an item and press
-        <span class="keys"><kbd>Ctrl</kbd>+<kbd>E</kbd></span>: a panel next to your inventory shows what similar items sell
-        for on the official trade site. And right on the game's HUD, above the flask and skill panels,
-        you see how fast you level, how long until the next level and how long the current map has run.</p>
+      <p class="hero-name">PoE2 Oracle</p>
+      <h1>Native, fast and light</h1>
+      <p class="lead">Price check on <span class="keys"><kbd>Ctrl</kbd>+<kbd>E</kbd></span> and an XP
+        overlay on the game's HUD for Path of Exile 2, in one native Windows app with no browser inside.
+        Its interface is drawn by the graphics card through Direct3D 11.</p>
+      <ul class="proof">
+        <li><b data-bench="memory"></b> of memory in Task Manager</li>
+        <li><b data-bench="processes"></b> process, and no helper processes</li>
+        <li><b data-bench="ready"></b> from launch to ready</li>
+        <li><b data-bench="item_text"></b> to read the item from the game</li>
+      </ul>
+      <p class="proof-more"><a href="#fast">How it compares with other price checkers</a></p>
       <div class="actions">
         <a class="button button-primary" href="download/latest">Download for Windows</a>
         <a class="button" href="guide/en/introduction.html">Read the guide</a>
@@ -53,6 +61,58 @@
       <figure class="shot">
         <div data-oracle="hero" data-lang="en" data-fit data-alt="The PoE2 Oracle price panel with a rare helmet's filters and listings, a currency's market card and both XP overlay plates, above the game's flask and skill panels"></div>
       </figure>
+    </div>
+  </section>
+
+  <section class="section section-alt" id="fast">
+    <div class="wrap">
+      <h2>Fast and light</h2>
+      <p class="intro">PoE2 Oracle is a native Windows app written in Rust, with no Electron and no
+        browser inside. It's one process: the graphics card draws its panels and overlays through
+        Direct3D 11, with GPUI, the UI framework of the Zed code editor, and DirectWrite draws the text.
+        The only browser it ever opens is the optional sign-in window for pathofexile.com, which is
+        Windows' own WebView2 and closes with the window.</p>
+      <p class="intro">While you play, that leaves your memory to the game: Task Manager shows one
+        process of about <span data-bench="memory"></span>. Nothing else starts with it, and there's
+        nothing else to install.</p>
+
+      <h3 class="fast-heading">Next to other price checkers</h3>
+      <figure class="bench">
+        <div data-bench-chart></div>
+        <figcaption><span data-bench="measured">Measured</span> on one PC: Core i7-13700KF, 32 GB of RAM,
+          GeForce RTX 4090, Windows 11, two 4K monitors at 200% scaling, with Path of Exile 2 running in
+          the background and every app idle. Memory is Task Manager's Memory column, the private working
+          set, summed over all of an app's processes; idle CPU is in percent of one logical core, and the
+          PC has 24. <a href="guide/en/performance.html">How it was measured, and every other number</a></figcaption>
+      </figure>
+      <div class="bench-notes">
+        <p><span data-bench="lower"></span> Exiled Exchange 2 turns off hardware acceleration and draws
+          with the CPU, so it holds no GPU memory; Overwolf's overlay in the game runs inside the game's
+          own process and isn't counted.</p>
+        <p>PoE Overlay II runs only on Overwolf, so Overwolf's processes count as its own. Started from
+          its desktop shortcut, it opened its main window by itself, with two animated banner ads and an
+          offer of Premium to remove them. While that window stays open, Overwolf's built-in browser keeps
+          redrawing it and uses more than a whole CPU core; minimized, the app needs about half the
+          memory.</p>
+      </div>
+
+      <h3 class="fast-heading">Quick to start, quick to price</h3>
+      <ul class="facts">
+        <li><b data-bench="ready"></b> from launch to ready to price</li>
+        <li><b data-bench="item_text"></b> for the item's text, once the app has asked the game to copy
+          it</li>
+        <li><b data-bench="processing"></b> to read the item, set up its filters and open the panel</li>
+        <li><b data-bench="exchange"></b> to price currency and other exchange items, or repeat a recent
+          search, from data already loaded</li>
+        <li><b data-bench="listings"></b> for a search with listings,
+          <span data-bench="listings_trade_site"></span> of it waiting for pathofexile.com's two
+          answers</li>
+        <li><b data-bench="installer"></b> installer; the app itself is one exe of about
+          <span data-bench="exe"></span>, with no .NET, Visual C++ runtime or Chromium to install</li>
+      </ul>
+      <p class="fineprint facts-note">Times from the log of PoE2 Oracle <span data-bench="version"></span>
+        on the same PC, <span data-bench="facts_measured"></span>; a single time is the median of its
+        price checks.</p>
     </div>
   </section>
 
@@ -217,5 +277,6 @@
 </footer>
 <script type="module" src="lang.js"></script>
 <script type="module" src="ui/oracle-ui.js"></script>
+<script type="module" src="ui/bench.js"></script>
 </body>
 </html>
