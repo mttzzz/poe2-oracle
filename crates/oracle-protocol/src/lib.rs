@@ -15,6 +15,13 @@
 //! base64 of an Ed25519 signature over that file's exact bytes, made by the release pipeline's key.
 //! The updater checks it against the public key it carries, so neither the service nor anyone on
 //! the way can hand out an installer the release pipeline didn't sign.
+//!
+//! Live updates: the app stays connected to [`EVENTS_PATH`], a Server-Sent Events stream whose
+//! [`VERSIONS_EVENT`] events carry the latest published [`Versions`] -- the app release and the
+//! data pack -- once on connecting and again whenever either changes. Two channels follow from it:
+//! a new app version is the release above, installed by its signed installer; a new data pack
+//! ([`LATEST_DATA_PATH`], [`DataManifest`]) replaces the game tables the app carries without a new
+//! exe, signed the same way.
 
 use serde::{Deserialize, Serialize};
 
@@ -345,6 +352,69 @@ pub const SUMS_SIGNATURE_ASSET: &str = "SHA256SUMS.sig";
 /// The installer's asset name for `version` (`0.1.0`, no `v`).
 pub fn installer_asset(version: &str) -> String {
     format!("PoE2-Oracle-Setup-{version}.exe")
+}
+
+// --- Live updates -------------------------------------------------------------------------------
+
+/// The service's event stream: `text/event-stream`, no authentication. The first
+/// [`VERSIONS_EVENT`] event comes right after connecting and the next whenever a version changes;
+/// in between, a comment line (`: ping`) every [`EVENTS_PING_SECS`] seconds keeps proxies from
+/// closing the idle connection and tells the app it is still alive.
+pub const EVENTS_PATH: &str = "/api/v1/events";
+/// The name of the event whose data is a [`Versions`] JSON.
+pub const VERSIONS_EVENT: &str = "versions";
+/// How often the service sends a keep-alive comment on the event stream.
+pub const EVENTS_PING_SECS: u64 = 25;
+
+/// The latest published versions, as the event stream announces them.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
+pub struct Versions {
+    /// The latest app release's version (`0.1.1`, no `v`); `None` while none is published.
+    pub app: Option<String>,
+    /// The latest data pack's version; `None` while none is published.
+    pub data: Option<DataVersion>,
+}
+
+// --- Data packs ---------------------------------------------------------------------------------
+
+/// Where the updater asks for the latest data pack: a [`Release`], as [`LATEST_RELEASE_PATH`]
+/// answers one, for the newest published release tagged [`DATA_TAG_PREFIX`]`<version>`. Its assets
+/// are the pack ([`data_pack_asset`]), [`SUMS_ASSET`] and [`SUMS_SIGNATURE_ASSET`], downloaded from
+/// the service under [`DOWNLOAD_PATH`] and signed by the same key as app releases.
+pub const LATEST_DATA_PATH: &str = "/api/v1/data/latest";
+/// Data pack releases are tagged `data-<version>`; app releases `v<semver>`.
+pub const DATA_TAG_PREFIX: &str = "data-";
+/// A data pack's version: `YYYYMMDDNN`, the day the pack was made and that day's number, so a
+/// later pack always compares greater.
+pub type DataVersion = u64;
+/// The pack layout this build reads ([`DataManifest::format`]).
+pub const DATA_FORMAT: u32 = 1;
+/// The manifest's name inside a data pack zip.
+pub const DATA_MANIFEST: &str = "manifest.json";
+/// The tables a data pack carries, by file name: the game data the app otherwise has built in.
+pub const DATA_FILES: [&str; 5] = [
+    "stat-matchers-en.tsv",
+    "stat-matchers-ru.tsv",
+    "mod-tiers.tsv",
+    "cx-items.tsv",
+    "item-refs.tsv",
+];
+
+/// The data pack's asset name for `version`.
+pub fn data_pack_asset(version: DataVersion) -> String {
+    format!("PoE2-Oracle-Data-{version}.zip")
+}
+
+/// What a data pack zip says about itself, in [`DATA_MANIFEST`].
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct DataManifest {
+    /// [`DATA_FORMAT`] when the pack was made; an app reads only its own format.
+    pub format: u32,
+    pub version: DataVersion,
+    /// The oldest app version that can use the pack (semver, no `v`).
+    pub min_app: String,
+    /// Every table in the pack by file name ([`DATA_FILES`]), with its SHA-256 in lowercase hex.
+    pub files: std::collections::BTreeMap<String, String>,
 }
 
 /// The diagnostics zip as standard base64 in the JSON. Read, it's decoded straight from the text
