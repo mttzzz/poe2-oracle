@@ -58,7 +58,9 @@ service does with a report.
 
 ## Sending
 
-Click **Send**; while the report goes, the button says **Sending…**. Then the window says one of:
+Click **Send**; while the report goes, the button says **Sending…**, and the window stays open
+until the answer comes: **Cancel**, the **×** and <kbd>Esc</kbd> wait for it. Then the window says
+one of:
 
 - "Sent — thank you! Report #*number*": the developer has it. Mention the number if you write about
   the same thing again. Sometimes the window says only "Sent — thank you!": the report arrived all

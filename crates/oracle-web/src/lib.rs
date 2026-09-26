@@ -138,9 +138,10 @@ impl Config {
     }
 }
 
-/// How many report bodies the service reads at once. Each can take up to ~20 MiB while it's read
-/// and parsed (its raw 12 MiB and the diagnostics zip decoded from it), and the pod has 256 MiB;
-/// a report arriving while all are taken is refused with 503 and `Retry-After`.
+/// How many reports the service holds in memory at once. Each can take up to ~20 MiB while it's
+/// read and parsed (its raw 12 MiB and the diagnostics zip decoded from it), and a report with a
+/// zip keeps up to 8 MiB after its answer, until the zip has gone to Telegram; the pod has
+/// 256 MiB. A report arriving while every place is taken is refused with 503 and `Retry-After`.
 pub const REPORTS_AT_ONCE: usize = 3;
 
 /// Everything the handlers share.
@@ -150,9 +151,10 @@ pub struct App {
     github: github::GitHub,
     telegram: telegram::Telegram,
     releases: releases::Releases,
-    /// The [`REPORTS_AT_ONCE`] report bodies that may be in memory at once, taken before a body
-    /// is read and given back once it's parsed.
-    report_bodies: Semaphore,
+    /// The [`REPORTS_AT_ONCE`] places for reports in memory: one is taken before a body is read
+    /// and given back once it's parsed -- or, for a report with a diagnostics zip, once Telegram
+    /// has the zip or the tries at sending it are over.
+    reports_in_memory: Arc<Semaphore>,
     /// Work that outlives its request: a report's files going to Telegram after the sender has
     /// its answer. Shutting down waits for it.
     background: TaskTracker,
@@ -183,7 +185,7 @@ impl App {
                 config.telegram_chat_id,
             ),
             releases: releases::Releases::new(config.public_url),
-            report_bodies: Semaphore::new(REPORTS_AT_ONCE),
+            reports_in_memory: Arc::new(Semaphore::new(REPORTS_AT_ONCE)),
             background: TaskTracker::new(),
         }))
     }

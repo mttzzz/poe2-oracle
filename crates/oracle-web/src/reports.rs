@@ -3,7 +3,9 @@
 //!
 //! The report is checked ([`Report::check`], the same rules the sender ran) and rate-limited
 //! ([`crate::limits`]) before anything leaves the service. Its body is read only when a report
-//! from its sender could pass the limits, and only [`REPORTS_AT_ONCE`] bodies are read at once.
+//! from its sender could pass the limits, and only while one of the [`REPORTS_AT_ONCE`] places
+//! for reports in memory is free; a report with a diagnostics zip keeps its place until the zip
+//! has gone to Telegram, so zips waiting on a slow Telegram can't pile up either.
 //! Then both channels get it: the issue first, so the message can link it; the diagnostics zip
 //! and the item's or crash's text go to Telegram as files replying to the message, since an issue
 //! can't carry files. The sender hears 200 when either channel took it, and 503 only when both
@@ -23,7 +25,7 @@ use http_body_util::BodyExt as _;
 use oracle_protocol::{
     MAX_BODY_BYTES, Problem, RejectReason, Report, ReportAccepted, ReportRejected,
 };
-use tokio::sync::oneshot;
+use tokio::sync::{OwnedSemaphorePermit, oneshot};
 use tracing::{Instrument as _, Span, error, info, warn};
 
 use crate::github::Filing;
@@ -38,8 +40,8 @@ const BODY_TIMEOUT: Duration = Duration::from_secs(120);
 /// The most GitHub gets to open an issue, labels included: the sender waits on it, and on the
 /// Telegram message after it (one try, at most 8 s).
 const GITHUB_LIMIT: Duration = Duration::from_secs(12);
-/// The wait a sender is told while [`REPORTS_AT_ONCE`] other bodies are being read: a body
-/// takes seconds on a usual connection.
+/// The wait a sender is told while [`REPORTS_AT_ONCE`] other reports are in memory: a body takes
+/// seconds on a usual connection, and so does a zip's way to Telegram.
 const BUSY_RETRY_AFTER: u64 = 30;
 /// The most of a parse error the sender is told: it may quote whatever the body holds.
 const ERROR_CHARS: usize = 300;
@@ -74,8 +76,8 @@ pub async fn submit(State(app): State<Arc<App>>, request: Request) -> Response {
 
     // Held until the body is parsed: the body, and the zip decoded from it, are the report's
     // megabytes.
-    let Ok(reading) = app.report_bodies.try_acquire() else {
-        info!("report refused: {REPORTS_AT_ONCE} others are being read");
+    let Ok(place) = app.reports_in_memory.clone().try_acquire_owned() else {
+        info!("report refused: {REPORTS_AT_ONCE} others are in memory");
         return busy();
     };
     let bytes = match tokio::time::timeout(BODY_TIMEOUT, read(body, declared)).await {
@@ -102,11 +104,13 @@ pub async fn submit(State(app): State<Arc<App>>, request: Request) -> Response {
     let parsed = serde_json::from_slice::<Report>(&bytes)
         .map_err(|error| format!("not a report: {}", bounded(&error, ERROR_CHARS)));
     drop(bytes);
-    drop(reading);
     let report = match parsed {
         Ok(report) => report,
         Err(message) => return rejected(StatusCode::BAD_REQUEST, RejectReason::Invalid, message),
     };
+    // The zip is the part of a report that stays megabytes after the answer: its report keeps the
+    // place until the zip has gone. Any other report gives it back now.
+    let place = report.diagnostics.is_some().then_some(place);
     if let Err(problem) = report.check() {
         info!(?problem, kind = ?report.kind, source = ?report.source, "report refused");
         return rejected(
@@ -131,7 +135,7 @@ pub async fn submit(State(app): State<Arc<App>>, request: Request) -> Response {
     // as soon as the issue and the message are settled; the files follow in that task.
     let (answer, answered) = oneshot::channel();
     app.background
-        .spawn(pass_on(app.clone(), report, answer).instrument(Span::current()));
+        .spawn(pass_on(app.clone(), report, answer, place).instrument(Span::current()));
     match answered.await {
         Ok(Some(id)) => Json(ReportAccepted { id }).into_response(),
         Ok(None) => rejected(
@@ -152,8 +156,14 @@ pub async fn submit(State(app): State<Arc<App>>, request: Request) -> Response {
 
 /// Passes `report` on to GitHub and Telegram. `answer` gets the issue's number (0 without one)
 /// once either took it, `None` when both failed. When it was taken, a message that failed gets
-/// more tries after that, and the report's files go to Telegram either way.
-async fn pass_on(app: Arc<App>, mut report: Report, answer: oneshot::Sender<Option<u64>>) {
+/// more tries after that, and the report's files go to Telegram either way. `place`, the
+/// report's place in memory when it has a zip, is given back once the files are settled.
+async fn pass_on(
+    app: Arc<App>,
+    mut report: Report,
+    answer: oneshot::Sender<Option<u64>>,
+    place: Option<OwnedSemaphorePermit>,
+) {
     let telegram_on = app.telegram.configured();
     let body = issue::body(&report, telegram_on);
     let title = issue::title(&report);
@@ -268,6 +278,8 @@ async fn pass_on(app: Arc<App>, mut report: Report, answer: oneshot::Sender<Opti
             error!(issue = id, name = document.name, %problem, "a report's file never reached Telegram and is lost");
         }
     }
+    drop(documents);
+    drop(place);
 }
 
 /// Why a body wasn't read whole.
@@ -351,7 +363,7 @@ fn rate_limited(wait: i64) -> Response {
     response
 }
 
-/// 503 while [`REPORTS_AT_ONCE`] other bodies are being read, with `Retry-After`.
+/// 503 while [`REPORTS_AT_ONCE`] other reports are in memory, with `Retry-After`.
 fn busy() -> Response {
     let mut response = rejected(
         StatusCode::SERVICE_UNAVAILABLE,

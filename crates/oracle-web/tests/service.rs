@@ -181,15 +181,15 @@ fn telegram(seen: &Seen) -> Response {
     axum::Json(answer).into_response()
 }
 
-/// Telegram refusing a message for flooding, asking for no wait.
-fn flooded() -> Response {
+/// Telegram refusing a call for flooding, asking for a `wait` of that many seconds.
+fn flooded(wait: u64) -> Response {
     (
         StatusCode::TOO_MANY_REQUESTS,
         axum::Json(json!({
             "ok": false,
             "error_code": 429,
-            "description": "Too Many Requests: retry after 0",
-            "parameters": { "retry_after": 0 },
+            "description": format!("Too Many Requests: retry after {wait}"),
+            "parameters": { "retry_after": wait },
         })),
     )
         .into_response()
@@ -506,7 +506,7 @@ async fn the_files_go_even_when_the_message_does_not() {
     let refused = Arc::new(AtomicBool::new(false));
     let service = start_with(false, false, false, move |seen: &Seen| {
         if seen.path.ends_with("/sendMessage") && !refused.swap(true, Ordering::SeqCst) {
-            return flooded();
+            return flooded(0);
         }
         telegram(seen)
     })
@@ -524,7 +524,7 @@ async fn the_files_go_even_when_the_message_does_not() {
     // Telegram refuses every message: the files still go, on their own.
     let service = start_with(false, false, false, |seen: &Seen| {
         if seen.path.ends_with("/sendMessage") {
-            return flooded();
+            return flooded(0);
         }
         telegram(seen)
     })
@@ -573,6 +573,47 @@ async fn reports_past_the_ones_being_read_wait_their_turn() {
     assert!(answer.starts_with("HTTP/1.1 200"), "{answer}");
     let next = service.post(&site_report("идея"), "203.0.113.8").await;
     assert_eq!(next.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn a_report_with_a_zip_keeps_its_place_until_the_zip_has_gone() {
+    // Telegram takes messages, but floods on files and asks for two seconds each time: every zip
+    // stays with the service through the tries at sending it.
+    let service = start_with(false, false, false, |seen: &Seen| {
+        if seen.path.ends_with("/sendDocument") {
+            return flooded(2);
+        }
+        telegram(seen)
+    })
+    .await;
+    let mut report = app_report(ReportKind::Bug, "Панель не открывается");
+    report.diagnostics = Some(b"PK\x03\x04 a diagnostics zip".to_vec());
+    for client in 0..REPORTS_AT_ONCE {
+        let response = service.post(&report, &format!("198.51.100.{client}")).await;
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    // Their zips are still on their way: any next report is refused, even one without a zip.
+    let refused = service.post(&site_report("идея"), "203.0.113.10").await;
+    assert_eq!(refused.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert!(refused.headers().contains_key(header::RETRY_AFTER));
+    assert_eq!(
+        refused.json::<Value>().await.unwrap()["error"],
+        "unavailable"
+    );
+
+    // Once Telegram's tries at a zip are over, its report's place is free again.
+    let mut tries = 0;
+    loop {
+        let response = service.post(&site_report("идея"), "203.0.113.10").await;
+        if response.status() == StatusCode::OK {
+            break;
+        }
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        tries += 1;
+        assert!(tries < 200, "the places never came back");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
 }
 
 #[tokio::test]
