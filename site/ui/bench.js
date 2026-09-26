@@ -3,7 +3,8 @@
 // changes that file and nothing else. [data-bench-chart] gets the comparison, a table whose memory
 // column is a bar chart; each [data-bench="<name>"] gets one value, in the page's language:
 //
-//   memory, processes        PoE2 Oracle's memory in whole MB, and its process count
+//   memory, processes        PoE2 Oracle's memory in MB to one decimal, as Task Manager shows it,
+//                            and its process count
 //   ready                    from launch to ready to price
 //   item_text, processing    a price check: the item's text after the copy, then reading it,
 //                            its filters and the panel
@@ -53,7 +54,7 @@ const words = {
         gpu: "Видеопамять",
         units: { mb: "МБ", s: "с", ms: "мс" },
         percent: (number) => `${number}${nbsp}%`,
-        // «в 2,8 раза», «в 7 раз», «в 13 раз»: a fraction and 2-4 take «раза».
+        // «в 3,7 раза», «в 4 раза», «в 7 раз»: a fraction and 2-4 take «раза».
         times: (number, whole) => {
             const form = whole === null ? "other" : new Intl.PluralRules("ru").select(whole);
             return `в ${number} ${form === "few" || form === "other" ? "раза" : "раз"} больше`;
@@ -94,18 +95,24 @@ function date(iso) {
     return words.date(dayMonth.format(day), day.getUTCFullYear());
 }
 
-/** How many times `ours` `value` is: to one decimal below 10, whole from there. */
+/** How many times `ours` `value` is, to one decimal; null when that rounds to 1 or less. */
 function times(value, ours) {
-    const ratio = value / ours;
-    const rounded = ratio >= 10 ? Math.round(ratio) : Math.round(ratio * 10) / 10;
+    const rounded = Math.round((value / ours) * 10) / 10;
+    if (rounded <= 1) return null;
     const whole = Number.isInteger(rounded);
     return words.times(format(rounded, whole ? 0 : 1), whole ? rounded : null);
 }
 
-/** The comparison: one row per app and state, PoE2 Oracle's first, its bars scaled to the most. */
+/** PoE2 Oracle first, then the others from the least memory to the most, each by its first state. */
+const ordered = (apps) =>
+    [...apps].sort((a, b) =>
+        a.id === "oracle" ? -1 : b.id === "oracle" ? 1 : a.states[0].memory - b.states[0].memory,
+    );
+
+/** The comparison: one row per app and state, in `ordered` order, its bars scaled to the most. */
 function chart(apps) {
     const ours = apps.find((app) => app.id === "oracle").states[0];
-    const rows = apps.flatMap((app) =>
+    const rows = ordered(apps).flatMap((app) =>
         app.states.map((state, index) => ({ app, state, again: index > 0 })),
     );
     const most = Math.max(...rows.map(({ state }) => state.memory));
@@ -137,6 +144,7 @@ function chart(apps) {
 /** An app's row in one of its states; a second state of the same app repeats only its name. */
 function line({ app, state, again }, ours, most) {
     const mine = app.id === "oracle";
+    const ratio = mine ? null : times(state.memory, ours.memory);
     return h(
         "tr",
         {
@@ -159,7 +167,7 @@ function line({ app, state, again }, ours, most) {
                 h("span", { class: "bench-bar", "--share": (state.memory / most).toFixed(4) }),
                 h("span", "bench-value", megabytes(state.memory, 1)),
             ),
-            !mine && state.memory > ours.memory && h("span", "bench-ratio", times(state.memory, ours.memory)),
+            ratio && h("span", "bench-ratio", ratio),
         ),
         h(
             "td",
@@ -172,11 +180,12 @@ function line({ app, state, again }, ours, most) {
             format(state.processes, 0),
         ),
         h("td", { role: "cell", class: "bench-number", "data-label": words.cpuCard }, percent(state.cpu)),
-        h("td", { role: "cell", class: "bench-number", "data-label": words.gpu }, megabytes(state.gpu, 0)),
+        h("td", { role: "cell", class: "bench-number", "data-label": words.gpu }, megabytes(state.gpu, 1)),
     );
 }
 
-/** Each metric of the comparison where another app needs less than PoE2 Oracle, with the apps. */
+/** Each metric of the comparison where another app needs less than PoE2 Oracle, with the apps,
+ * the one that needs least first. */
 function lower(apps) {
     const ours = apps.find((app) => app.id === "oracle").states[0];
     const parts = Object.entries(words.metrics).flatMap(([metric, name]) => {
@@ -185,9 +194,13 @@ function lower(apps) {
             .flatMap((app) => {
                 const below = app.states.filter((state) => state[metric] < ours[metric]);
                 if (below.length === 0) return [];
-                if (below.length === app.states.length) return [app.name];
-                return below.map((state) => `${app.name}, ${text(state.label)}`);
-            });
+                if (below.length === app.states.length) {
+                    return [{ name: app.name, least: Math.min(...below.map((state) => state[metric])) }];
+                }
+                return below.map((state) => ({ name: `${app.name}, ${text(state.label)}`, least: state[metric] }));
+            })
+            .sort((a, b) => a.least - b.least)
+            .map(({ name }) => name);
         return names.length ? [`${name} (${list(names)})`] : [];
     });
     return parts.length ? words.lower(list(parts)) : "";
@@ -201,7 +214,7 @@ function values(apps, facts) {
             ? words.measured(date(ours.measured))
             : words.measuredApart(date(ours.measured), list(others.map(date)));
     return {
-        memory: megabytes(ours.states[0].memory, 0),
+        memory: megabytes(ours.states[0].memory, 1),
         processes: format(ours.states[0].processes, 0),
         ready: unit(format(facts.ready_s, 2), "s"),
         item_text: unit(format(facts.item_text_ms, 0), "ms"),
