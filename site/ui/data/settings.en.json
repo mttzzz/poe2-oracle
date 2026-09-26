@@ -43,12 +43,26 @@
             "title": "System",
             "rows": [
                 {
-                    "label": "Start with Windows",
-                    "control": { "type": "switch", "on": false }
+                    "label": "Where to show the app",
+                    "note": "The icon by the clock or a button on the taskbar: a click on either opens these settings",
+                    "control": {
+                        "type": "segmented",
+                        "options": ["In the tray", "On the taskbar", "Both"],
+                        "picked": 0
+                    }
                 },
                 {
-                    "label": "Check for updates automatically",
-                    "note": "Half a minute after launch; a new version shows up in the menu of the icon by the clock",
+                    "label": "Start with Windows",
+                    "control": { "type": "switch", "on": false }
+                }
+            ]
+        },
+        {
+            "title": "Updates",
+            "rows": [
+                {
+                    "label": "Update automatically",
+                    "note": "Stays connected to oracle.pushka.biz: new versions and game data install by themselves, the app restarting once none of its windows is open",
                     "control": { "type": "switch", "on": true }
                 }
             ]

@@ -14,11 +14,12 @@
 //! keeps its last allowed text (`quick_action::kept_actions`).
 //!
 //! Signing in and out of pathofexile.com (`crate::login`, `crate::session`) keeps its secret out
-//! of the settings; Помощь's buttons write reports and open folders and pages.
+//! of the settings; Помощь's buttons write reports, open folders and pages, and quit the app.
 //!
 //! The window stays above the game (topmost), stepping down while the sign-in window -- which
 //! isn't topmost -- is open over it. × and Esc (with no menu open) close it, and so does
-//! anything that sends it `WM_CLOSE` -- Alt+F4, the taskbar -- routed through the same close
+//! anything that sends it `WM_CLOSE` -- Alt+F4, its own taskbar button while it has one (not
+//! under the app's taskbar button, `platform::taskbar`) -- routed through the same close
 //! ([`SettingsView::close`]).
 //!
 //! It follows the UI scale as the price panel does: everything in it is sized in rems, whose size
@@ -37,9 +38,11 @@ use gpui::{
 use serde_json::Value;
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, VK_0, VK_9, VK_SHIFT};
 
+use crate::data_pack;
 use crate::diagnostics::{self, SetupProblem};
 use crate::i18n::{self, Lang};
 use crate::league_chip;
+use crate::league_lookup::LookupLine;
 use crate::login::{self, Login, LoginProblem};
 use crate::platform::autostart;
 use crate::platform::win32::Win32Overlay;
@@ -48,11 +51,12 @@ use crate::quick_action::{self, ActionDraft};
 use crate::report;
 use crate::session::{self, SessionStatus};
 use crate::settings::{
-    self, ClientLanguage, Hotkey, HotkeyProblem, InterfaceLanguage, KeyName, LeagueChoice,
+    self, AppIcon, ClientLanguage, Hotkey, HotkeyProblem, InterfaceLanguage, KeyName, LeagueChoice,
     ListingStatusChoice, QuickActionKind, Settings,
 };
 use crate::tour::{Host, Stop};
 use crate::tr;
+use crate::tr_n;
 use crate::ui::fonts::{self, NameFont};
 use crate::ui::style::{
     ButtonKind, CARD_RADIUS, TRANSITION, alpha, appear, button, card, diamond, ease, ease_hover,
@@ -65,6 +69,9 @@ use crate::ui::theme::{
     TEXT_DIM, TEXT_MUTED, TEXT_WARNING, blend, rems_from_px,
 };
 use crate::ui::tour;
+use crate::ui::welcome::{self, Welcome};
+use crate::update_rules::Target;
+use crate::updates::{self, LinkState, UpdateStatus, Work};
 
 /// The window's size at 100 % UI scale, as the owner approved it on the style mockup, and the
 /// least the player can size it to; both grow and shrink with the scale, as its content does.
@@ -120,6 +127,12 @@ const SELLERS: [(ListingStatusChoice, Label); 4] = [
 const ACTION_KINDS: [(QuickActionKind, Label); 2] = [
     (QuickActionKind::ChatCommand, || tr!("Chat")),
     (QuickActionKind::StashSearch, || tr!("Stash")),
+];
+/// Where the app shows itself while it runs, as the segmented choice lists them.
+const APP_ICONS: [(AppIcon, Label); 3] = [
+    (AppIcon::Tray, || tr!("In the tray")),
+    (AppIcon::Taskbar, || tr!("On the taskbar")),
+    (AppIcon::Both, || tr!("Both")),
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -177,7 +190,8 @@ impl Section {
 }
 
 /// What the window says above Общие: whatever in the player's setup keeps checks from working
-/// (`diagnostics::setup_problems`). The first launch's welcome is the tour's (`ui::tour`).
+/// (`diagnostics::setup_problems`). The install's welcome is a dialog over the window
+/// (`ui::welcome`), the first launch's introduction the tour's (`ui::tour`).
 pub struct Intro {
     pub problems: Vec<SetupProblem>,
 }
@@ -294,14 +308,28 @@ impl SettingsView {
                 state.set_settings_window(None);
                 cx.notify();
             });
+            // The welcome goes with its window, and what waited for it follows.
+            welcome::dismiss(cx);
         })
         .detach();
         // Everything shown comes from the app and these globals as they stand.
         cx.observe(&app, |_, _, cx| cx.notify()).detach();
         cx.observe_global::<SessionStatus>(|_, cx| cx.notify())
             .detach();
+        cx.observe_global::<UpdateStatus>(|_, cx| cx.notify())
+            .detach();
         cx.observe_global::<Login>(|view, cx| {
             view.sync_topmost(cx);
+            cx.notify();
+        })
+        .detach();
+        // The welcome coming up over an open window takes it back to Общие, which its words point
+        // into, with no menu left open over it; its coming and going redraws.
+        cx.observe_global::<Welcome>(|view, cx| {
+            if welcome::is_showing(cx) {
+                view.league_menu = false;
+                view.show(Section::General, cx);
+            }
             cx.notify();
         })
         .detach();
@@ -554,6 +582,11 @@ impl SettingsView {
     /// Esc closes what is open, innermost first, then the window. A field or a capturing recorder
     /// takes its Esc itself.
     fn escape(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        // The welcome over the window takes Esc first, and Enter as its «Понятно».
+        if welcome::is_showing(cx) && matches!(event.keystroke.key.as_str(), "escape" | "enter") {
+            welcome::dismiss(cx);
+            return;
+        }
         if event.keystroke.key != "escape" {
             return;
         }
@@ -565,8 +598,7 @@ impl SettingsView {
         }
     }
 
-    /// «Написать разработчику»: the report window, as the tray's «Сообщить о проблеме или идее…»
-    /// opens it (`app::open_report`).
+    /// «Написать разработчику»: the report window (`app::open_report`), for a problem or an idea.
     fn write_to_developer(&mut self, cx: &mut Context<Self>) {
         let app = self.app.clone();
         cx.defer(move |cx| crate::app::open_report(&app, report::Request::general(), cx));
@@ -1156,6 +1188,10 @@ impl SettingsView {
             .iter()
             .position(|&choice| choice == settings.interface_language)
             .unwrap_or(0);
+        let app_icon = APP_ICONS
+            .iter()
+            .position(|&(icon, _)| icon == settings.app_icon)
+            .unwrap_or(0);
         let scale = scale_percent(settings.ui_scale);
         div()
             .flex()
@@ -1241,6 +1277,26 @@ impl SettingsView {
                 face,
                 tr!("System"),
                 [
+                    setting_row(
+                        tr!("Where to show the app"),
+                        [note(
+                            tr!(
+                                "The icon by the clock or a button on the taskbar: a click on \
+                                 either opens these settings"
+                            ),
+                            TEXT_DIM,
+                        )],
+                        segmented(
+                            "app-icon",
+                            APP_ICONS.map(|(_, label)| SharedString::from(label())),
+                            app_icon,
+                            cx.listener(|view, index: &usize, _, cx| {
+                                if let Some(&(icon, _)) = APP_ICONS.get(*index) {
+                                    view.change(cx, |settings| settings.app_icon = icon);
+                                }
+                            }),
+                        ),
+                    ),
                     toggle_row(
                         "autostart",
                         tr!("Start with Windows"),
@@ -1249,19 +1305,56 @@ impl SettingsView {
                         |settings| &mut settings.autostart,
                         cx,
                     ),
-                    toggle_row(
-                        "check-updates",
-                        tr!("Check for updates automatically"),
-                        Some(tr!(
-                            "Half a minute after launch; a new version shows up in the menu of \
-                             the icon by the clock"
-                        )),
-                        settings.check_updates,
-                        |settings| &mut settings.check_updates,
-                        cx,
-                    ),
                 ],
             ))
+            .child(self.render_updates(settings, face, cx))
+    }
+
+    /// «Обновления»: the setting; the app's version and its game data's, with what the updater
+    /// does under them (`crate::updates`); and, while it's on, «Проверить сейчас».
+    fn render_updates(
+        &self,
+        settings: &Settings,
+        face: &'static NameFont,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
+        let on = settings.check_updates;
+        group(
+            face,
+            tr!("Updates"),
+            [
+                toggle_row(
+                    "check-updates",
+                    tr!("Update automatically"),
+                    Some(tr!(
+                        "Stays connected to oracle.pushka.biz: new versions and game data install \
+                         by themselves, the app restarting once none of its windows is open"
+                    )),
+                    on,
+                    |settings| &mut settings.check_updates,
+                    cx,
+                ),
+                setting_row(
+                    SharedString::from(tr!(
+                        "Version {version} · game data {data}",
+                        version = VERSION,
+                        data = data_pack::active_version()
+                    )),
+                    update_lines(cx.try_global::<UpdateStatus>(), on),
+                    div().when(on, |this| {
+                        this.child(button(
+                            "check-now",
+                            tr!("Check now"),
+                            ButtonKind::Secondary,
+                            face,
+                            |_: &MouseDownEvent, _: &mut Window, cx: &mut App| {
+                                updates::check_now(cx);
+                            },
+                        ))
+                    }),
+                ),
+            ],
+        )
     }
 
     /// The league searches go to: «Авто» (naming the league it stands for), every league the
@@ -1662,8 +1755,8 @@ impl SettingsView {
     }
 
     /// The pathofexile.com session: what the site says of it (`session`'s check), «Войти» (the
-    /// sign-in window, `crate::login`) or «Выйти», and the account's private leagues, which the
-    /// league menus offer while it's signed in.
+    /// sign-in window, `crate::login`) or «Выйти»; and, while it's signed in, the account's
+    /// private leagues in a card under it ([`Self::render_private_leagues`]).
     fn render_account(&self, face: &'static NameFont, cx: &Context<Self>) -> impl IntoElement {
         let status = cx
             .try_global::<SessionStatus>()
@@ -1696,31 +1789,156 @@ impl SettingsView {
                     |_: &MouseDownEvent, _: &mut Window, cx: &mut App| session::sign_out(cx),
                 ))
             });
-        let leagues = self.app.read(cx).private_leagues();
-        let mine = (signed_in && !leagues.is_empty()).then(|| {
-            let names = leagues
-                .iter()
-                .map(|league| league.id.as_str())
-                .collect::<Vec<_>>()
-                .join(", ");
-            note(
-                tr!(
-                    "Your leagues on pathofexile.com are in the league menus: {leagues}",
-                    leagues = names
-                ),
-                TEXT_DIM,
-            )
+        div()
+            .flex()
+            .flex_col()
+            .gap(rems_from_px(22.))
+            .child(group(
+                face,
+                "pathofexile.com",
+                [setting_row(
+                    div().text_color(rgb(label_color)).child(label),
+                    [Some(note(about, TEXT_DIM)), problem].into_iter().flatten(),
+                    buttons,
+                )],
+            ))
+            .when(signed_in, |this| {
+                this.child(self.render_private_leagues(face, cx))
+            })
+    }
+
+    /// The signed-in account's private leagues, which the league menus offer: each with the
+    /// public league it's made from, or that there are none yet; «Обновить», which looks them up
+    /// again and says what it found (`LeagueLookup::line`); and how often they're looked up by
+    /// themselves (`Settings::private_leagues_refresh_minutes`), quietly.
+    fn render_private_leagues(
+        &self,
+        face: &'static NameFont,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
+        let app = self.app.read(cx);
+        let lookup = app.league_lookup();
+        let names = app.league_names();
+        let leagues = lookup.leagues().iter().map(|league| {
+            let parent = league_chip::league_name(&league.parent, names);
+            div()
+                .flex()
+                .flex_wrap()
+                .items_center()
+                .gap_x(rems_from_px(6.))
+                .text_size(rems_from_px(13.))
+                .child(
+                    div()
+                        .text_color(rgb(TEXT))
+                        .child(SharedString::from(league.id.clone())),
+                )
+                .child(
+                    div()
+                        .text_color(rgb(TEXT_DIM))
+                        .child(SharedString::from(tr!(
+                            "based on {league}",
+                            league = parent
+                        ))),
+                )
+                .into_any_element()
         });
+        let summary = if !lookup.leagues().is_empty() {
+            Some(note(
+                tr!("They're in the league menus: in “General” and on the price panel"),
+                TEXT_DIM,
+            ))
+        } else if lookup.answered() {
+            Some(note(
+                tr!("None on this account yet. After joining one, press “Refresh”"),
+                TEXT_DIM,
+            ))
+        } else {
+            None
+        };
+        let outcome = lookup.line().map(|line| match line {
+            LookupLine::Looking => note(tr!("Looking them up on pathofexile.com…"), TEXT_DIM),
+            LookupLine::Found(count) => note(
+                tr_n!(
+                    count as u64,
+                    "Found {n} private league|Found {n} private leagues"
+                ),
+                TEXT,
+            ),
+            LookupLine::Failed(error) => note(
+                tr!("Couldn't reach pathofexile.com: {error}", error = error),
+                TEXT_WARNING,
+            ),
+        });
+        let refresh = if lookup.busy() {
+            button(
+                "refresh-leagues",
+                tr!("Refreshing…"),
+                ButtonKind::Secondary,
+                face,
+                |_: &MouseDownEvent, _: &mut Window, _: &mut App| {},
+            )
+            .into_any_element()
+        } else {
+            button(
+                "refresh-leagues",
+                tr!("Refresh"),
+                ButtonKind::Secondary,
+                face,
+                cx.listener(|view, _: &MouseDownEvent, _, cx| {
+                    view.app
+                        .update(cx, |app, cx| app.refresh_private_leagues(true, cx));
+                }),
+            )
+            .into_any_element()
+        };
+        let every = app.settings.private_leagues_refresh_minutes;
+        let picked = settings::PRIVATE_LEAGUE_REFRESHES
+            .iter()
+            .position(|&minutes| minutes == every)
+            .map_or(0, |index| index + 1);
+        let intervals = std::iter::once(SharedString::from(tr!("Off"))).chain(
+            settings::PRIVATE_LEAGUE_REFRESHES.map(|minutes| {
+                SharedString::from(i18n::duration(Duration::from_secs(u64::from(minutes) * 60)))
+            }),
+        );
         group(
             face,
-            "pathofexile.com",
-            [setting_row(
-                div().text_color(rgb(label_color)).child(label),
-                [Some(note(about, TEXT_DIM)), mine, problem]
-                    .into_iter()
-                    .flatten(),
-                buttons,
-            )],
+            tr!("Private leagues"),
+            [
+                setting_row(
+                    tr!("Your leagues"),
+                    leagues.chain(summary).chain(outcome),
+                    refresh,
+                ),
+                setting_row(
+                    tr!("Refresh automatically"),
+                    [note(
+                        tr!(
+                            "How often they're looked up again while you're signed in — quietly, \
+                             without popups"
+                        ),
+                        TEXT_DIM,
+                    )],
+                    segmented(
+                        "league-refresh",
+                        intervals,
+                        picked,
+                        cx.listener(|view, index: &usize, _, cx| {
+                            let minutes = match index.checked_sub(1) {
+                                None => Some(0),
+                                Some(index) => {
+                                    settings::PRIVATE_LEAGUE_REFRESHES.get(index).copied()
+                                }
+                            };
+                            if let Some(minutes) = minutes {
+                                view.change(cx, |settings| {
+                                    settings.private_leagues_refresh_minutes = minutes;
+                                });
+                            }
+                        }),
+                    ),
+                ),
+            ],
         )
     }
 
@@ -1844,6 +2062,27 @@ impl SettingsView {
                             },
                         )),
                 ),
+                setting_row(
+                    tr!("Quit the app"),
+                    [note(
+                        tr!(
+                            "Price checks, quick actions and the XP overlay stop until you start \
+                             it again from the Start menu"
+                        ),
+                        TEXT_DIM,
+                    )],
+                    button(
+                        "quit",
+                        tr!("Quit"),
+                        ButtonKind::Secondary,
+                        face,
+                        // Not from inside this window's own event: quitting reads it first
+                        // (`app::quit`).
+                        |_: &MouseDownEvent, _: &mut Window, cx: &mut App| {
+                            cx.defer(crate::app::quit);
+                        },
+                    ),
+                ),
             ],
         )
     }
@@ -1887,6 +2126,7 @@ impl Render for SettingsView {
             ))
             .child(game_frame())
             .children(tour::layer(Host::Settings, window, cx))
+            .children(welcome::layer(settings, cx))
     }
 }
 
@@ -1988,6 +2228,70 @@ fn toggle_row(
         ))
         .child(switch("switch", on));
     ease_hover(key, row, |row, hover| row.bg(alpha(GOLD, 0.05 * hover))).into_any_element()
+}
+
+/// What «Обновления» say under the version (`updates::UpdateStatus`): the connection to the
+/// service, then the update under way -- or that this is the latest version.
+fn update_lines(status: Option<&UpdateStatus>, on: bool) -> Vec<AnyElement> {
+    if !on {
+        return vec![note(
+            tr!(
+                "Off: the app doesn't connect to oracle.pushka.biz; new versions are on the website"
+            ),
+            TEXT_DIM,
+        )];
+    }
+    let Some(status) = status else {
+        return Vec::new();
+    };
+    let link = match status.link {
+        LinkState::Connecting => note(tr!("Connecting to oracle.pushka.biz…"), TEXT_DIM),
+        LinkState::Connected => note(tr!("Connected to oracle.pushka.biz"), TEXT_DIM),
+        LinkState::Offline => note(
+            tr!("No connection to oracle.pushka.biz — will connect when the internet is back"),
+            TEXT_DIM,
+        ),
+    };
+    let work = match &status.work {
+        None => status
+            .up_to_date
+            .then(|| note(tr!("You have the latest version"), TEXT_DIM)),
+        Some(Work::Fetching(Target::App(version))) => Some(note(
+            tr!("Downloading version {version}…", version = version),
+            TEXT,
+        )),
+        Some(Work::Fetching(Target::Data(_))) => {
+            Some(note(tr!("Downloading new game data…"), TEXT))
+        }
+        Some(Work::Waiting(Target::App(version))) => Some(note(
+            tr!(
+                "Version {version} is ready: the app installs it and restarts once its windows \
+                 are closed",
+                version = version
+            ),
+            TEXT,
+        )),
+        Some(Work::Waiting(Target::Data(_))) => Some(note(
+            tr!("New game data is ready: the app restarts with it once its windows are closed"),
+            TEXT,
+        )),
+        Some(Work::Failed(Target::App(version), error)) => Some(note(
+            tr!(
+                "Couldn't update to version {version}: {error}. Will try again later",
+                version = version,
+                error = error
+            ),
+            TEXT_WARNING,
+        )),
+        Some(Work::Failed(Target::Data(_), error)) => Some(note(
+            tr!(
+                "Couldn't update the game data: {error}. Will try again later",
+                error = error
+            ),
+            TEXT_WARNING,
+        )),
+    };
+    [Some(link), work].into_iter().flatten().collect()
 }
 
 /// What the account's row says of the session -- its label, the label's colour and the line

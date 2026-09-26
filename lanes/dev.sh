@@ -8,7 +8,8 @@
 #     /guide/en/, /guide/ru/
 #                       the guide, a book per language, built by docs/guide/build.sh
 #     /guide/images/    docs/guide/src/images, the books' pictures (/images/ too, for site/)
-#     /api/v1/...       reports and the latest release;  /download/...  the release proxy
+#     /api/v1/...       reports, the latest app release and data pack, the update event stream
+#     /download/...     the release proxy
 #
 # / and /guide/ pick the reader's language: the `lang` cookie that the language links on the site
 # and in the guide set, or else the browser's languages. / answers in English or redirects to /ru/,

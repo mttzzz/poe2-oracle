@@ -1,10 +1,11 @@
 //! Where the app keeps its files, all in `directories`' per-user folders for "poe2-oracle": the
 //! settings in the roaming config folder (`%APPDATA%\poe2-oracle\config`), the log, the kept item
-//! texts, the last crash and the sign-in window's browser profile in the local data folder
-//! (`%LOCALAPPDATA%\poe2-oracle\data`), and whatever can be fetched again -- trade catalogs,
-//! exchange and poe2scout prices, downloaded updates -- in the local cache folder
-//! (`%LOCALAPPDATA%\poe2-oracle\cache`). Without a home folder (never on a real Windows profile)
-//! the data and cache fall back to the temp folder, and settings aren't kept.
+//! texts, the last crash, the last update's marker, the sign-in window's browser profile and the
+//! installed game data pack in the local data folder (`%LOCALAPPDATA%\poe2-oracle\data`), and
+//! whatever can be fetched again -- trade catalogs, exchange and poe2scout prices, downloaded
+//! updates -- in the local cache folder (`%LOCALAPPDATA%\poe2-oracle\cache`). Without a home
+//! folder (never on a real Windows profile) the data and cache fall back to the temp folder, and
+//! settings aren't kept.
 
 use std::path::PathBuf;
 use std::sync::LazyLock;
@@ -26,9 +27,15 @@ pub fn cache_dir() -> PathBuf {
         .map_or_else(temp_fallback, |dirs| dirs.cache_dir().to_path_buf())
 }
 
-/// Installers the updater downloaded.
+/// Installers and game data packs the updater downloaded.
 pub fn updates_dir() -> PathBuf {
     cache_dir().join("updates")
+}
+
+/// What the last update was, from which version to which (`update_rules::Marker`), until the next
+/// start has said so.
+pub fn update_marker_file() -> PathBuf {
+    data_dir().join("last-update.json")
 }
 
 /// Item texts the parser rejected or couldn't fully read (and every checked text while
@@ -51,6 +58,11 @@ pub fn crash_file() -> PathBuf {
 /// browser has exited.
 pub fn login_browser_dir() -> PathBuf {
     data_dir().join("login-browser")
+}
+
+/// The installed game data pack, and the last one set aside as damaged (`data_pack`).
+pub fn data_pack_dir() -> PathBuf {
+    data_dir().join("game-data")
 }
 
 fn data_dir() -> PathBuf {

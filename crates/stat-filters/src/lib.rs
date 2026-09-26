@@ -7,7 +7,8 @@
 //! (`rank`), weighted sums (`weighted`) and search profiles (`profile`). Both are cited as the
 //! algorithms' ground truth, never as code to copy. Pure logic, no I/O: this crate depends on
 //! nothing but `poe2-domain` by design (see `Cargo.toml`); the RePoE tier table it ranks mods by
-//! is compiled in (`tiers`).
+//! is compiled in (`tiers`), and a game data pack may replace it for a run
+//! ([`read_mod_tiers`], [`use_mod_tiers`]).
 //!
 //! Property rows (the `property` module) search the trade query's own item filters -- defences,
 //! DPS, item level, sockets, quality -- rather than a stat: their single trade id names that
@@ -28,7 +29,9 @@ pub use profile::{SearchProfile, apply_profile};
 use property::property_filters;
 pub use property::uses_exact_preset;
 use rank::{Candidate, Pick};
-pub use tiers::{GameMod, Roll, game_mod, printed, stat_hash};
+pub use tiers::{
+    GameMod, ModTiers, Roll, game_mod, printed, read_mod_tiers, stat_hash, use_mod_tiers,
+};
 
 /// Where a `SearchFilter` came from -- drives the panel's tag pill.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

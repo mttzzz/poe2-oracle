@@ -7,10 +7,15 @@
 //! (Abyssal) mods have families of their own: the client numbers their tiers apart from the
 //! ordinary ones of the same stats. So have waystones, one set per waystone tier
 //! (`map.waystone:<tier>`), which only `game_mod` looks up: their mods roll by the tier.
+//!
+//! The table is built in, and a game data pack (the app's `data_pack`) may bring a newer one for
+//! a run: [`read_mod_tiers`] reads a pack's table, refusing a malformed one, and
+//! [`use_mod_tiers`] puts it in place before the table is first read.
 
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
+use poe2_domain::pack_table::{PackTable, TableInUse};
 use poe2_domain::{ModGeneration, ModifierType, ParsedItem, ParsedModifier, ParsedStat};
 
 use crate::TierInfo;
@@ -73,13 +78,13 @@ impl Tag {
     }
 }
 
-/// One tier of a family.
+/// One tier of a family, in a table whose text lives for `'a`.
 #[derive(Debug)]
-pub(crate) struct Tier {
+pub(crate) struct Tier<'a> {
     /// The item level the tier needs.
     pub(crate) level: u32,
     /// RePoE's id of the tier's mod (`IncreasedLife7`), the game's own.
-    pub(crate) mod_id: &'static str,
+    pub(crate) mod_id: &'a str,
     pub(crate) tags: Vec<Tag>,
     /// Each key stat's roll range as the item prints it, in `Family::stats` order; `None` for a
     /// flag.
@@ -107,17 +112,21 @@ enum Pool {
     Desecrated,
 }
 
-/// One mod family on one kind of item.
+/// One mod family on one kind of item, in a table whose text lives for `'a`; the table in use is
+/// `'static` ([`Family`]).
 #[derive(Debug)]
-pub(crate) struct Family {
+pub(crate) struct FamilyOf<'a> {
     slot: ModGeneration,
-    category: &'static str,
+    category: &'a str,
     pool: Pool,
     /// The key's trade stat hashes, sorted.
-    stats: Vec<&'static str>,
+    stats: Vec<&'a str>,
     /// T1 first.
-    pub(crate) tiers: Vec<Tier>,
+    pub(crate) tiers: Vec<Tier<'a>>,
 }
+
+/// One mod family on one kind of item.
+pub(crate) type Family = FamilyOf<'static>;
 
 impl Family {
     /// How many tiers the family has for a mod of tier `current` and the best one `item_level`
@@ -162,10 +171,37 @@ impl Family {
     }
 }
 
+/// A data pack's table, waiting for the first read of [`FAMILIES`].
+static PACK: PackTable<ModTiers<'static>> = PackTable::new();
+
 /// The table, by family key.
 static FAMILIES: LazyLock<HashMap<&'static str, Vec<Family>>> = LazyLock::new(|| {
-    parse(include_str!("../data/mod-tiers.tsv")).expect("data/mod-tiers.tsv is well-formed")
+    PACK.take().map_or_else(
+        || parse(include_str!("../data/mod-tiers.tsv")).expect("data/mod-tiers.tsv is well-formed"),
+        |pack| pack.0,
+    )
 });
+
+/// The mod tiers table, read ([`read_mod_tiers`]) from a text that lives for `'a`.
+pub struct ModTiers<'a>(HashMap<&'a str, Vec<FamilyOf<'a>>>);
+
+/// Reads a mod tiers table, as `data/mod-tiers.tsv` has it. An error names the first row that
+/// isn't one, or the rule the rows break (a family listed twice, a tier needing a higher level
+/// than the one above it); a table without rows is one too.
+pub fn read_mod_tiers(table: &str) -> Result<ModTiers<'_>, String> {
+    let families = parse(table)?;
+    if families.is_empty() {
+        return Err("no rows".to_owned());
+    }
+    Ok(ModTiers(families))
+}
+
+/// Makes `table`, a data pack's ([`read_mod_tiers`]), the one mods are looked up in for the rest
+/// of the run. Refused once the table has been read: the app puts a pack's table in place before
+/// anything reads it.
+pub fn use_mod_tiers(table: ModTiers<'static>) -> Result<(), TableInUse> {
+    PACK.set(table)
+}
 
 /// `stat_id`'s hash: the trade id without its mod type and option (`explicit.stat_3891355829|2`
 /// is `stat_3891355829`).
@@ -297,11 +333,11 @@ pub fn game_mod(item: &ParsedItem, modifier: &ParsedModifier) -> Option<GameMod>
 
 /// Reads the table: one row per tier, `key slot category pool level mod_id tags ranges order`, a
 /// family's rows consecutive and T1 first.
-fn parse(table: &'static str) -> Result<HashMap<&'static str, Vec<Family>>, String> {
-    let mut families: HashMap<&'static str, Vec<Family>> = HashMap::new();
+fn parse<'a>(table: &'a str) -> Result<HashMap<&'a str, Vec<FamilyOf<'a>>>, String> {
+    let mut families: HashMap<&'a str, Vec<FamilyOf<'a>>> = HashMap::new();
     let mut last: Option<(&str, &str, &str, &str)> = None;
     for (number, line) in table.lines().enumerate() {
-        let fields: Vec<&'static str> = line.split('\t').collect();
+        let fields: Vec<&'a str> = line.split('\t').collect();
         let [
             key,
             slot,
@@ -317,7 +353,7 @@ fn parse(table: &'static str) -> Result<HashMap<&'static str, Vec<Family>>, Stri
             return Err(format!("line {}: {} fields", number + 1, fields.len()));
         };
         let bad = |what: &str| format!("line {}: bad {what}", number + 1);
-        let stats: Vec<&'static str> = key.split('+').collect();
+        let stats: Vec<&'a str> = key.split('+').collect();
         let tier = Tier {
             level: level.parse().map_err(|_| bad("level"))?,
             mod_id,
@@ -367,7 +403,7 @@ fn parse(table: &'static str) -> Result<HashMap<&'static str, Vec<Family>>, Stri
             family.tiers.push(tier);
             continue;
         }
-        let family = Family {
+        let family = FamilyOf {
             slot: match slot {
                 "p" => ModGeneration::Prefix,
                 "s" => ModGeneration::Suffix,
@@ -449,6 +485,16 @@ mod tests {
             parse("stat_1\tp\tjewel\ta\t10\tA\t\t1:2\t0,0\nstat_1\tp\tjewel\ta\t1\tB\t\t1:2\t_\n")
                 .is_ok()
         );
+        assert!(read_mod_tiers("").is_err(), "a table without rows");
+    }
+
+    #[test]
+    fn a_pack_table_comes_too_late_once_the_built_in_one_is_read() {
+        // Whatever ran first, the built-in table is in use from here.
+        LazyLock::force(&FAMILIES);
+        let pack = read_mod_tiers("stat_1\tp\tjewel\ta\t10\tA\t\t1:2\t0\n").unwrap();
+        assert_eq!(use_mod_tiers(pack), Err(TableInUse));
+        assert!(FAMILIES.len() > 1, "the built-in table stays");
     }
 
     fn life_prefix(stat_id: &str, modifier_type: ModifierType) -> ParsedModifier {

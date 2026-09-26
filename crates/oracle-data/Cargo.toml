@@ -1,0 +1,32 @@
+[package]
+name = "oracle-data"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+# The library is what a game data pack is: the app reads packs with it (crates/poe2-oracle's
+# data_pack). The `oracle-data` tool (src/main.rs) makes one from this checkout's tables for
+# .github/workflows/data-release.yml. Neither needs anything the app's GPUI side brings.
+[dependencies]
+# The pack's manifest, table names, format and asset names.
+oracle-protocol = { path = "../oracle-protocol" }
+# The zip, built reproducibly and read back. Deflate through flate2, as the app's own zips.
+zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2"] }
+# Not used directly: zip's deflate-flate2 leaves flate2's backend to other crates of a build, and
+# `cargo run -p oracle-data` alone has none. This one, miniz_oxide, is the one the app's graph
+# already has; the pack's bytes depend on it.
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+# Each table's SHA-256 in the manifest, and SHA256SUMS.
+sha2 = "0.10"
+# The manifest is JSON.
+serde_json = "1"
+# A pack's `min_app` against the app's version.
+semver = "1"
+anyhow = "1"
+
+[dev-dependencies]
+tempfile = "3"

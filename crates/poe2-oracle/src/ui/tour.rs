@@ -36,7 +36,7 @@ use crate::overlay_layout::{PhysicalRect, hud_rails};
 use crate::platform::game_window::GameScreen;
 use crate::platform::win32::Win32Overlay;
 use crate::price_check::{BootstrapState, PriceCheckApp, SearchState};
-use crate::settings::{self, Hotkey};
+use crate::settings::{self, AppIcon, Hotkey};
 use crate::tour::{self, Action, Area, Host, Outcome, STEPS, Stop, Tour, Watched};
 use crate::tr;
 use crate::ui::fonts;
@@ -84,6 +84,12 @@ pub fn holds_xp_line(cx: &App) -> bool {
         let tour = &guide.read(cx).tour;
         tour.ended().is_none() && tour.stop() == Stop::XpLine
     })
+}
+
+/// Whether the tour is under way: its cards stand over the game or the app's windows, and an
+/// update's restart waits for it to end (`crate::updates`).
+pub fn under_way(cx: &App) -> bool {
+    running(cx).is_some_and(|guide| guide.read(cx).tour.ended().is_none())
 }
 
 /// The running tour: where its course stands, what the app last showed, the tour's own window,
@@ -607,13 +613,28 @@ fn words(stop: Stop, g: &Guide, cx: &App) -> Words {
         note: None,
     };
     match stop {
+        // Where the player finds the app, as `Settings::app_icon` shows it.
         Stop::League => plain(
             tr!("Welcome to PoE2 Oracle"),
-            tr!(
-                "PoE2 Oracle runs in the background: its icon sits by the clock, sometimes under \
-                 the “Show hidden icons” arrow. These settings open from its menu and from the ⚙ \
-                 on the price panel. Start with your league — “Auto” follows the current one."
-            ),
+            match g.app.read(cx).settings.app_icon {
+                AppIcon::Tray => tr!(
+                    "PoE2 Oracle runs in the background: its icon sits by the clock, sometimes \
+                     under the “Show hidden icons” arrow. A click on it opens these settings, and \
+                     so does the ⚙ on the price panel. Start with your league — “Auto” follows the \
+                     current one."
+                ),
+                AppIcon::Taskbar => tr!(
+                    "PoE2 Oracle runs in the background: its button stays on the taskbar. A click \
+                     on it opens these settings, and so does the ⚙ on the price panel. Start with \
+                     your league — “Auto” follows the current one."
+                ),
+                AppIcon::Both => tr!(
+                    "PoE2 Oracle runs in the background: its button stays on the taskbar, and its \
+                     icon sits by the clock. A click on either opens these settings, and so does \
+                     the ⚙ on the price panel. Start with your league — “Auto” follows the current \
+                     one."
+                ),
+            },
         ),
         Stop::PriceCheck => Words {
             title: tr!("Check a price"),

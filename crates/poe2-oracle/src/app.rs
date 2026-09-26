@@ -13,10 +13,12 @@
 //! - no Windows 11 DWM frame (otherwise a permanent outline over the game);
 //! - focus handed back to the game when a panel the player clicked into closes.
 //!
-//! The tray icon is the app's only visible "running" signal, and its menu opens the settings and
-//! quits: a `PopUp` window has no taskbar button.
+//! Where the running app shows itself -- its notification-area icon, a taskbar button or both --
+//! is the player's choice (`Settings::app_icon`, applied live by `PriceCheckRoot::sync_presence`):
+//! a `PopUp` window has no taskbar button, so without them the app would be invisible. A left click
+//! on the icon or a click on the button opens the settings; the icon's menu opens them and quits,
+//! and so does the button's «Закрыть окно» ([`serve_presence`]).
 
-use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -28,8 +30,8 @@ use gpui::{
 use gpui_platform::application;
 use http_client::HttpClient;
 use reqwest_client::ReqwestClient;
-use tray_icon::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
-use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
+use tray_icon::menu::{Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem};
+use tray_icon::{Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 use windows::Win32::UI::HiDpi::{
     DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, SetProcessDpiAwarenessContext,
 };
@@ -37,24 +39,27 @@ use windows::Win32::UI::HiDpi::{
 use crate::brand;
 use crate::diagnostics;
 use crate::i18n::{self, Lang};
+use crate::launch::{Knock, Launch};
 use crate::logging;
 use crate::login;
 use crate::overlay_layout::PhysicalRect;
 use crate::platform::instance::{self, Request};
+use crate::platform::taskbar::{self, ButtonEvent, TaskbarButton};
 use crate::platform::win32::Win32Overlay;
 use crate::platform::{autostart, game_config, game_window, redraw_filter};
 use crate::price_check::{self, BootstrapState, PriceCheckApp};
 use crate::report;
 use crate::session::{self, SessionHttpClient};
-use crate::settings::{self, Hotkey};
+use crate::settings::{self, AppIcon, Hotkey};
 use crate::tr;
 use crate::ui::fonts;
 use crate::ui::report_view::{self, ReportView};
 use crate::ui::settings_view::{self, Intro, SettingsView};
 use crate::ui::theme::BASE_REM_SIZE;
 use crate::ui::tour;
+use crate::ui::welcome;
 use crate::ui::xp_overlay::{self, XpCover, XpOverlay, XpOverlayOptions};
-use crate::updates::Updates;
+use crate::updates;
 
 const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 /// A server that goes quiet this long -- before its answer or in the middle of it -- fails the
@@ -67,7 +72,7 @@ const READ_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Wraps `Entity<PriceCheckApp>` with the platform-window state that has to follow it: the
 /// `Win32Overlay` handle (resolved once the real platform window exists), what was last applied to
-/// it, and the tray.
+/// it, and where the app shows itself -- the tray icon, the taskbar button.
 struct PriceCheckRoot {
     inner: Entity<PriceCheckApp>,
     overlay: Option<Win32Overlay>,
@@ -82,9 +87,16 @@ struct PriceCheckRoot {
     default_bounds: Option<PhysicalRect>,
     default_bounds_scale: Option<f32>,
     was_visible: bool,
-    tray: Tray,
+    /// The notification-area icon, made the first time `Settings::app_icon` asks for it and
+    /// hidden while it doesn't; the taskbar button, while it asks for one (`sync_presence`).
+    tray: Option<Tray>,
+    taskbar: Option<TaskbarButton>,
+    /// Where the app shows itself as of the last change `sync_presence` made, and whether one is
+    /// under way.
+    app_icon: AppIcon,
+    presence_changing: bool,
     /// The hotkey and the interface language the tray was last worded for; `None` until the first
-    /// sync.
+    /// sync, and for a new tray.
     tray_words: Option<(Hotkey, Lang)>,
     /// The XP overlay, opened while the setting allows it (see `sync_xp`).
     xp: Option<Entity<XpOverlay>>,
@@ -137,6 +149,7 @@ impl PriceCheckRoot {
             self.default_bounds = game_window::default_panel_rect(ui_scale);
             self.default_bounds_scale = Some(ui_scale);
         }
+        self.sync_presence(cx);
         self.sync_tray(cx);
         self.sync_xp(cx);
         let Some(overlay) = self.overlay else {
@@ -202,6 +215,62 @@ impl PriceCheckRoot {
         .detach();
     }
 
+    /// Shows the app where `Settings::app_icon` says -- the tray icon, the taskbar button or both
+    /// -- once the player changes it. Spawned, and all of it done outside any update: this runs
+    /// inside `render`/an `observe` callback, and the button takes an open settings window over or
+    /// gives it back (`TaskbarButton::show`), sending GPUI's procedure messages. What is wanted
+    /// shows before what isn't goes, so the app never disappears; a change made meanwhile follows
+    /// once this one is done.
+    ///
+    /// The tray icon, once made, is only hidden and shown again: Windows remembers whether the
+    /// player keeps it by the clock or under the ^ arrow by the icon's number within the run,
+    /// which a new icon wouldn't have.
+    fn sync_presence(&mut self, cx: &mut Context<Self>) {
+        let wanted = self.inner.read(cx).settings.app_icon;
+        if wanted == self.app_icon || self.presence_changing {
+            return;
+        }
+        self.presence_changing = true;
+        cx.spawn(async move |this, cx| {
+            let Ok((mut tray, mut button, hotkey)) = this.update(cx, |root, cx| {
+                let hotkey = root.inner.read(cx).settings.hotkey;
+                (root.tray.take(), root.taskbar.take(), hotkey)
+            }) else {
+                return;
+            };
+            if wanted.tray() {
+                match &mut tray {
+                    Some(tray) => tray.show(true),
+                    None => tray = new_tray(hotkey),
+                }
+            }
+            if wanted.taskbar() && button.is_none() {
+                button = new_button();
+            }
+            if !wanted.tray()
+                && let Some(tray) = &mut tray
+            {
+                tray.show(false);
+            }
+            if !wanted.taskbar()
+                && let Some(button) = button.take()
+            {
+                button.remove();
+            }
+            this.update(cx, |root, cx| {
+                root.tray = tray;
+                root.taskbar = button;
+                root.app_icon = wanted;
+                root.presence_changing = false;
+                root.tray_words = None;
+                root.sync_presence(cx);
+                root.sync_tray(cx);
+            })
+            .ok();
+        })
+        .detach();
+    }
+
     /// Words the tray in the interface language and names the current hotkey in its tooltip --
     /// the only place it's shown besides the panel's own hint.
     fn sync_tray(&mut self, cx: &mut Context<Self>) {
@@ -209,7 +278,9 @@ impl PriceCheckRoot {
         if self.tray_words == Some(words) {
             return;
         }
-        self.tray.word(words.0);
+        if let Some(tray) = &self.tray {
+            tray.word(words.0);
+        }
         self.tray_words = Some(words);
     }
 
@@ -313,104 +384,158 @@ fn tray_tooltip(hotkey: Hotkey) -> String {
     tr!("PoE2 Oracle — price check: {hotkey}", hotkey = hotkey)
 }
 
+/// The ids the tray menu's entries come back with ([`serve_presence`]).
+const TRAY_SETTINGS: &str = "settings";
+const TRAY_QUIT: &str = "quit";
+
 /// The notification-area icon and its menu's entries, kept to word them again in another
-/// interface language ([`Tray::word`]).
+/// interface language ([`Tray::word`]). Dropping it takes the icon away.
 struct Tray {
     icon: TrayIcon,
     settings: MenuItem,
-    updates: Rc<Updates>,
-    report: MenuItem,
     quit: MenuItem,
+    /// Not hidden ([`Tray::show`]).
+    shown: bool,
 }
 
 impl Tray {
+    /// Puts the icon in the notification area, with «Настройки» and «Выход» in its menu and
+    /// `hotkey` named in its tooltip. A right click opens the menu, a left click the settings: its
+    /// clicks reach [`serve_presence`]. On GPUI's main thread, whose message loop also drives the
+    /// tray's hidden window.
+    fn new(hotkey: Hotkey) -> anyhow::Result<Tray> {
+        // `Tray::word` gives the entries their words.
+        let settings = MenuItem::with_id(MenuId::new(TRAY_SETTINGS), "", true, None);
+        let quit = MenuItem::with_id(MenuId::new(TRAY_QUIT), "", true, None);
+        let menu = Menu::new();
+        menu.append(&settings)?;
+        menu.append(&PredefinedMenuItem::separator())?;
+        menu.append(&quit)?;
+        let icon = TrayIconBuilder::new()
+            .with_icon(tray_icon_image())
+            .with_menu(Box::new(menu))
+            .with_menu_on_left_click(false)
+            .build()?;
+        let tray = Tray {
+            icon,
+            settings,
+            quit,
+            shown: true,
+        };
+        tray.word(hotkey);
+        Ok(tray)
+    }
+
     /// Words the menu in the interface language, and the tooltip naming `hotkey`.
     fn word(&self, hotkey: Hotkey) {
         self.settings.set_text(tr!("Settings"));
-        self.updates.relabel();
-        self.report.set_text(tr!("Report a problem or idea…"));
         self.quit.set_text(tr!("Quit"));
         if let Err(err) = self.icon.set_tooltip(Some(tray_tooltip(hotkey))) {
             log::warn!("{err:#}");
         }
     }
+
+    /// Shows the icon in the notification area, or hides it there.
+    fn show(&mut self, shown: bool) {
+        if self.shown == shown {
+            return;
+        }
+        match self.icon.set_visible(shown) {
+            Ok(()) => self.shown = shown,
+            Err(err) => log::warn!("showing the tray icon ({shown}) failed: {err:#}"),
+        }
+    }
 }
 
-/// Notification-area icon with «Настройки», the update entry (`crate::updates`), «Сообщить о
-/// проблеме или идее…» (the report window, [`open_report`]) and «Выход», worded in the interface
-/// language.
-/// Created on GPUI's main thread, whose message loop also drives the tray's hidden window; menu
-/// clicks come through `MenuEvent`'s handler into a channel a task here awaits.
-fn build_tray(cx: &mut App, app: &Entity<PriceCheckApp>) -> anyhow::Result<Tray> {
-    // Before the menu exists: `muda` settles on its channel for good with the first event.
-    let (click_tx, clicks) = async_channel::unbounded();
-    MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
-        let _ = click_tx.try_send(event);
-    }));
-    // `Tray::word` gives the entries their words.
-    let settings_item = MenuItem::new("", true, None);
-    let settings_id = settings_item.id().clone();
-    let update_item = Updates::menu_item();
-    let update_id = update_item.id().clone();
-    let report_item = MenuItem::new("", true, None);
-    let report_id = report_item.id().clone();
-    let quit_item = MenuItem::new("", true, None);
-    let quit_id = quit_item.id().clone();
-    let menu = Menu::new();
-    menu.append(&settings_item)?;
-    menu.append(&update_item)?;
-    menu.append(&report_item)?;
-    menu.append(&PredefinedMenuItem::separator())?;
-    menu.append(&quit_item)?;
-    let icon = TrayIconBuilder::new()
-        .with_icon(tray_icon_image())
-        .with_menu(Box::new(menu))
-        .build()?;
-    let updates = Updates::new(update_item, cx.http_client());
-    let tray = Tray {
-        icon,
-        settings: settings_item,
-        updates: updates.clone(),
-        report: report_item,
-        quit: quit_item,
-    };
-    tray.word(app.read(cx).settings.hotkey);
+/// A new tray icon; the app runs on without one it can't make.
+fn new_tray(hotkey: Hotkey) -> Option<Tray> {
+    Tray::new(hotkey)
+        .inspect_err(|err| log::warn!("the tray icon is unavailable: {err:#}"))
+        .ok()
+}
 
-    let check_after_launch = app.read(cx).settings.check_updates;
-    let app = app.downgrade();
-    cx.spawn(async move |cx| {
-        if check_after_launch {
-            updates.check_after_launch(cx);
+/// A new taskbar button; the app runs on without one it can't make.
+fn new_button() -> Option<TaskbarButton> {
+    TaskbarButton::show()
+        .inspect_err(|err| log::warn!("the taskbar button is unavailable: {err:#}"))
+        .ok()
+}
+
+/// What the player asks through the tray icon or the taskbar button.
+#[derive(Clone, Copy)]
+enum Ask {
+    Settings,
+    Quit,
+}
+
+/// Answers the tray icon and the taskbar button for the app's whole run, whichever of them shows
+/// and however often the player switches: a left click on the icon, its «Настройки» and a click
+/// on the button open the settings (or bring them forward); its «Выход» and the button's «Закрыть
+/// окно» quit. Call before the first icon exists: `muda` and `tray-icon` settle on their event
+/// handlers for good with their first event.
+fn serve_presence(cx: &mut App, app: &Entity<PriceCheckApp>) {
+    let (ask, asks) = async_channel::unbounded();
+    let menu_ask = ask.clone();
+    MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
+        let asked = if event.id == TRAY_SETTINGS {
+            Ask::Settings
+        } else if event.id == TRAY_QUIT {
+            Ask::Quit
+        } else {
+            return;
+        };
+        let _ = menu_ask.try_send(asked);
+    }));
+    // A left click opens the settings once the button is let go; presses, double clicks and the
+    // pointer's moves over the icon wake nothing.
+    let icon_ask = ask.clone();
+    TrayIconEvent::set_event_handler(Some(move |event: TrayIconEvent| {
+        if let TrayIconEvent::Click {
+            button: MouseButton::Left,
+            button_state: MouseButtonState::Up,
+            ..
+        } = event
+        {
+            let _ = icon_ask.try_send(Ask::Settings);
         }
-        while let Ok(event) = clicks.recv().await {
-            if event.id == quit_id {
-                cx.update(quit);
+    }));
+    let button_events = taskbar::events();
+    cx.spawn(async move |_| {
+        while let Ok(event) = button_events.recv().await {
+            let asked = match event {
+                ButtonEvent::Activated => Ask::Settings,
+                ButtonEvent::Close => Ask::Quit,
+            };
+            if ask.send(asked).await.is_err() {
                 return;
-            }
-            if event.id == settings_id
-                && let Some(app) = app.upgrade()
-            {
-                cx.update(|cx| open_settings(&app, cx));
-            }
-            if event.id == update_id {
-                updates.clicked(cx);
-            }
-            if event.id == report_id
-                && let Some(app) = app.upgrade()
-            {
-                cx.update(|cx| open_report(&app, report::Request::general(), cx));
             }
         }
     })
     .detach();
 
-    Ok(tray)
+    let app = app.downgrade();
+    cx.spawn(async move |cx| {
+        while let Ok(asked) = asks.recv().await {
+            match asked {
+                Ask::Quit => {
+                    cx.update(quit);
+                    return;
+                }
+                Ask::Settings => {
+                    if let Some(app) = app.upgrade() {
+                        cx.update(|cx| open_settings(&app, cx));
+                    }
+                }
+            }
+        }
+    })
+    .detach();
 }
 
-/// Quits the app -- from the tray, for the installer (`instance`) or for an update. What the
-/// settings window's fields hold, typed but not yet left, applies first
-/// (`SettingsView::apply_typed`), as the window's own close would apply it: quitting ends GPUI's
-/// message loop without closing any window, so nothing else would.
+/// Quits the app -- from the tray, the taskbar button or the settings window's «Помощь», for the
+/// installer (`instance`) or for an update. What the settings window's fields hold, typed but not
+/// yet left, applies first (`SettingsView::apply_typed`), as the window's own close would apply
+/// it: quitting ends GPUI's message loop without closing any window, so nothing else would.
 pub fn quit(cx: &mut App) {
     for settings in cx
         .windows()
@@ -446,7 +571,7 @@ pub fn open_settings(app: &Entity<PriceCheckApp>, cx: &mut App) {
     // the account's own.
     app.update(cx, |state, cx| {
         state.settings.autostart = autostart::autostart_enabled();
-        state.refresh_private_leagues(cx);
+        state.refresh_private_leagues(false, cx);
     });
     let intro = Intro {
         problems: diagnostics::setup_problems(&game_config::read()),
@@ -478,11 +603,14 @@ pub fn open_settings(app: &Entity<PriceCheckApp>, cx: &mut App) {
         show: true,
         ..Default::default()
     };
-    let opened = cx.open_window(options, |window, cx| {
-        let app = app.clone();
-        let view = cx.new(|cx| SettingsView::new(app, intro, window, cx));
-        window.focus(&view.focus_handle(cx), cx);
-        view
+    // While the taskbar button shows, the window opens under it, without a button of its own.
+    let opened = taskbar::under_button(|| {
+        cx.open_window(options, |window, cx| {
+            let app = app.clone();
+            let view = cx.new(|cx| SettingsView::new(app, intro, window, cx));
+            window.focus(&view.focus_handle(cx), cx);
+            view
+        })
     });
     match opened {
         Ok(handle) => {
@@ -546,9 +674,11 @@ pub fn open_report(app: &Entity<PriceCheckApp>, request: report::Request, cx: &m
         show: true,
         ..Default::default()
     };
-    let opened = cx.open_window(options, |window, cx| {
-        let app = app.clone();
-        cx.new(|cx| ReportView::new(app, request, window, cx))
+    let opened = taskbar::under_button(|| {
+        cx.open_window(options, |window, cx| {
+            let app = app.clone();
+            cx.new(|cx| ReportView::new(app, request, window, cx))
+        })
     });
     match opened {
         Ok(_) => {
@@ -598,22 +728,23 @@ pub fn close_window(window: &Window, cx: &mut App) {
     .detach();
 }
 
-/// Starts the tour (`ui::tour`) once the catalogs are in (or failed): its first stop is the
-/// settings window's league select, whose list comes with them.
+/// Starts the tour (`ui::tour`) once the catalogs are in (or failed) -- its first stop is the
+/// settings window's league select, whose list comes with them -- and the welcome after an
+/// install is gone (`ui::welcome`): the tour follows it, never shows under it.
 fn tour_when_ready(app: &Entity<PriceCheckApp>, cx: &mut App) {
     let mut pending = true;
     cx.observe(app, move |app, cx| {
         if pending && !matches!(app.read(cx).bootstrap, BootstrapState::Loading) {
             pending = false;
             // Not from inside the notification that reported it.
-            cx.defer(move |cx| tour::start(&app, cx));
+            cx.defer(move |cx| welcome::after(cx, move |cx| tour::start(&app, cx)));
         }
     })
     .detach();
 }
 
 /// Serves what other processes ask through `instance`'s door: the installer's quit, a second
-/// launch's settings.
+/// launch's knock -- the settings, with the welcome for one the installer's finish page started.
 fn serve_instance_requests(
     cx: &mut App,
     app: &Entity<PriceCheckApp>,
@@ -628,9 +759,12 @@ fn serve_instance_requests(
                     cx.update(quit);
                     return;
                 }
-                Request::ShowSettings => {
+                Request::Knock(knock) => {
                     if let Some(app) = app.upgrade() {
-                        cx.update(|cx| open_settings(&app, cx));
+                        cx.update(|cx| match knock {
+                            Knock::Settings => open_settings(&app, cx),
+                            Knock::Welcome => welcome::show(&app, cx),
+                        });
                     }
                 }
             }
@@ -639,7 +773,7 @@ fn serve_instance_requests(
     .detach();
 }
 
-/// Runs the app until the player quits from the tray.
+/// Runs the app until the player quits: from the tray, the taskbar button or the settings.
 pub fn run() {
     // Before any window exists: per-monitor-v2 DPI awareness, so every Win32 coordinate this app
     // reads or sets (game window, cursor, SetWindowPos) is in physical pixels and GPUI renders at
@@ -647,16 +781,24 @@ pub fn run() {
     // already set the process's awareness.
     let _ = unsafe { SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) };
     // Before the log: `logging::init` starts a new file, and a second copy must leave the running
-    // one's log alone. A second copy started by autostart leaves quietly; one the player started
-    // has the running copy open its settings.
-    let autostarted = std::env::args().any(|arg| arg == autostart::AUTOSTART_ARG);
-    let requests = match instance::claim(autostarted) {
+    // one's log alone. A second copy asks the running one for what it was started for
+    // (`Launch::knock`) and leaves.
+    let launch = Launch::parse(std::env::args_os().skip(1));
+    // An update's restart: the copy this one replaces is still quitting (`updates`).
+    let closed_replaced = launch.after.is_some_and(instance::wait_for_exit);
+    let requests = match instance::claim(launch.knock()) {
         Ok(None) => return,
         claimed => claimed,
     };
     logging::init();
+    if closed_replaced {
+        log::warn!("the copy this one replaces didn't quit in time and was closed");
+    }
     // Before GPUI starts: its vsync thread loads the `RedrawWindow` import once, before its loop.
     redraw_filter::install();
+    // Before anything reads a game table: the installed data pack's tables, when it's sound and
+    // newer than the built-in ones (`data_pack`).
+    crate::data_pack::activate();
     let requests = requests.unwrap_or_else(|err| {
         log::warn!("the single-copy check failed, running anyway: {err:#}");
         None
@@ -679,7 +821,7 @@ pub fn run() {
             inner_client.clone(),
             trade_session.clone(),
         )))
-        .run(|cx: &mut App| {
+        .run(move |cx: &mut App| {
             if let Err(err) = fonts::register(cx) {
                 log::warn!("nameplate fonts unavailable: {err:#}");
             }
@@ -688,7 +830,7 @@ pub fn run() {
             let settings = settings::load();
             crate::i18n::apply(settings.interface_language);
             // Until the player finishes or skips it, the tour starts with every launch -- the
-            // first one's welcome.
+            // first one's introduction, after the install's welcome (`tour_when_ready`).
             let start_tour = !settings.tour_done;
             let inner = price_check::create_app(cx, http_client, settings);
             login::init(cx);
@@ -698,7 +840,15 @@ pub fn run() {
 
             price_check::register_hotkeys(cx, inner.clone())
                 .expect("failed to set up the price-check hotkey and Esc hook");
-            let tray = build_tray(cx, &inner).expect("failed to create the tray icon");
+            // Before any window opens: the settings and report windows open under the taskbar
+            // button while it shows, and a failure to show either only costs that one.
+            serve_presence(cx, &inner);
+            let (app_icon, hotkey) = {
+                let settings = &inner.read(cx).settings;
+                (settings.app_icon, settings.hotkey)
+            };
+            let tray = app_icon.tray().then(|| new_tray(hotkey)).flatten();
+            let taskbar = app_icon.taskbar().then(new_button).flatten();
             if let Some(requests) = requests {
                 serve_instance_requests(cx, &inner, requests);
             }
@@ -706,6 +856,14 @@ pub fn run() {
             if let Some(crash) = report::recent_crash() {
                 open_report(&inner, report::Request::crash(crash), cx);
             }
+            // Started by the installer's finish page: the settings open with the welcome over
+            // them, which says the install worked and where the app lives from now on.
+            if launch.installed {
+                welcome::show(&inner, cx);
+            }
+            // What the last update left to say, and the updater itself: it connects a few
+            // seconds on, while the player allows it.
+            updates::init(&inner, cx);
 
             cx.open_window(build_window_options(), |window, cx| {
                 window.set_window_title("PoE2 Oracle — Price Check");
@@ -741,6 +899,9 @@ pub fn run() {
                         default_bounds_scale: None,
                         was_visible: false,
                         tray,
+                        taskbar,
+                        app_icon,
+                        presence_changing: false,
                         tray_words: None,
                         xp: None,
                         xp_opening: false,

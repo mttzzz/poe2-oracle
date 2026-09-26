@@ -27,6 +27,15 @@ oracle-protocol = { path = "../oracle-protocol" }
 # base64), checked with `verify_strict` like crates/release-sign checks it.
 ed25519-dalek = "2"
 base64 = "0.22"
+# The event stream (src/events.rs): the channels the app hears it on, the kind its GPUI side
+# already uses (2.5 for `Sender::closed`); its waits -- the backoff, the silent-connection
+# watchdog -- on whatever executor runs it, through one helper thread and no runtime; the backoff's
+# jitter (already in the tree through GPUI's executor); and why a connection dropped, in the app's
+# log.
+async-channel = "2.5"
+futures-timer = "3"
+fastrand = "2"
+log = "0.4"
 
 [dev-dependencies]
 parking_lot = "0.12"

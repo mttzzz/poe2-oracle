@@ -517,10 +517,14 @@ name = "auto-update"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-channel",
  "base64",
  "ed25519-dalek",
+ "fastrand",
  "futures",
+ "futures-timer",
  "http_client",
+ "log",
  "oracle-protocol",
  "parking_lot",
  "semver",
@@ -2223,6 +2227,12 @@ name = "futures-task"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cd417de3d1d015fc3bfd2b1ea46dfc7bab72ef86f1cc7cc9c78e728b34a6d1fd"
+
+[[package]]
+name = "futures-timer"
+version = "3.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "af43fadb8a98512d547e37b4e92e0ced13e205c061b87b4623eff01d918d6968"
 
 [[package]]
 name = "futures-util"
@@ -4491,6 +4501,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
+name = "oracle-data"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "flate2",
+ "oracle-protocol",
+ "semver",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "zip",
+]
+
+[[package]]
 name = "oracle-protocol"
 version = "0.1.0"
 dependencies = [
@@ -4504,6 +4528,7 @@ name = "oracle-web"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "futures-util",
  "http-body-util",
  "mlua",
  "oracle-protocol",
@@ -4511,6 +4536,8 @@ dependencies = [
  "percent-encoding",
  "redis",
  "reqwest",
+ "rustix",
+ "semver",
  "serde",
  "serde_json",
  "sha2",
@@ -4780,6 +4807,7 @@ dependencies = [
  "image",
  "item-parser",
  "log",
+ "oracle-data",
  "oracle-protocol",
  "parking_lot",
  "percent-encoding",

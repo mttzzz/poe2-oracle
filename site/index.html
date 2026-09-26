@@ -3,15 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PoE2 Oracle: price check overlay for Path of Exile 2</title>
-<meta name="description" content="Free Windows overlay for Path of Exile 2: point at an item, press Ctrl+E and see what it sells for on the official trade site.">
+<title>PoE2 Oracle: price check and XP tracker for Path of Exile 2</title>
+<meta name="description" content="Free Windows app for Path of Exile 2: press Ctrl+E on an item to see what it sells for on the official trade site, and track your XP right on the game's HUD: levelling speed, time to the next level and a map timer.">
 <link rel="canonical" href="https://oracle.pushka.biz/">
 <link rel="alternate" hreflang="en" href="https://oracle.pushka.biz/">
 <link rel="alternate" hreflang="ru" href="https://oracle.pushka.biz/ru/">
 <link rel="alternate" hreflang="x-default" href="https://oracle.pushka.biz/">
 <meta property="og:type" content="website">
 <meta property="og:title" content="PoE2 Oracle">
-<meta property="og:description" content="Price check for Path of Exile 2 on a hotkey. Free Windows overlay.">
+<meta property="og:description" content="Price check on a hotkey and an XP overlay on the game's HUD. Free, for Windows.">
 <meta property="og:url" content="https://oracle.pushka.biz/">
 <meta property="og:image" content="https://oracle.pushka.biz/images/en/og.jpg">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -22,10 +22,9 @@
 
 <header class="topbar">
   <div class="wrap">
-    <a class="brand" href="./"><img src="favicon.png" alt="" width="32" height="32">PoE2 Oracle</a>
+    <a class="brand" href="./"><img src="brand.png" alt="" width="32" height="32">PoE2 Oracle</a>
     <nav aria-label="Main">
       <ul class="topnav">
-        <li><a href="#features">Features</a></li>
         <li><a href="guide/en/introduction.html">Guide</a></li>
         <li class="lang-switch" aria-label="Language">
           <span aria-current="page">EN</span>
@@ -40,9 +39,10 @@
   <section class="hero">
     <div class="wrap">
       <h1>PoE2 Oracle</h1>
-      <p class="lead">Price check for Path of Exile 2 on a hotkey. Point at an item, press
-        <span class="keys"><kbd>Ctrl</kbd>+<kbd>E</kbd></span>, and a panel next to your inventory shows what similar items
-        sell for on the official trade site.</p>
+      <p class="lead">Price check and XP tracking for Path of Exile 2. Point at an item and press
+        <span class="keys"><kbd>Ctrl</kbd>+<kbd>E</kbd></span>: a panel next to your inventory shows what similar items sell
+        for on the official trade site. And right on the game's HUD, above the flask and skill panels,
+        you see how fast you level, how long until the next level and how long the current map has run.</p>
       <div class="actions">
         <a class="button button-primary" href="download/latest">Download for Windows</a>
         <a class="button" href="guide/en/introduction.html">Read the guide</a>
@@ -51,7 +51,7 @@
       <p class="fineprint">The installer isn't code-signed yet. If Windows says “Windows protected your
         PC”, click <em>More info</em>, then <em>Run anyway</em>.</p>
       <figure class="shot">
-        <div data-oracle="hero" data-lang="en" data-fit data-alt="The PoE2 Oracle price panel with a rare helmet's filters and listings, a currency's market card and the XP overlay's line above the game's flask panel"></div>
+        <div data-oracle="hero" data-lang="en" data-fit data-alt="The PoE2 Oracle price panel with a rare helmet's filters and listings, a currency's market card and both XP overlay plates, above the game's flask and skill panels"></div>
       </figure>
     </div>
   </section>
@@ -59,9 +59,9 @@
   <section class="section" id="features">
     <div class="wrap">
       <h2>What it does</h2>
-      <p class="intro">PoE2 Oracle runs in the background. The price panel opens over the game only
-        when you press the hotkey; the XP overlay sits on the game's own HUD and can be turned off in
-        the settings. Prices need no account and no browser.</p>
+      <p class="intro">PoE2 Oracle runs in the background. The XP overlay is always in view: it sits on
+        the game's own HUD, looks like part of it and can be turned off in the settings. The price panel
+        opens over the game only when you press the hotkey. Prices need no account and no browser.</p>
 
       <article class="feature">
         <div class="feature-text">
@@ -84,6 +84,25 @@
 
       <article class="feature">
         <div class="feature-text">
+          <h3>XP overlay</h3>
+          <p>Two plates right on the game's HUD rails, drawn in its own moulding and colours. Above the
+            flask panel: how fast you gain experience and when the next level comes. Above the skill
+            panel: a timer for the current map.</p>
+          <ul>
+            <li>Levelling speed in percent of a level per hour, and the time to the next level at that speed</li>
+            <li>Time and experience of the current map, and your average map time for the session</li>
+            <li>Time in towns and hideouts stays out of the speed: while you pause, the line dims and
+              shows only how much of the level you have</li>
+            <li>Experience is read from the XP bar on screen and from the game's log</li>
+          </ul>
+        </div>
+        <figure class="feature-media">
+          <div data-oracle="xp" data-lang="en" data-fit data-alt="The XP overlay's plates above the game's flask and skill panels"></div>
+        </figure>
+      </article>
+
+      <article class="feature">
+        <div class="feature-text">
           <h3>Currency market</h3>
           <p>Currency, omens, runes, essences and everything else traded on the in-game Currency
             Exchange are priced from GGG's own record of the trades made on it: the value in divine,
@@ -94,18 +113,6 @@
         </div>
         <figure class="feature-media">
           <div data-oracle="market" data-lang="en" data-fit data-alt="The market card with a seven-day price chart for a currency item"></div>
-        </figure>
-      </article>
-
-      <article class="feature">
-        <div class="feature-text">
-          <h3>XP overlay</h3>
-          <p>On top of the game's own HUD: how fast you level, in percent of a level per hour, and the
-            time to the next level above the flask panel; the time and experience of the current map
-            next to your average map time above the skill panel.</p>
-        </div>
-        <figure class="feature-media">
-          <div data-oracle="xp" data-lang="en" data-fit data-alt="The XP overlay's lines above the game's flask and skill panels"></div>
         </figure>
       </article>
 
@@ -122,11 +129,10 @@
       </article>
 
       <ul class="also">
-        <li><strong>Waystone marks</strong>Mark waystone modifiers as danger, caution or wanted and
-          spot them on every waystone you check.</li>
-        <li><strong>Updates</strong>A new version shows up in the menu of the tray icon; a click
-          installs it, and only once the release's signature and the installer's SHA-256 checksum
-          check out.</li>
+        <li><strong>Updates</strong>New versions and new game data install by themselves, only
+          once their signature and SHA-256 checksums check out, and never while one of the app's
+          windows is open; a plate over the game says so after the restart.
+          <a href="guide/en/updates.html">How it works</a></li>
         <li><strong>Problem reports</strong>Write to the developer from the app itself: its report
           window sends your text, with the item's text or a diagnostics report attached if you
           choose. After a crash it opens by itself on the next start. No account needed.

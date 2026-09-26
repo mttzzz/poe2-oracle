@@ -36,6 +36,9 @@ In scope:
   entries and what it deletes.
 - **The updater** (`crates/auto-update`): the release check, the download, the check of the
   release's Ed25519 signature and the installer's SHA-256, and the silent install.
+- **Game data packs** (`crates/oracle-data`, `crates/poe2-oracle/src/data_pack.rs`): reading a
+  signed pack's zip, the check of each table against its SHA-256 before it is parsed, and the
+  folder the app unpacks packs into.
 - **The web service** at oracle.pushka.biz (`crates/oracle-web`): the report form and API, the
   update proxy, and what the service keeps (counts per day, no ids).
 - **Data handling**: what the app keeps on disk, and the diagnostics report: what it holds, its
@@ -89,6 +92,9 @@ didn't sign. That doesn't protect against a compromised release pipeline or sign
   записи в реестре и то, что удаляется.
 - **Обновление** (`crates/auto-update`): проверка выпуска, скачивание, проверка подписи Ed25519
   выпуска и SHA-256 установщика и тихая установка.
+- **Пакеты данных игры** (`crates/oracle-data`, `crates/poe2-oracle/src/data_pack.rs`): чтение zip
+  подписанного пакета, проверка SHA-256 каждой таблицы перед разбором и папка, куда программа
+  распаковывает пакеты.
 - **Веб-сервис** oracle.pushka.biz (`crates/oracle-web`): форма и API сообщений, прокси обновлений
   и то, что сервис хранит (счётчики по дням, без идентификаторов).
 - **Работа с данными**: что программа хранит на диске, и отчёт диагностики — что в нём, как в нём

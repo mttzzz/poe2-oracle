@@ -2,7 +2,7 @@
     "width": 1200,
     "height": 630,
     "title": "PoE2 Oracle",
-    "tagline": "Проверка цены в Path of Exile 2 по горячей клавише",
+    "tagline": "Проверка цены и оверлей опыта для Path of Exile 2",
     "columns": [
         [
             {
@@ -10,8 +10,7 @@
             },
             {
                 "part": "xp",
-                "scale": 0.9,
-                "plates": 1
+                "scale": 0.7
             }
         ],
         [

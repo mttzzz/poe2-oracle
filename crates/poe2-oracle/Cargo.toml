@@ -55,6 +55,8 @@ auto-update = { path = "../auto-update" }
 # The contract with the app's service at oracle.pushka.biz: where it is, and the report the report
 # window sends it (src/report.rs).
 oracle-protocol = { path = "../oracle-protocol" }
+# The game data pack's format and the built-in tables' data version (src/data_pack.rs).
+oracle-data = { path = "../oracle-data" }
 # Everything the app reports goes through `log`'s macros (GPUI/gpui_wgpu's own device-lost/
 # surface/adapter-fallback warnings too), and `env_logger` writes it to the log file
 # (src/logging.rs) -- and to stderr when one is attached, so `RUST_LOG=debug` still surfaces
@@ -124,6 +126,9 @@ zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2
 # for the XP overlay -- src/platform/lip_watch.rs; gpui_windows' renderer builds them already).
 # `Win32_System_Diagnostics_Debug` and `Win32_System_SystemServices` (this executable's own PE
 # headers, whose import of `RedrawWindow` src/platform/redraw_filter.rs points at its filter).
+# `Win32_System_Com` and `Win32_UI_Shell` (`ITaskbarList`, which drops or restores the taskbar
+# button of a window the app's own button takes over or gives back -- src/platform/taskbar.rs;
+# gpui_windows builds both already).
 windows = { version = "0.62", features = [
     "Win32_Foundation",
     "Win32_Globalization",
@@ -135,6 +140,7 @@ windows = { version = "0.62", features = [
     "Win32_Graphics_Gdi",
     "Win32_Media",
     "Win32_Security_Credentials",
+    "Win32_System_Com",
     "Win32_System_Console",
     "Win32_System_DataExchange",
     "Win32_System_Diagnostics_Debug",
@@ -148,14 +154,16 @@ windows = { version = "0.62", features = [
     "Win32_System_Time",
     "Win32_UI_Accessibility",
     "Win32_UI_HiDpi",
+    "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_Input_KeyboardAndMouse",
 ] }
-# Notification-area icon with a Quit item: the overlay is a `WindowKind::PopUp` (no taskbar
-# button by design), so without it the running app is invisible and can only be killed from Task
-# Manager -- EE2 ships the same tray entry for the same reason. Same tauri-apps family as
-# `global-hotkey`, driven by the same GPUI main-thread message loop. Default features are
-# Linux-only (libxdo/appindicator), so they're off.
+# Notification-area icon, opening the settings on a click, with Settings and Quit in its menu: the
+# overlay is a `WindowKind::PopUp` (no taskbar button by design), so without it -- or the taskbar
+# button the player may pick instead, src/platform/taskbar.rs -- the running app is invisible and
+# can only be killed from Task Manager. EE2 ships the same tray entry for the same reason. Same
+# tauri-apps family as `global-hotkey`, driven by the same GPUI main-thread message loop. Default
+# features are Linux-only (libxdo/appindicator), so they're off.
 tray-icon = { version = "0.25", default-features = false }
 # The sign-in window (src/platform/login_window.rs): pathofexile.com's login page in Microsoft Edge
 # WebView2, through Microsoft's WebView2 COM API generated for the same `windows` 0.62. Its

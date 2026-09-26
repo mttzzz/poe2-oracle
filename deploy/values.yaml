@@ -23,8 +23,9 @@ app:
     memory: 64Mi
     cpu: 10m
   limits:
-    # The latest release's assets stay in memory (up to about 40 MB) to serve downloads, and a
-    # report's body can be 12 MiB.
+    # The latest releases' files stay in memory (up to 40 MiB) to serve downloads, a report's body
+    # can be 12 MiB (three at once), and each open event stream takes about 23 KiB (the service
+    # holds at most 4000: crates/oracle-web/src/events.rs).
     memory: 256Mi
     cpu: 250m
 env:
@@ -48,11 +49,24 @@ httpRoute:
             value: /api/v1/reports
       timeouts:
         request: 600s
-    # Installers stream to the player at the player's pace, which the default 600 s would cut on a
-    # slow line; 0s turns the route timeout off.
+    # Release files, installers and data packs, stream to the player at the player's pace, which
+    # the default 600 s would cut on a slow line; 0s turns the route timeout off.
     - matches:
         - path:
             type: PathPrefix
             value: /download
+      timeouts:
+        request: 0s
+    # The app's event stream stays open while the app runs. 0s turns off the route timeout and the
+    # route's idle timeout with it (Envoy Gateway v1.8: a route whose request timeout is 0 gets
+    # idle_timeout 0, unless a ClientTrafficPolicy sets a stream idle timeout). The service writes
+    # `: ping` every 25 s, inside every idle timeout that could still apply: a stream idle timeout
+    # (Envoy's default is 5 min), Envoy's connection idle timeouts (1 h, for connections without an
+    # open stream) and the DigitalOcean load balancer's 600 s (kuber:
+    # helmfile/manifests/gateway/envoy-proxy-config.yaml).
+    - matches:
+        - path:
+            type: Exact
+            value: /api/v1/events
       timeouts:
         request: 0s

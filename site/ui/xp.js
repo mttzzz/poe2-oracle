@@ -10,10 +10,14 @@
 
 import { diamond, h } from "./dom.js";
 
-const HUD = {
-    flask: new URL("img/hud-flask.webp", import.meta.url).href,
-    skill: new URL("img/hud-skill.webp", import.meta.url).href,
-};
+// Each capture at 840 px (a 2x screen at the figure's 420 CSS px) and halved to 420 px, which a
+// 1x screen or a phone, where the figure shrinks to a fraction of the page, is given instead.
+const capture = (name) => ({
+    full: new URL(`img/${name}.webp`, import.meta.url).href,
+    half: new URL(`img/${name}-420.webp`, import.meta.url).href,
+});
+const HUD = { flask: capture("hud-flask"), skill: capture("hud-skill") };
+const HUD_SIZES = "(max-width: 40rem) 50vw, 420px";
 const ART = {
     flask: new URL("img/plate-flask.png", import.meta.url).href,
     skill: new URL("img/plate-skill.png", import.meta.url).href,
@@ -40,7 +44,14 @@ export function render(data, lang) {
             h(
                 "div",
                 `oui-xp-figure oui-xp-figure--${plate.rail}`,
-                h("img", { class: "oui-xp-hud", src: HUD[plate.rail], alt: "", decoding: "async" }),
+                h("img", {
+                    class: "oui-xp-hud",
+                    src: HUD[plate.rail].full,
+                    srcset: `${HUD[plate.rail].half} 420w, ${HUD[plate.rail].full} 840w`,
+                    sizes: HUD_SIZES,
+                    alt: "",
+                    decoding: "async",
+                }),
                 h("img", { class: "oui-xp-art", src: ART[plate.rail], alt: "", decoding: "async" }),
                 plate.rail === "flask" ? levelPlate(plate, lang) : mapPlate(plate, lang),
             ),

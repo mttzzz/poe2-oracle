@@ -12,11 +12,11 @@ Players report from the app or from the site; this repository's issue forms are 
 maintainer's own notes, since outsiders can't reach them while the repository is private.
 
 1. **One problem per report.** Two unrelated bugs in one report tend to get only one of them fixed.
-2. **Report from the app**, which adds what is needed: **Report a problem or idea…** in the tray
-   menu, or **Write to the developer** in the **Help** section of the settings, opens the report
-   window. Along with your text it sends the app version, the interface and client languages, the
-   Windows version, the league and the interface scale. You can write in English or Russian; leave
-   a contact (Telegram, Discord or email) if you'd like an answer.
+2. **Report from the app**, which adds what is needed: **Write to the developer** in the **Help**
+   section of the settings opens the report window. Along with your text it sends the app version,
+   the interface and client languages, the Windows version, the league and the interface scale. You
+   can write in English or Russian; leave a contact (Telegram, Discord or email) if you'd like an
+   answer.
 3. **Always say** what you did, what you expected and what happened instead.
 4. **For an item problem, report it from the item.** The link **report a problem** under the item
    name on the price panel, or the button **Report a problem** in the message about an item the app
@@ -53,19 +53,23 @@ For security vulnerabilities, see [SECURITY.md](SECURITY.md).
 
 ```text
 crates/
-  poe2-oracle/     the app: price panel, settings, XP overlay, report window, tray, updates, Win32
-                   overlay windows, hotkeys and the game's input
+  poe2-oracle/     the app: price panel, settings, XP overlay, report window, tray icon and taskbar
+                   button, updates, Win32 overlay windows, hotkeys and the game's input
   item-parser/     clipboard item text -> ParsedItem (English and Russian clients)
   stat-filters/    ParsedItem -> the trade search's filter rows (built as in Exiled Exchange 2;
                    which ones a search starts with, and their bounds, as in PoE Overlay II)
   trade-client/    trade API (leagues, catalogs, search, fetch, rate limits), the Currency Exchange
                    market from GGG's hourly exchange data, poe2scout prices
   poe2-domain/     shared item and stat types, no I/O
-  auto-update/     release check against oracle.pushka.biz, Ed25519-verified SHA256SUMS and the
-                   SHA-256-checked installer download
+  auto-update/     the live link to oracle.pushka.biz's event stream (reconnecting with backoff),
+                   release and data pack checks, Ed25519-verified SHA256SUMS and the
+                   SHA-256-checked download of the installer or the data pack
   oracle-protocol/ the app <-> service contract: where the service is, what a report carries, the
-                   release answer the updater reads
-  oracle-web/      the oracle.pushka.biz service: site, guide, reports, update proxy, daily digest
+                   release answers and the event stream the updater reads
+  oracle-data/     the game data pack: the built-in tables' data version (data-version.txt), the
+                   pack's zip format, and the tool that builds a pack in CI
+  oracle-web/      the oracle.pushka.biz service: site, guide, reports, update proxy and event
+                   stream, daily digest
   release-sign/    signs a release's SHA256SUMS in CI
 packaging/         release script, NSIS installer, data table generators (packaging/data)
 docs/guide/        the user guide: English and Russian mdBooks, served by oracle-web under /guide/
@@ -105,7 +109,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File packaging\build-release.ps1
 Things that save time:
 
 - Only one copy of the app runs per Windows session. If an installed copy is running, `cargo run`
-  just opens that copy's settings and exits: quit the installed one from its tray icon first.
+  just opens that copy's settings and exits: quit the installed one first (**Quit** in its tray
+  icon's menu, or **Quit the app** in its settings' **Help**).
 - A debug build compiles GPUI's shaders at run time from the source checkout, so a debug exe runs
   only on the machine that built it. Give testers a release build.
 - The log is `%LOCALAPPDATA%\poe2-oracle\data\logs\poe2-oracle.log`. `RUST_LOG` replaces its
@@ -215,6 +220,52 @@ Given a saved hour of the exchange data
 (`https://web.poecdn.com/api/currency-exchange/poe2/<unix hour>`) as a third argument,
 `generate_cx_ids.py` also lists the items that hour trades without a trade id.
 
+## Game data packs
+
+The five tables above -- `stat-matchers-en.tsv`, `stat-matchers-ru.tsv`, `mod-tiers.tsv`,
+`cx-items.tsv` and `item-refs.tsv` -- are built into the app and are also published on their own,
+as a signed game data pack, so that installed apps get newer ones without a new installer. An app
+takes a pack at its next start when the pack is newer than the app's built-in tables and names no
+newer app than it. A pack it can't use is deleted; a damaged one (a table changed on the disk, or
+one that doesn't parse) is set aside in `%LOCALAPPDATA%\poe2-oracle\data\game-data\rejected`, and
+the built-in tables stay in use.
+
+`crates/oracle-data/data-version.txt` records the built-in tables:
+
+- `version`: their data version, `YYYYMMDDNN`, the day they were made and that day's number from
+  `01` (`2026100101`, then `2026100102` the same day). A pack replaces an app's tables only when
+  its version is higher.
+- `min_app`: the oldest app version whose code reads them. When a table changes in a way older
+  apps can't read (a new column, a tag or value their parser doesn't know), raise it to the
+  version about to be released: older apps then leave the pack alone.
+- `tables`: the SHA-256 of the tables' `sha256sum` listing.
+
+**Whenever a table changes, give it a new version.** `cargo test -p oracle-data` fails while the
+tables aren't the ones recorded, and prints the digest to write; set `version` above the old one in
+the same commit. A data version names one set of tables: apps compare versions only, and a tag
+can't be pushed twice.
+
+To publish a pack, for the maintainer:
+
+1. Commit the regenerated tables with the new `data-version.txt`, push, and wait for CI to pass on
+   that commit: its tests parse every table.
+2. Push a tag `data-<version>` with the version `data-version.txt` names
+   (`git tag data-2026100101 && git push origin data-2026100101`).
+   `.github/workflows/data-release.yml` builds `PoE2-Oracle-Data-<version>.zip` and `SHA256SUMS`
+   with `cargo run -p oracle-data -- build` (a job without secrets), signs `SHA256SUMS` with
+   `crates/release-sign` and the `RELEASE_SIGNING_KEY` secret as `release.yml` does, and creates a
+   **draft** GitHub release with the three files. The build refuses a tag whose version isn't
+   `data-version.txt`'s, and tables that changed since that version was recorded.
+3. Check the draft, then publish it, never as the latest release:
+   `gh release edit data-<version> --draft=false --latest=false`, or leave **Set as the latest
+   release** unticked on GitHub. oracle.pushka.biz serves published packs only; from then on,
+   running apps with automatic updates on download the pack at once and restart to load it.
+
+`cargo run -p oracle-data -- build <folder>` makes the same pack by hand: the same tables give the
+same bytes (entries in name order, fixed dates, one deflate backend), so a published pack can be
+rebuilt and compared. An app release carries its commit's tables, so after an update the app
+deletes an installed pack that isn't newer than its own tables.
+
 ## Pictures of the app
 
 The landing pages draw the app's interface from data instead of showing screenshots. `site/ui/`
@@ -237,7 +288,9 @@ add `--no-sandbox`. It writes `docs/guide/src/images/<en|ru>/*.webp` and the soc
 `og.jpg` from `site/ui/shots.html`. The app's text face is Segoe UI, which comes with Windows and
 may not be shared: render on Windows or with Segoe UI installed, or the script warns and the
 pictures' text comes out in another face. The XP overlay's pictures lie on two crops of the game's
-HUD, `site/ui/img/hud-flask.webp` and `hud-skill.webp`. The plates on them are the app's own
+HUD, `site/ui/img/hud-flask.webp` and `hud-skill.webp` (840 px), with copies halved to 420 px,
+`hud-*-420.webp`, that the site gives 1x screens and phones; replace a crop and halve its copy
+too. The plates on them are the app's own
 pixels, `site/ui/img/plate-flask.png` and `plate-skill.png`: after changing the plates' look, draw
 them again from the app's code before running `render-ui.mjs`:
 
@@ -250,11 +303,22 @@ cargo run -p poe2-oracle --example plate_art -- site/ui/img
 `crates/oracle-web` is the service at oracle.pushka.biz. It serves the landing pages (`site/`), the
 guide (`docs/guide`, a book per language) and its images; takes reports on `POST /api/v1/reports`
 and passes each one on to the maintainer, as an issue in this repository and a Telegram message;
-serves the latest release and its files from this private repository (`/api/v1/releases/latest`,
-`/download/<tag>/<file>`, `/download/latest`); and posts a daily digest of downloads, update
-checks and reports. What the app and the service share is in `crates/oracle-protocol`: the
-service's address, the report and release types, and the report limits (`Report::check`, which
-both sides run).
+serves the latest app release and the latest data pack, with their files, from this private
+repository (`/api/v1/releases/latest`, `/api/v1/data/latest`, `/download/<tag>/<file>`,
+`/download/latest`); tells the running apps about both over an event stream (`/api/v1/events`);
+and posts a daily digest of downloads, stream connections, update checks and reports. What the app
+and the service share is in `crates/oracle-protocol`: the service's address, the report, release
+and event types, and the report limits (`Report::check`, which both sides run).
+
+The service lists the repository's releases when it starts and every two minutes after, sending
+GitHub the last list's ETag, so an unchanged list costs no rate limit. Of the published releases
+(drafts and prereleases never count) it offers two: the app's, the `v<semver>` tag highest by
+semver precedence, and the data pack, the `data-<N>` tag with the highest N; a release of one kind
+never stands for the other. `GET /api/v1/events` is a Server-Sent Events stream: a `versions` event
+with both versions (`{"app":"0.1.1","data":2026092601}`) as soon as the app connects and again
+whenever either changes, and a `: ping` comment after 25 s of silence. One address may hold 8
+streams at once and the service 4000 in all (about 23 KiB of memory each); past either, it answers
+429 or 503 with `Retry-After`. When the service shuts down, the streams end, and the apps reconnect.
 
 The site's root and `/guide/` open in the reader's language: the one in the `lang` cookie, which the
 language links on the site and in the guide set when clicked, or else the browser's
@@ -271,7 +335,7 @@ It takes its settings from the environment, all optional:
 | `SITE_DIR` | `/app/site` | The landing pages (`site/`); a `404.html` there is the 404 page |
 | `GUIDE_DIR` | `/app/guide` | The built guide (`docs/guide/build.sh`): a book per language in `en/` and `ru/`, served under `/guide/en/` and `/guide/ru/`; each answers a missing page with its own `404.html` |
 | `IMAGES_DIR` | `/app/images` | `docs/guide/src/images`, served under `/images/` and `/guide/images/` |
-| `GITHUB_TOKEN` | — | A fine-grained token for this repository (Issues read and write, Contents read): files the report issues, reads the latest release and downloads its files. Unset: no issues are filed, and `/api/v1/releases/latest` and `/download` answer 503 |
+| `GITHUB_TOKEN` | — | A fine-grained token for this repository (Issues read and write, Contents read): files the report issues, lists the releases and downloads their files. Unset: no issues are filed, `/api/v1/releases/latest`, `/api/v1/data/latest` and `/download` answer 503, and the event stream announces no versions |
 | `GITHUB_REPO` | `mttzzz/poe2-oracle` | The repository the issues and releases belong to |
 | `TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID` | — | The bot and the chat the reports and the digest go to; with either unset, nothing goes to Telegram |
 | `REDIS_URL` | — | Redis for the daily counters (kept 120 days), the report rate limits and the digest lock; unset, they're kept in memory and lost on a restart |
@@ -290,6 +354,9 @@ http://localhost:8080/:
 docs/guide/build.sh "$PWD/target/guide"
 SITE_DIR=site GUIDE_DIR=target/guide IMAGES_DIR=docs/guide/src/images cargo run -p oracle-web
 ```
+
+`curl -N http://localhost:8080/api/v1/events` shows the event stream; without a token, its event
+announces no versions.
 
 A test build of the app pointed at it (`POE2_ORACLE_API_BASE`) takes release files only from under
 that address's `/download/`, so set the service's `PUBLIC_URL` to the same address; a test
@@ -340,7 +407,8 @@ on it. Then:
 - [ ] New behaviour is covered by a test where a plausible bug would fail it.
 - [ ] Changes to the panel or the overlays were tried in the game on Windows; visible changes come
       with a screenshot, and the drawings in `site/ui` follow them.
-- [ ] Data tables were regenerated with the scripts, not edited by hand.
+- [ ] Data tables were regenerated with the scripts, not edited by hand, and
+      `crates/oracle-data/data-version.txt` gives them a new version.
 - [ ] A new dependency's license is accepted by `about.toml`.
 - [ ] `CHANGELOG.md` and `CHANGELOG.ru.md` have a line under `Unreleased` for a change players will
       notice.
@@ -364,6 +432,8 @@ For the maintainer:
    download button gives its installer.
 
 A tag with a pre-release suffix (`v0.2.0-rc.1`) becomes a pre-release, which the app never offers.
+Game data packs are released on their own, with a `data-<version>` tag: see
+[Game data packs](#game-data-packs).
 
 `RELEASE_SIGNING_KEY` is the standard base64 of the 32-byte Ed25519 seed: one line, 44 characters,
 kept as a GitHub Actions secret. Its public key, `crates/auto-update/release-signing-key.pub`, is

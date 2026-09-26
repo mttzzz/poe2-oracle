@@ -5,11 +5,14 @@
 Go through these in order.
 
 1. **Is PoE2 Oracle running?** Its icon must be in the notification area by the clock (maybe under
-   the **^** arrow). If not, start it from the Start menu.
+   the **^** arrow), or its **PoE2 Oracle** button on the taskbar, whichever **Where to show the
+   app** in the [settings](settings.md#system) shows. If neither is there, start it from the Start
+   menu.
 2. **Is the game the window in front, with the settings window closed?** The hotkey works only
    while the game or the price panel is active, and not at all while the settings window is open:
    it is off then, so that you can record a new one. Close the settings window, click into the game
-   once and try again. If you changed the hotkey, hover the tray icon to see the current one.
+   once and try again. If you changed the hotkey, hover the tray icon to see the current one, or
+   look in the settings, section **Price check**.
 3. **Does another program hold <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>C</kbd>?** PoE2 Oracle checks
    prices by pressing the game's own copy shortcut. If a graphics card overlay, a screen recorder
    or Discord has taken that combination, the game never receives it. The settings window then
@@ -76,6 +79,23 @@ was read but got wrong filters or a price that looks wrong, with the link **repo
 under the item's name. Both open the [report window](report.md) with the item's text attached:
 describe what went wrong and click **Send**. You need no account.
 
+## My private league is not in the league menus
+
+The league menus offer your account's PoE 2 private leagues while you are signed in to
+pathofexile.com. If yours is missing:
+
+1. Open the [settings](settings.md#account), section **Account**. The sign-in row should say
+   "Signed in as …"; if it says "Not signed in" or "Session expired", sign in.
+2. The card **Private leagues** under it lists what pathofexile.com shows for your account. Joined
+   the league after signing in? Click **Refresh**. The list is also looked up by itself, every hour
+   by default (**Refresh automatically**).
+3. "Couldn't reach pathofexile.com: …" means the site didn't answer; the reason follows. Click
+   **Refresh** again later.
+4. Still missing? Open pathofexile.com in your browser, signed in to the same account, and go to
+   **Events** → **My Private Leagues**. PoE2 Oracle lists the PoE 2 leagues that page shows; a
+   league you left, or one that has ended, isn't there. If the page shows yours and the app
+   doesn't, [report a problem](#reporting-a-problem).
+
 ## Collecting a diagnostics report
 
 1. Open the [settings](settings.md#help), section **Help**.
@@ -104,10 +124,10 @@ with **Attach diagnostics** on.
 
 ## Reporting a problem
 
-To tell the developer about a problem or an idea, click **Report a problem or idea…** in the tray
-icon's menu, or **Write to the developer** in the [settings](settings.md#help), section **Help**.
-Either opens the report window; see [Reporting a problem](report.md). If PoE2 Oracle won't start,
-use the form on the site: see [Without the app](report.md#without-the-app).
+To tell the developer about a problem or an idea, click **Write to the developer** in the
+[settings](settings.md#help), section **Help**, or the link **report a problem** on the price panel
+for the item it shows. Either opens the report window; see [Reporting a problem](report.md). If
+PoE2 Oracle won't start, use the form on the site: see [Without the app](report.md#without-the-app).
 
 Windows **Settings → Apps → Installed apps** shows the installed version under PoE2 Oracle; the
 first line of `summary.txt` in the report has it too.
@@ -143,5 +163,6 @@ you like and click **Send**, or close the window to skip it. See
 [After a crash](report.md#after-a-crash).
 
 **Where are my settings? How do I start over?**
-In `%APPDATA%\poe2-oracle\config\settings.json`. Quit PoE2 Oracle from the tray, delete the file,
-and the next start begins with the defaults and the guided tour.
+In `%APPDATA%\poe2-oracle\config\settings.json`. Quit PoE2 Oracle (**Quit** in the tray icon's menu,
+or **Quit the app** in the settings, section **Help**), delete the file, and the next start begins
+with the defaults and the guided tour.

@@ -25,6 +25,9 @@
 //!   trades are not on that list -- Hawk, Panther and Stoat Idols, Raven's Reflection, The
 //!   Triskelion Reforged, Shattered Triskelion, Eonyr's Thunder, Helbrym's Hide -- and are left out:
 //!   no check routes to the market for them.
+//! - The table is built in, and a game data pack (the app's `data_pack`) may bring a newer one
+//!   for a run: [`read_exchange_items`] reads a pack's table, refusing a malformed one, and
+//!   [`use_exchange_items`] puts it in place before the table is first read.
 //!
 //! A price -- steps 1 and 2 as VibeTools reads the same record (`cx-feed.js`, POE2 Prices 3.0.7):
 //! 1. The window is the newest three complete hours the CDN has.
@@ -46,6 +49,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::{Context, Result, anyhow};
 use futures::future::join;
 use http_client::{AsyncBody, HttpClient};
+use poe2_domain::pack_table::{PackTable, TableInUse};
 use serde::{Deserialize, Serialize};
 
 use crate::cache::{read_stale_cache, write_cache};
@@ -73,26 +77,66 @@ const CHAOS: &str = "chaos";
 /// cheaper in exalted.
 pub(crate) const DIVINE_UNIT_CUTOVER: f64 = 0.94;
 
-/// `data/cx-items.tsv`'s rows by metadata id.
-static EXCHANGE_ITEMS: LazyLock<HashMap<&'static str, ExchangeItem>> = LazyLock::new(|| {
-    let mut items = HashMap::new();
-    for row in include_str!("../data/cx-items.tsv").lines() {
-        let mut fields = row.split('\t');
-        let (Some(metadata_id), Some(trade_id), Some(group)) =
-            (fields.next(), fields.next(), fields.next())
-        else {
-            continue;
-        };
-        items.insert(metadata_id, ExchangeItem { trade_id, group });
-    }
-    items
-});
+/// A data pack's table, waiting for the first read of [`EXCHANGE_ITEMS`].
+static PACK: PackTable<ExchangeItems<'static>> = PackTable::new();
 
-/// An item the exchange trades, as the trade site knows it.
-struct ExchangeItem {
-    trade_id: &'static str,
+/// `data/cx-items.tsv`'s rows by metadata id.
+static EXCHANGE_ITEMS: LazyLock<HashMap<&'static str, ExchangeItem<'static>>> =
+    LazyLock::new(|| {
+        PACK.take().map_or_else(
+            || {
+                read_exchange_items(include_str!("../data/cx-items.tsv"))
+                    .expect("data/cx-items.tsv is well-formed")
+                    .0
+            },
+            |pack| pack.0,
+        )
+    });
+
+/// An item the exchange trades, as the trade site knows it, in a table whose text lives for `'a`.
+struct ExchangeItem<'a> {
+    trade_id: &'a str,
     /// Its group on the trade site's exchange list: `Currency`, `Ritual`, `Runes`...
-    group: &'static str,
+    group: &'a str,
+}
+
+/// The exchange items table, read ([`read_exchange_items`]) from a text that lives for `'a`.
+pub struct ExchangeItems<'a>(HashMap<&'a str, ExchangeItem<'a>>);
+
+/// Reads an exchange items table: one row per item -- its metadata id, trade id and group, none
+/// empty, each metadata id once. An error names the first row that isn't one; a table without
+/// rows is one too.
+pub fn read_exchange_items(table: &str) -> Result<ExchangeItems<'_>, String> {
+    let mut items = HashMap::new();
+    for (number, row) in table.lines().enumerate() {
+        let mut fields = row.split('\t');
+        let (Some(metadata_id), Some(trade_id), Some(group), None) =
+            (fields.next(), fields.next(), fields.next(), fields.next())
+        else {
+            let count = row.split('\t').count();
+            return Err(format!("line {}: {count} fields", number + 1));
+        };
+        if [metadata_id, trade_id, group].contains(&"") {
+            return Err(format!("line {}: an empty field", number + 1));
+        }
+        if items
+            .insert(metadata_id, ExchangeItem { trade_id, group })
+            .is_some()
+        {
+            return Err(format!("line {}: {metadata_id} listed twice", number + 1));
+        }
+    }
+    if items.is_empty() {
+        return Err("no rows".to_owned());
+    }
+    Ok(ExchangeItems(items))
+}
+
+/// Makes `table`, a data pack's ([`read_exchange_items`]), the one exchange items are looked up
+/// in for the rest of the run. Refused once the table has been read: the app puts a pack's table
+/// in place before anything reads it.
+pub fn use_exchange_items(table: ExchangeItems<'static>) -> Result<(), TableInUse> {
+    PACK.set(table)
 }
 
 /// Hours of GGG's record read so far, by their cache file: two cache folders (tests') never share
@@ -1122,5 +1166,43 @@ mod tests {
                 end: AT_10 + 3 * HOUR
             })
         );
+    }
+
+    #[test]
+    fn an_exchange_items_table_with_a_malformed_row_is_refused() {
+        let good = "Metadata/Items/Currency/CurrencyModValues\tdivine\tCurrency\n\
+            Metadata/Items/Currency/CurrencyAddModToRare\texalted\tCurrency\n";
+        let items = read_exchange_items(good).expect("a well-formed table");
+        let divine = &items.0["Metadata/Items/Currency/CurrencyModValues"];
+        assert_eq!((divine.trade_id, divine.group), ("divine", "Currency"));
+
+        for (bad, why) in [
+            (
+                "Metadata/Items/Currency/CurrencyModValues\tdivine\n",
+                "2 fields",
+            ),
+            (
+                "Metadata/Items/Currency/CurrencyModValues\tdivine\tCurrency\tmore\n",
+                "4 fields",
+            ),
+            (
+                "Metadata/Items/Currency/CurrencyModValues\t\tCurrency\n",
+                "no trade id",
+            ),
+            ("", "no rows"),
+        ] {
+            assert!(read_exchange_items(bad).is_err(), "{why}");
+        }
+        let twice = format!("{good}Metadata/Items/Currency/CurrencyModValues\tchaos\tCurrency\n");
+        assert!(read_exchange_items(&twice).is_err(), "an item listed twice");
+    }
+
+    #[test]
+    fn a_pack_table_comes_too_late_once_the_built_in_one_is_read() {
+        // Whatever ran first, the built-in table is in use from here.
+        LazyLock::force(&EXCHANGE_ITEMS);
+        let pack = read_exchange_items("Metadata/Items/Currency/A\ta\tCurrency\n").unwrap();
+        assert_eq!(use_exchange_items(pack), Err(TableInUse));
+        assert!(EXCHANGE_ITEMS.len() > 1, "the built-in table stays");
     }
 }

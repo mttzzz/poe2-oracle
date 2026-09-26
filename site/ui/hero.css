@@ -55,3 +55,9 @@
     font-size: calc(26 * var(--u));
     line-height: 1.3;
 }
+
+/* In a hero column the XP overlay's two plates stack, the flask panel's over the skill panel's,
+   so the column keeps the width of its other parts. */
+.oui-hero-xp .oui-xp {
+    flex-direction: column;
+}

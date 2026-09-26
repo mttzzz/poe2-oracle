@@ -1,6 +1,6 @@
 //! oracle.pushka.biz: the web service of PoE2 Oracle.
 //!
-//! One small server does four jobs:
+//! One small server does five jobs:
 //! - it serves the site the way GitHub Pages served it: the landing pages from `site/` (English
 //!   at the root, Russian under `/ru/`), the player guide's two books built from `docs/guide`
 //!   under `/guide/en/` and `/guide/ru/`, and the guide's pictures under `/images/` and
@@ -8,16 +8,19 @@
 //! - it takes the reports the app's report window and the site's form send
 //!   ([`oracle_protocol::Report`]) and passes each on twice: as an issue in the private GitHub
 //!   repository and as a Telegram message to the owner ([`reports`]);
-//! - it answers the app's update check with the repository's latest release and serves that
-//!   release's files, which GitHub itself hands out only with a token while the repository is
-//!   private ([`releases`]);
-//! - it counts downloads, update checks and reports per Moscow day, and every morning posts the
-//!   day before to the owner's Telegram ([`stats`]).
+//! - it lists the repository's releases every two minutes and answers the app's updater with the
+//!   latest of each kind, the app's release and the data pack, and serves their files, which
+//!   GitHub itself hands out only with a token while the repository is private ([`releases`]);
+//! - it keeps the running apps connected to an event stream that tells them the latest versions
+//!   as soon as it lists them, so a new release reaches them within minutes ([`events`]);
+//! - it counts downloads, stream connections, update checks and reports per Moscow day, and every
+//!   morning posts the day before to the owner's Telegram ([`stats`]).
 //!
 //! Everything is configured from the environment ([`Config::from_env`]). Without a GitHub or a
 //! Telegram token the service runs dry on that side: it logs what it would have sent and sends
 //! nothing, which is how the dev lanes run it.
 
+mod events;
 mod github;
 mod issue;
 mod limits;
@@ -40,13 +43,15 @@ use axum::Router;
 use axum::http::{HeaderValue, header};
 use axum::response::Response;
 use axum::routing::{get, post};
-use oracle_protocol::{LATEST_RELEASE_PATH, REPORTS_PATH};
+use oracle_protocol::{EVENTS_PATH, LATEST_DATA_PATH, LATEST_RELEASE_PATH, REPORTS_PATH};
 use tokio::net::TcpListener;
 use tokio::sync::{Notify, Semaphore};
 use tokio_util::task::TaskTracker;
 use tower_http::compression::CompressionLayer;
 use tower_http::trace::TraceLayer;
 use tracing::{Span, info, info_span, warn};
+
+pub use events::PER_CLIENT as STREAMS_PER_CLIENT;
 
 /// How the service runs. [`Config::from_env`] reads it from the environment; tests fill it in
 /// directly, pointing the API addresses at stand-ins. No `Debug`: it holds the tokens.
@@ -79,6 +84,12 @@ pub struct Config {
     pub github_api: String,
     /// Telegram's Bot API. Not in the environment: only tests point it elsewhere.
     pub telegram_api: String,
+    /// How often the releases are listed: every two minutes. Not in the environment: only tests
+    /// shorten it.
+    pub list_releases_every: Duration,
+    /// The most event streams at once ([`events::AT_ONCE`]), or fewer when the open-file limit
+    /// leaves room for fewer. Not in the environment: only tests lower it.
+    pub event_streams: usize,
 }
 
 impl Default for Config {
@@ -97,6 +108,8 @@ impl Default for Config {
             redis_url: None,
             github_api: "https://api.github.com".to_owned(),
             telegram_api: "https://api.telegram.org".to_owned(),
+            list_releases_every: releases::LIST_EVERY,
+            event_streams: events::AT_ONCE,
         }
     }
 }
@@ -147,12 +160,14 @@ impl Config {
 pub const REPORTS_AT_ONCE: usize = 3;
 
 /// Everything the handlers share.
-pub struct App {
+struct App {
     site: site::Site,
     store: store::Store,
     github: github::GitHub,
     telegram: telegram::Telegram,
     releases: releases::Releases,
+    /// The event streams open, which shutting down ends.
+    streams: Arc<events::Streams>,
     /// The [`REPORTS_AT_ONCE`] places for reports in memory: one is taken before a body is read
     /// and given back once it's parsed -- or, for a report with a diagnostics zip, once Telegram
     /// has the zip or the tries at sending it are over.
@@ -165,28 +180,30 @@ pub struct App {
 impl App {
     /// The service for `config`. Redis, when configured, is connected on first use, so a Redis
     /// that is down at start delays nothing.
-    pub fn new(config: Config) -> Result<Arc<App>, Box<dyn Error + Send + Sync>> {
+    fn new(config: Config) -> Result<Arc<App>, Box<dyn Error + Send + Sync>> {
         let http = upstream::client()?;
         let store = match &config.redis_url {
             Some(url) => store::Store::redis(url)?,
             None => store::Store::memory(),
         };
+        let github = github::GitHub::new(
+            http.clone(),
+            config.github_api,
+            config.github_repo,
+            config.github_token,
+        );
         Ok(Arc::new(App {
             site: site::Site::new(config.site_dir, config.guide_dir, config.images_dir),
             store,
-            github: github::GitHub::new(
-                http.clone(),
-                config.github_api,
-                config.github_repo,
-                config.github_token,
-            ),
+            releases: releases::Releases::new(config.public_url, github.configured()),
+            github,
             telegram: telegram::Telegram::new(
                 http,
                 config.telegram_api,
                 config.telegram_token,
                 config.telegram_chat_id,
             ),
-            releases: releases::Releases::new(config.public_url),
+            streams: Arc::new(events::Streams::new(config.event_streams)),
             reports_in_memory: Arc::new(Semaphore::new(REPORTS_AT_ONCE)),
             background: TaskTracker::new(),
         }))
@@ -194,10 +211,10 @@ impl App {
 }
 
 /// The whole service's routes: the API, the release downloads, and the site behind them.
-pub fn router(app: Arc<App>) -> Router {
-    // Only the site's files are compressed: the release answer is a few hundred bytes with a
-    // strong ETag, and the downloads are already-compressed installers sent with their exact
-    // Content-Length.
+fn router(app: Arc<App>) -> Router {
+    // Only the site's files are compressed: the release answers are a few hundred bytes with a
+    // strong ETag, the downloads are already-compressed files sent with their exact
+    // Content-Length, and each event must reach the app as soon as it's written.
     let site = Router::new()
         .fallback(site::serve)
         .layer(CompressionLayer::new())
@@ -206,6 +223,8 @@ pub fn router(app: Arc<App>) -> Router {
         .route("/healthz", get(|| async { "ok" }))
         .route(REPORTS_PATH, post(reports::submit))
         .route(LATEST_RELEASE_PATH, get(releases::latest))
+        .route(LATEST_DATA_PATH, get(releases::latest_data))
+        .route(EVENTS_PATH, get(events::follow))
         .route("/download/latest", get(releases::latest_installer))
         .route("/download/{tag}/{asset}", get(releases::asset))
         .merge(site)
@@ -268,10 +287,23 @@ const WITHDRAW_DELAY: Duration = Duration::from_secs(5);
 /// taking connections. Kubernetes kills the pod 30 s after SIGTERM.
 const DRAIN_LIMIT: Duration = Duration::from_secs(20);
 
-/// Serves `config` until SIGTERM or Ctrl+C, with the morning digest running alongside.
+/// Serves `config` on every address until SIGTERM or Ctrl+C ([`serve`]).
 pub async fn run(config: Config) -> Result<(), Box<dyn Error + Send + Sync>> {
     let listener = TcpListener::bind(("0.0.0.0", config.port)).await?;
+    serve(listener, config, shutdown_signal()).await
+}
+
+/// Serves `config` on `listener`, with the release listing and the morning digest running
+/// alongside, until `stop` resolves -- for [`run`], [`WITHDRAW_DELAY`] after SIGTERM, or at once
+/// on Ctrl+C. Then it stops taking connections: the event streams end at once, and the requests
+/// in flight and the reports still passing on get [`DRAIN_LIMIT`] to finish.
+pub async fn serve(
+    listener: TcpListener,
+    config: Config,
+    stop: impl Future<Output = ()> + Send + 'static,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
     let public_url = config.public_url.clone();
+    let list_releases_every = config.list_releases_every;
     let counters = if config.redis_url.is_some() {
         "redis"
     } else {
@@ -294,16 +326,27 @@ pub async fn run(config: Config) -> Result<(), Box<dyn Error + Send + Sync>> {
         github = mode(app.github.configured()),
         telegram = mode(app.telegram.configured()),
         counters,
+        event_streams = app.streams.at_once(),
         "serving"
     );
     let digest = tokio::spawn(stats::post_digests(app.clone()));
+    let listing = tokio::spawn(releases::refresh(app.clone(), list_releases_every));
     let draining = Arc::new(Notify::new());
+    let stopping = {
+        let (app, draining) = (app.clone(), draining.clone());
+        async move {
+            stop.await;
+            info!("no longer taking connections; ending the event streams, finishing the rest");
+            app.streams.stop();
+            draining.notify_one();
+        }
+    };
     let mut server = tokio::spawn(
         axum::serve(
             listener,
             router(app.clone()).into_make_service_with_connect_info::<SocketAddr>(),
         )
-        .with_graceful_shutdown(shutdown_signal(draining.clone()))
+        .with_graceful_shutdown(stopping)
         .into_future(),
     );
     tokio::select! {
@@ -329,12 +372,14 @@ pub async fn run(config: Config) -> Result<(), Box<dyn Error + Send + Sync>> {
         );
     }
     digest.abort();
+    listing.abort();
     info!("stopped");
     Ok(())
 }
 
-/// Resolves when the service should stop taking connections, and tells `draining` so.
-async fn shutdown_signal(draining: Arc<Notify>) {
+/// Resolves when the service should stop taking connections: [`WITHDRAW_DELAY`] after SIGTERM,
+/// at once on Ctrl+C.
+async fn shutdown_signal() {
     let mut terminate =
         match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
             Ok(signal) => Some(signal),
@@ -358,6 +403,4 @@ async fn shutdown_signal(draining: Arc<Notify>) {
         }
         _ = tokio::signal::ctrl_c() => info!("interrupted"),
     }
-    info!("no longer taking connections; finishing the requests in flight");
-    draining.notify_one();
 }

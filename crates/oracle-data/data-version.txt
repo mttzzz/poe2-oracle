@@ -1,0 +1,7 @@
+# The game tables the app carries built in: their data version (YYYYMMDDNN: the day they were
+# made and that day's number, 01 first), the oldest app version that reads them, and the SHA-256
+# of their sha256sum listing. Change a table and `cargo test -p oracle-data` fails until the
+# version is a new one and the digest is the tables'. See CONTRIBUTING.md, "Game data packs".
+version 2026092601
+min_app 0.1.0
+tables 7e3b1cf2d1e947711fa2fa7a20bed0da5c5b408270f64cf5142c74e6d0e7f57b

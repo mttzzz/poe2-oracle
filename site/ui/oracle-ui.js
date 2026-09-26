@@ -68,22 +68,31 @@ async function draw(element) {
 }
 
 /** Shrinks `element`'s drawing, drawn at `scale`, to the width its container gives it -- as a
- * screenshot would shrink -- and follows the container as it resizes. */
+ * screenshot would shrink -- and follows the container as it resizes. The drawing's own width is
+ * measured once, and again when the web fonts have loaded: measuring forces a layout, while a
+ * resize only rescales it by the room ResizeObserver has already laid out. */
 function fitWidth(element, scale) {
     const room = element.parentElement;
-    const apply = () => {
+    const measure = () => {
         element.style.setProperty("--oui-scale", scale);
         // Its width unconstrained: a drawing that wraps (the XP lines) would shrink to the room.
         element.style.width = "max-content";
-        const natural = element.firstElementChild?.offsetWidth ?? 0;
+        const width = element.firstElementChild?.offsetWidth ?? 0;
         element.style.width = "";
-        const width = room.clientWidth;
-        if (natural > width && width > 0) {
-            element.style.setProperty("--oui-scale", (scale * width) / natural);
-        }
+        return width;
     };
-    apply();
-    new ResizeObserver(apply).observe(room);
+    const fit = (width) => {
+        element.style.setProperty(
+            "--oui-scale",
+            natural > width && width > 0 ? (scale * width) / natural : scale,
+        );
+    };
+    let natural = measure();
+    new ResizeObserver(() => fit(room.clientWidth)).observe(room);
+    document.fonts.ready.then(() => {
+        natural = measure();
+        fit(room.clientWidth);
+    });
 }
 
 window.oracleUiReady = Promise.all(

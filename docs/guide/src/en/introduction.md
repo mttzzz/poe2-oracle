@@ -1,10 +1,12 @@
 # Introduction
 
-![The PoE2 Oracle price panel, a currency's market card and the XP overlay's line](../images/en/hero.webp)
+![The PoE2 Oracle price panel, a currency's market card and both XP overlay plates](../images/en/hero.webp)
 
-PoE2 Oracle is a free overlay for Path of Exile 2 on Windows. Point at an item in the
-game, press <kbd>Ctrl</kbd>+<kbd>E</kbd>, and a panel next to your inventory shows what similar
-items sell for on the official trade site, with the item's modifiers as filters you can adjust.
+PoE2 Oracle is a free price checker and XP tracker for Path of Exile 2 on Windows. Point at an
+item in the game, press <kbd>Ctrl</kbd>+<kbd>E</kbd>, and a panel next to your inventory shows what
+similar items sell for on the official trade site, with the item's modifiers as filters you can
+adjust. And an XP overlay right on the game's HUD shows how fast you level, how long until the next
+level and how long the current map has run.
 
 **[Download for Windows](../../download/latest)** · [Project site](../../)
 
@@ -21,9 +23,9 @@ items sell for on the official trade site, with the item's modifiers as filters 
   a stash search.
 - **[XP overlay](xp-overlay.md).** Your levelling rate, in percent of a level per hour, and the
   time to the next level, above the game's flask panel, and a map timer above its skill panel.
-- **[Updates](updates.md).** A new version from oracle.pushka.biz shows up in the tray icon's menu;
-  a click installs it, and only once the release's signature and the installer's SHA-256 checksum
-  check out.
+- **[Updates](updates.md).** New versions and new game data from oracle.pushka.biz install by
+  themselves, only once their signature and SHA-256 checksums check out, and never while one of
+  the app's windows is open; after the restart a plate over the game says so.
 - **[Reporting a problem](report.md).** Write to the developer from the app's report window, with
   the item's text or a diagnostics report attached if you like; no account needed. After a crash,
   the window opens by itself on the next start.
@@ -37,6 +39,9 @@ items sell for on the official trade site, with the item's modifiers as filters 
   them; league names are the ones the trade site uses in the interface language.
 - You need Windows 10 or 11 (64-bit), the English or Russian game client, and the game in Windowed
   or Windowed Fullscreen mode. See [Install and first run](install.md).
+- There is no main window: PoE2 Oracle runs in the background, shown by its icon by the clock, a
+  button on the taskbar, or both, as picked in the [settings](settings.md#system). A click on either
+  opens the settings.
 - PoE2 Oracle needs no account for price checks and sends no telemetry. Signing in to
   pathofexile.com is optional: it opens private leagues and **sum** filter rows. See
   [Privacy](privacy.md).

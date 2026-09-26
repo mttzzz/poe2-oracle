@@ -1,6 +1,8 @@
 {
   "Welcome to PoE2 Oracle": "Добро пожаловать в PoE2 Oracle",
-  "PoE2 Oracle runs in the background: its icon sits by the clock, sometimes under the “Show hidden icons” arrow. These settings open from its menu and from the ⚙ on the price panel. Start with your league — “Auto” follows the current one.": "PoE2 Oracle работает в фоне: его значок — у часов, иногда под стрелкой «Показать скрытые значки». Эти настройки открываются из его меню и шестерёнкой на панели цены. Начните с лиги: «Авто» следует за текущей.",
+  "PoE2 Oracle runs in the background: its icon sits by the clock, sometimes under the “Show hidden icons” arrow. A click on it opens these settings, and so does the ⚙ on the price panel. Start with your league — “Auto” follows the current one.": "PoE2 Oracle работает в фоне: его значок — у часов, иногда под стрелкой «Показать скрытые значки». Щелчок по значку открывает эти настройки, как и шестерёнка на панели цены. Начните с лиги: «Авто» следует за текущей.",
+  "PoE2 Oracle runs in the background: its button stays on the taskbar. A click on it opens these settings, and so does the ⚙ on the price panel. Start with your league — “Auto” follows the current one.": "PoE2 Oracle работает в фоне: его кнопка стоит на панели задач. Щелчок по ней открывает эти настройки, как и шестерёнка на панели цены. Начните с лиги: «Авто» следует за текущей.",
+  "PoE2 Oracle runs in the background: its button stays on the taskbar, and its icon sits by the clock. A click on either opens these settings, and so does the ⚙ on the price panel. Start with your league — “Auto” follows the current one.": "PoE2 Oracle работает в фоне: его кнопка стоит на панели задач, а значок — у часов. Щелчок по любому из них открывает эти настройки, как и шестерёнка на панели цены. Начните с лиги: «Авто» следует за текущей.",
   "Check a price": "Проверьте цену",
   "Hover over an item in the game and press {hotkey}. The price panel opens next to your inventory, and the tour carries on there.": "Наведите курсор на предмет в игре и нажмите {hotkey} — рядом с инвентарём откроется панель с ценой, и обучение продолжится на ней.",
   "Waiting for": "Жду нажатия",
@@ -21,5 +23,16 @@
   "Skip tour": "Пропустить обучение",
   "Back": "Назад",
   "Next": "Далее",
-  "Done": "Готово"
+  "Done": "Готово",
+  "PoE2 Oracle is installed and running": "PoE2 Oracle установлен и работает",
+  "From now on it works in the background, with no main window: its icon sits in the notification area by the clock, and a click on the icon opens these settings.": "Теперь он работает в фоне, без главного окна: его значок — в области уведомлений у часов, а щелчок по значку открывает эти настройки.",
+  "From now on it works in the background, with no main window: its button stays on the taskbar while it runs, and a click on the button opens these settings.": "Теперь он работает в фоне, без главного окна: пока он запущен, его кнопка стоит на панели задач, а щелчок по кнопке открывает эти настройки.",
+  "From now on it works in the background, with no main window: its button stays on the taskbar, its icon sits by the clock, and a click on either opens these settings.": "Теперь он работает в фоне, без главного окна: его кнопка стоит на панели задач, значок — у часов, и щелчок по любому из них открывает эти настройки.",
+  "Windows first hides a new app's icon under the ^ arrow (“Show hidden icons”): drag it from there onto the taskbar to keep it in sight.": "Значок новой программы Windows сначала прячет под стрелку ^ («Показать скрытые значки»): перетащите его оттуда на панель задач, чтобы он всегда был на виду.",
+  "Close these settings, hover over an item in the game and press {hotkey}: the price panel opens next to your inventory.": "Закройте эти настройки, наведите курсор на предмет в игре и нажмите {hotkey} — рядом с инвентарём откроется панель с ценой.",
+  "The XP overlay shows above the flask panel.": "Оверлей опыта показывается над панелью флаконов.",
+  "The XP overlay above the flask panel is off: turn it on in the “XP overlay” section.": "Оверлей опыта над панелью флаконов выключен: включите его в разделе «Оверлей опыта».",
+  "It starts with Windows, so it's ready whenever you play.": "Он запускается вместе с Windows, так что всегда готов к игре.",
+  "It doesn't start with Windows yet: turn on “Start with Windows” in the “General” section to have it ready whenever you play.": "Вместе с Windows он пока не запускается: включите «Запускать вместе с Windows» в разделе «Общие», чтобы он всегда был готов к игре.",
+  "Got it": "Понятно"
 }

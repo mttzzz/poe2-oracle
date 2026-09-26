@@ -6,7 +6,6 @@ service, which passes it on to the developer. You need no account, on GitHub or 
 
 ## Opening the report window
 
-- The tray icon's menu → **Report a problem or idea…**
 - The [settings](settings.md#help), section **Help**: **Write to the developer** in the row
   **Report a problem or idea**.
 - On the price panel, the link **report a problem** under the item's name, when an item was read
@@ -92,8 +91,9 @@ the error it stopped on and where in its code that happened, with your Windows u
 folders hidden, and the diagnostics report, on by default.
 
 Writing what you were doing helps, but is optional. Send the report or close the window: either
-way it doesn't come back for that crash. If you quit PoE2 Oracle from the tray while the window is
-open, it opens again at the next start. A crash more than a week old is forgotten without a word.
+way it doesn't come back for that crash. If you quit PoE2 Oracle while the window is open (**Quit**
+in the tray icon's menu, say), it opens again at the next start. A crash more than a week old is
+forgotten without a word.
 
 ## Without the app
 

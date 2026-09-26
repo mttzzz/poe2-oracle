@@ -64,7 +64,10 @@ The first public release.
   read or keep the password; the site's session is kept in Windows Credential Manager, sent only
   to pathofexile.com, and removed by **Sign out** or uninstalling. Signed in, the app searches
   private leagues and the trade site's “sum” rows: the league menus offer the account's own
-  private leagues, as the site's **Private Leagues** page lists them; nothing is typed in. A
+  private leagues, as the site's **Private Leagues** page lists them; nothing is typed in.
+  Settings → Account lists them under the sign-in, each with the public league it's made from;
+  **Refresh** looks them up again at once, and while you're signed in they're looked up by
+  themselves every hour by default (15 minutes, 1 hour, 6 hours or off), without popups. A
   private league trades too little on the Currency Exchange to price by, so its exchange prices,
   Divine Orb rate and poe2scout prices come from the public league it's made from (the one its
   page names), and the market card says so.
@@ -83,8 +86,8 @@ The first public release.
   its key; `@last thanks` answers whoever whispered last) or paste a stash search string.
 - **Settings window:** league, client language, hotkeys, quick actions, default sellers, seller
   column, interface scale (80 to 150 %, the price panel and the settings window), XP overlay, start
-  with Windows, update checks, reports to the developer and the diagnostics report. It warns when
-  the game runs in exclusive fullscreen or another program holds the item-copy combination.
+  with Windows, automatic updates, reports to the developer and the diagnostics report. It warns
+  when the game runs in exclusive fullscreen or another program holds the item-copy combination.
 - **Title-bar buttons** (⚙ and × on the panel, × on the settings window) light up gold under the
   pointer, with a soft glow behind the glyph.
 - **Guided tour** at launch, until finished or skipped, and again from Settings → Help →
@@ -100,34 +103,64 @@ The first public release.
   (`1.72` and `15%` in English, `1,72` and `15 %` in Russian), and so do the league names (as the
   trade site in that language names them), the pathofexile.com sign-in page, Craft of Exile's
   language and the page **Website ↗** opens.
-- **Tray icon** with Settings, the update check, Report a problem or idea… and Quit. One copy runs
-  per Windows session; starting it again opens the settings.
-- **Reports to the developer**, from a window of the app, no account needed: **Report a problem or
-  idea…** in the tray menu or **Write to the developer** in Settings → Help for a problem or an
-  idea; **report a problem** under the item name on the panel, or **Report a problem** under an
-  item the app couldn't read, for that item, with its text attached. The kind is **Problem**,
-  **Idea** or **Item**; the text takes up to 8000 characters, and a contact (Telegram, Discord or
-  email) is optional, for an answer. **Attach diagnostics** adds the diagnostics report (on by
-  default for a problem or an item, off for an idea), and **What's inside** saves the same zip to
-  the desktop. The window sends the report to oracle.pushka.biz, which passes it on to the
-  developer, and then says "Sent — thank you! Report #{id}", or "Couldn't send: {reason}" with
-  **Try again**, **Save to desktop** (the whole report as one zip) and **Close**.
+- **Tray icon, taskbar button or both**, as Settings → General → **Where to show the app** picks
+  (the tray icon by default; a change applies at once): a click on either opens the settings, or
+  brings them to the front. The tray icon's right-click menu has Settings and Quit. The taskbar
+  button stays while the app runs: its **Close window** quits, the settings and report windows add
+  no button of their own while it shows, and hovering it shows the app's icon. **Quit the app** in
+  Settings → Help quits as well. One copy runs per Windows session; starting it again opens the
+  settings.
+- **Reports to the developer**, from a window of the app, no account needed: **Write to the
+  developer** in Settings → Help for a problem or an idea; **report a problem** under the item
+  name on the panel, or **Report a problem** under an item the app couldn't read, for that item,
+  with its text attached. The kind is **Problem**, **Idea** or **Item**; the text takes up to 8000
+  characters, and a contact (Telegram, Discord or email) is optional, for an answer. **Attach
+  diagnostics** adds the diagnostics report (on by default for a problem or an item, off for an
+  idea), and **What's inside** saves the same zip to the desktop. The window sends the report to
+  oracle.pushka.biz, which passes it on to the developer, and then says "Sent — thank you! Report
+  #{id}", or "Couldn't send: {reason}" with **Try again**, **Save to desktop** (the whole report as
+  one zip) and **Close**.
 - **Crash reports:** after a crash, the next launch (within 7 days) opens the report window by
   itself, once, as a **Crash** report with what the app reported attached (the version, the time,
   the panic message, where in the code and the backtrace, with the Windows user name and folders
-  masked); writing something is optional. Closing the window drops the report; quitting from the
-  tray while it's open keeps it for the next launch.
+  masked); writing something is optional. Closing the window drops the report; quitting the app
+  while it's open keeps it for the next launch.
 - **A report form on the site**, https://oracle.pushka.biz/report.html (Russian: /ru/report.html),
   for a problem or an idea without the app.
-- **Updates** served by oracle.pushka.biz: 30 seconds after start while **Check for updates
-  automatically** is on, or from the tray menu's **Check for updates**; a newer version shows up as
-  **Install version X.Y.Z**. The installer runs only after the Ed25519 signature on the release's
-  `SHA256SUMS` checks out against the public key built into the app and the installer matches its
-  SHA-256 there; it installs silently and the app restarts. Pre-releases are never offered.
+- **Automatic updates** from oracle.pushka.biz while **Update automatically** is on (Settings →
+  General → Updates; on by default). The app stays connected to the service's event stream, from
+  about 10 seconds after start, and hears of a new app version or new game data within about two
+  minutes of its publication. A new version's installer, or a game data pack (the tables the app
+  reads items with), is downloaded at once and used only after the Ed25519 signature on its
+  release's `SHA256SUMS` checks out against the public key built into the app and the file matches
+  its SHA-256 there. It goes in once none of the app's windows is open (price panel, settings,
+  report window, sign-in window, tour): the installer runs silently and restarts the app, or the app
+  restarts itself to load the pack. After the restart a plate at the bottom right of the game's
+  screen says "PoE2 Oracle updated to X.Y.Z" or "Game data updated" for 8 seconds, without taking
+  the keyboard; × closes it, a click elsewhere on it opens the settings. A dropped connection comes
+  back by itself, and at once when Windows says the internet is back (Windows 10 2004 and later); a
+  failed download is retried later, quietly. The settings show the version, the game data's
+  version and what the updater is doing, with **Check now**. Turned off, the app doesn't connect
+  to oracle.pushka.biz at all. Pre-releases are never offered.
+- **Game data between app releases:** the tables the app reads items with -- the ways the client
+  prints a stat that the trade catalog lacks (English and Russian), the mod tiers, the Currency
+  Exchange items, and items' English names, art and bases -- are built into the app and also come
+  as game data packs. The app takes a pack at its next start only when the pack is newer than the
+  built-in tables and needs no newer version of the app, and each of its tables matches the
+  SHA-256 the pack lists for it and reads without an error; otherwise the built-in tables stay.
+  After an update, a pack no newer than the app's own tables is deleted; a damaged one is set
+  aside.
 - **Installer** for the current user, without administrator rights: Start menu shortcut, optional
   start with Windows, the license texts and third-party notices next to the app. Uninstalling
   removes the saved sign-in and keeps settings and caches unless asked to remove them. Nothing
   else to install: the C runtime is built into the app, so no Visual C++ Redistributable.
+- **Welcome after installing:** the installer's last page starts the app with its settings open at
+  General and a welcome over them: PoE2 Oracle is installed and running; where it shows from now
+  on (tray icon, taskbar button or both) and that a click there opens the settings; that Windows
+  first hides a new tray icon under the ^ arrow, and how to keep it in sight; how to check a price
+  with the current hotkey, and where the XP overlay shows; and whether the app starts with
+  Windows. **Got it**, Enter or Esc closes it; the guided tour, until done, starts after it. The
+  installer's silent updates don't show it.
 - **Diagnostics report:** **Collect report** (Settings → Help) saves a zip on the desktop with the
   logs, settings, unread item texts and a summary of the system, with the user's folder paths
   masked, and the Windows user name too if it has three characters or more, and shows it in

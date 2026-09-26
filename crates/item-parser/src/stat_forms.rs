@@ -5,52 +5,175 @@
 //! характеристикам`), a 100% chance printed as a plain effect (`Blind Enemies on Hit`), a count
 //! of one as a word (`You can apply one fewer Curse`). `catalog_match` falls back on them once
 //! the catalog's own texts, the word pairs and grammatical number have all failed.
+//!
+//! Both tables are built in, and a game data pack (the app's `data_pack`) may bring newer ones
+//! for a run: [`read_table`] reads a pack's table, refusing one with a malformed row, and
+//! [`use_tables`] puts both in place before [`EN`] or [`RU`] is first read.
 
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
+use poe2_domain::pack_table::{PackTable, TableInUse};
+
 use crate::catalog_match::without_break_spaces;
 
-/// One printed form of a stat.
+/// One printed form of a stat, in a table whose text lives for `'a`; the tables in use are
+/// `'static` ([`StatForm`]).
 #[derive(Debug)]
-pub struct StatForm {
+pub struct StatFormOf<'a> {
     /// The form counts the stat the other way (`reduced` for the catalog's `increased`): the roll
     /// is negated.
     pub negated: bool,
     /// The value a form that prints no number stands for (a flag's 100, "one fewer"'s -1).
     pub value: Option<f64>,
     /// The trade stat ids it counts toward (`explicit.stat_2933846633`, ...).
-    pub ids: Vec<&'static str>,
+    pub ids: Vec<&'a str>,
 }
 
+/// One printed form of a stat.
+pub type StatForm = StatFormOf<'static>;
+
 /// Printed forms, numbers as `#` and line breaks without the spaces around them, to the stats
-/// they print.
-pub type StatForms = HashMap<String, Vec<StatForm>>;
+/// they print, from a table whose text lives for `'a`.
+pub type StatFormsOf<'a> = HashMap<String, Vec<StatFormOf<'a>>>;
 
-pub static EN: LazyLock<StatForms> =
-    LazyLock::new(|| parse(include_str!("../data/stat-matchers-en.tsv")));
-pub static RU: LazyLock<StatForms> =
-    LazyLock::new(|| parse(include_str!("../data/stat-matchers-ru.tsv")));
+/// Printed forms to the stats they print ([`StatFormsOf`]).
+pub type StatForms = StatFormsOf<'static>;
 
-/// The table's rows: form, `n` for a negated form, the value a numberless form stands for, the
-/// comma-joined trade ids.
-fn parse(table: &'static str) -> StatForms {
-    let mut forms = StatForms::new();
-    for row in table.lines() {
+/// A data pack's tables, waiting for the first read of [`EN`] and [`RU`].
+static EN_PACK: PackTable<StatForms> = PackTable::new();
+static RU_PACK: PackTable<StatForms> = PackTable::new();
+
+pub static EN: LazyLock<StatForms> = LazyLock::new(|| {
+    EN_PACK.take().unwrap_or_else(|| {
+        read_table(include_str!("../data/stat-matchers-en.tsv"))
+            .expect("data/stat-matchers-en.tsv is well-formed")
+    })
+});
+pub static RU: LazyLock<StatForms> = LazyLock::new(|| {
+    RU_PACK.take().unwrap_or_else(|| {
+        read_table(include_str!("../data/stat-matchers-ru.tsv"))
+            .expect("data/stat-matchers-ru.tsv is well-formed")
+    })
+});
+
+/// Reads a table: one row per form -- the form, `n` for a negated form, the value a numberless
+/// form stands for, the comma-joined trade ids. An error names the first row that isn't one; a
+/// table without rows is one too.
+pub fn read_table(table: &str) -> Result<StatFormsOf<'_>, String> {
+    let mut forms = StatFormsOf::new();
+    for (number, row) in table.lines().enumerate() {
+        let bad = |what: &str| format!("line {}: bad {what}", number + 1);
         let mut fields = row.split('\t');
-        let (Some(form), Some(negated), Some(value), Some(ids)) =
-            (fields.next(), fields.next(), fields.next(), fields.next())
-        else {
-            continue;
+        let (Some(form), Some(negated), Some(value), Some(ids), None) = (
+            fields.next(),
+            fields.next(),
+            fields.next(),
+            fields.next(),
+            fields.next(),
+        ) else {
+            let count = row.split('\t').count();
+            return Err(format!("line {}: {count} fields", number + 1));
         };
+        if form.is_empty() {
+            return Err(bad("form"));
+        }
+        let negated = match negated {
+            "" => false,
+            "n" => true,
+            _ => return Err(bad("negation")),
+        };
+        let value = match value {
+            "" => None,
+            value => Some(
+                value
+                    .parse::<f64>()
+                    .ok()
+                    .filter(|value| value.is_finite())
+                    .ok_or_else(|| bad("value"))?,
+            ),
+        };
+        let ids: Vec<&str> = ids.split(',').collect();
+        if ids.contains(&"") {
+            return Err(bad("trade ids"));
+        }
         forms
             .entry(without_break_spaces(&form.replace("\\n", "\n")))
             .or_default()
-            .push(StatForm {
-                negated: negated == "n",
-                value: value.parse().ok(),
-                ids: ids.split(',').collect(),
+            .push(StatFormOf {
+                negated,
+                value,
+                ids,
             });
     }
-    forms
+    if forms.is_empty() {
+        return Err("no rows".to_owned());
+    }
+    Ok(forms)
+}
+
+/// Makes `en` and `ru`, a data pack's tables ([`read_table`]), the ones [`EN`] and [`RU`] hold
+/// for the rest of the run. Refused once either has been read: the app puts a pack's tables in
+/// place before anything reads them.
+pub fn use_tables(en: StatForms, ru: StatForms) -> Result<(), TableInUse> {
+    EN_PACK.set(en)?;
+    RU_PACK.set(ru)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_table_with_a_malformed_row_is_refused() {
+        let good = "#% increased Life\t\t\texplicit.stat_1\n\
+            #% reduced Life\tn\t\texplicit.stat_1,rune.stat_1\n\
+            Blind Enemies on Hit\t\t100\texplicit.stat_2\n";
+        let forms = read_table(good).expect("a well-formed table");
+        assert_eq!(forms.len(), 3);
+        let reduced = &forms["#% reduced Life"][0];
+        assert!(reduced.negated);
+        assert_eq!(reduced.ids, ["explicit.stat_1", "rune.stat_1"]);
+        assert_eq!(forms["Blind Enemies on Hit"][0].value, Some(100.0));
+
+        for (bad, why) in [
+            ("#% increased Life\t\texplicit.stat_1\n", "3 fields"),
+            (
+                "#% increased Life\t\t\texplicit.stat_1\textra\n",
+                "5 fields",
+            ),
+            ("\t\t\texplicit.stat_1\n", "no form"),
+            (
+                "#% increased Life\tyes\t\texplicit.stat_1\n",
+                "a negation other than n",
+            ),
+            (
+                "Blind Enemies on Hit\t\tall\texplicit.stat_2\n",
+                "a value that isn't one",
+            ),
+            (
+                "Blind Enemies on Hit\t\tinf\texplicit.stat_2\n",
+                "an endless value",
+            ),
+            ("#% increased Life\t\t\t\n", "no trade id"),
+            (
+                "#% increased Life\t\t\texplicit.stat_1,\n",
+                "an empty trade id",
+            ),
+            ("", "no rows"),
+        ] {
+            assert!(read_table(bad).is_err(), "{why}");
+        }
+        // The same rows after a good one: the first bad row fails the table.
+        assert!(read_table(&format!("{good}#% increased Life\t\texplicit.stat_1\n")).is_err());
+    }
+
+    #[test]
+    fn a_pack_table_comes_too_late_once_the_built_in_one_is_read() {
+        // Whatever ran first, the built-in tables are in use from here.
+        let _ = (&*EN, &*RU);
+        let pack = || read_table("#% increased Life\t\t\texplicit.stat_1\n").unwrap();
+        assert_eq!(use_tables(pack(), pack()), Err(TableInUse));
+        assert!(EN.len() > 1, "the built-in table stays");
+    }
 }

@@ -11,6 +11,7 @@ members = [
     "crates/auto-update",
     "crates/poe2-oracle",
     "crates/oracle-protocol",
+    "crates/oracle-data",
     "crates/oracle-web",
     "crates/release-sign",
 ]

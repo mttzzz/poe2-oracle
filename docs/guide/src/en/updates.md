@@ -2,32 +2,59 @@
 
 ## Updates
 
-PoE2 Oracle updates from [oracle.pushka.biz](https://oracle.pushka.biz/), the app's own site.
-Nothing is installed without your click.
+PoE2 Oracle keeps itself up to date from [oracle.pushka.biz](https://oracle.pushka.biz/), the
+app's own site, while **Update automatically** is on in the settings (section **General**, group
+**Updates**; on by default). Nothing needs a click.
 
-- With **Check for updates automatically** on in the settings, the default, the app asks
-  oracle.pushka.biz for the latest release 30 seconds after it starts. There is no pop-up: when a
-  newer version exists, the update entry in the tray menu changes to **Install version X.Y.Z**.
-- To check yourself, click **Check for updates** in the tray menu. It shows "Checking for
-  updates…", then "You have the latest version" or "Couldn't check for updates" (click it to try
-  again).
-- Click **Install version X.Y.Z** to update. The entry shows "Downloading version X.Y.Z…" while
-  PoE2 Oracle downloads the release's `SHA256SUMS` file, checks its Ed25519 signature with the key
-  built into the app, then downloads the installer and checks its SHA-256 checksum against
-  `SHA256SUMS`. The signing key stays where releases are built, so neither oracle.pushka.biz nor
-  anyone on the way can hand you an installer of their own. Then the app closes, the
-  installer runs silently, and the new version starts by itself a few seconds later. Your settings
-  and your start-with-Windows choice stay as they were.
-- If the download or a check fails, the entry reads **Update failed — retry (X.Y.Z)**; click it
-  to try again. Nothing runs then: with a bad signature the installer isn't even downloaded, and a
-  download that doesn't match its checksum is deleted.
+- **Staying connected.** About 10 seconds after it starts, once the trade site's catalogs are in,
+  the app connects to oracle.pushka.biz and stays connected. The service tells it the latest app
+  version and the latest game data version as soon as it connects, and again when one of them
+  changes: within about two minutes of a new release.
+- **A new version** is downloaded at once: first the release's `SHA256SUMS` file, whose Ed25519
+  signature PoE2 Oracle checks with the key built into the app, then the installer, whose SHA-256
+  checksum must match `SHA256SUMS`. The signing key stays where releases are built, so neither
+  oracle.pushka.biz nor anyone on the way can hand you an installer of their own. Then the app
+  closes, the installer runs silently, and the new version starts by itself a few seconds later.
+  Your settings and your start-with-Windows choice stay as they were.
+- **New game data** — the tables PoE2 Oracle reads items with: the modifiers in both client
+  languages and their tiers, the Currency Exchange's items, item names and pictures — comes as a
+  game data pack, checked the same way before it is used. The app unpacks it and restarts itself to
+  load it; the program itself isn't reinstalled.
+- **Not while you use it.** An update waits while any of the app's windows is open: the price
+  panel, the settings, the report window, the pathofexile.com sign-in window or the tour. It goes
+  in the moment the last of them closes.
+- **After the restart** a plate at the bottom right of the game's screen says "PoE2 Oracle updated
+  to X.Y.Z" or "Game data updated" for 8 seconds. It never takes the keyboard from the game: **×**
+  closes it, and a click anywhere else on it opens the settings.
+- **Without internet** the app connects again by itself: a few seconds after a failed attempt,
+  then less often, up to about 5 minutes apart. On Windows 10 version 2004 and later it connects
+  at once when Windows says the internet is back.
+- **When something fails** — the download, a signature or checksum check — nothing runs, and the
+  app quietly tries again later: after a minute, then after longer waits, at least once an hour.
+  With a bad signature the installer isn't even downloaded, and a download that doesn't match its
+  checksum is deleted. An update that didn't take after its restart is tried again only at the
+  next start.
 
-You can also update by hand: download the new installer from
+In the settings, section **General**, group **Updates**, the row under the switch names the app's
+version and its game data's, and says what is going on: connecting, connected, "No connection to
+oracle.pushka.biz — will connect when the internet is back", "You have the latest version", a
+download under way, an update that is ready and waits for the app's windows to close, or why the
+last try failed. **Check now** connects at once instead of waiting for the next attempt, and
+retries a failed download right away.
+
+With **Update automatically** off, PoE2 Oracle doesn't connect to oracle.pushka.biz at all, and
+nothing is downloaded or installed. You can update by hand then: download the new installer from
 [oracle.pushka.biz](https://oracle.pushka.biz/) and run it. It installs over the old version, into
 the same folder, and keeps your settings.
 
 Downloaded installers are kept in `%LOCALAPPDATA%\poe2-oracle\cache\updates`; the next update
-removes the old one.
+removes the old one. A game data pack is deleted from there once it is unpacked.
+
+The unpacked game data is kept in `%LOCALAPPDATA%\poe2-oracle\data\game-data`. At each start the
+app uses it only while it is newer than the tables built into the app, and only if every table
+still matches its checksum and reads without an error. An installed pack that the next app update
+has caught up with is deleted; a damaged one is moved to `game-data\rejected`, and the app uses its
+built-in tables.
 
 ## Uninstall
 

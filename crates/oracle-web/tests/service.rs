@@ -1,11 +1,12 @@
-//! The service end to end: its router on a real socket, with GitHub and Telegram played by servers
-//! on 127.0.0.1 that record every request they get.
+//! The service end to end: [`oracle_web::serve`] on a real socket, with GitHub and Telegram played
+//! by servers on 127.0.0.1 that record every request they get.
 
+use std::hash::{DefaultHasher, Hash as _, Hasher as _};
 use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use axum::Router;
 use axum::body::Bytes;
@@ -15,16 +16,22 @@ use axum::response::{IntoResponse, Response};
 use oracle_protocol::{
     AppContext, MAX_BODY_BYTES, Release, Report, ReportItem, ReportKind, ReportSource,
 };
-use oracle_web::{App, Config, REPORTS_AT_ONCE, router};
+use oracle_web::{Config, REPORTS_AT_ONCE, STREAMS_PER_CLIENT};
 use parking_lot::Mutex;
 use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
-use tokio::net::TcpStream;
+use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::oneshot;
+use tokio::task::JoinHandle;
 
 const TOKEN: &str = "github-test-token";
 const BOT: &str = "123:bot-test-token";
 const INSTALLER: &[u8] = b"MZ\x90\x00 the installer's bytes";
 const SUMS: &[u8] = b"0123abcd  PoE2-Oracle-Setup-0.1.0.exe\n";
+const DATA_PACK: &[u8] = b"PK\x03\x04 the data pack's bytes";
+const DATA_SUMS: &[u8] = b"4567cdef  PoE2-Oracle-Data-2026092601.zip\n";
+/// Where the GitHub stand-in lists the releases: the only page there is.
+const LISTING: &str = "/repos/mttzzz/poe2-oracle/releases?per_page=100&page=1";
 
 /// A request a stand-in got.
 #[derive(Clone, Debug)]
@@ -54,9 +61,9 @@ impl StandIn {
     }
 }
 
-/// Serves `router` on 127.0.0.1, answering its base URL.
+/// Serves a stand-in's `router` on 127.0.0.1, answering its base URL.
 async fn serve(router: Router) -> String {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     tokio::spawn(async move {
         axum::serve(
@@ -102,72 +109,142 @@ async fn stand_in(down: bool, answer: impl Answer) -> (String, StandIn) {
     (serve(router).await, stand_in)
 }
 
-/// GitHub as the service calls it, for the token [`TOKEN`] only.
-fn github(seen: &Seen) -> Response {
-    if seen
-        .headers
-        .get(header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        != Some(&format!("Bearer {TOKEN}"))
-        && !seen.path.starts_with("/storage/")
-    {
-        return (
-            StatusCode::UNAUTHORIZED,
-            axum::Json(json!({ "message": "Bad credentials" })),
-        )
-            .into_response();
+/// The repository's releases, newest first, as the GitHub stand-in lists them.
+type Releases = Arc<Mutex<Vec<Value>>>;
+
+/// A published release tagged `tag` with the files `assets` (id, name, bytes).
+fn published(tag: &str, assets: &[(u64, &str, &[u8])]) -> Value {
+    let assets: Vec<Value> = assets
+        .iter()
+        .map(|(id, name, bytes)| {
+            json!({ "id": id, "name": name, "size": bytes.len(), "state": "uploaded" })
+        })
+        .collect();
+    json!({
+        "tag_name": tag,
+        "html_url": format!("https://github.com/mttzzz/poe2-oracle/releases/tag/{tag}"),
+        "draft": false,
+        "prerelease": false,
+        "assets": assets,
+    })
+}
+
+/// The releases the GitHub stand-in starts with: the app's v0.1.0, a data pack published after
+/// it, and two releases the service must pass over -- a draft and a prerelease, both newer.
+fn first_releases() -> Vec<Value> {
+    let mut draft = published("v0.2.0", &[(5, "PoE2-Oracle-Setup-0.2.0.exe", INSTALLER)]);
+    draft["draft"] = json!(true);
+    let mut prerelease = published("v0.3.0-rc.1", &[]);
+    prerelease["prerelease"] = json!(true);
+    vec![
+        draft,
+        prerelease,
+        published(
+            "data-2026092601",
+            &[
+                (11, "PoE2-Oracle-Data-2026092601.zip", DATA_PACK),
+                (12, "SHA256SUMS", DATA_SUMS),
+            ],
+        ),
+        published(
+            "v0.1.0",
+            &[
+                (1, "PoE2-Oracle-Setup-0.1.0.exe", INSTALLER),
+                (2, "SHA256SUMS", SUMS),
+            ],
+        ),
+    ]
+}
+
+/// The bytes of the release file `id`, as GitHub's storage holds them.
+fn stored(id: &str) -> Option<&'static [u8]> {
+    match id {
+        "1" => Some(INSTALLER),
+        "2" => Some(SUMS),
+        "11" => Some(DATA_PACK),
+        "12" => Some(DATA_SUMS),
+        _ => None,
     }
-    let json = |status: StatusCode, value: Value| (status, axum::Json(value)).into_response();
-    match (seen.method.as_str(), seen.path.as_str()) {
-        ("GET", "/repos/mttzzz/poe2-oracle/labels?per_page=100") => json(
-            StatusCode::OK,
-            json!([{ "name": "bug" }, { "name": "enhancement" }]),
-        ),
-        ("POST", "/repos/mttzzz/poe2-oracle/labels") => json(StatusCode::CREATED, json!({})),
-        ("POST", "/repos/mttzzz/poe2-oracle/issues") => json(
-            StatusCode::CREATED,
-            json!({ "number": 42, "html_url": "https://github.com/mttzzz/poe2-oracle/issues/42" }),
-        ),
-        ("GET", "/repos/mttzzz/poe2-oracle/releases/latest") => json(
-            StatusCode::OK,
-            json!({
-                "tag_name": "v0.1.0",
-                "html_url": "https://github.com/mttzzz/poe2-oracle/releases/tag/v0.1.0",
-                "draft": false,
-                "prerelease": false,
-                "assets": [
-                    { "id": 1, "name": "PoE2-Oracle-Setup-0.1.0.exe", "size": INSTALLER.len(), "state": "uploaded" },
-                    { "id": 2, "name": "SHA256SUMS", "size": SUMS.len(), "state": "uploaded" },
-                ],
-            }),
-        ),
-        // A file: GitHub sends the octet-stream request on to its storage.
-        (
-            "GET",
-            "/repos/mttzzz/poe2-oracle/releases/assets/1"
-            | "/repos/mttzzz/poe2-oracle/releases/assets/2",
-        ) => {
-            if seen
-                .headers
-                .get(header::ACCEPT)
-                .map(|value| value.as_bytes())
-                != Some(b"application/octet-stream")
-            {
-                return json(
-                    StatusCode::OK,
-                    json!({ "id": 1, "name": "metadata, not the file" }),
-                );
-            }
-            let id = seen.path.rsplit('/').next().unwrap();
-            (
-                StatusCode::FOUND,
-                [(header::LOCATION, format!("/storage/{id}"))],
+}
+
+/// GitHub as the service calls it, for the token [`TOKEN`] only, listing `releases`.
+fn github(releases: Releases) -> impl Answer {
+    move |seen: &Seen| {
+        if seen
+            .headers
+            .get(header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok())
+            != Some(&format!("Bearer {TOKEN}"))
+            && !seen.path.starts_with("/storage/")
+        {
+            return (
+                StatusCode::UNAUTHORIZED,
+                axum::Json(json!({ "message": "Bad credentials" })),
             )
-                .into_response()
+                .into_response();
         }
-        ("GET", "/storage/1") => INSTALLER.into_response(),
-        ("GET", "/storage/2") => SUMS.into_response(),
-        _ => json(StatusCode::NOT_FOUND, json!({ "message": "Not Found" })),
+        let json = |status: StatusCode, value: Value| (status, axum::Json(value)).into_response();
+        let file = seen
+            .path
+            .strip_prefix("/repos/mttzzz/poe2-oracle/releases/assets/")
+            .filter(|id| stored(id).is_some());
+        match (seen.method.as_str(), seen.path.as_str(), file) {
+            ("GET", "/repos/mttzzz/poe2-oracle/labels?per_page=100", _) => json(
+                StatusCode::OK,
+                json!([{ "name": "bug" }, { "name": "enhancement" }]),
+            ),
+            ("POST", "/repos/mttzzz/poe2-oracle/labels", _) => json(StatusCode::CREATED, json!({})),
+            ("POST", "/repos/mttzzz/poe2-oracle/issues", _) => json(
+                StatusCode::CREATED,
+                json!({ "number": 42, "html_url": "https://github.com/mttzzz/poe2-oracle/issues/42" }),
+            ),
+            // The list, with a validator: asked with it and unchanged, it's a bare 304.
+            ("GET", LISTING, _) => {
+                let body = serde_json::to_vec(&*releases.lock()).unwrap();
+                let mut hasher = DefaultHasher::new();
+                body.hash(&mut hasher);
+                let etag = format!("W/\"{:x}\"", hasher.finish());
+                if seen
+                    .headers
+                    .get(header::IF_NONE_MATCH)
+                    .is_some_and(|tag| tag == etag.as_str())
+                {
+                    return (StatusCode::NOT_MODIFIED, [(header::ETAG, etag)]).into_response();
+                }
+                (
+                    [
+                        (header::CONTENT_TYPE, "application/json".to_owned()),
+                        (header::ETAG, etag),
+                    ],
+                    body,
+                )
+                    .into_response()
+            }
+            // A file: GitHub sends the octet-stream request on to its storage.
+            ("GET", _, Some(id)) => {
+                if seen
+                    .headers
+                    .get(header::ACCEPT)
+                    .map(|value| value.as_bytes())
+                    != Some(b"application/octet-stream")
+                {
+                    return json(
+                        StatusCode::OK,
+                        json!({ "id": 1, "name": "metadata, not the file" }),
+                    );
+                }
+                (
+                    StatusCode::FOUND,
+                    [(header::LOCATION, format!("/storage/{id}"))],
+                )
+                    .into_response()
+            }
+            ("GET", path, None) => match path.strip_prefix("/storage/").and_then(stored) {
+                Some(bytes) => bytes.into_response(),
+                None => json(StatusCode::NOT_FOUND, json!({ "message": "Not Found" })),
+            },
+            _ => json(StatusCode::NOT_FOUND, json!({ "message": "Not Found" })),
+        }
     }
 }
 
@@ -199,14 +276,20 @@ struct Service {
     url: String,
     github: StandIn,
     telegram: StandIn,
+    /// What the GitHub stand-in lists: change it, and the service sees it at its next listing.
+    releases: Releases,
     http: reqwest::Client,
+    /// Sent, or dropped with the service: SIGTERM's withdrawal is over, and the service stops.
+    stop: Option<oneshot::Sender<()>>,
+    /// The service, running until it has stopped.
+    running: JoinHandle<()>,
     _dirs: [tempfile::TempDir; 3],
 }
 
 /// The service with GitHub and Telegram stood in for (each up or down), or with neither
 /// configured: a dry run.
 async fn start(github_down: bool, telegram_down: bool, dry: bool) -> Service {
-    start_with(github_down, telegram_down, dry, telegram).await
+    launch(github_down, telegram_down, dry, telegram, |_| {}).await
 }
 
 /// [`start`] with Telegram answering as `telegram_answers`.
@@ -216,7 +299,23 @@ async fn start_with(
     dry: bool,
     telegram_answers: impl Answer,
 ) -> Service {
-    let (github_url, github) = stand_in(github_down, github).await;
+    launch(github_down, telegram_down, dry, telegram_answers, |_| {}).await
+}
+
+/// The service with GitHub and Telegram up, its configuration changed by `tune`.
+async fn start_tuned(tune: impl FnOnce(&mut Config)) -> Service {
+    launch(false, false, false, telegram, tune).await
+}
+
+async fn launch(
+    github_down: bool,
+    telegram_down: bool,
+    dry: bool,
+    telegram_answers: impl Answer,
+    tune: impl FnOnce(&mut Config),
+) -> Service {
+    let releases: Releases = Arc::new(Mutex::new(first_releases()));
+    let (github_url, github) = stand_in(github_down, github(releases.clone())).await;
     let (telegram_url, telegram) = stand_in(telegram_down, telegram_answers).await;
     let dirs = [
         tempfile::tempdir().unwrap(),
@@ -224,7 +323,7 @@ async fn start_with(
         tempfile::tempdir().unwrap(),
     ];
     site(dirs[0].path(), dirs[1].path(), dirs[2].path());
-    let config = Config {
+    let mut config = Config {
         public_url: "https://oracle.example".to_owned(),
         site_dir: dirs[0].path().to_owned(),
         guide_dir: dirs[1].path().to_owned(),
@@ -236,7 +335,16 @@ async fn start_with(
         telegram_api: telegram_url,
         ..Config::default()
     };
-    let url = serve(router(App::new(config).unwrap())).await;
+    tune(&mut config);
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let (stop, stopped) = oneshot::channel::<()>();
+    let running = tokio::spawn(async move {
+        let stopped = async {
+            let _ = stopped.await;
+        };
+        oracle_web::serve(listener, config, stopped).await.unwrap();
+    });
     let http = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .build()
@@ -245,7 +353,10 @@ async fn start_with(
         url,
         github,
         telegram,
+        releases,
         http,
+        stop: Some(stop),
+        running,
         _dirs: dirs,
     }
 }
@@ -321,6 +432,71 @@ impl Service {
         }
         request.send().await.unwrap()
     }
+
+    /// An event stream opened from `client`, as a browser that takes compressed answers asks.
+    async fn events(&self, client: &str) -> reqwest::Response {
+        self.get(
+            "/api/v1/events",
+            &[("x-forwarded-for", client), ("accept-encoding", "gzip, br")],
+        )
+        .await
+    }
+
+    /// Tells the service SIGTERM's withdrawal is over: it stops taking connections.
+    fn stop(&mut self) {
+        self.stop.take().unwrap().send(()).unwrap();
+    }
+}
+
+/// An event stream's body, block by block.
+struct Events {
+    stream: reqwest::Response,
+    read: String,
+}
+
+impl Events {
+    fn of(stream: reqwest::Response) -> Events {
+        assert_eq!(stream.status(), StatusCode::OK);
+        Events {
+            stream,
+            read: String::new(),
+        }
+    }
+
+    /// The next event or comment the service writes, without its blank line; `None` once the
+    /// stream has ended.
+    async fn next(&mut self) -> Option<String> {
+        loop {
+            if let Some(end) = self.read.find("\n\n") {
+                let block = self.read[..end].to_owned();
+                self.read.drain(..end + 2);
+                return Some(block);
+            }
+            let chunk = tokio::time::timeout(Duration::from_secs(10), self.stream.chunk())
+                .await
+                .expect("the service writes within 10 s")
+                .unwrap()?;
+            self.read.push_str(std::str::from_utf8(&chunk).unwrap());
+        }
+    }
+}
+
+/// The `versions` event announcing `app` and `data`, the first of a stream with its `retry`.
+fn versions(first: bool, app: Option<&str>, data: Option<u64>) -> String {
+    let retry = if first { "retry: 15000\n" } else { "" };
+    let data = json!({ "app": app, "data": data });
+    format!("event: versions\n{retry}data: {data}")
+}
+
+/// Waits until GitHub has been asked for the releases `count` times.
+async fn listed(github: &StandIn, count: usize) {
+    for _ in 0..500 {
+        if github.requests_to(Method::GET, LISTING).len() >= count {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    panic!("GitHub wasn't asked for the releases {count} times");
 }
 
 /// What `stand_in` has seen once it has seen `count` requests: a report's files still go to
@@ -721,12 +897,13 @@ async fn reports_are_checked_and_rate_limited() {
 }
 
 #[tokio::test]
-async fn the_latest_release_is_mapped_cached_and_revalidated() {
+async fn the_app_release_is_mapped_and_revalidated() {
     let service = start(false, false, false).await;
     let first = service.get("/api/v1/releases/latest", &[]).await;
     assert_eq!(first.status(), StatusCode::OK);
     let etag = first.headers()[header::ETAG].to_str().unwrap().to_owned();
     let release: Release = first.json().await.unwrap();
+    // Not the newer draft, the prerelease or the data pack published after it.
     assert_eq!(release.tag_name, "v0.1.0");
     assert_eq!(release.html_url, "https://oracle.example/");
     assert_eq!(
@@ -761,23 +938,31 @@ async fn the_latest_release_is_mapped_cached_and_revalidated() {
         )
         .await;
     assert_eq!(stale.status(), StatusCode::OK);
-    let asked = service
-        .github
-        .requests_to(Method::GET, "/repos/mttzzz/poe2-oracle/releases/latest");
-    assert_eq!(asked.len(), 1, "cached for five minutes");
+    assert_eq!(
+        service.github.requests_to(Method::GET, LISTING).len(),
+        1,
+        "listed once as the service started: the answers never ask GitHub"
+    );
 }
 
 #[tokio::test]
 async fn without_a_token_there_is_no_release() {
     let service = start(false, false, true).await;
-    assert_eq!(
-        service.get("/api/v1/releases/latest", &[]).await.status(),
-        StatusCode::SERVICE_UNAVAILABLE
-    );
-    assert_eq!(
-        service.get("/download/latest", &[]).await.status(),
-        StatusCode::SERVICE_UNAVAILABLE
-    );
+    for path in [
+        "/api/v1/releases/latest",
+        "/api/v1/data/latest",
+        "/download/latest",
+        "/download/v0.1.0/SHA256SUMS",
+    ] {
+        assert_eq!(
+            service.get(path, &[]).await.status(),
+            StatusCode::SERVICE_UNAVAILABLE,
+            "{path}"
+        );
+    }
+    // The event stream says there's nothing to update to.
+    let mut events = Events::of(service.events("203.0.113.20").await);
+    assert_eq!(events.next().await.unwrap(), versions(true, None, None));
 }
 
 #[tokio::test]
@@ -829,6 +1014,8 @@ async fn downloads_stream_the_release_files() {
     for missing in [
         "/download/v0.0.9/PoE2-Oracle-Setup-0.1.0.exe",
         "/download/v0.1.0/other.exe",
+        // A draft's file: not published, not offered.
+        "/download/v0.2.0/PoE2-Oracle-Setup-0.2.0.exe",
     ] {
         assert_eq!(
             service.get(missing, &[]).await.status(),
@@ -836,6 +1023,210 @@ async fn downloads_stream_the_release_files() {
             "{missing}"
         );
     }
+}
+
+#[tokio::test]
+async fn the_data_pack_is_offered_and_served_like_a_release() {
+    let service = start(false, false, false).await;
+    let first = service.get("/api/v1/data/latest", &[]).await;
+    assert_eq!(first.status(), StatusCode::OK);
+    assert_eq!(first.headers()[header::CACHE_CONTROL], "no-cache");
+    let etag = first.headers()[header::ETAG].to_str().unwrap().to_owned();
+    let release: Release = first.json().await.unwrap();
+    assert_eq!(release.tag_name, "data-2026092601");
+    assert_eq!(release.html_url, "https://oracle.example/");
+    assert_eq!(
+        release
+            .assets
+            .iter()
+            .map(|asset| (asset.browser_download_url.as_str(), asset.size))
+            .collect::<Vec<_>>(),
+        [
+            (
+                "https://oracle.example/download/data-2026092601/PoE2-Oracle-Data-2026092601.zip",
+                DATA_PACK.len() as u64
+            ),
+            (
+                "https://oracle.example/download/data-2026092601/SHA256SUMS",
+                DATA_SUMS.len() as u64
+            ),
+        ]
+    );
+    let unchanged = service
+        .get("/api/v1/data/latest", &[("if-none-match", &etag)])
+        .await;
+    assert_eq!(unchanged.status(), StatusCode::NOT_MODIFIED);
+
+    for _ in 0..2 {
+        let pack = service
+            .get(
+                "/download/data-2026092601/PoE2-Oracle-Data-2026092601.zip",
+                &[],
+            )
+            .await;
+        assert_eq!(pack.status(), StatusCode::OK);
+        assert_eq!(
+            pack.headers()[header::CONTENT_DISPOSITION],
+            "attachment; filename=\"PoE2-Oracle-Data-2026092601.zip\""
+        );
+        assert_eq!(pack.bytes().await.unwrap(), DATA_PACK);
+    }
+    let fetched = service
+        .github
+        .requests_to(Method::GET, "/repos/mttzzz/poe2-oracle/releases/assets/11");
+    assert_eq!(fetched.len(), 1, "kept in memory after the first download");
+    // Each release's own SHA256SUMS, by its tag.
+    let sums = service
+        .get("/download/data-2026092601/SHA256SUMS", &[])
+        .await;
+    assert_eq!(sums.bytes().await.unwrap(), DATA_SUMS);
+    let sums = service.get("/download/v0.1.0/SHA256SUMS", &[]).await;
+    assert_eq!(sums.bytes().await.unwrap(), SUMS);
+    assert_eq!(
+        service
+            .get(
+                "/download/data-2026092500/PoE2-Oracle-Data-2026092601.zip",
+                &[]
+            )
+            .await
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+}
+
+#[tokio::test]
+async fn the_event_stream_tells_the_versions_and_each_new_release() {
+    let service =
+        start_tuned(|config| config.list_releases_every = Duration::from_millis(50)).await;
+    let stream = service.events("203.0.113.30").await;
+    assert_eq!(stream.headers()[header::CONTENT_TYPE], "text/event-stream");
+    assert_eq!(stream.headers()[header::CACHE_CONTROL], "no-cache");
+    assert!(
+        !stream.headers().contains_key(header::CONTENT_ENCODING),
+        "never compressed"
+    );
+    let mut events = Events::of(stream);
+    assert_eq!(
+        events.next().await.unwrap(),
+        versions(true, Some("0.1.0"), Some(2026092601))
+    );
+    let app = service.get("/api/v1/releases/latest", &[]).await;
+    let app_etag = app.headers()[header::ETAG].to_str().unwrap().to_owned();
+
+    // A new data pack: announced, and the app's release stays as it was.
+    service.releases.lock().insert(
+        0,
+        published(
+            "data-2026092602",
+            &[(13, "PoE2-Oracle-Data-2026092602.zip", DATA_PACK)],
+        ),
+    );
+    assert_eq!(
+        events.next().await.unwrap(),
+        versions(false, Some("0.1.0"), Some(2026092602))
+    );
+    let unchanged = service
+        .get("/api/v1/releases/latest", &[("if-none-match", &app_etag)])
+        .await;
+    assert_eq!(unchanged.status(), StatusCode::NOT_MODIFIED);
+    assert_eq!(
+        service.get("/download/latest", &[]).await.headers()[header::LOCATION],
+        "/download/v0.1.0/PoE2-Oracle-Setup-0.1.0.exe"
+    );
+
+    // The next app release, first as a draft: the pack published meanwhile is told alone.
+    let mut next = published("v0.1.1", &[(14, "PoE2-Oracle-Setup-0.1.1.exe", INSTALLER)]);
+    next["draft"] = json!(true);
+    service.releases.lock().insert(0, next);
+    listed(
+        &service.github,
+        service.github.requests_to(Method::GET, LISTING).len() + 1,
+    )
+    .await;
+    service.releases.lock().insert(
+        0,
+        published(
+            "data-2026092603",
+            &[(15, "PoE2-Oracle-Data-2026092603.zip", DATA_PACK)],
+        ),
+    );
+    assert_eq!(
+        events.next().await.unwrap(),
+        versions(false, Some("0.1.0"), Some(2026092603))
+    );
+    service.releases.lock()[1]["draft"] = json!(false);
+    assert_eq!(
+        events.next().await.unwrap(),
+        versions(false, Some("0.1.1"), Some(2026092603))
+    );
+
+    // Listed with the validator of the list the service holds: GitHub answers an unchanged list
+    // with a bare 304.
+    assert!(
+        service
+            .github
+            .requests_to(Method::GET, LISTING)
+            .iter()
+            .skip(1)
+            .all(|seen| seen.headers.contains_key(header::IF_NONE_MATCH))
+    );
+}
+
+#[tokio::test]
+async fn streams_are_capped_per_address_and_in_all() {
+    let service = start_tuned(|config| {
+        config.event_streams = STREAMS_PER_CLIENT + 2;
+    })
+    .await;
+    let mut open = Vec::new();
+    for _ in 0..STREAMS_PER_CLIENT {
+        open.push(Events::of(service.events("203.0.113.40").await));
+    }
+    let refused = service.events("203.0.113.40").await;
+    assert_eq!(refused.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(refused.headers()[header::RETRY_AFTER], "60");
+    // Another address, while the service has room.
+    for _ in 0..2 {
+        open.push(Events::of(service.events("203.0.113.41").await));
+    }
+    let refused = service.events("203.0.113.42").await;
+    assert_eq!(refused.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(refused.headers()[header::RETRY_AFTER], "60");
+
+    // A stream whose app has gone gives its place back.
+    drop(open.remove(0));
+    let started = Instant::now();
+    loop {
+        let stream = service.events("203.0.113.42").await;
+        if stream.status() == StatusCode::OK {
+            break;
+        }
+        assert_eq!(stream.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "the closed stream's place is still taken"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
+#[tokio::test]
+async fn shutting_down_ends_the_streams_at_once() {
+    let mut service = start(false, false, false).await;
+    let mut events = Events::of(service.events("203.0.113.50").await);
+    assert_eq!(
+        events.next().await.unwrap(),
+        versions(true, Some("0.1.0"), Some(2026092601))
+    );
+    let stopped = Instant::now();
+    service.stop();
+    assert_eq!(events.next().await, None, "the stream ends");
+    // The requests in flight get 20 s to finish; an open stream doesn't hold the service that long.
+    tokio::time::timeout(Duration::from_secs(5), &mut service.running)
+        .await
+        .expect("the service stops once the stream has ended")
+        .unwrap();
+    assert!(stopped.elapsed() < Duration::from_secs(5));
 }
 
 #[tokio::test]

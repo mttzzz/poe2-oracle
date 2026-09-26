@@ -27,18 +27,26 @@ const DIGEST_RETRY: Duration = Duration::from_secs(10 * 60);
 pub enum Stat {
     /// The installer, downloaded from the site's button or by the updater.
     Download,
-    /// Any other release file: `SHA256SUMS` and its signature, which only the updater fetches.
-    UpdateDownload,
-    /// An update check, which the app makes at every start.
+    /// An event stream opened: the app connects when it starts, and again after losing the
+    /// connection.
+    EventStream,
+    /// An update check: the app's latest release or the latest data pack asked for.
     UpdateCheck,
+    /// A data pack, downloaded by the updater.
+    DataDownload,
+    /// Any other release file: the `SHA256SUMS` of a release and its signature, which only the
+    /// updater fetches.
+    UpdateDownload,
     Report(ReportKind),
 }
 
 /// Every counter, in the order the digest reads them.
-const ALL: [Stat; 7] = [
+const ALL: [Stat; 9] = [
     Stat::Download,
-    Stat::UpdateDownload,
+    Stat::EventStream,
     Stat::UpdateCheck,
+    Stat::DataDownload,
+    Stat::UpdateDownload,
     Stat::Report(ReportKind::Bug),
     Stat::Report(ReportKind::Idea),
     Stat::Report(ReportKind::Item),
@@ -49,8 +57,10 @@ impl Stat {
     fn name(self) -> &'static str {
         match self {
             Stat::Download => "download",
-            Stat::UpdateDownload => "update_download",
+            Stat::EventStream => "event_stream",
             Stat::UpdateCheck => "update_check",
+            Stat::DataDownload => "data_download",
+            Stat::UpdateDownload => "update_download",
             Stat::Report(ReportKind::Bug) => "report_bug",
             Stat::Report(ReportKind::Idea) => "report_idea",
             Stat::Report(ReportKind::Item) => "report_item",
@@ -141,15 +151,18 @@ fn digest(day: Day, values: &[u64]) -> String {
         MONTHS[month as usize - 1],
         MONTHS[week_ago_month as usize - 1],
     );
-    for (stat, label) in [
-        (0, "Скачивания установщика"),
-        (2, "Проверки обновлений ≈ запуски"),
-        (1, "Скачивания SHA256SUMS и подписи"),
-    ] {
+    let lines = [
+        "Скачивания установщика",
+        "Подключения программы (запуски и переподключения)",
+        "Проверки обновлений",
+        "Скачивания пакета данных",
+        "Скачивания SHA256SUMS и подписей",
+    ];
+    for (stat, label) in lines.iter().enumerate() {
         let (now, before) = count(stat);
         let _ = writeln!(text, "{label}: <b>{now}</b> ({before})");
     }
-    let reports: Vec<(u64, u64)> = (3..7).map(count).collect();
+    let reports: Vec<(u64, u64)> = (lines.len()..ALL.len()).map(count).collect();
     let (total, total_before) = reports
         .iter()
         .fold((0, 0), |(now, before), (day, week_ago)| {
@@ -202,15 +215,19 @@ mod tests {
     #[test]
     fn the_digest_reads_a_day_against_a_week_before() {
         let friday = Day::of(SATURDAY).minus(1);
-        let values = [12, 8, 30, 22, 340, 290, 3, 1, 1, 1, 1, 0, 0, 0];
+        let values = [
+            12, 8, 410, 380, 7, 290, 25, 0, 30, 22, 3, 1, 1, 1, 1, 0, 0, 0,
+        ];
         assert_eq!(
             digest(friday, &values),
             "📊 <b>PoE2 Oracle за пятницу, 25 сентября</b>\n\
              <i>В скобках — неделей раньше, 18 сентября.</i>\n\
              \n\
              Скачивания установщика: <b>12</b> (8)\n\
-             Проверки обновлений ≈ запуски: <b>340</b> (290)\n\
-             Скачивания SHA256SUMS и подписи: <b>30</b> (22)\n\
+             Подключения программы (запуски и переподключения): <b>410</b> (380)\n\
+             Проверки обновлений: <b>7</b> (290)\n\
+             Скачивания пакета данных: <b>25</b> (0)\n\
+             Скачивания SHA256SUMS и подписей: <b>30</b> (22)\n\
              Сообщения: <b>5</b> (2)\n\
              🐞 ошибки 3 (1), 💡 идеи 1 (1), 💎 предметы 1 (0), 💥 вылеты 0 (0)"
         );
@@ -220,7 +237,7 @@ mod tests {
     fn a_week_back_can_cross_a_month() {
         let first = Day::of(SATURDAY).minus(22);
         assert_eq!(first.to_string(), "2026-09-04");
-        let text = digest(first, &[0; 14]);
+        let text = digest(first, &[0; 2 * ALL.len()]);
         assert!(text.starts_with("📊 <b>PoE2 Oracle за пятницу, 4 сентября</b>\n<i>В скобках — неделей раньше, 28 августа.</i>"), "{text}");
     }
 

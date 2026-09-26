@@ -2,9 +2,10 @@
 
 ![The settings window](../images/en/settings.webp)
 
-Open the settings in any of four ways:
+Open the settings in any of these ways:
 
-- the tray icon's menu → **Settings**;
+- a click on the tray icon, or its menu (right click) → **Settings**;
+- a click on the **PoE2 Oracle** button on the taskbar, if you [show one](#system);
 - the gear **⚙** on the price panel;
 - the gear **⚙** at the end of the [XP overlay](xp-overlay.md)'s plate above the flask panel;
 - start PoE2 Oracle again while it is already running: the running copy opens its settings.
@@ -86,12 +87,31 @@ HUD and takes its size.
 
 Group **System**.
 
+- **Where to show the app**: **In the tray** (the default), **On the taskbar** or **Both**, with
+  the note "The icon by the clock or a button on the taskbar: a click on either opens these
+  settings". **In the tray** keeps PoE2 Oracle's icon in the notification area next to the clock;
+  **On the taskbar** keeps a **PoE2 Oracle** button on the taskbar for as long as the app runs, and
+  the settings and report windows then show no button of their own; **Both** shows the two. A change
+  applies at once. See [The tray icon and the taskbar button](install.md#the-tray-icon-and-the-taskbar-button).
 - **Start with Windows**, off by default. It adds PoE2 Oracle to the apps Windows starts when you
   sign in; the installer's last page has the same option. Turning it on here also re-enables it if it
   was disabled in Task Manager's startup apps.
-- **Check for updates automatically**, on by default: look for a new version on oracle.pushka.biz
-  30 seconds after start. The tray menu's update entry works either way. See
-  [Updates and uninstall](updates.md).
+
+### Updates
+
+Group **Updates**. See [Updates and uninstall](updates.md) for how updates work.
+
+- **Update automatically**, on by default: stay connected to oracle.pushka.biz, and install new
+  versions and new game data within minutes of their release, the app restarting once none of its
+  windows is open. Off, the app doesn't connect to oracle.pushka.biz at all.
+- The row under it names the app's version and its game data's ("Version *X.Y.Z* · game data
+  *N*") and says what the updater is doing: "Connecting to oracle.pushka.biz…", "Connected to
+  oracle.pushka.biz" with "You have the latest version", "No connection to oracle.pushka.biz — will
+  connect when the internet is back", "Downloading version *X.Y.Z*…", that a version or new game
+  data is ready and goes in once the app's windows are closed, or "Couldn't update to version
+  *X.Y.Z*: *why*. Will try again later". Off, it reads "Off: the app doesn't connect to
+  oracle.pushka.biz; new versions are on the website". **Check now**, shown while the switch is
+  on, connects at once and retries a failed download right away.
 
 ## Price check
 
@@ -167,12 +187,22 @@ Section **Account**. Signing in to pathofexile.com is needed to search private l
   sign-in window needs the Microsoft Edge WebView2 Runtime; without it, the row shows a link
   **Download from Microsoft**.
 
-  Signed in, a note under the row names your account's private leagues, if it has any: "Your
-  leagues on pathofexile.com are in the league menus: *names*". Nothing needs typing: the league
-  menus, in **General** and on the price panel, list them as pathofexile.com shows them on its
-  **Private Leagues** page. The list is read again each time the settings open, so a league you
-  joined since shows up. Exchange and poe2scout prices come from the public league yours is made
-  from: see [In a private league](price-check.md#in-a-private-league).
+- **Private leagues**, a card under the sign-in while you are signed in: your account's PoE 2
+  private leagues, as pathofexile.com's **Private Leagues** page lists them. The league menus, in
+  **General** and on the price panel, offer the same leagues: nothing needs typing. Exchange and
+  poe2scout prices come from the public league yours is made from: see
+  [In a private league](price-check.md#in-a-private-league).
+  - **Your leagues** names each league and the public league it is made from ("HC FRites League
+    by Cardiff (PL86503) based on HC Forbidden Rites"), or says "None on this account yet. After
+    joining one, press “Refresh”". **Refresh** looks them up again: meanwhile the button reads
+    **Refreshing…** and the row "Looking them up on pathofexile.com…"; then the row says "Found
+    *N* private leagues", shows that there are none, or says "Couldn't reach pathofexile.com:
+    *reason*" and keeps the list it had. The league menus follow at once. Until the first list
+    comes, the row also says that it's looking, or why it couldn't.
+  - **Refresh automatically**, 1h by default: Off, 15m, 1h or 6h. While you are signed in, the
+    leagues are looked up again that long after the last lookup, quietly: nothing opens or pops
+    up, only the log notes it. A change applies at once. They are also looked up when you sign in
+    and each time the settings open.
 
 ## Help
 
@@ -183,9 +213,8 @@ Section **Help**.
 - **Report a problem or idea**, with the note "Straight to the developer from the app, no account
   needed. “Collect report” saves the logs, settings and unread item texts to your desktop in one
   archive, with your Windows user name hidden":
-  - **Write to the developer** opens the [report window](report.md), as the tray menu entry
-    **Report a problem or idea…** does: write what went wrong or what you'd like, and PoE2 Oracle
-    sends it to the developer. You need no account.
+  - **Write to the developer** opens the [report window](report.md): write what went wrong or what
+    you'd like, and PoE2 Oracle sends it to the developer. You need no account.
   - **Collect report** only saves the report: a zip with the logs, the settings and the item texts
     the app could not read, on your desktop, shown in File Explorer. Your Windows user name, if it
     has three characters or more, is hidden in it. Then the row says "Saved: *path*". See
@@ -194,6 +223,9 @@ Section **Help**.
 - **About**: PoE2 Oracle's version and license. **Licenses** opens `THIRD-PARTY-NOTICES.html`, which
   the installer puts next to the app: the licenses of everything it includes. **Website ↗** opens
   the app's site, [oracle.pushka.biz](https://oracle.pushka.biz/), in the interface language.
+- **Quit the app** → **Quit** closes PoE2 Oracle, as **Quit** in the tray icon's menu and **Close
+  window** on the taskbar button do. The note says "Price checks, quick actions and the XP overlay
+  stop until you start it again from the Start menu".
 
 ## Where the settings are kept
 

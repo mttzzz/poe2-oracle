@@ -108,10 +108,13 @@ fn percent_decode(text: &str) -> String {
     String::from_utf8_lossy(&decoded).into_owned()
 }
 
+/// `text` with the escapes the site's pages write decoded: `&amp;`, `&lt;`, `&gt;`, `&quot;` and
+/// an apostrophe's `&#039;` (as in "Kirac&#039;s Vault Pass").
 pub(crate) fn unescape_html(text: &str) -> String {
     text.replace("&lt;", "<")
         .replace("&gt;", ">")
         .replace("&quot;", "\"")
+        .replace("&#039;", "'")
         .replace("&#39;", "'")
         .replace("&amp;", "&")
 }

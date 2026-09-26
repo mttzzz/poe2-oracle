@@ -22,13 +22,12 @@ use windows::Win32::System::Registry::{
 };
 use windows::core::{PCWSTR, w};
 
+use crate::launch::AUTOSTART_ARG;
+
 const RUN_KEY: PCWSTR = w!(r"Software\Microsoft\Windows\CurrentVersion\Run");
 const STARTUP_APPROVED_KEY: PCWSTR =
     w!(r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run");
 const VALUE_NAME: PCWSTR = w!("PoE2 Oracle");
-
-/// The argument the `Run` value starts the app with, so it knows the player didn't launch it.
-pub const AUTOSTART_ARG: &str = "--autostart";
 
 /// Makes Windows start this executable at sign-in, or stops it from doing so.
 pub fn set_autostart(enabled: bool) -> Result<()> {

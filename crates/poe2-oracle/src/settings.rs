@@ -18,6 +18,7 @@ use std::fmt;
 use std::fs::{self, File};
 use std::io::{self, Write as _};
 use std::path::Path;
+use std::time::Duration;
 
 use anyhow::{Context as _, Result, anyhow};
 use global_hotkey::hotkey::{Code, HotKey, Modifiers};
@@ -42,6 +43,9 @@ pub const MIN_UI_SCALE: f32 = 0.8;
 pub const MAX_UI_SCALE: f32 = 1.5;
 /// The averaging windows the XP rate offers, in minutes: the half-life of its weighting.
 pub const XP_RATE_WINDOWS: [u16; 4] = [5, 10, 20, 30];
+/// How often the account's private leagues may be looked up again by themselves, in minutes
+/// ([`Settings::private_leagues_refresh_minutes`]); `0` is never.
+pub const PRIVATE_LEAGUE_REFRESHES: [u16; 3] = [15, 60, 360];
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 #[serde(default)]
@@ -60,6 +64,9 @@ pub struct Settings {
     /// Start with Windows. The registry is the truth here -- the installer and Task Manager change
     /// it too -- so read `platform::autostart::autostart_enabled` into this before showing it.
     pub autostart: bool,
+    /// Where the running app shows itself: its notification-area icon, a taskbar button, or both.
+    #[serde(deserialize_with = "or_default")]
+    pub app_icon: AppIcon,
     /// The global price-check hotkey; passes [`Hotkey::check`] once loaded.
     #[serde(deserialize_with = "or_default")]
     pub hotkey: Hotkey,
@@ -80,7 +87,13 @@ pub struct Settings {
     /// Minutes the experience rate mostly averages over (the half-life of its weighting), one of
     /// [`XP_RATE_WINDOWS`]: shorter reacts to a change of farming sooner, longer reads steadier.
     pub xp_rate_window_minutes: u16,
-    /// Look for a new version of the app.
+    /// Minutes between lookups of the account's private leagues while signed in, one of
+    /// [`PRIVATE_LEAGUE_REFRESHES`], or `0` for none by themselves: then only at sign-in, when the
+    /// settings window opens, and on «Обновить».
+    pub private_leagues_refresh_minutes: u16,
+    /// Update automatically: stay connected to the app's service and install new versions of the
+    /// app and its game data as they come out (`crate::updates`). The field keeps its old name, so
+    /// a file saved before still says what the player chose.
     pub check_updates: bool,
     /// The player's marks on waystone modifiers -- EE2's map check -- by trade stat id, the same
     /// on every client language.
@@ -107,6 +120,7 @@ impl Default for Settings {
             client_language: ClientLanguage::default(),
             interface_language: InterfaceLanguage::default(),
             autostart: false,
+            app_icon: AppIcon::default(),
             hotkey: Hotkey::default(),
             listing_status: ListingStatusChoice::default(),
             show_seller_column: true,
@@ -115,6 +129,7 @@ impl Default for Settings {
             xp_show_percent: false,
             xp_map_timer: true,
             xp_rate_window_minutes: 10,
+            private_leagues_refresh_minutes: 60,
             check_updates: true,
             waystone_marks: BTreeMap::new(),
             // The command every player types most, ready for a hotkey.
@@ -158,6 +173,14 @@ impl Settings {
             .into_iter()
             .min_by_key(|window| window.abs_diff(self.xp_rate_window_minutes))
             .unwrap_or(10);
+        // Never stays never; any other the nearest offered: a hand-edited 5 reads as 15.
+        if self.private_leagues_refresh_minutes > 0 {
+            let minutes = self.private_leagues_refresh_minutes;
+            self.private_leagues_refresh_minutes = PRIVATE_LEAGUE_REFRESHES
+                .into_iter()
+                .min_by_key(|offered| offered.abs_diff(minutes))
+                .unwrap_or(60);
+        }
         if self.hotkey.check().is_err() {
             self.hotkey = Hotkey::default();
         }
@@ -177,6 +200,13 @@ impl Settings {
         });
         self.quick_actions.truncate(MAX_QUICK_ACTIONS);
         self
+    }
+
+    /// How long after one lookup of the account's private leagues the next comes by itself;
+    /// `None` for never.
+    pub fn private_leagues_refresh(&self) -> Option<Duration> {
+        (self.private_leagues_refresh_minutes > 0)
+            .then(|| Duration::from_secs(u64::from(self.private_leagues_refresh_minutes) * 60))
     }
 }
 
@@ -295,6 +325,29 @@ pub enum InterfaceLanguage {
     Auto,
     Russian,
     English,
+}
+
+/// Where the running app shows itself (`app::sync_presence`): its icon in the notification area,
+/// a button on the taskbar (`platform::taskbar`), or both.
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum AppIcon {
+    #[default]
+    Tray,
+    Taskbar,
+    Both,
+}
+
+impl AppIcon {
+    /// Whether the notification-area icon shows.
+    pub fn tray(self) -> bool {
+        matches!(self, AppIcon::Tray | AppIcon::Both)
+    }
+
+    /// Whether the taskbar button shows.
+    pub fn taskbar(self) -> bool {
+        matches!(self, AppIcon::Taskbar | AppIcon::Both)
+    }
 }
 
 /// The sellers a price check searches: the choices the panel's "Продавцы" chip steps through
@@ -653,6 +706,7 @@ mod tests {
             league: LeagueChoice::Named("HC Forbidden Rites".to_owned()),
             client_language: ClientLanguage::Russian,
             autostart: true,
+            app_icon: AppIcon::Both,
             hotkey: Hotkey {
                 ctrl: false,
                 shift: true,
@@ -666,6 +720,7 @@ mod tests {
             xp_show_percent: true,
             xp_map_timer: false,
             xp_rate_window_minutes: 30,
+            private_leagues_refresh_minutes: 0,
             check_updates: false,
             waystone_marks: BTreeMap::from([
                 ("explicit.stat_1".to_owned(), WaystoneMark::Danger),
@@ -733,6 +788,7 @@ mod tests {
                 "client_language": "german",
                 "hotkey": {"ctrl": true, "key": "NumPad1"},
                 "listing_status": "online_league",
+                "app_icon": "dock",
                 "xp_overlay": false
             }"#,
         );
@@ -869,6 +925,15 @@ mod tests {
         let loaded = load_from(&path);
         assert_eq!(loaded.ui_scale, MIN_UI_SCALE);
         assert_eq!(loaded.xp_rate_window_minutes, 5);
+
+        // A league lookup "never" stays never; any other interval is the nearest offered.
+        for (written, loaded) in [(0, 0), (5, 15), (40, 60), (1000, 360)] {
+            write_file(
+                &path,
+                &format!(r#"{{"private_leagues_refresh_minutes": {written}}}"#),
+            );
+            assert_eq!(load_from(&path).private_leagues_refresh_minutes, loaded);
+        }
     }
 
     #[test]

@@ -1,37 +1,49 @@
-//! The latest release, for the app's update check and the site's download button.
+//! The releases, for the app's updater and the site's download button.
 //!
-//! The repository is private, so GitHub shows its releases to the owner's token only. The service
-//! asks with it (at most every five minutes), answers the update check with the part of the
-//! release the updater reads ([`oracle_protocol::Release`]), and serves the release's files itself
-//! under `/download`, keeping them in memory once fetched. When GitHub fails, the last answer
-//! stands.
+//! The repository publishes two kinds: the app's releases, tagged `v<semver>`, whose installer
+//! replaces the exe, and data packs, tagged `data-<N>` ([`DATA_TAG_PREFIX`]), the game tables the
+//! app takes in without a new exe. The repository is private, so GitHub shows them to the owner's
+//! token only. The service lists them itself ([`refresh`]: at start, then every two minutes, each
+//! page asked with its last validator, so that an unchanged list costs no rate limit) and keeps the
+//! latest of each kind: the published `v` release with the highest version by semver precedence,
+//! and the published `data-` release with the highest number. Drafts and prereleases never count,
+//! and a release of one kind never stands for the other. The service answers the updater with the
+//! part of either release it reads ([`oracle_protocol::Release`]), serves both releases' files
+//! itself under `/download`, keeping them in memory once fetched, and tells the event streams
+//! ([`crate::events`]) their versions. When GitHub fails, the last listing stands.
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use axum::body::{Body, Bytes};
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use oracle_protocol::{DOWNLOAD_PATH, Release, ReleaseAsset, installer_asset};
+use oracle_protocol::{
+    DATA_TAG_PREFIX, DOWNLOAD_PATH, DataVersion, Release, ReleaseAsset, Versions, data_pack_asset,
+    installer_asset,
+};
 use parking_lot::Mutex;
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
+use semver::Version;
 use sha2::{Digest as _, Sha256};
-use tokio::sync::OnceCell;
-use tracing::warn;
+use tokio::sync::{OnceCell, watch};
+use tracing::{info, warn};
 
 use crate::App;
-use crate::github::{GhAsset, GhRelease, GitHub};
+use crate::github::{GhAsset, GhRelease, GitHub, Listed, Page, RELEASES_PER_PAGE};
 use crate::stats::{self, Stat};
 use crate::upstream::describe;
 
-/// How long an answer from GitHub stands before the next request asks again.
-const FRESH_FOR: Duration = Duration::from_secs(5 * 60);
-/// After GitHub fails, how long the last answer (or none) stands before asking again.
-const RETRY_AFTER: Duration = Duration::from_secs(60);
-/// The release files kept in memory, together: the installer (a few MB), `SHA256SUMS` and its
-/// signature fit many times over. A file over what's left streams from GitHub on every download.
+/// How often the releases are listed, unless tests say otherwise
+/// ([`crate::Config::list_releases_every`]).
+pub const LIST_EVERY: Duration = Duration::from_secs(2 * 60);
+/// The most pages a listing reads, [`RELEASES_PER_PAGE`] releases each.
+const MAX_PAGES: usize = 10;
+/// The release files kept in memory, together: the installer (a few MB), the data pack, and each
+/// release's `SHA256SUMS` and its signature fit many times over. A file over what's left streams
+/// from GitHub on every download.
 const KEEP_BYTES: u64 = 40 * 1024 * 1024;
 /// A file fetched to be kept: the whole of it from GitHub's storage.
 const FETCH_TIMEOUT: Duration = Duration::from_secs(120);
@@ -44,48 +56,161 @@ const SEGMENT: &AsciiSet = &NON_ALPHANUMERIC
 
 pub struct Releases {
     public_url: String,
-    cache: Mutex<Cache>,
-    /// Held while asking GitHub: one request asks, the rest take the last answer meanwhile.
-    asking: tokio::sync::Mutex<()>,
+    /// What the service knows of the releases, for the updater's answers and the downloads.
+    known: watch::Sender<Known>,
+    /// The latest versions, for the event streams; `None` while the service doesn't know them.
+    versions: watch::Sender<Option<Versions>>,
     files: Mutex<Files>,
 }
 
-struct Cache {
-    latest: Option<Arc<Latest>>,
-    ask_after: Instant,
+/// What the service knows of the releases.
+enum Known {
+    /// The first listing is on its way.
+    Awaited,
+    /// No listing: no token to list with, or GitHub has failed every time so far.
+    Unlisted,
+    Listed(Arc<Listing>),
 }
 
-/// The latest release as the service last heard it.
+/// The latest release of each kind, as a listing found them.
+pub struct Listing {
+    app: Option<Latest>,
+    data: Option<Latest>,
+    versions: Versions,
+}
+
+/// A release the service offers.
 pub struct Latest {
     tag: String,
+    /// The file it's for: the app's installer, or the data pack.
+    payload: String,
     /// Its files, those finished uploading.
     assets: Vec<GhAsset>,
-    /// The update check's answer, and its strong ETag.
+    /// The updater's answer, and its strong ETag.
     json: Bytes,
     etag: HeaderValue,
 }
 
+/// What a release's tag makes it.
+#[derive(Debug, PartialEq)]
+enum Kind {
+    /// `v` and a semver version.
+    App(Version),
+    /// [`DATA_TAG_PREFIX`] and the pack's version, written plainly: `data-007` isn't the tag of
+    /// pack 7, whose file is named `…-7.zip`.
+    Data(DataVersion),
+}
+
+impl Kind {
+    fn of(tag: &str) -> Option<Kind> {
+        if let Some(number) = tag.strip_prefix(DATA_TAG_PREFIX) {
+            let version: DataVersion = number.parse().ok()?;
+            return (version.to_string() == number).then_some(Kind::Data(version));
+        }
+        Version::parse(tag.strip_prefix('v')?).ok().map(Kind::App)
+    }
+}
+
+/// The latest release of each kind among some.
+#[derive(Default)]
+struct Picked<'a> {
+    app: Option<(&'a GhRelease, Version)>,
+    data: Option<(&'a GhRelease, DataVersion)>,
+}
+
+/// The latest release of each kind among `releases`, listed newest first: the published app
+/// release with the highest version by semver precedence, and the published data pack with the
+/// highest version. Of two releases with equal versions, the first listed stands.
+fn pick<'a>(releases: impl IntoIterator<Item = &'a GhRelease>) -> Picked<'a> {
+    let mut picked = Picked::default();
+    for release in releases {
+        if release.draft || release.prerelease {
+            continue;
+        }
+        match Kind::of(&release.tag_name) {
+            Some(Kind::App(version))
+                if picked
+                    .app
+                    .as_ref()
+                    .is_none_or(|(_, latest)| version.cmp_precedence(latest).is_gt()) =>
+            {
+                picked.app = Some((release, version));
+            }
+            Some(Kind::Data(version)) if picked.data.is_none_or(|(_, latest)| version > latest) => {
+                picked.data = Some((release, version));
+            }
+            _ => {}
+        }
+    }
+    picked
+}
+
+impl Listing {
+    /// The latest releases among `releases`, listed newest first, as the service at `public_url`
+    /// offers them.
+    fn new<'a>(releases: impl IntoIterator<Item = &'a GhRelease>, public_url: &str) -> Listing {
+        let picked = pick(releases);
+        let app = picked.app.map(|(release, _)| {
+            let version = release.tag_name.strip_prefix('v').unwrap_or_default();
+            (
+                version,
+                Latest::new(release, installer_asset(version), public_url),
+            )
+        });
+        let data = picked.data.map(|(release, version)| {
+            (
+                version,
+                Latest::new(release, data_pack_asset(version), public_url),
+            )
+        });
+        Listing {
+            versions: Versions {
+                app: app.as_ref().map(|(version, _)| (*version).to_owned()),
+                data: data.as_ref().map(|(version, _)| *version),
+            },
+            app: app.map(|(_, latest)| latest),
+            data: data.map(|(_, latest)| latest),
+        }
+    }
+
+    fn releases(&self) -> impl Iterator<Item = &Latest> {
+        self.app.iter().chain(&self.data)
+    }
+
+    /// The offered release tagged `tag`, and what a download of its payload counts as.
+    fn release(&self, tag: &str) -> Option<(&Latest, Stat)> {
+        [
+            (&self.app, Stat::Download),
+            (&self.data, Stat::DataDownload),
+        ]
+        .into_iter()
+        .find_map(|(latest, payload)| {
+            latest
+                .as_ref()
+                .filter(|latest| latest.tag == tag)
+                .map(|latest| (latest, payload))
+        })
+    }
+}
+
 impl Latest {
-    fn new(release: GhRelease, public_url: &str) -> Latest {
+    fn new(release: &GhRelease, payload: String, public_url: &str) -> Latest {
         let assets: Vec<GhAsset> = release
             .assets
-            .into_iter()
+            .iter()
             .filter(|asset| asset.state == "uploaded")
+            .cloned()
             .collect();
         let json = serde_json::to_vec(&answer(&release.tag_name, &assets, public_url))
             .expect("a release serializes");
         let etag = strong_etag(&json);
         Latest {
-            tag: release.tag_name,
+            tag: release.tag_name.clone(),
+            payload,
             assets,
             json: Bytes::from(json),
             etag,
         }
-    }
-
-    /// The version its tag names: `v0.1.0` is `0.1.0`.
-    fn version(&self) -> &str {
-        self.tag.strip_prefix('v').unwrap_or(&self.tag)
     }
 
     fn asset(&self, name: &str) -> Option<&GhAsset> {
@@ -94,112 +219,171 @@ impl Latest {
 }
 
 impl Releases {
-    pub fn new(public_url: String) -> Releases {
+    /// The releases as the service at `public_url` offers them. `listed`: whether there is a token
+    /// to list them with; without one there is no release to offer, and the event streams say so.
+    pub fn new(public_url: String, listed: bool) -> Releases {
+        let (known, versions) = if listed {
+            (Known::Awaited, None)
+        } else {
+            (Known::Unlisted, Some(Versions::default()))
+        };
         Releases {
             public_url,
-            cache: Mutex::new(Cache {
-                latest: None,
-                ask_after: Instant::now(),
-            }),
-            asking: tokio::sync::Mutex::new(()),
+            known: watch::Sender::new(known),
+            versions: watch::Sender::new(versions),
             files: Mutex::default(),
         }
     }
 
-    /// The latest release: the last answer while it's fresh, else GitHub's; `None` when there is
-    /// no answer to give.
-    pub async fn current(&self, github: &GitHub) -> Option<Arc<Latest>> {
-        if !github.configured() {
+    /// The last listing, once the first is in; `None` when there is none.
+    pub async fn listing(&self) -> Option<Arc<Listing>> {
+        let mut known = self.known.subscribe();
+        let known = known
+            .wait_for(|known| !matches!(known, Known::Awaited))
+            .await
+            .ok()?;
+        match &*known {
+            Known::Listed(listing) => Some(listing.clone()),
+            Known::Awaited | Known::Unlisted => None,
+        }
+    }
+
+    /// The latest versions, and each change of them.
+    pub fn versions(&self) -> watch::Receiver<Option<Versions>> {
+        self.versions.subscribe()
+    }
+
+    /// Takes a listing of `releases`, newest first: their latest are offered from now on.
+    fn listed<'a>(&self, releases: impl IntoIterator<Item = &'a GhRelease>) {
+        let listing = Listing::new(releases, &self.public_url);
+        let mut offered: Vec<u64> = listing
+            .releases()
+            .flat_map(|latest| latest.assets.iter().map(|asset| asset.id))
+            .collect();
+        offered.sort_unstable();
+        self.files.lock().switch(offered);
+        let versions = listing.versions.clone();
+        self.known.send_replace(Known::Listed(Arc::new(listing)));
+        self.versions.send_if_modified(|known| {
+            if known.as_ref() == Some(&versions) {
+                return false;
+            }
+            info!(app = ?versions.app, data = ?versions.data, "the latest versions");
+            *known = Some(versions);
+            true
+        });
+    }
+
+    /// A listing failed: the last one stands, and without one there is nothing to offer.
+    fn unlisted(&self) {
+        self.known.send_if_modified(|known| {
+            let first = matches!(known, Known::Awaited);
+            if first {
+                *known = Known::Unlisted;
+            }
+            first
+        });
+    }
+
+    /// Where `asset` is kept once fetched; `None` when it doesn't fit, or its release is no
+    /// longer offered.
+    fn kept(&self, asset: &GhAsset) -> Option<Arc<OnceCell<Bytes>>> {
+        let mut files = self.files.lock();
+        if files.offered.binary_search(&asset.id).is_err() {
             return None;
         }
-        if let Some(standing) = self.standing() {
-            return standing;
-        }
-        let _asking = match self.asking.try_lock() {
-            Ok(asking) => asking,
-            Err(_) => match self.last() {
-                Some(last) => return Some(last),
-                None => self.asking.lock().await,
-            },
-        };
-        // Whoever asked while this request waited may have got the answer.
-        if let Some(standing) = self.standing() {
-            return standing;
-        }
-        let asked = github.latest_release().await;
-        let mut cache = self.cache.lock();
-        match asked {
-            Ok(release) => {
-                let latest = Arc::new(Latest::new(release, &self.public_url));
-                self.files.lock().switch(&latest.assets);
-                cache.latest = Some(latest);
-                cache.ask_after = Instant::now() + FRESH_FOR;
-            }
-            Err(problem) => {
-                warn!(%problem, "GitHub didn't give the latest release");
-                cache.ask_after = Instant::now() + RETRY_AFTER;
-            }
-        }
-        cache.latest.clone()
-    }
-
-    /// The last answer while it stands, which may be none; `None` when it's time to ask.
-    fn standing(&self) -> Option<Option<Arc<Latest>>> {
-        let cache = self.cache.lock();
-        (Instant::now() < cache.ask_after).then(|| cache.latest.clone())
-    }
-
-    fn last(&self) -> Option<Arc<Latest>> {
-        self.cache.lock().latest.clone()
-    }
-
-    /// Where `asset` of the release made of `assets` is kept once fetched; `None` when it doesn't
-    /// fit.
-    fn kept(&self, assets: &[GhAsset], asset: &GhAsset) -> Option<Arc<OnceCell<Bytes>>> {
-        let mut files = self.files.lock();
-        files.switch(assets);
-        if let Some(cell) = files.cells.get(&asset.id) {
-            return Some(cell.clone());
+        if let Some(kept) = files.kept.get(&asset.id) {
+            return Some(kept.cell.clone());
         }
         if files.promised + asset.size > KEEP_BYTES {
             return None;
         }
         files.promised += asset.size;
         let cell = Arc::new(OnceCell::new());
-        files.cells.insert(asset.id, cell.clone());
+        files.kept.insert(
+            asset.id,
+            Kept {
+                size: asset.size,
+                cell: cell.clone(),
+            },
+        );
         Some(cell)
     }
 }
 
-/// The latest release's files, each fetched once by whichever download comes first. Known by
+/// The offered releases' files, each fetched once by whichever download comes first. Known by
 /// their asset ids: GitHub gives every upload a new one, so a file replaced under its name --
 /// `gh release upload --clobber`, or the release deleted and published again under its tag -- is
 /// another file.
 #[derive(Default)]
 struct Files {
-    /// The release's asset ids, sorted.
-    release: Vec<u64>,
-    cells: HashMap<u64, Arc<OnceCell<Bytes>>>,
+    /// The asset ids of the offered releases, sorted: the files that may be kept.
+    offered: Vec<u64>,
+    kept: HashMap<u64, Kept>,
     /// The sizes of the files given a cell, fetched or not yet.
     promised: u64,
 }
 
+struct Kept {
+    size: u64,
+    cell: Arc<OnceCell<Bytes>>,
+}
+
 impl Files {
-    /// Keeps only the files of the release made of `assets`: another release, or a file of this
-    /// one replaced, lets all the kept ones go.
-    fn switch(&mut self, assets: &[GhAsset]) {
-        let mut release: Vec<u64> = assets.iter().map(|asset| asset.id).collect();
-        release.sort_unstable();
-        if self.release != release {
-            *self = Files {
-                release,
-                ..Files::default()
-            };
+    /// Offers the files `offered` (sorted asset ids) from now on: the kept files not among them
+    /// are let go, the rest stay.
+    fn switch(&mut self, offered: Vec<u64>) {
+        if self.offered == offered {
+            return;
         }
+        self.kept.retain(|id, _| offered.binary_search(id).is_ok());
+        self.promised = self.kept.values().map(|kept| kept.size).sum();
+        self.offered = offered;
     }
 }
 
-/// The update check's answer for release `tag`: every file downloads from this service, and the
+/// Lists the releases at once and then every `every`, for as long as the service runs. Without a
+/// GitHub token there is nothing to list.
+pub async fn refresh(app: Arc<App>, every: Duration) {
+    if !app.github.configured() {
+        return;
+    }
+    let mut pages = Vec::new();
+    loop {
+        match list(&app.github, &mut pages).await {
+            Ok(()) => app
+                .releases
+                .listed(pages.iter().flat_map(|page| &page.releases)),
+            Err(problem) => {
+                warn!(%problem, "GitHub didn't list the releases");
+                app.releases.unlisted();
+            }
+        }
+        tokio::time::sleep(every).await;
+    }
+}
+
+/// Every release GitHub lists, into `pages`: page after page, until one isn't full or
+/// [`MAX_PAGES`] are read. Each page is asked with the validator of its copy in `pages`, so a page
+/// unchanged since costs no rate limit and stays as it is.
+async fn list(github: &GitHub, pages: &mut Vec<Page>) -> Result<(), String> {
+    for index in 0..MAX_PAGES {
+        let etag = pages.get(index).and_then(|page| page.etag.as_deref());
+        match github.releases(index + 1, etag).await? {
+            Listed::Changed(page) if index < pages.len() => pages[index] = page,
+            Listed::Changed(page) => pages.push(page),
+            Listed::Unchanged if index < pages.len() => {}
+            Listed::Unchanged => return Err("an unchanged page that was never listed".to_owned()),
+        }
+        if pages[index].releases.len() < RELEASES_PER_PAGE {
+            pages.truncate(index + 1);
+            break;
+        }
+    }
+    Ok(())
+}
+
+/// The updater's answer for release `tag`: every file downloads from this service, and the
 /// release's page is the site.
 fn answer(tag: &str, assets: &[GhAsset], public_url: &str) -> Release {
     Release {
@@ -246,10 +430,30 @@ fn names(if_none_match: &HeaderValue, etag: &HeaderValue) -> bool {
         .any(|tag| tag == "*" || tag.trim_start_matches("W/") == etag)
 }
 
-/// `GET /api/v1/releases/latest`: the updater's check, `304` when it already has this answer.
+/// `GET /api/v1/releases/latest`: the app's latest release, `304` when the updater already has
+/// this answer.
 pub async fn latest(State(app): State<Arc<App>>, headers: HeaderMap) -> Response {
     stats::count(&app, Stat::UpdateCheck);
-    let Some(latest) = app.releases.current(&app.github).await else {
+    let listing = app.releases.listing().await;
+    offer(
+        listing.as_deref().and_then(|listing| listing.app.as_ref()),
+        &headers,
+    )
+}
+
+/// `GET /api/v1/data/latest`: the latest data pack's release, answered the same way.
+pub async fn latest_data(State(app): State<Arc<App>>, headers: HeaderMap) -> Response {
+    stats::count(&app, Stat::UpdateCheck);
+    let listing = app.releases.listing().await;
+    offer(
+        listing.as_deref().and_then(|listing| listing.data.as_ref()),
+        &headers,
+    )
+}
+
+/// The updater's answer offering `latest`, `304` when `headers` name its ETag.
+fn offer(latest: Option<&Latest>, headers: &HeaderMap) -> Response {
+    let Some(latest) = latest else {
         return no_release();
     };
     let unchanged = headers
@@ -272,34 +476,40 @@ pub async fn latest(State(app): State<Arc<App>>, headers: HeaderMap) -> Response
 
 /// `GET /download/latest`: the site's download button, sent on to the current installer.
 pub async fn latest_installer(State(app): State<Arc<App>>) -> Response {
-    let Some(latest) = app.releases.current(&app.github).await else {
+    let listing = app.releases.listing().await;
+    let Some(latest) = listing.as_deref().and_then(|listing| listing.app.as_ref()) else {
         return no_release();
     };
-    let name = installer_asset(latest.version());
-    if latest.asset(&name).is_none() {
+    if latest.asset(&latest.payload).is_none() {
         return (StatusCode::NOT_FOUND, "the latest release has no installer").into_response();
     }
     (
         StatusCode::FOUND,
         [
-            (header::LOCATION, download_path(&latest.tag, &name)),
+            (
+                header::LOCATION,
+                download_path(&latest.tag, &latest.payload),
+            ),
             (header::CACHE_CONTROL, "no-cache".to_owned()),
         ],
     )
         .into_response()
 }
 
-/// `GET /download/<tag>/<asset>`: a file of the latest release. Kept in memory after the first
-/// download, which fetches it for everyone asking meanwhile.
+/// `GET /download/<tag>/<asset>`: a file of an offered release, the app's or the data pack's.
+/// Kept in memory after the first download, which fetches it for everyone asking meanwhile.
 pub async fn asset(
     State(app): State<Arc<App>>,
     Path((tag, name)): Path<(String, String)>,
     method: Method,
 ) -> Response {
-    let Some(latest) = app.releases.current(&app.github).await else {
+    let Some(listing) = app.releases.listing().await else {
         return no_release();
     };
-    let Some(asset) = latest.asset(&name).filter(|_| latest.tag == tag) else {
+    let Some((release, payload)) = listing.release(&tag) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let Some(asset) = release.asset(&name) else {
         return StatusCode::NOT_FOUND.into_response();
     };
     let disposition = HeaderValue::from_str(&format!("attachment; filename=\"{name}\""))
@@ -315,7 +525,7 @@ pub async fn asset(
     if method == Method::HEAD {
         return (headers, Body::empty()).into_response();
     }
-    let body = match app.releases.kept(&latest.assets, asset) {
+    let body = match app.releases.kept(asset) {
         Some(cell) => match cell.get_or_try_init(|| fetch(&app.github, asset)).await {
             Ok(bytes) => Body::from(bytes.clone()),
             Err(problem) => return unreachable_file(&name, &problem),
@@ -325,11 +535,10 @@ pub async fn asset(
             Err(problem) => return unreachable_file(&name, &problem),
         },
     };
-    let installer = name == installer_asset(latest.version());
     stats::count(
         &app,
-        if installer {
-            Stat::Download
+        if name == release.payload {
+            payload
         } else {
             Stat::UpdateDownload
         },
@@ -382,18 +591,41 @@ mod tests {
         }
     }
 
+    fn release(tag: &str, assets: Vec<GhAsset>) -> GhRelease {
+        GhRelease {
+            tag_name: tag.to_owned(),
+            draft: false,
+            prerelease: false,
+            assets,
+        }
+    }
+
+    fn tags(picked: &Picked) -> (Option<String>, Option<String>) {
+        (
+            picked
+                .app
+                .as_ref()
+                .map(|(release, _)| release.tag_name.clone()),
+            picked
+                .data
+                .as_ref()
+                .map(|(release, _)| release.tag_name.clone()),
+        )
+    }
+
     #[test]
     fn the_answer_downloads_everything_from_this_service() {
-        let release = GhRelease {
-            tag_name: "v0.1.0".to_owned(),
-            assets: vec![
+        let release = release(
+            "v0.1.0",
+            vec![
                 asset(1, "PoE2-Oracle-Setup-0.1.0.exe", 9_000_000, "uploaded"),
                 asset(2, "SHA256SUMS", 96, "uploaded"),
                 asset(3, "odd name+ü.txt", 5, "uploaded"),
                 asset(4, "SHA256SUMS.sig", 88, "open"),
             ],
-        };
-        let latest = Latest::new(release, "https://oracle.pushka.biz");
+        );
+        let listing = Listing::new([&release], "https://oracle.pushka.biz");
+        let latest = listing.app.as_ref().unwrap();
         let answer: Release = serde_json::from_slice(&latest.json).unwrap();
         assert_eq!(
             answer,
@@ -425,7 +657,122 @@ mod tests {
             },
             "a file still uploading isn't offered"
         );
-        assert_eq!(latest.version(), "0.1.0");
+        assert_eq!(latest.payload, "PoE2-Oracle-Setup-0.1.0.exe");
+        assert_eq!(
+            listing.versions,
+            Versions {
+                app: Some("0.1.0".to_owned()),
+                data: None
+            }
+        );
+    }
+
+    #[test]
+    fn each_kind_has_its_own_latest_release() {
+        let published = |tag: &str| release(tag, Vec::new());
+        let draft = |tag: &str| GhRelease {
+            draft: true,
+            ..published(tag)
+        };
+        let prerelease = |tag: &str| GhRelease {
+            prerelease: true,
+            ..published(tag)
+        };
+        // Newest first, as GitHub lists them: data packs made after the app's latest release.
+        let releases = [
+            published("data-2026092602"),
+            draft("data-2026092701"),
+            prerelease("data-2026092700"),
+            draft("v0.11.0"),
+            prerelease("v0.12.0"),
+            published("v0.9.1"),
+            published("v0.10.0"),
+            published("data-2026092601"),
+            published("v0.9.0"),
+            published("data-2026092503"),
+        ];
+        assert_eq!(
+            tags(&pick(&releases)),
+            (
+                Some("v0.10.0".to_owned()),
+                Some("data-2026092602".to_owned())
+            ),
+            "by version, not by name or date; drafts and prereleases never"
+        );
+        let listing = Listing::new(&releases, "https://oracle.example");
+        assert_eq!(
+            listing.versions,
+            Versions {
+                app: Some("0.10.0".to_owned()),
+                data: Some(2026092602),
+            }
+        );
+        assert_eq!(
+            listing.data.unwrap().payload,
+            "PoE2-Oracle-Data-2026092602.zip"
+        );
+
+        // A newer data pack leaves the app's latest release as it was, and the other way round.
+        assert_eq!(
+            tags(&pick(&releases[1..])),
+            (
+                Some("v0.10.0".to_owned()),
+                Some("data-2026092601".to_owned())
+            )
+        );
+        assert_eq!(
+            tags(&pick([&published("v0.10.1")].into_iter().chain(&releases))),
+            (
+                Some("v0.10.1".to_owned()),
+                Some("data-2026092602".to_owned())
+            )
+        );
+    }
+
+    #[test]
+    fn versions_go_by_semver_precedence_and_ties_by_the_newer_release() {
+        let published = |tag: &str| release(tag, Vec::new());
+        let app = |names: &[&str]| {
+            let releases: Vec<GhRelease> = names.iter().map(|name| published(name)).collect();
+            tags(&pick(&releases)).0
+        };
+        // A release candidate published as a release ranks below its final version.
+        assert_eq!(app(&["v1.0.0-rc.1", "v1.0.0"]).as_deref(), Some("v1.0.0"));
+        assert_eq!(
+            app(&["v1.0.0-rc.2", "v1.0.0-rc.10"]).as_deref(),
+            Some("v1.0.0-rc.10")
+        );
+        // Build metadata doesn't rank: of equal versions, the one GitHub lists first -- the newer.
+        assert_eq!(
+            app(&["v1.0.0+build.2", "v1.0.0+build.10"]).as_deref(),
+            Some("v1.0.0+build.2")
+        );
+    }
+
+    #[test]
+    fn a_tag_of_neither_kind_is_never_offered() {
+        for tag in [
+            "v0.10",
+            "0.13.0",
+            "V0.14.0",
+            "v01.0.0",
+            "latest",
+            "data-",
+            "data-abc",
+            "data-007",
+            "data-+7",
+            "data--7",
+            "data-7.0",
+            "Data-7",
+            "data-18446744073709551616",
+        ] {
+            assert_eq!(Kind::of(tag), None, "{tag}");
+        }
+        assert_eq!(Kind::of("data-7"), Some(Kind::Data(7)));
+        assert_eq!(
+            Kind::of("v0.1.0-rc.1"),
+            Some(Kind::App(Version::parse("0.1.0-rc.1").unwrap()))
+        );
     }
 
     #[test]
@@ -454,22 +801,46 @@ mod tests {
     }
 
     #[test]
-    fn a_file_replaced_under_its_name_is_kept_anew() {
-        let releases = Releases::new("https://oracle.example".to_owned());
-        let published = [
-            asset(1, "PoE2-Oracle-Setup-0.1.0.exe", 9_000_000, "uploaded"),
-            asset(2, "SHA256SUMS", 96, "uploaded"),
-        ];
-        let sums = releases.kept(&published, &published[1]).unwrap();
+    fn kept_files_follow_their_asset_ids() {
+        let releases = Releases::new("https://oracle.example".to_owned(), true);
+        let app = release(
+            "v0.1.0",
+            vec![
+                asset(1, "PoE2-Oracle-Setup-0.1.0.exe", 9_000_000, "uploaded"),
+                asset(2, "SHA256SUMS", 96, "uploaded"),
+            ],
+        );
+        let data = |id: u64| {
+            release(
+                &format!("data-{id}"),
+                vec![asset(id, &data_pack_asset(id), 400_000, "uploaded")],
+            )
+        };
+        releases.listed([&data(10), &app]);
+        let sums = releases.kept(&app.assets[1]).unwrap();
         sums.set(Bytes::from_static(b"the first sums")).unwrap();
-        // The same release, its files listed in another order: the same file, kept.
-        let reordered = [published[1].clone(), published[0].clone()];
-        let again = releases.kept(&reordered, &reordered[0]).unwrap();
-        assert!(Arc::ptr_eq(&sums, &again));
+        let pack = releases.kept(&data(10).assets[0]).unwrap();
+        pack.set(Bytes::from_static(b"the first pack")).unwrap();
+
+        // A new data pack: the old one is let go, the app's files stay.
+        releases.listed([&data(11), &data(10), &app]);
+        assert!(Arc::ptr_eq(&sums, &releases.kept(&app.assets[1]).unwrap()));
+        assert!(
+            releases.kept(&data(10).assets[0]).is_none(),
+            "a pack no longer offered isn't kept"
+        );
 
         // `gh release upload --clobber`: the same tag and name, a new upload with a new id.
-        let replaced = [published[0].clone(), asset(3, "SHA256SUMS", 97, "uploaded")];
-        let fresh = releases.kept(&replaced, &replaced[1]).unwrap();
+        let replaced = GhRelease {
+            assets: vec![
+                app.assets[0].clone(),
+                asset(3, "SHA256SUMS", 97, "uploaded"),
+            ],
+            ..app.clone()
+        };
+        releases.listed([&data(11), &replaced]);
+        let fresh = releases.kept(&replaced.assets[1]).unwrap();
         assert!(fresh.get().is_none(), "the first file's bytes are let go");
+        assert!(releases.kept(&app.assets[1]).is_none());
     }
 }

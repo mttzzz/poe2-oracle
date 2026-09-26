@@ -35,7 +35,9 @@
     --gold-bright: #ecc94b;
     --text: #dcdcdc;
     --text-dim: #9d9da3;
-    --text-muted: #66666c;
+    /* The darkest gray that keeps 4.5:1 (WCAG AA) on every site background, --bg-control's
+       #1e1e22 included; the app's own #66666c read 3.55:1 on the footer. */
+    --text-muted: #86868c;
     --warning: #e0664f;
     --display: "Alegreya SC", Georgia, "Times New Roman", serif;
     --display-weight: 500;

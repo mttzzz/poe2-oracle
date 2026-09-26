@@ -5,10 +5,15 @@
 //! the trade site's own. A base Craft of Exile crafts also carries the game's own ids of the bases
 //! so named and the trade stats of their implicits, from RePoE's export of the game's tables
 //! (`bases`).
+//!
+//! The table is built in, and a game data pack (`data_pack`) may bring a newer one for a run:
+//! [`read_table`] reads a pack's table, refusing a malformed one, and [`use_table`] puts it in
+//! place before the table is first read.
 
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
+use poe2_domain::pack_table::{PackTable, TableInUse};
 use poe2_domain::{ItemRarity, ParsedItem, ParsedModifier};
 
 const DATA: &str = include_str!("../assets/data/item-refs.tsv");
@@ -24,35 +29,46 @@ pub enum RefKind {
     Unique,
 }
 
-/// One item: its English reference name and art.
+/// One item: its English reference name and art, in a table whose text lives for `'a`; the table
+/// in use is `'static` ([`ItemRef`]).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct ItemRef {
-    pub ref_name: &'static str,
-    icon_tail: &'static str,
+pub struct ItemRefOf<'a> {
+    pub ref_name: &'a str,
+    icon_tail: &'a str,
     /// The table's fifth field: the bases of the name Craft of Exile crafts (`bases` reads it).
-    bases: &'static str,
+    bases: &'a str,
 }
 
-/// One of the game's bases: its metadata id and its implicits.
+/// One item: its English reference name and art.
+pub type ItemRef = ItemRefOf<'static>;
+
+/// One of the game's bases: its metadata id and its implicits, from a table whose text lives for
+/// `'a`.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Base {
+pub struct BaseOf<'a> {
     /// The game's own id of the base (`Metadata/Items/Rings/FourRing9`).
-    pub id: &'static str,
-    pub implicits: Vec<Implicit>,
+    pub id: &'a str,
+    pub implicits: Vec<ImplicitOf<'a>>,
 }
 
-/// One implicit of a base.
+/// One of the game's bases ([`BaseOf`]).
+pub type Base = BaseOf<'static>;
+
+/// One implicit of a base, from a table whose text lives for `'a`.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Implicit {
+pub struct ImplicitOf<'a> {
     /// Each of its lines' trade stat hashes (`stat_2901986750`), two where two stats print alike,
     /// none for a line no trade stat prints.
-    pub lines: Vec<Vec<&'static str>>,
+    pub lines: Vec<Vec<&'a str>>,
     /// The line printing each of its stats, in the game's order of them (a line of two numbers
     /// twice); `None` when the item's text can't give each of them its roll.
     pub order: Option<Vec<usize>>,
 }
 
-impl Implicit {
+/// One implicit of a base ([`ImplicitOf`]).
+pub type Implicit = ImplicitOf<'static>;
+
+impl ImplicitOf<'_> {
     /// Which of `modifier`'s stats prints each of the implicit's lines: `None` unless each line
     /// has its own, one of the trade stats the line prints as.
     pub fn lines_in(&self, modifier: &ParsedModifier) -> Option<Vec<usize>> {
@@ -81,7 +97,7 @@ impl Implicit {
 }
 
 /// A base as the table writes it: the metadata id, then `;` and each implicit.
-fn parse_base(field: &'static str) -> Option<Base> {
+fn parse_base(field: &str) -> Option<BaseOf<'_>> {
     let mut parts = field.split(';');
     let id = parts.next().filter(|id| !id.is_empty())?;
     let implicits = parts
@@ -90,7 +106,7 @@ fn parse_base(field: &'static str) -> Option<Base> {
                 Some((lines, order)) => (lines, Some(order)),
                 None => (implicit, None),
             };
-            let lines: Vec<Vec<&'static str>> = lines
+            let lines: Vec<Vec<&str>> = lines
                 .split(',')
                 .map(|line| match line {
                     "?" => Vec::new(),
@@ -106,10 +122,10 @@ fn parse_base(field: &'static str) -> Option<Base> {
                 ),
                 None => None,
             };
-            Some(Implicit { lines, order })
+            Some(ImplicitOf { lines, order })
         })
         .collect::<Option<_>>()?;
-    Some(Base { id, implicits })
+    Some(BaseOf { id, implicits })
 }
 
 impl ItemRef {
@@ -155,33 +171,80 @@ impl ItemRef {
     }
 }
 
+/// A data pack's table, waiting for the first read of [`INDEX`].
+static PACK: PackTable<ItemRefs<'static>> = PackTable::new();
+
 /// Both languages' names of every item, by kind. Built on first use: ~3,600 table rows.
 static INDEX: LazyLock<HashMap<(RefKind, &'static str), ItemRef>> = LazyLock::new(|| {
+    PACK.take().map_or_else(
+        || {
+            read_table(DATA)
+                .expect("assets/data/item-refs.tsv is well-formed")
+                .0
+        },
+        |pack| pack.0,
+    )
+});
+
+/// The item reference table, read ([`read_table`]) from a text that lives for `'a`.
+pub struct ItemRefs<'a>(HashMap<(RefKind, &'a str), ItemRefOf<'a>>);
+
+/// Reads an item reference table: one row per item -- its kind (`gem`, `item` or `unique`), its
+/// English and Russian names, its art (empty for none) and its bases, each as `parse_base` reads
+/// one. An error names the first row that isn't one; a table without rows is one too.
+pub fn read_table(table: &str) -> Result<ItemRefs<'_>, String> {
     let mut index = HashMap::new();
-    for line in DATA.lines() {
+    for (number, line) in table.lines().enumerate() {
+        let bad = |what: &str| format!("line {}: bad {what}", number + 1);
         let mut fields = line.split('\t');
-        let (Some(kind), Some(ref_name), Some(ru_name), Some(icon_tail)) =
-            (fields.next(), fields.next(), fields.next(), fields.next())
-        else {
-            continue;
+        let (Some(kind), Some(ref_name), Some(ru_name), Some(icon_tail), Some(bases), None) = (
+            fields.next(),
+            fields.next(),
+            fields.next(),
+            fields.next(),
+            fields.next(),
+            fields.next(),
+        ) else {
+            let count = line.split('\t').count();
+            return Err(format!("line {}: {count} fields", number + 1));
         };
         let kind = match kind {
             "gem" => RefKind::Gem,
             "item" => RefKind::Item,
             "unique" => RefKind::Unique,
-            _ => continue,
+            _ => return Err(bad("kind")),
         };
-        let item = ItemRef {
+        if ref_name.is_empty() || ru_name.is_empty() {
+            return Err(bad("name"));
+        }
+        if bases
+            .split(' ')
+            .filter(|base| !base.is_empty())
+            .any(|base| parse_base(base).is_none())
+        {
+            return Err(bad("base"));
+        }
+        let item = ItemRefOf {
             ref_name,
             icon_tail,
-            bases: fields.next().unwrap_or(""),
+            bases,
         };
         // A repeated name keeps its first row, the one EE2 lists first.
         index.entry((kind, ref_name)).or_insert(item);
         index.entry((kind, ru_name)).or_insert(item);
     }
-    index
-});
+    if index.is_empty() {
+        return Err("no rows".to_owned());
+    }
+    Ok(ItemRefs(index))
+}
+
+/// Makes `table`, a data pack's ([`read_table`]), the one items are looked up in for the rest of
+/// the run. Refused once the table has been read: `data_pack::activate` puts a pack's table in
+/// place before anything reads it.
+pub fn use_table(table: ItemRefs<'static>) -> Result<(), TableInUse> {
+    PACK.set(table)
+}
 
 /// The item named `name` -- in English or Russian -- among `kind`.
 pub fn lookup(kind: RefKind, name: &str) -> Option<ItemRef> {
@@ -316,5 +379,47 @@ mod tests {
         assert_eq!(gem.map(|found| found.ref_name), Some("Herald of Ice"));
         // Nothing to link for a name the database doesn't know.
         assert_eq!(refs_for(&item(None, "currency", "Не предмет", None)), None);
+    }
+
+    #[test]
+    fn a_table_with_a_malformed_row_is_refused() {
+        let good = "item\tAbsent Amulet\tАмулет отсутствия\tabsent.png\t\
+            Metadata/Items/Amulets/FourAmuletB1c;stat_3182714256,stat_718638445=0,1\n\
+            gem\tHerald of Ice\tВестник льда\t\t\n";
+        let table = read_table(good).expect("a well-formed table");
+        let amulet = table.0[&(RefKind::Item, "Амулет отсутствия")];
+        assert_eq!(amulet.ref_name, "Absent Amulet");
+        assert!(table.0.contains_key(&(RefKind::Gem, "Herald of Ice")));
+
+        for (bad, why) in [
+            ("gem\tHerald of Ice\tВестник льда\t\n", "4 fields"),
+            ("gem\tHerald of Ice\tВестник льда\t\t\tmore\n", "6 fields"),
+            (
+                "skill\tHerald of Ice\tВестник льда\t\t\n",
+                "an unknown kind",
+            ),
+            ("gem\t\tВестник льда\t\t\n", "no English name"),
+            ("gem\tHerald of Ice\t\t\t\n", "no Russian name"),
+            (
+                "item\tAbsent Amulet\tАмулет отсутствия\t\t;stat_3182714256\n",
+                "a base without its id",
+            ),
+            (
+                "item\tAbsent Amulet\tАмулет отсутствия\t\tMetadata/Items/A;stat_1=2\n",
+                "an order naming a line the implicit hasn't",
+            ),
+            ("", "no rows"),
+        ] {
+            assert!(read_table(bad).is_err(), "{why}");
+        }
+    }
+
+    #[test]
+    fn a_pack_table_comes_too_late_once_the_built_in_one_is_read() {
+        // Whatever ran first, the built-in table is in use from here.
+        LazyLock::force(&INDEX);
+        let pack = read_table("gem\tHerald of Ice\tВестник льда\t\t\n").unwrap();
+        assert_eq!(use_table(pack), Err(TableInUse));
+        assert!(INDEX.len() > 2, "the built-in table stays");
     }
 }

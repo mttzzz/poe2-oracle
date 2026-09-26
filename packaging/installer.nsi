@@ -102,15 +102,20 @@ VIAddVersionKey /LANG=0 "LegalCopyright" "Copyright (c) 2026 ${PUBLISHER}"
 !define MUI_PAGE_CUSTOMFUNCTION_LEAVE DirectoryLeave
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
-; The Finish page's second checkbox is the autostart choice: preset from the registry when the page
-; shows, applied when the user clicks Finish. A silent run never reaches this page, which is what
-; keeps /S updates from changing autostart.
+; The Finish page's first checkbox starts the app with --installed: its settings window opens with
+; the welcome over it (crates/poe2-oracle/src/launch.rs), the player's sign that the install
+; worked. The second one is the autostart choice: preset from the registry when the page shows,
+; applied when the user clicks Finish -- before the app starts, since the welcome says whether it
+; starts with Windows (FinishPageLeave). A silent run never reaches this page, which is what keeps
+; /S updates from changing autostart, and their restarts (.onInstSuccess, .onInstFailed) from
+; bringing up the welcome.
 !define MUI_FINISHPAGE_NOREBOOTSUPPORT
 !define MUI_FINISHPAGE_RUN "$INSTDIR\${APP_EXE}"
+!define MUI_FINISHPAGE_RUN_PARAMETERS "--installed"
 !define MUI_FINISHPAGE_SHOWREADME
 !define MUI_FINISHPAGE_SHOWREADME_TEXT "$(AutostartOption)"
 !define MUI_FINISHPAGE_SHOWREADME_NOTCHECKED
-!define MUI_FINISHPAGE_SHOWREADME_FUNCTION EnableAutostart
+!define MUI_FINISHPAGE_SHOWREADME_FUNCTION AutostartBoxAction
 !define MUI_PAGE_CUSTOMFUNCTION_SHOW FinishPageShow
 !define MUI_PAGE_CUSTOMFUNCTION_LEAVE FinishPageLeave
 !insertmacro MUI_PAGE_FINISH
@@ -318,19 +323,24 @@ Function FinishPageShow
   ${EndIf}
 FunctionEnd
 
-; Runs before the Finish page's own actions: an unticked box turns autostart off, both values, as
-; the app's settings do.
+; Runs before the Finish page's own actions -- before its Run box starts the app, whose welcome
+; says whether it starts with Windows: the autostart box's choice applies here, both ways, as the
+; app's settings apply it. Ticked, the Run value starts this folder's exe, and a Task Manager
+; "Disable" is cleared so that it really does; unticked, both values go.
 Function FinishPageLeave
   ${NSD_GetState} $mui.FinishPage.ShowReadme $R0
-  ${If} $R0 != ${BST_CHECKED}
+  ${If} $R0 == ${BST_CHECKED}
+    WriteRegStr HKCU "${RUN_KEY}" "${RUN_VALUE}" '"$INSTDIR\${APP_EXE}" --autostart'
+  ${Else}
     DeleteRegValue HKCU "${RUN_KEY}" "${RUN_VALUE}"
-    DeleteRegValue HKCU "${STARTUP_APPROVED_KEY}" "${RUN_VALUE}"
   ${EndIf}
+  DeleteRegValue HKCU "${STARTUP_APPROVED_KEY}" "${RUN_VALUE}"
 FunctionEnd
 
-Function EnableAutostart
-  WriteRegStr HKCU "${RUN_KEY}" "${RUN_VALUE}" '"$INSTDIR\${APP_EXE}" --autostart'
-  DeleteRegValue HKCU "${STARTUP_APPROVED_KEY}" "${RUN_VALUE}"
+; The autostart box's own action, which the page runs after starting the app: none is left, since
+; FinishPageLeave applied the choice. MUI needs a function here all the same: without one, a
+; ticked box would open the page's readme file, and there is none.
+Function AutostartBoxAction
 FunctionEnd
 
 Section "un.${PRODUCT_NAME}" UninstallProgram

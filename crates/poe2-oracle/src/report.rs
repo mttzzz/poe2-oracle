@@ -48,7 +48,7 @@ pub struct Request {
 
 #[cfg(target_os = "windows")]
 impl Request {
-    /// A problem or an idea: the tray's entry and the settings window's button.
+    /// A problem or an idea: the settings window's «Написать разработчику».
     pub fn general() -> Request {
         Request {
             kind: ReportKind::Bug,

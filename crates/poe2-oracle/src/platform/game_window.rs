@@ -188,6 +188,46 @@ pub(crate) fn dpi_to_scale(dpi: u32) -> f64 {
     if dpi == 0 { 1.0 } else { f64::from(dpi) / 96.0 }
 }
 
+/// The monitor the game is on -- or, without a game window, the one under the cursor -- as a
+/// notice in its corner needs it (`ui::toast`).
+#[derive(Debug, Clone, Copy)]
+pub struct WorkArea {
+    /// Its `HMONITOR` value: what `gpui_windows` names a display by (`DisplayId`).
+    pub monitor: u64,
+    /// The monitor less the taskbar.
+    pub rect: PhysicalRect,
+    pub dpi_scale: f64,
+}
+
+/// The game's monitor's [`WorkArea`]; `None` if Windows can't say.
+pub fn game_work_area() -> Option<WorkArea> {
+    let monitor = monitor_of(game_window(), cursor_pos().unwrap_or((0, 0)));
+    let mut info = MONITORINFO {
+        cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+        ..Default::default()
+    };
+    if monitor.is_invalid() || !unsafe { GetMonitorInfoW(monitor, &mut info) }.as_bool() {
+        return None;
+    }
+    let work = info.rcWork;
+    let (mut dpi_x, mut dpi_y) = (0u32, 0u32);
+    let dpi_scale =
+        match unsafe { GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y) } {
+            Ok(()) => dpi_to_scale(dpi_x),
+            Err(_) => 1.0,
+        };
+    Some(WorkArea {
+        monitor: monitor.0 as u64,
+        rect: PhysicalRect {
+            x: work.left,
+            y: work.top,
+            width: work.right - work.left,
+            height: work.bottom - work.top,
+        },
+        dpi_scale,
+    })
+}
+
 /// The panel's rect and side for a check triggered at the current cursor position: beside the
 /// inventory when the cursor is over the right half of the game, beside the stash otherwise --
 /// where the player left it on that side (`positions`), else EE2's placement -- as wide as the

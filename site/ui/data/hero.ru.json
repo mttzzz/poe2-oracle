@@ -4,7 +4,7 @@
             {
                 "part": "panel",
                 "scale": 0.8,
-                "listings": 6
+                "listings": 7
             }
         ],
         [
@@ -14,7 +14,7 @@
             },
             {
                 "part": "xp",
-                "plates": 1
+                "scale": 0.85
             }
         ]
     ]

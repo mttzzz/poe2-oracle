@@ -1,7 +1,7 @@
 //! GitHub's REST API as the service uses it: an issue per report (with its labels), the
-//! repository's latest release, and that release's files. Every call carries the owner's
-//! fine-grained token (`GITHUB_TOKEN`: Issues read/write, Contents read). Without one, issues are
-//! only logged and there is no release to offer.
+//! repository's releases, and their files. Every call carries the owner's fine-grained token
+//! (`GITHUB_TOKEN`: Issues read/write, Contents read). Without one, issues are only logged and
+//! there is no release to offer.
 
 use std::collections::HashSet;
 use std::time::Duration;
@@ -16,8 +16,10 @@ use tracing::{debug, info, warn};
 use crate::upstream::describe;
 
 const API_VERSION: &str = "2022-11-28";
-/// An API call: an issue or a label to create, the latest release to read.
+/// An API call: an issue or a label to create, a page of releases to read.
 const CALL_TIMEOUT: Duration = Duration::from_secs(10);
+/// How many releases a page of the list holds: GitHub's most.
+pub const RELEASES_PER_PAGE: usize = 100;
 
 /// The labels reports carry, each with the color and description it's created with when the
 /// repository lacks it (`bug` and `enhancement` as GitHub's defaults have them).
@@ -73,7 +75,26 @@ impl Filing {
 #[derive(Debug, Clone, Deserialize)]
 pub struct GhRelease {
     pub tag_name: String,
+    /// Not published yet.
+    #[serde(default)]
+    pub draft: bool,
+    #[serde(default)]
+    pub prerelease: bool,
     pub assets: Vec<GhAsset>,
+}
+
+/// A page of the repository's releases, as GitHub gave it.
+pub struct Page {
+    /// GitHub's validator of the page, which asks it whether the page has changed since.
+    pub etag: Option<String>,
+    pub releases: Vec<GhRelease>,
+}
+
+/// GitHub's answer for a page of releases.
+pub enum Listed {
+    /// The page is as it was when its validator was given: a `304`, which costs no rate limit.
+    Unchanged,
+    Changed(Page),
 }
 
 /// One file of a release.
@@ -233,15 +254,31 @@ impl GitHub {
         }
     }
 
-    /// The latest release, as GitHub names it: neither a draft nor a prerelease.
-    pub async fn latest_release(&self) -> Result<GhRelease, String> {
+    /// Page `page` (from 1) of the repository's releases, newest first as GitHub lists them,
+    /// [`RELEASES_PER_PAGE`] to a page. With `etag`, the validator of the copy the caller holds, a
+    /// page unchanged since is [`Listed::Unchanged`].
+    pub async fn releases(&self, page: usize, etag: Option<&str>) -> Result<Listed, String> {
         let token = self.token.as_deref().ok_or("no GitHub token")?;
-        let sent = self
-            .call(Method::GET, "releases/latest", token)
-            .timeout(CALL_TIMEOUT)
-            .send()
-            .await;
-        answer(sent).await
+        let path = format!("releases?per_page={RELEASES_PER_PAGE}&page={page}");
+        let mut request = self.call(Method::GET, &path, token).timeout(CALL_TIMEOUT);
+        if let Some(etag) = etag {
+            request = request.header(header::IF_NONE_MATCH, etag);
+        }
+        let response = request.send().await.map_err(describe)?;
+        let status = response.status();
+        if status == StatusCode::NOT_MODIFIED {
+            return Ok(Listed::Unchanged);
+        }
+        if !status.is_success() {
+            return Err(refusal(response).await);
+        }
+        let etag = response
+            .headers()
+            .get(header::ETAG)
+            .and_then(|etag| etag.to_str().ok())
+            .map(str::to_owned);
+        let releases = response.json().await.map_err(describe)?;
+        Ok(Listed::Changed(Page { etag, releases }))
     }
 
     /// A release file, its bytes the answer's body. GitHub answers with a redirect to its storage,

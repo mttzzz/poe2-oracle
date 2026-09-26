@@ -1,12 +1,22 @@
-//! Keeps an installed PoE2 Oracle current: a new version shows up in the tray, from the releases
-//! the app's web service hands out (`crates/oracle-web`, at oracle.pushka.biz for a release build).
+//! Keeps an installed PoE2 Oracle current, from what the app's web service hands out
+//! (`crates/oracle-web`, at oracle.pushka.biz for a release build), on two channels: app
+//! releases, whose installer replaces the exe, and data packs, which replace the game tables the
+//! exe carries without it.
 //!
-//! The app drives three steps: [`check_for_update`] asks the service for the latest release,
+//! [`events::follow_events`] stays connected to the service's event stream, which announces the
+//! latest published version of each once on connecting and again whenever one changes. The app
+//! takes it from there with the steps below.
+//!
+//! A new app version takes three: [`check_for_update`] asks the service for the latest release,
 //! [`download_update`] fetches that release's installer and checks it against the release's
 //! `SHA256SUMS`, itself trusted only with the release key's signature, and [`apply_update`] starts
 //! the installer silently. The app then quits and the installer finishes the job: it waits for the
 //! app to exit (closing it if it lingers), replaces the files, keeps the user's autostart choice
 //! and starts the new version.
+//!
+//! A new data pack takes two: [`check_for_data`] asks for the latest pack, and [`download_data`]
+//! fetches its zip, verified the same way against its own release's signed `SHA256SUMS`.
+//! Unpacking it, and checking that this app can use it, is the app's part.
 //!
 //! There is no separate swap-on-quit helper exe: the NSIS installer (`packaging/installer.nsi`)
 //! has to close a running copy anyway for manual installs, so updates go through exactly that
@@ -15,7 +25,9 @@
 //! The release layout relied on here is what `packaging/build-release.ps1` and
 //! `.github/workflows/release.yml` make: tag `vX.Y.Z`, assets `PoE2-Oracle-Setup-X.Y.Z.exe`,
 //! `SHA256SUMS` (`sha256sum` format) and `SHA256SUMS.sig`, all attached to a draft release that
-//! the owner publishes once tested. The service hands out published releases only.
+//! the owner publishes once tested. The service hands out published releases only. A data pack's
+//! release is laid out alike, as oracle-protocol describes it: tag `data-<version>`, assets
+//! `PoE2-Oracle-Data-<version>.zip`, `SHA256SUMS` and `SHA256SUMS.sig`, signed with the same key.
 //!
 //! Testing an update end to end takes a build pointed at a stand-in service that answers like
 //! `crates/oracle-web` (the lane's own, say) over plain http, which needs oracle-protocol's
@@ -26,6 +38,8 @@
 //! $env:POE2_ORACLE_API_BASE = 'http://poe2-oracle-main.lanes.internal'
 //! cargo build -p poe2-oracle --release --features oracle-protocol/dev-endpoints
 //! ```
+
+pub mod events;
 
 use std::fs::{self, File};
 use std::io::Write as _;
@@ -44,8 +58,8 @@ use http_client::{
     AsyncBody, HttpClient, HttpRequestExt as _, RedirectPolicy, Request, StatusCode,
 };
 use oracle_protocol::{
-    API_BASE, DOWNLOAD_PATH, LATEST_RELEASE_PATH, Release, ReleaseAsset, SUMS_ASSET,
-    SUMS_SIGNATURE_ASSET, installer_asset,
+    API_BASE, DATA_TAG_PREFIX, DOWNLOAD_PATH, DataVersion, LATEST_DATA_PATH, LATEST_RELEASE_PATH,
+    Release, ReleaseAsset, SUMS_ASSET, SUMS_SIGNATURE_ASSET, data_pack_asset, installer_asset,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
@@ -61,14 +75,17 @@ const RELEASE_PUBLIC_KEY: &str = include_str!("../release-signing-key.pub").trim
 /// Tells the service which app and version asks. Every crate shares the workspace version, so this
 /// is the running app's version too.
 const USER_AGENT: &str = concat!("PoE2-Oracle/", env!("CARGO_PKG_VERSION"));
-/// How [`installer_asset`]'s names start, whatever the version: what [`remove_old_installers`]
-/// deletes.
+/// How [`installer_asset`]'s names start, whatever the version: what [`download_update`] deletes
+/// of earlier installers.
 const INSTALLER_PREFIX: &str = "PoE2-Oracle-Setup-";
+/// How [`data_pack_asset`]'s names start, whatever the version: what [`download_data`] deletes of
+/// earlier packs.
+const DATA_PACK_PREFIX: &str = "PoE2-Oracle-Data-";
 /// `packaging/installer.nsi`'s switches: no UI, then start the app again once done.
 const INSTALLER_ARGS: [&str; 2] = ["/S", "/relaunch"];
 const METADATA_TIMEOUT: Duration = Duration::from_secs(20);
-/// The whole installer download (a few MB): generous for a slow line, yet a stalled connection
-/// cannot keep "downloading" forever.
+/// A whole download, of an installer (a few MB) or a data pack (less): generous for a slow line,
+/// yet a stalled connection cannot keep "downloading" forever.
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(600);
 /// The release JSON, SHA256SUMS and its signature are a few KB at most; a body far larger is not
 /// what was asked for.
@@ -77,19 +94,28 @@ const MAX_METADATA_BYTES: u64 = 1 << 20;
 /// service that isn't what it should be -- or a proxy on the way -- could otherwise fill the disk
 /// before the signed SHA-256 turns the download down. The real one is a few MB.
 const MAX_INSTALLER_BYTES: u64 = 256 << 20;
+/// The most a data pack may be, whatever its release lists, for the same reason. The real one
+/// zips a few MB of tables.
+const MAX_DATA_PACK_BYTES: u64 = 32 << 20;
 /// The service's last latest-release answer, kept in the updates folder as [`KeptRelease`].
 const KEPT_RELEASE_FILE: &str = "latest-release.json";
+/// The service's last latest-data-pack answer, kept apart from the latest release's.
+const KEPT_DATA_FILE: &str = "latest-data.json";
 
 /// A published release newer than the running app, with what [`download_update`] needs.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UpdateInfo {
     /// The release's version: its tag without the `v`.
     pub version: Version,
-    installer: ReleaseAsset,
-    /// Where the release's `SHA256SUMS` is.
-    sums_url: String,
-    /// Where its `SHA256SUMS.sig` is.
-    signature_url: String,
+    installer: SignedFile,
+}
+
+/// A published data pack newer than the one the app uses, with what [`download_data`] needs.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DataUpdate {
+    /// The pack's version: its tag without the `data-`.
+    pub version: DataVersion,
+    pack: SignedFile,
 }
 
 /// The service's last latest-release answer, with its `ETag` and the URL it came from, kept on
@@ -100,6 +126,51 @@ struct KeptRelease {
     url: String,
     etag: String,
     body: String,
+}
+
+/// A release's file for the updater, and where the release's checksums are: all three downloaded
+/// from the service.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct SignedFile {
+    payload: Payload,
+    asset: ReleaseAsset,
+    /// Where the release's `SHA256SUMS` is.
+    sums_url: String,
+    /// Where its `SHA256SUMS.sig` is.
+    signature_url: String,
+}
+
+/// What a [`SignedFile`] is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Payload {
+    Installer,
+    DataPack,
+}
+
+impl Payload {
+    /// The most it may be, whatever its release lists.
+    fn max_bytes(self) -> u64 {
+        match self {
+            Self::Installer => MAX_INSTALLER_BYTES,
+            Self::DataPack => MAX_DATA_PACK_BYTES,
+        }
+    }
+
+    /// What it is, in messages.
+    fn noun(self) -> &'static str {
+        match self {
+            Self::Installer => "an installer",
+            Self::DataPack => "a data pack",
+        }
+    }
+
+    /// How its file names start and end, whatever the version.
+    fn name_parts(self) -> (&'static str, &'static str) {
+        match self {
+            Self::Installer => (INSTALLER_PREFIX, ".exe"),
+            Self::DataPack => (DATA_PACK_PREFIX, ".zip"),
+        }
+    }
 }
 
 /// Returns the latest published release when it is newer than `current` by semver precedence --
@@ -116,8 +187,61 @@ pub async fn check_for_update(
     current: &Version,
     cache_dir: &Path,
 ) -> Result<Option<UpdateInfo>> {
-    let url = oracle_protocol::url(LATEST_RELEASE_PATH);
-    let kept_path = cache_dir.join(KEPT_RELEASE_FILE);
+    let release = latest_release(client, LATEST_RELEASE_PATH, cache_dir, KEPT_RELEASE_FILE).await?;
+    let tag = release.tag_name.as_str();
+    let version = Version::parse(tag.strip_prefix('v').unwrap_or(tag))
+        .with_context(|| format!("release tag {tag:?} is not vX.Y.Z"))?;
+    if version.cmp_precedence(current).is_le() {
+        return Ok(None);
+    }
+    let installer = installer_asset(&version.to_string());
+    Ok(Some(UpdateInfo {
+        installer: SignedFile::take(release, &installer, Payload::Installer)?,
+        version,
+    }))
+}
+
+/// Returns the latest published data pack when it is newer than `current`, the one the app uses.
+/// `cache_dir` keeps the service's last answer apart from [`check_for_update`]'s, so an unchanged
+/// pack comes back as an empty `304` too.
+///
+/// Every failure is an error, as there: network trouble, a refusal of the service (a 503 while it
+/// knows no pack), a tag other than `data-<version>`, and a latest pack lacking its zip,
+/// `SHA256SUMS` or `SHA256SUMS.sig`, listing one that isn't downloaded from the service, or
+/// listing a zip over [`MAX_DATA_PACK_BYTES`]. Whether this app can use the pack -- its
+/// manifest's format and `min_app` -- shows only inside the zip.
+pub async fn check_for_data(
+    client: &Arc<dyn HttpClient>,
+    current: DataVersion,
+    cache_dir: &Path,
+) -> Result<Option<DataUpdate>> {
+    let release = latest_release(client, LATEST_DATA_PATH, cache_dir, KEPT_DATA_FILE).await?;
+    let tag = release.tag_name.as_str();
+    let version = tag
+        .strip_prefix(DATA_TAG_PREFIX)
+        .filter(|digits| !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit()))
+        .and_then(|digits| digits.parse::<DataVersion>().ok())
+        .with_context(|| format!("data pack tag {tag:?} is not {DATA_TAG_PREFIX}<version>"))?;
+    if version <= current {
+        return Ok(None);
+    }
+    let pack = data_pack_asset(version);
+    Ok(Some(DataUpdate {
+        pack: SignedFile::take(release, &pack, Payload::DataPack)?,
+        version,
+    }))
+}
+
+/// The [`Release`] the service answers at `path`, asked conditionally when `cache_dir` keeps its
+/// last answer from the same URL in `kept_file` ([`KeptRelease`]).
+async fn latest_release(
+    client: &Arc<dyn HttpClient>,
+    path: &str,
+    cache_dir: &Path,
+    kept_file: &str,
+) -> Result<Release> {
+    let url = oracle_protocol::url(path);
+    let kept_path = cache_dir.join(kept_file);
     let kept = fs::read(&kept_path)
         .ok()
         .and_then(|bytes| serde_json::from_slice::<KeptRelease>(&bytes).ok())
@@ -167,42 +291,45 @@ pub async fn check_for_update(
             body
         }
     };
-    let release: Release =
-        serde_json::from_slice(&body).with_context(|| format!("parsing {url}'s answer"))?;
+    serde_json::from_slice(&body).with_context(|| format!("parsing {url}'s answer"))
+}
 
-    let tag = release.tag_name.as_str();
-    let version = Version::parse(tag.strip_prefix('v').unwrap_or(tag))
-        .with_context(|| format!("release tag {tag:?} is not vX.Y.Z"))?;
-    if version.cmp_precedence(current).is_le() {
-        return Ok(None);
-    }
-    let mut assets = release.assets;
-    let mut take = |name: &str| -> Result<ReleaseAsset> {
-        let at = assets
-            .iter()
-            .position(|asset| asset.name == name)
-            .with_context(|| format!("release {tag} has no {name}"))?;
-        let asset = assets.swap_remove(at);
+impl SignedFile {
+    /// Takes `name`, the release's `payload`, out of `release`, along with the release's
+    /// checksums. All three have to be there and downloaded from the service, and the file no
+    /// bigger than `payload` may be: the release pipeline attaches them while the release is
+    /// still a draft, so a published one without them is broken, not still uploading.
+    fn take(release: Release, name: &str, payload: Payload) -> Result<Self> {
+        let tag = release.tag_name;
+        let mut assets = release.assets;
+        let mut take = |name: &str| -> Result<ReleaseAsset> {
+            let at = assets
+                .iter()
+                .position(|asset| asset.name == name)
+                .with_context(|| format!("release {tag} has no {name}"))?;
+            let asset = assets.swap_remove(at);
+            ensure!(
+                is_service_download(&asset.browser_download_url),
+                "release {tag}'s {name} isn't downloaded from {API_BASE}{DOWNLOAD_PATH}/: {}",
+                asset.browser_download_url
+            );
+            Ok(asset)
+        };
+        let asset = take(name)?;
+        let max_bytes = payload.max_bytes();
         ensure!(
-            is_service_download(&asset.browser_download_url),
-            "release {tag}'s {name} isn't downloaded from {API_BASE}{DOWNLOAD_PATH}/: {}",
-            asset.browser_download_url
+            asset.size <= max_bytes,
+            "release {tag}'s {name} is {} bytes, more than the {max_bytes} {} may be",
+            asset.size,
+            payload.noun()
         );
-        Ok(asset)
-    };
-    let installer = take(&installer_asset(&version.to_string()))?;
-    ensure!(
-        installer.size <= MAX_INSTALLER_BYTES,
-        "release {tag}'s {} is {} bytes, more than the {MAX_INSTALLER_BYTES} an installer may be",
-        installer.name,
-        installer.size
-    );
-    Ok(Some(UpdateInfo {
-        installer,
-        sums_url: take(SUMS_ASSET)?.browser_download_url,
-        signature_url: take(SUMS_SIGNATURE_ASSET)?.browser_download_url,
-        version,
-    }))
+        Ok(Self {
+            payload,
+            asset,
+            sums_url: take(SUMS_ASSET)?.browser_download_url,
+            signature_url: take(SUMS_SIGNATURE_ASSET)?.browser_download_url,
+        })
+    }
 }
 
 /// Downloads `update`'s installer into `dir` and returns its path, but only once the release's
@@ -220,37 +347,53 @@ pub async fn download_update(
     update: &UpdateInfo,
     dir: &Path,
 ) -> Result<PathBuf> {
-    download_signed(client, update, dir, &release_key()?).await
+    download_signed(client, &update.installer, dir, &release_key()?).await
 }
 
-/// [`download_update`], trusting the signatures of `key`.
+/// Downloads `update`'s pack into `dir` and returns the zip's path, verified as
+/// [`download_update`] verifies an installer: only once its release's `SHA256SUMS` carries the
+/// release key's signature, with the SHA-256 listed there and the size its release lists, and
+/// never half-written. Opening the zip, and reading its manifest, is the app's part.
+///
+/// `dir` may be the folder [`download_update`] uses: packs left there by earlier downloads are
+/// deleted first, installers stay. File writes block: run this on a background executor.
+pub async fn download_data(
+    client: &Arc<dyn HttpClient>,
+    update: &DataUpdate,
+    dir: &Path,
+) -> Result<PathBuf> {
+    download_signed(client, &update.pack, dir, &release_key()?).await
+}
+
+/// [`download_update`] and [`download_data`], trusting the signatures of `key`.
 async fn download_signed(
     client: &Arc<dyn HttpClient>,
-    update: &UpdateInfo,
+    file: &SignedFile,
     dir: &Path,
     key: &VerifyingKey,
 ) -> Result<PathBuf> {
-    let sums = get_capped(client, &update.sums_url)
+    let sums = get_capped(client, &file.sums_url)
         .await
         .with_context(|| format!("downloading {SUMS_ASSET}"))?;
-    let signature = get_capped(client, &update.signature_url)
+    let signature = get_capped(client, &file.signature_url)
         .await
         .with_context(|| format!("downloading {SUMS_SIGNATURE_ASSET}"))?;
     check_signature(key, &sums, &signature)?;
     let sums = String::from_utf8(sums).with_context(|| format!("{SUMS_ASSET} is not text"))?;
-    let expected = expected_sha256(&sums, &update.installer.name)?;
+    let name = &file.asset.name;
+    let expected = expected_sha256(&sums, name)?;
 
     fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
-    remove_old_installers(dir);
-    let partial = dir.join(format!("{}.part", update.installer.name));
-    if let Err(error) = download_verified(client, &update.installer, &expected, &partial).await {
+    remove_earlier(dir, file.payload);
+    let partial = dir.join(format!("{name}.part"));
+    if let Err(error) = download_verified(client, file, &expected, &partial).await {
         let _ = fs::remove_file(&partial);
-        return Err(error.context(format!("downloading {}", update.installer.name)));
+        return Err(error.context(format!("downloading {name}")));
     }
-    let installer = dir.join(&update.installer.name);
-    fs::rename(&partial, &installer)
-        .with_context(|| format!("moving the verified installer to {}", installer.display()))?;
-    Ok(installer)
+    let path = dir.join(name);
+    fs::rename(&partial, &path)
+        .with_context(|| format!("moving the verified {name} to {}", path.display()))?;
+    Ok(path)
 }
 
 /// Starts the installer [`download_update`] verified, silently: it waits for this process to
@@ -326,15 +469,18 @@ async fn read_capped(body: &mut AsyncBody, limit: u64) -> Result<Vec<u8>> {
 
 async fn download_verified(
     client: &Arc<dyn HttpClient>,
-    asset: &ReleaseAsset,
+    file: &SignedFile,
     expected: &[u8; 32],
     path: &Path,
 ) -> Result<()> {
+    let asset = &file.asset;
     // The size the release lists bounds the stream, and the cap bounds that size.
+    let max_bytes = file.payload.max_bytes();
     ensure!(
-        asset.size <= MAX_INSTALLER_BYTES,
-        "the release lists {} bytes, more than the {MAX_INSTALLER_BYTES} an installer may be",
-        asset.size
+        asset.size <= max_bytes,
+        "the release lists {} bytes, more than the {max_bytes} {} may be",
+        asset.size,
+        file.payload.noun()
     );
     let url = &asset.browser_download_url;
     let mut response = client.send(asset_request(url, DOWNLOAD_TIMEOUT)?).await?;
@@ -374,9 +520,11 @@ async fn download_verified(
     Ok(())
 }
 
-/// Best effort: a leftover only costs disk space, and never shadows the download (that has a
-/// `.part` name until verified, then replaces any same-named file).
-fn remove_old_installers(dir: &Path) {
+/// Deletes what earlier downloads of `payload` left in `dir`: only files named like ours. Best
+/// effort: a leftover only costs disk space, and never shadows the download (that has a `.part`
+/// name until verified, then replaces any same-named file).
+fn remove_earlier(dir: &Path, payload: Payload) {
+    let (prefix, extension) = payload.name_parts();
     let Ok(entries) = fs::read_dir(dir) else {
         return;
     };
@@ -385,9 +533,8 @@ fn remove_old_installers(dir: &Path) {
         let Some(name) = name.to_str() else {
             continue;
         };
-        if name.starts_with(INSTALLER_PREFIX)
-            && (name.ends_with(".exe") || name.ends_with(".exe.part"))
-        {
+        let name = name.strip_suffix(".part").unwrap_or(name);
+        if name.starts_with(prefix) && name.ends_with(extension) {
             let _ = fs::remove_file(entry.path());
         }
     }
@@ -442,38 +589,71 @@ mod tests {
     const ETAG_0_2_0: &str = "\"release-v0.2.0\"";
     const NEXT_INSTALLER: &[u8] = b"MZ\x90\x00 stand-in for the next version's installer";
     const ETAG_0_2_1: &str = "\"release-v0.2.1\"";
+    const PACK: &[u8] = b"PK\x03\x04 stand-in for a data pack";
+    const PACK_VERSION: DataVersion = 2026092601;
+    const PACK_NAME: &str = "PoE2-Oracle-Data-2026092601.zip";
+    const ETAG_PACK: &str = "\"data-2026092601\"";
+
+    /// One canned answer: the URL, its status and its body.
+    type Answer = (String, u16, Vec<u8>);
 
     /// Serves canned bodies by exact URL (anything else: 404) and records each request's URL and
-    /// `If-None-Match`. With an `etag`, the latest release carries it, and a request asking
-    /// `If-None-Match` it gets the service's empty `304`.
+    /// `If-None-Match`. A URL given an ETag answers with it, and a request asking `If-None-Match`
+    /// it gets the service's empty `304`.
     struct CannedClient {
         responses: HashMap<String, (u16, Vec<u8>)>,
         requests: Mutex<Vec<String>>,
-        etag: Option<&'static str>,
+        etags: HashMap<String, &'static str>,
         conditions: Mutex<Vec<Option<String>>>,
     }
 
     impl CannedClient {
-        fn new(responses: impl IntoIterator<Item = (String, u16, Vec<u8>)>) -> Arc<Self> {
+        fn new(responses: impl IntoIterator<Item = Answer>) -> Arc<Self> {
             Arc::new(Self {
                 responses: responses
                     .into_iter()
                     .map(|(url, status, body)| (url, (status, body)))
                     .collect(),
                 requests: Mutex::new(Vec::new()),
-                etag: None,
+                etags: HashMap::new(),
                 conditions: Mutex::new(Vec::new()),
             })
         }
 
+        /// The latest release's answer carries `etag`.
         fn with_etag(self: Arc<Self>, etag: &'static str) -> Arc<Self> {
+            self.with_etag_at(latest_url(), etag)
+        }
+
+        /// The latest data pack's answer carries `etag`.
+        fn with_pack_etag(self: Arc<Self>, etag: &'static str) -> Arc<Self> {
+            self.with_etag_at(latest_pack_url(), etag)
+        }
+
+        fn with_etag_at(self: Arc<Self>, url: String, etag: &'static str) -> Arc<Self> {
             let mut client = Arc::into_inner(self).expect("sole owner");
-            client.etag = Some(etag);
+            client.etags.insert(url, etag);
             Arc::new(client)
         }
 
-        fn fetched_an_installer(&self) -> bool {
-            self.requests.lock().iter().any(|url| url.ends_with(".exe"))
+        /// Whether a file named `*<extension>` was asked for.
+        fn fetched(&self, extension: &str) -> bool {
+            self.requests
+                .lock()
+                .iter()
+                .any(|url| url.ends_with(extension))
+        }
+
+        /// The `If-None-Match` of each request for `url`, in order.
+        fn conditions_at(&self, url: &str) -> Vec<Option<String>> {
+            let requests = self.requests.lock();
+            let conditions = self.conditions.lock();
+            requests
+                .iter()
+                .zip(conditions.iter())
+                .filter(|(asked, _)| *asked == url)
+                .map(|(_, condition)| condition.clone())
+                .collect()
         }
     }
 
@@ -498,7 +678,7 @@ mod tests {
                 .map(str::to_owned);
             self.requests.lock().push(url.clone());
             self.conditions.lock().push(condition.clone());
-            let etag = self.etag.filter(|_| url == latest_url());
+            let etag = self.etags.get(&url).copied();
             let (status, body) = if etag.is_some() && condition.as_deref() == etag {
                 (304, Vec::new())
             } else {
@@ -522,17 +702,22 @@ mod tests {
         oracle_protocol::url(LATEST_RELEASE_PATH)
     }
 
+    fn latest_pack_url() -> String {
+        oracle_protocol::url(LATEST_DATA_PATH)
+    }
+
     fn download_url(tag: &str, name: &str) -> String {
         format!("{API_BASE}{DOWNLOAD_PATH}/{tag}/{name}")
     }
 
-    /// The service's latest-release answer for `tag`, its assets `(name, size)` downloaded from
-    /// the service, plus those downloads.
-    fn service(
+    /// The service's answer at `latest` naming the release `tag`, its assets `(name, size)`
+    /// downloaded from the service, plus those downloads.
+    fn answers(
+        latest: &str,
         tag: &str,
         assets: &[(&str, usize)],
         downloads: Vec<(&str, Vec<u8>)>,
-    ) -> Arc<CannedClient> {
+    ) -> Vec<Answer> {
         let release = Release {
             tag_name: tag.to_owned(),
             html_url: format!("https://github.com/mttzzz/poe2-oracle/releases/tag/{tag}"),
@@ -545,13 +730,32 @@ mod tests {
                 })
                 .collect(),
         };
-        let mut responses = vec![(latest_url(), 200, serde_json::to_vec(&release).unwrap())];
-        responses.extend(
+        let latest = oracle_protocol::url(latest);
+        let mut answers = vec![(latest, 200, serde_json::to_vec(&release).unwrap())];
+        answers.extend(
             downloads
                 .into_iter()
                 .map(|(name, body)| (download_url(tag, name), 200, body)),
         );
-        CannedClient::new(responses)
+        answers
+    }
+
+    /// The service with [`answers`] for the latest release.
+    fn service(
+        tag: &str,
+        assets: &[(&str, usize)],
+        downloads: Vec<(&str, Vec<u8>)>,
+    ) -> Arc<CannedClient> {
+        CannedClient::new(answers(LATEST_RELEASE_PATH, tag, assets, downloads))
+    }
+
+    /// The service with [`answers`] for the latest data pack.
+    fn pack_service(
+        tag: &str,
+        assets: &[(&str, usize)],
+        downloads: Vec<(&str, Vec<u8>)>,
+    ) -> Arc<CannedClient> {
+        CannedClient::new(answers(LATEST_DATA_PATH, tag, assets, downloads))
     }
 
     /// The key the test releases are signed with. The updater's own, [`RELEASE_PUBLIC_KEY`], is
@@ -560,14 +764,18 @@ mod tests {
         SigningKey::from_bytes(&[7; 32])
     }
 
+    /// SHA256SUMS listing `file`'s digest for `name`, after another asset's.
+    fn sums_for(name: &str, file: &[u8]) -> String {
+        format!(
+            "{:x}  poe2-oracle-symbols.zip\n{:x}  {name}\n",
+            Sha256::digest(b"other asset"),
+            Sha256::digest(file),
+        )
+    }
+
     /// SHA256SUMS listing `installer`'s digest for `version`'s installer, after another asset's.
     fn sums_listing(version: &str, installer: &[u8]) -> String {
-        format!(
-            "{:x}  poe2-oracle-{version}-symbols.zip\n{:x}  {}\n",
-            Sha256::digest(b"other asset"),
-            Sha256::digest(installer),
-            installer_asset(version),
-        )
+        sums_for(&installer_asset(version), installer)
     }
 
     /// SHA256SUMS.sig for `sums` by `key`, as `release-sign sign` writes it.
@@ -579,15 +787,16 @@ mod tests {
         .into_bytes()
     }
 
-    /// A release of `version` serving `sums`, `signature` and `installer`.
-    fn release(
+    /// The answers of a release of `version` serving `sums`, `signature` and `installer`.
+    fn release_answers(
         version: &str,
         sums: String,
         signature: Vec<u8>,
         installer: &[u8],
-    ) -> Arc<CannedClient> {
+    ) -> Vec<Answer> {
         let name = installer_asset(version);
-        service(
+        answers(
+            LATEST_RELEASE_PATH,
             &format!("v{version}"),
             &[
                 (SUMS_ASSET, sums.len()),
@@ -602,21 +811,62 @@ mod tests {
         )
     }
 
+    /// A release of `version` serving `sums`, `signature` and `installer`.
+    fn release(
+        version: &str,
+        sums: String,
+        signature: Vec<u8>,
+        installer: &[u8],
+    ) -> Arc<CannedClient> {
+        CannedClient::new(release_answers(version, sums, signature, installer))
+    }
+
     /// A v0.2.0 release serving `sums`, `signature` and [`INSTALLER`].
     fn release_0_2_0(sums: String, signature: Vec<u8>) -> Arc<CannedClient> {
         release("0.2.0", sums, signature, INSTALLER)
     }
 
-    /// `version` as the release workflow makes it, with `installer`, signed with [`test_key`].
-    fn signed(version: &str, installer: &[u8]) -> Arc<CannedClient> {
+    /// The answers of `version` as the release workflow makes it, with `installer`, signed with
+    /// [`test_key`].
+    fn signed_answers(version: &str, installer: &[u8]) -> Vec<Answer> {
         let sums = sums_listing(version, installer);
         let signature = signature_file(&test_key(), &sums);
-        release(version, sums, signature, installer)
+        release_answers(version, sums, signature, installer)
+    }
+
+    /// `version` as the release workflow makes it, with `installer`, signed with [`test_key`].
+    fn signed(version: &str, installer: &[u8]) -> Arc<CannedClient> {
+        CannedClient::new(signed_answers(version, installer))
     }
 
     /// v0.2.0 as the release workflow makes it, signed with [`test_key`].
     fn signed_release() -> Arc<CannedClient> {
         signed("0.2.0", INSTALLER)
+    }
+
+    /// The answers of the data pack [`PACK_VERSION`] serving `sums`, `signature` and `pack`.
+    fn pack_answers(sums: String, signature: Vec<u8>, pack: &[u8]) -> Vec<Answer> {
+        answers(
+            LATEST_DATA_PATH,
+            &format!("data-{PACK_VERSION}"),
+            &[
+                (SUMS_ASSET, sums.len()),
+                (SUMS_SIGNATURE_ASSET, signature.len()),
+                (PACK_NAME, pack.len()),
+            ],
+            vec![
+                (SUMS_ASSET, sums.into_bytes()),
+                (SUMS_SIGNATURE_ASSET, signature),
+                (PACK_NAME, pack.to_vec()),
+            ],
+        )
+    }
+
+    /// The answers of the data pack [`PACK_VERSION`] carrying [`PACK`], signed with [`test_key`].
+    fn signed_pack_answers() -> Vec<Answer> {
+        let sums = sums_for(PACK_NAME, PACK);
+        let signature = signature_file(&test_key(), &sums);
+        pack_answers(sums, signature, PACK)
     }
 
     /// A check with nothing kept from an earlier one.
@@ -638,15 +888,37 @@ mod tests {
         ))
     }
 
+    /// A data pack check with nothing kept from an earlier one.
+    fn check_pack(client: &Arc<CannedClient>, current: DataVersion) -> Result<Option<DataUpdate>> {
+        let dir = tempfile::tempdir().unwrap();
+        check_pack_in(client, current, dir.path())
+    }
+
+    fn check_pack_in(
+        client: &Arc<CannedClient>,
+        current: DataVersion,
+        cache_dir: &Path,
+    ) -> Result<Option<DataUpdate>> {
+        let client: Arc<dyn HttpClient> = client.clone();
+        block_on(check_for_data(&client, current, cache_dir))
+    }
+
     /// [`download_update`], trusting [`test_key`].
     fn download(client: &Arc<CannedClient>, update: &UpdateInfo, dir: &Path) -> Result<PathBuf> {
         let client: Arc<dyn HttpClient> = client.clone();
-        block_on(download_signed(
-            &client,
-            update,
-            dir,
-            &test_key().verifying_key(),
-        ))
+        let key = test_key().verifying_key();
+        block_on(download_signed(&client, &update.installer, dir, &key))
+    }
+
+    /// [`download_data`], trusting [`test_key`].
+    fn download_pack(
+        client: &Arc<CannedClient>,
+        update: &DataUpdate,
+        dir: &Path,
+    ) -> Result<PathBuf> {
+        let client: Arc<dyn HttpClient> = client.clone();
+        let key = test_key().verifying_key();
+        block_on(download_signed(&client, &update.pack, dir, &key))
     }
 
     fn files_in(dir: &Path) -> Vec<String> {
@@ -758,11 +1030,16 @@ mod tests {
         )
         .unwrap();
         fs::write(dir.path().join("settings.json"), b"{}").unwrap();
+        // A data pack downloaded meanwhile, for the app to install: not an installer's to delete.
+        fs::write(dir.path().join(PACK_NAME), PACK).unwrap();
         let installer = download(&service, &update, dir.path()).unwrap();
 
         assert_eq!(installer, dir.path().join(INSTALLER_NAME));
         assert_eq!(fs::read(&installer).unwrap(), INSTALLER);
-        assert_eq!(files_in(dir.path()), [INSTALLER_NAME, "settings.json"]);
+        assert_eq!(
+            files_in(dir.path()),
+            [PACK_NAME, INSTALLER_NAME, "settings.json"]
+        );
     }
 
     #[test]
@@ -795,7 +1072,7 @@ mod tests {
             format!("{error:#}").contains(SUMS_SIGNATURE_ASSET),
             "{error:#}"
         );
-        assert!(!service.fetched_an_installer());
+        assert!(!service.fetched(".exe"));
         assert!(files_in(dir.path()).is_empty());
     }
 
@@ -813,7 +1090,7 @@ mod tests {
             format!("{error:#}").contains(SUMS_SIGNATURE_ASSET),
             "{error:#}"
         );
-        assert!(!service.fetched_an_installer());
+        assert!(!service.fetched(".exe"));
         assert!(files_in(dir.path()).is_empty());
     }
 
@@ -857,7 +1134,7 @@ mod tests {
 
     #[test]
     fn a_release_whose_installer_is_off_the_service_is_an_error() {
-        // Refused at the check: the tray never offers what it couldn't install.
+        // Refused at the check: the app never starts an update it couldn't install.
         let off_service = "https://github.com/mttzzz/poe2-oracle/releases/download/v0.2.0/\
             PoE2-Oracle-Setup-0.2.0.exe";
         let release = Release {
@@ -939,5 +1216,199 @@ mod tests {
         assert_eq!(expected_sha256(&sums, "b.exe").unwrap(), digest(b"b"));
         assert_eq!(expected_sha256(&sums, "c.exe").unwrap(), digest(b"c"));
         assert!(expected_sha256(&sums, "d.exe").is_err());
+    }
+
+    #[test]
+    fn a_newer_data_pack_downloads_as_its_verified_zip() {
+        let service = CannedClient::new(signed_pack_answers());
+        let update = check_pack(&service, PACK_VERSION - 1)
+            .unwrap()
+            .expect("a later pack is newer");
+        assert_eq!(update.version, PACK_VERSION);
+
+        let dir = tempfile::tempdir().unwrap();
+        let earlier = data_pack_asset(PACK_VERSION - 1);
+        fs::write(dir.path().join(&earlier), b"earlier pack").unwrap();
+        fs::write(dir.path().join(format!("{earlier}.part")), b"interrupted").unwrap();
+        // An installer downloaded meanwhile, for the app to run: not a pack's to delete.
+        fs::write(dir.path().join(INSTALLER_NAME), INSTALLER).unwrap();
+        fs::write(dir.path().join("settings.json"), b"{}").unwrap();
+        let pack = download_pack(&service, &update, dir.path()).unwrap();
+
+        assert_eq!(pack, dir.path().join(PACK_NAME));
+        assert_eq!(fs::read(&pack).unwrap(), PACK);
+        assert_eq!(
+            files_in(dir.path()),
+            [PACK_NAME, INSTALLER_NAME, "settings.json"]
+        );
+    }
+
+    #[test]
+    fn only_a_newer_data_pack_is_an_update() {
+        let service = CannedClient::new(signed_pack_answers());
+        assert_eq!(check_pack(&service, PACK_VERSION).unwrap(), None);
+        assert_eq!(check_pack(&service, PACK_VERSION + 1).unwrap(), None);
+        let update = check_pack(&service, PACK_VERSION - 1).unwrap();
+        assert_eq!(update.map(|update| update.version), Some(PACK_VERSION));
+    }
+
+    #[test]
+    fn a_data_pack_whose_signature_does_not_match_is_never_fetched() {
+        // SHA256SUMS swapped, after signing, for one listing the pack served.
+        let signed = sums_for(PACK_NAME, b"the pack the release was built with");
+        let signature = signature_file(&test_key(), &signed);
+        let service = CannedClient::new(pack_answers(sums_for(PACK_NAME, PACK), signature, PACK));
+        let update = check_pack(&service, 0).unwrap().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+
+        let error = download_pack(&service, &update, dir.path()).unwrap_err();
+
+        assert!(
+            format!("{error:#}").contains(SUMS_SIGNATURE_ASSET),
+            "{error:#}"
+        );
+        assert!(!service.fetched(".zip"));
+        assert!(files_in(dir.path()).is_empty());
+
+        // Nor is one signed as the release pipeline signs, with a key other than the release key.
+        let service = CannedClient::new(signed_pack_answers());
+        let update = check_pack(&service, 0).unwrap().unwrap();
+        let client: Arc<dyn HttpClient> = service.clone();
+
+        let error = block_on(download_data(&client, &update, dir.path())).unwrap_err();
+
+        assert!(
+            format!("{error:#}").contains(SUMS_SIGNATURE_ASSET),
+            "{error:#}"
+        );
+        assert!(!service.fetched(".zip"));
+        assert!(files_in(dir.path()).is_empty());
+    }
+
+    #[test]
+    fn a_tampered_data_pack_is_rejected_and_deleted() {
+        // A signed SHA256SUMS, listing another pack than the one served.
+        let sums = sums_for(PACK_NAME, b"the pack the release was built with");
+        let signature = signature_file(&test_key(), &sums);
+        let service = CannedClient::new(pack_answers(sums, signature, PACK));
+        let update = check_pack(&service, 0).unwrap().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+
+        let error = download_pack(&service, &update, dir.path()).unwrap_err();
+
+        assert!(format!("{error:#}").contains("SHA-256"), "{error:#}");
+        assert!(files_in(dir.path()).is_empty());
+    }
+
+    #[test]
+    fn a_data_pack_over_the_cap_is_never_offered() {
+        // Only the size listed matters: the check downloads nothing.
+        let listing = |size: u64| {
+            let assets = [
+                (SUMS_ASSET, 100),
+                (SUMS_SIGNATURE_ASSET, 100),
+                (PACK_NAME, usize::try_from(size).unwrap()),
+            ];
+            pack_service(&format!("data-{PACK_VERSION}"), &assets, Vec::new())
+        };
+
+        let at_the_cap = check_pack(&listing(MAX_DATA_PACK_BYTES), 0).unwrap();
+        assert_eq!(at_the_cap.map(|update| update.version), Some(PACK_VERSION));
+        assert!(check_pack(&listing(MAX_DATA_PACK_BYTES + 1), 0).is_err());
+    }
+
+    #[test]
+    fn a_data_pack_missing_a_file_or_off_the_service_is_an_error() {
+        let tag = format!("data-{PACK_VERSION}");
+        let files = [PACK_NAME, SUMS_ASSET, SUMS_SIGNATURE_ASSET];
+        for missing in files {
+            // The pack of another version must not be taken for this one's.
+            let earlier = data_pack_asset(PACK_VERSION - 1);
+            let mut assets = vec![(earlier.as_str(), 100)];
+            assets.extend(
+                files
+                    .iter()
+                    .filter(|&&name| name != missing)
+                    .map(|&name| (name, 100)),
+            );
+            let error = check_pack(&pack_service(&tag, &assets, Vec::new()), 0).unwrap_err();
+            assert!(
+                error.to_string().ends_with(&format!("has no {missing}")),
+                "{error:#}"
+            );
+        }
+
+        let off_service =
+            format!("https://github.com/mttzzz/poe2-oracle/releases/download/{tag}/{PACK_NAME}");
+        let release = Release {
+            tag_name: tag.clone(),
+            html_url: format!("https://github.com/mttzzz/poe2-oracle/releases/tag/{tag}"),
+            assets: [
+                (SUMS_ASSET, download_url(&tag, SUMS_ASSET)),
+                (
+                    SUMS_SIGNATURE_ASSET,
+                    download_url(&tag, SUMS_SIGNATURE_ASSET),
+                ),
+                (PACK_NAME, off_service.clone()),
+            ]
+            .into_iter()
+            .map(|(name, browser_download_url)| ReleaseAsset {
+                name: name.to_owned(),
+                browser_download_url,
+                size: 100,
+            })
+            .collect(),
+        };
+        let service = CannedClient::new([(
+            latest_pack_url(),
+            200,
+            serde_json::to_vec(&release).unwrap(),
+        )]);
+
+        let error = check_pack(&service, 0).unwrap_err();
+
+        assert!(error.to_string().contains(&off_service), "{error:#}");
+    }
+
+    #[test]
+    fn a_data_pack_is_tagged_data_and_its_version() {
+        // An app release answered for a pack, a version missing or not all digits.
+        for tag in ["v0.2.0", "data-", "data-+2026092601", "data-2026092601b"] {
+            let error = check_pack(&pack_service(tag, &[], Vec::new()), 0).unwrap_err();
+            assert!(
+                error.to_string().ends_with("is not data-<version>"),
+                "{tag}: {error:#}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_data_pack_answer_is_kept_apart_from_the_release_answer() {
+        // One service and one updates folder for both, each answer with its own ETag.
+        let answers = signed_answers("0.2.0", INSTALLER)
+            .into_iter()
+            .chain(signed_pack_answers());
+        let service = CannedClient::new(answers)
+            .with_etag(ETAG_0_2_0)
+            .with_pack_etag(ETAG_PACK);
+        let dir = tempfile::tempdir().unwrap();
+
+        let release = check_in(&service, "0.1.0", dir.path()).unwrap();
+        let pack = check_pack_in(&service, 0, dir.path()).unwrap();
+        // Each next check asks with its own tag and reads its own kept answer.
+        let pack_again = check_pack_in(&service, 0, dir.path()).unwrap();
+        let release_again = check_in(&service, "0.1.0", dir.path()).unwrap();
+
+        assert_eq!(
+            service.conditions_at(&latest_pack_url()),
+            [None, Some(ETAG_PACK.to_owned())]
+        );
+        assert_eq!(
+            service.conditions_at(&latest_url()),
+            [None, Some(ETAG_0_2_0.to_owned())]
+        );
+        assert_eq!(pack_again, pack);
+        assert_eq!(pack.map(|update| update.version), Some(PACK_VERSION));
+        assert_eq!(release_again, release);
     }
 }

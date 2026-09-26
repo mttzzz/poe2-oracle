@@ -3,9 +3,12 @@
 pub mod bound_input;
 pub mod brand;
 pub mod craft_link;
+pub mod data_pack;
 pub mod i18n;
 pub mod item_refs;
+pub mod launch;
 pub mod league_chip;
+pub mod league_lookup;
 pub mod listing_match;
 pub mod overlay_layout;
 pub mod paths;
@@ -18,6 +21,7 @@ pub mod session;
 pub mod settings;
 pub mod text_area;
 pub mod tour;
+pub mod update_rules;
 pub mod xp_tracker;
 // The app side of reporting, whose rules its tests check on every target; only Windows sends.
 #[cfg(any(target_os = "windows", test))]

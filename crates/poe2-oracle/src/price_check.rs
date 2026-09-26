@@ -24,7 +24,7 @@ use anyhow::{Context as _, Result, ensure};
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 use gpui::{
     AnyWindowHandle, App, AppContext as _, AsyncApp, ClipboardItem, Context, Entity, FocusHandle,
-    KeyDownEvent,
+    KeyDownEvent, Task,
 };
 use http_client::HttpClient;
 use item_parser::{IndexedCatalog, ItemLanguage, ParseError};
@@ -48,6 +48,7 @@ use crate::game_chat;
 use crate::i18n;
 use crate::item_refs::{self, RefKind};
 use crate::league_chip;
+use crate::league_lookup::{LeagueLookup, Ticket};
 use crate::overlay_layout::{self, PanelSide, PhysicalRect};
 use crate::paths;
 use crate::platform::game_window::{Foreground, GameScreen};
@@ -445,10 +446,13 @@ pub struct PriceCheckApp {
     /// Every league the trade site lists, current first -- what the settings window offers and
     /// `Settings::league` resolves against.
     leagues: Vec<String>,
-    /// The signed-in account's PoE 2 private leagues, as pathofexile.com lists them
-    /// (`refresh_private_leagues`): on offer in the league menus, each priced by the public league
-    /// its page names. Empty while signed out.
-    private_leagues: Vec<PrivateLeague>,
+    /// The signed-in account's PoE 2 private leagues, as pathofexile.com lists them, and how
+    /// looking them up goes (`refresh_private_leagues`): on offer in the league menus, each priced
+    /// by the public league its page names. Empty while signed out.
+    league_lookup: LeagueLookup,
+    /// The next lookup of the private leagues by itself (`arm_league_refresh`); dropping it
+    /// cancels it.
+    league_refresh: Option<Task<()>>,
     /// The player's settings as they apply: as saved, unless the file didn't take the last write
     /// (`save_failure`).
     pub settings: Settings,
@@ -563,7 +567,8 @@ impl PriceCheckApp {
             http_client,
             league: String::new(),
             leagues: Vec::new(),
-            private_leagues: Vec::new(),
+            league_lookup: LeagueLookup::default(),
+            league_refresh: None,
             listing_status: settings.listing_status.into(),
             price_currency: PriceCurrency::Any,
             settings,
@@ -621,7 +626,13 @@ impl PriceCheckApp {
 
     /// The signed-in account's PoE 2 private leagues; empty while signed out or until they load.
     pub fn private_leagues(&self) -> &[PrivateLeague] {
-        &self.private_leagues
+        self.league_lookup.leagues()
+    }
+
+    /// The account's private leagues and how looking them up goes, as the settings window's
+    /// Account section says it.
+    pub fn league_lookup(&self) -> &LeagueLookup {
+        &self.league_lookup
     }
 
     /// The trade site's leagues named in the interface language (`i18n::lang`): the Russian
@@ -633,7 +644,7 @@ impl PriceCheckApp {
     /// The league whose exchange market and poe2scout prices stand for the current one's: itself,
     /// or for a private league the public one it's made from (`league_chip::market_league`).
     pub fn market_league(&self) -> &str {
-        league_chip::market_league(&self.league, &self.leagues, &self.private_leagues)
+        league_chip::market_league(&self.league, &self.leagues, self.league_lookup.leagues())
     }
 
     /// The public league a private one's prices come from, named in the interface language;
@@ -749,6 +760,9 @@ impl PriceCheckApp {
         {
             cx.refresh_windows();
         }
+        if self.settings.private_leagues_refresh_minutes != old.private_leagues_refresh_minutes {
+            self.arm_league_refresh(cx);
+        }
         cx.notify();
     }
 
@@ -791,57 +805,91 @@ impl PriceCheckApp {
         cx.notify();
     }
 
-    /// Loads the signed-in account's private leagues from pathofexile.com
-    /// (`trade_client::private_leagues::mine`): when the site accepts the session, and whenever
-    /// the settings window opens -- the player may have joined one since. Signed out, they're
-    /// forgotten. Should the league searched be one of them, priced by another public league than
-    /// its name suggested, its market loads again from that one.
-    pub fn refresh_private_leagues(&mut self, cx: &mut Context<Self>) {
-        let signed_in = matches!(
-            cx.try_global::<SessionStatus>(),
-            Some(SessionStatus::SignedIn { .. })
-        );
-        if !signed_in {
-            if !self.private_leagues.is_empty() {
-                self.private_leagues.clear();
+    /// Looks up the signed-in account's private leagues on pathofexile.com
+    /// (`trade_client::private_leagues::mine`): when the site accepts the session, or couldn't be
+    /// asked about it; whenever the settings window opens -- the player may have joined one
+    /// since; every `Settings::private_leagues_refresh` by itself (`arm_league_refresh`); and when
+    /// the player presses «Обновить» (`asked`). One at a time (`LeagueLookup::start`). Signed out,
+    /// they're forgotten, and none is looked up by itself.
+    pub fn refresh_private_leagues(&mut self, asked: bool, cx: &mut Context<Self>) {
+        if signed_out(cx) {
+            self.league_refresh = None;
+            if self.league_lookup.forget() {
                 cx.notify();
             }
             return;
         }
+        let started = self.league_lookup.start(asked);
+        if started.is_some() || asked {
+            cx.notify();
+        }
+        // Otherwise one is under way: a press has made it the player's.
+        let Some(ticket) = started else {
+            return;
+        };
         let client = self.http_client.clone();
         cx.spawn(async move |this, cx| {
-            let leagues = match private_leagues::mine(&client).await {
-                Ok(leagues) => leagues,
-                Err(err) => {
-                    log::warn!("loading the account's private leagues failed: {err:#}");
-                    return;
-                }
-            };
-            log::info!("private leagues on pathofexile.com: {}", leagues.len());
-            let _ = this.update(cx, |app, cx| {
-                if app.private_leagues == leagues {
-                    return;
-                }
-                let market = |app: &PriceCheckApp| {
-                    league_chip::market_league(&app.league, &app.leagues, &app.private_leagues)
-                        .to_owned()
-                };
-                let before = market(app);
-                app.private_leagues = leagues;
-                let after = market(app);
-                if after != before {
-                    log::info!(
-                        "{} is private: its exchange items are priced by {after}",
-                        app.league
-                    );
-                    app.market = None;
-                    app.scout = None;
-                    app.spawn_market_load(false, cx);
-                }
-                cx.notify();
-            });
+            let answer = private_leagues::mine(&client).await;
+            let _ = this.update(cx, |app, cx| app.take_private_leagues(ticket, answer, cx));
         })
         .detach();
+    }
+
+    /// A lookup's answer, unless a sign-out came since (`LeagueLookup::finish`): the leagues it
+    /// found take the old ones' place, or -- for no answer -- the old ones stay. Should the league
+    /// searched be one of them, priced by another public league than before, its market loads
+    /// again from that one. The next lookup by itself is due from now.
+    fn take_private_leagues(
+        &mut self,
+        ticket: Ticket,
+        answer: Result<Vec<PrivateLeague>>,
+        cx: &mut Context<Self>,
+    ) {
+        let answer = match answer {
+            Ok(leagues) => {
+                log::info!("private leagues on pathofexile.com: {}", leagues.len());
+                Ok(leagues)
+            }
+            Err(err) => {
+                log::warn!("loading the account's private leagues failed: {err:#}");
+                Err(format!("{err:#}"))
+            }
+        };
+        let before = self.market_league().to_owned();
+        if !self.league_lookup.finish(ticket, answer, Instant::now()) {
+            return;
+        }
+        let after = self.market_league();
+        if after != before {
+            log::info!(
+                "{} is private: its exchange items are priced by {after}",
+                self.league
+            );
+            self.market = None;
+            self.scout = None;
+            self.spawn_market_load(false, cx);
+        }
+        self.arm_league_refresh(cx);
+        cx.notify();
+    }
+
+    /// Arms the next lookup of the private leagues by itself: `Settings::private_leagues_refresh`
+    /// after the last one ended, at once if that's past (`LeagueLookup::due_in`) -- while there's a
+    /// session to look with. Set to never, or signed out, it's disarmed. Each lookup's end arms it
+    /// anew, and so does a change of the setting.
+    fn arm_league_refresh(&mut self, cx: &mut Context<Self>) {
+        self.league_refresh = None;
+        let Some(every) = self.settings.private_leagues_refresh() else {
+            return;
+        };
+        if signed_out(cx) {
+            return;
+        }
+        let wait = self.league_lookup.due_in(every, Instant::now());
+        self.league_refresh = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(wait).await;
+            let _ = this.update(cx, |app, cx| app.refresh_private_leagues(false, cx));
+        }));
     }
 
     /// Makes the league the settings resolve to the one searches go to, when it isn't already:
@@ -857,7 +905,8 @@ impl PriceCheckApp {
         if !self.league.is_empty() {
             log::info!("league {} -> {league}", self.league);
         }
-        let market = league_chip::market_league(league, &self.leagues, &self.private_leagues);
+        let market =
+            league_chip::market_league(league, &self.leagues, self.league_lookup.leagues());
         if market != league {
             log::info!("{league} is private: its exchange items are priced by {market}");
         }
@@ -1774,7 +1823,8 @@ async fn current_market(
             .filter(|(_, loaded_at)| loaded_at.elapsed() < MARKET_MAX_AGE)
             .map(|(market, _)| market.clone());
         let market_league =
-            league_chip::market_league(league, &state.leagues, &state.private_leagues).to_owned();
+            league_chip::market_league(league, &state.leagues, state.league_lookup.leagues())
+                .to_owned();
         (cached, market_league)
     });
     if let Some(market) = cached {
@@ -1807,7 +1857,8 @@ async fn current_scout(
             .as_ref()
             .is_some_and(|(_, loaded_at)| loaded_at.elapsed() < MARKET_MAX_AGE);
         let market_league =
-            league_chip::market_league(league, &state.leagues, &state.private_leagues).to_owned();
+            league_chip::market_league(league, &state.leagues, state.league_lookup.leagues())
+                .to_owned();
         (fresh, market_league)
     });
     if fresh {
@@ -1826,6 +1877,13 @@ async fn current_scout(
     Ok(())
 }
 
+/// Whether there's no session to look the account's private leagues up with: none stored, or the
+/// site refused it (`SessionStatus::signed_in`).
+fn signed_out(cx: &App) -> bool {
+    !cx.try_global::<SessionStatus>()
+        .is_some_and(SessionStatus::signed_in)
+}
+
 /// Opens the price-check `Entity`, immediately in `BootstrapState::Loading`, and spawns the task
 /// that loads the catalogs and leagues (`PriceCheckApp::apply_bootstrap`) -- then again every
 /// `CATALOG_REFRESH` while the app runs, and after a failed first load sooner
@@ -1837,17 +1895,15 @@ pub fn create_app(
 ) -> Entity<PriceCheckApp> {
     let view = cx.new(|_cx| PriceCheckApp::loading(http_client.clone(), settings));
 
-    // The account's private leagues follow the session: loaded once the site accepts it,
-    // forgotten once it's gone -- not while a check is under way.
+    // The account's private leagues follow the session: looked up once the site accepts it or
+    // couldn't be asked about it, forgotten once it's gone -- not while a check is under way.
     let weak = view.downgrade();
     cx.observe_global::<SessionStatus>(move |cx| {
-        if matches!(
+        if !matches!(
             cx.try_global::<SessionStatus>(),
-            Some(
-                SessionStatus::SignedIn { .. } | SessionStatus::SignedOut | SessionStatus::Invalid
-            )
+            Some(SessionStatus::Checking)
         ) {
-            let _ = weak.update(cx, |app, cx| app.refresh_private_leagues(cx));
+            let _ = weak.update(cx, |app, cx| app.refresh_private_leagues(false, cx));
         }
     })
     .detach();

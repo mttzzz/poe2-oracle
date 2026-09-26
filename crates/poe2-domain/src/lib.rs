@@ -1,8 +1,9 @@
 //! Plain data types shared across the price-check pipeline: `ParsedItem` and everything it's
 //! built from (see [`parsed_item`]), the trade API's stat catalog (`StatCatalog`) and
-//! `ItemCategory`. Zero crate-local dependencies and no I/O -- every other crate in this
-//! workspace that needs these shapes (`item-parser`, `stat-filters`, `trade-client`,
-//! `crates/poe2-oracle`) depends on this one, never the reverse.
+//! `ItemCategory`; and the slot where a data pack's copy of a built-in game table waits for the
+//! table's first read ([`pack_table`]). Zero crate-local dependencies and no I/O -- every other
+//! crate in this workspace that needs these shapes (`item-parser`, `stat-filters`,
+//! `trade-client`, `crates/poe2-oracle`) depends on this one, never the reverse.
 
 use serde::{Deserialize, Serialize};
 
@@ -18,3 +19,5 @@ pub struct ItemCategory {
 
 pub mod parsed_item;
 pub use parsed_item::*;
+
+pub mod pack_table;
