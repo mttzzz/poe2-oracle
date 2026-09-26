@@ -25,14 +25,14 @@ how they were measured and on which PC, and what the numbers don't tell.
 
 ## Next to other price checkers
 
-Measured on 26 September 2026, in two sessions, on the PC described under
+Measured on 26 September 2026, in three sessions, on the PC described under
 [How it was measured](#how-it-was-measured). Path of Exile 2 was open in the background and in
-view, but for the one row marked as covered, and nobody played or checked a price. The apps ran
-one at a time, each next to the game and PoE2 Oracle.
+view, and nobody played or checked a price. The other apps ran one at a time, each next to the game
+and a build of PoE2 Oracle; the build the site shows was measured on its own, in the same state.
 
 | App | Version | Built on | Measured at |
 |---|---|---|---|
-| PoE2 Oracle | 0.1.0, build of 26 September, 15:32 | Rust, GPUI on Direct3D 11 | 17:19, 17:28 and 17:32 |
+| PoE2 Oracle | 0.1.0, build of 26 September, 18:30 | Rust, GPUI on Direct3D 11 | 19:00, 19:01 and 19:03 |
 | POE2 Currency Overlay | 3.0.7 | Electron | 17:32 |
 | Exiled Exchange 2 | 0.16.7 | Electron | 14:18 |
 | Sidekick | 2026.9.2 | .NET and WebView2 | 14:22 and 14:32 |
@@ -42,8 +42,7 @@ Each time, in UTC+3, starts a minute of measuring. The four measurements the sit
 
 | App, state | Processes | Memory in Task Manager, MB | Idle CPU, % of a core | GPU memory, dedicated, MB |
 |---|--:|--:|--:|--:|
-| **PoE2 Oracle** | **1** | **37.5** | **0.20** | **70.5** |
-| PoE2 Oracle, the game covered, XP plates hidden | 1 | 37.4 | 0.14 | 70.5 |
+| **PoE2 Oracle** | **1** | **39.6** | **0.12** | **40.1** |
 | POE2 Currency Overlay | 4 | 132.9 | 0.12 | 61.7 |
 | Exiled Exchange 2 | 4 | 138.3 | 0.09 | 0.0 |
 | Sidekick, ready to work | 7 | 267.0 | 0.40 | 75.3 |
@@ -56,8 +55,7 @@ The other counters, from the same readings:
 
 | App, state | Threads | Working set, MB | Commit, MB | GPU memory, shared, MB |
 |---|--:|--:|--:|--:|
-| **PoE2 Oracle** | **55** | **88.6** | **224.1** | **0.8** |
-| PoE2 Oracle, the game covered, XP plates hidden | 55 | 88.6 | 277.4 | 0.2 |
+| **PoE2 Oracle** | **56** | **94.2** | **162.6** | **1.0** |
 | POE2 Currency Overlay | 161 | 376.8 | 292.8 | 4.5 |
 | Exiled Exchange 2 | 107 | 389.7 | 584.3 | 0.0 |
 | Sidekick, ready to work | 300 | 704.5 | 449.0 | 4.6 |
@@ -78,18 +76,29 @@ The other counters, from the same readings:
   card uses for the process.
 - **Idle CPU** is in percent of one logical core, so 100% is one core fully busy. This PC has 24,
   so Task Manager's CPU column shows a 24th of these numbers: 110% there reads about 4.6%.
-- PoE2 Oracle's row is the median of its two windows with the game in view: on its own at 17:28,
-  and beside POE2 Currency Overlay at 17:32. They gave 37.6 and 37.4 MB, and 0.20% of a core both
-  times.
-- The row with the game covered is PoE2 Oracle on its own at 17:19, while a maximized browser
-  window covered the whole game: PoE2 Oracle then hides its XP plates. The other apps weren't
-  measured in that state, so the row is there for reference.
+- PoE2 Oracle's row is the median of its three windows, at 19:00, 19:01 and 19:03, on its own
+  next to the game, 3.7 to 8.2 minutes after it started. They gave 39.6, 39.5 and 39.6 MB, and
+  0.128, 0.122 and 0.116% of a core; its dedicated GPU memory was 71.8 MB in the first and 40.1 MB
+  in the other two (see [Caveats](#caveats)).
+- In those minutes PoE2 Oracle showed three windows over the game: the XP plate, its ⚙ and the map
+  plate, which shows once a map has been played since logging in. Its earlier builds were measured
+  with the first two.
 
-PoE2 Oracle isn't the lowest in three columns: idle CPU, where Exiled Exchange 2, POE2 Currency
-Overlay and Sidekick on its setup page used less, and Sidekick ready to work and PoE Overlay II
-more; dedicated GPU memory, where Exiled Exchange 2, PoE Overlay II and POE2 Currency Overlay held
-less, and Sidekick more; and shared GPU memory, where Exiled Exchange 2, which draws without the
-graphics card, used none. See [Caveats](#caveats).
+PoE2 Oracle isn't the lowest in three columns. Idle CPU: Exiled Exchange 2 used less, 0.094%
+against PoE2 Oracle's 0.122%; POE2 Currency Overlay's 0.119% is within the spread of PoE2 Oracle's
+own three minutes, 0.116–0.128%; Sidekick (0.145% and 0.398%) and PoE Overlay II used more.
+Dedicated GPU memory: Exiled Exchange 2 and PoE Overlay II held less, POE2 Currency Overlay and
+Sidekick more. Shared GPU memory: Exiled Exchange 2, which draws without the graphics card, used
+none. See [Caveats](#caveats).
+
+> **The previous build.** POE2 Currency Overlay was measured next to the build of 26 September,
+> 15:32, in the same state, with two windows over the game: the XP plate and its ⚙. The median of
+> its two windows, on its own at 17:28 and beside POE2 Currency Overlay at 17:32: 1 process and 55
+> threads, 37.5 MB in Task Manager, a working set of 88.6 MB, 224.1 MB of commit, 70.5 MB of
+> dedicated and 0.8 MB of shared GPU memory, and 0.20% of a core. On its own at 17:19, while a
+> maximized browser window covered the whole game and it hid its plates, it had 37.4 MB, a working
+> set of 88.6 MB, 277.4 MB of commit, 70.5 and 0.2 MB of GPU memory, and 0.14% of a core; the other
+> apps weren't measured in that state.
 
 > **The earlier build.** Exiled Exchange 2, Sidekick and PoE Overlay II were measured next to an
 > earlier build of PoE2 Oracle 0.1.0, from before its idle work was cut down. In the same state it
@@ -132,8 +141,9 @@ disk; a very first start downloads them before it is ready, and neither log hold
 
 - The installer, `PoE2-Oracle-Setup-0.1.0.exe`: 7,268,475 bytes (6.9 MB).
 - The app it installs, `poe2-oracle.exe`: 28,299,776 bytes (27.0 MB). Installed with its
-  uninstaller, the licenses and the third-party notices, it takes about 27.5 MB. The build of 15:32,
-  whose memory and CPU are measured above, is an exe of 28,449,280 bytes.
+  uninstaller, the licenses and the third-party notices, it takes about 27.5 MB. The build of 18:30,
+  whose memory and CPU are measured above, is an exe of 28,505,600 bytes, from an installer of
+  7,321,898 bytes.
 - Its cache, `%LOCALAPPDATA%\poe2-oracle\cache`, holds about 5.4 MB for the current league: the
   trade site's catalogs in English and Russian (3.0 MB), three hours of GGG's record of the Currency
   Exchange (2.3 MB) and poe2scout's prices (0.14 MB).
@@ -144,18 +154,22 @@ disk; a very first start downloads them before it is ready, and neither log hold
 threads), 32 GB of RAM with 15.2 GB free at the start, NVIDIA GeForce RTX 4090 with driver
 32.0.16.1714. Two 3840 × 2160 monitors at 200% scaling, the main one at 60 Hz.
 
-**Two sessions.** From 14:14 to 14:45 (UTC+3), Exiled Exchange 2, Sidekick and PoE Overlay II were
+**Three sessions.** From 14:14 to 14:45 (UTC+3), Exiled Exchange 2, Sidekick and PoE Overlay II were
 measured next to the earlier build of PoE2 Oracle, which had been running since 12:07, with 13
 price checks and a sign-in behind it. From 17:19 to 17:33, POE2 Currency Overlay was measured next
-to the build of 15:32, running since 17:03, and that build on its own at 17:19 and 17:28.
+to the build of 15:32, running since 17:03, and that build on its own at 17:19 and 17:28. From
+19:00 to 19:05, the build of 18:30 was measured on its own three times; its installer had started
+it at 18:56.
 
-**The game.** Path of Exile 2 (Steam) ran through both sessions on the main monitor, in view but
-not the window in front: in front was a browser on the second monitor. PoE2 Oracle's XP plates
-were on screen over the game in every window but the one at 17:19. In the first session the
-character stood in the hideout in away mode. The game was started anew before the second session,
-with the owner at the PC: from 17:18 to 17:28 a maximized browser window covered the whole game,
-which is when the 17:19 window was taken; from 17:28:41 to the end the game was in view and not
-covered at all. The game's log got no new line during any of the measuring minutes.
+**The game.** Path of Exile 2 (Steam) ran through all three sessions on the main monitor, in view
+but not the window in front: in front was a browser on the second monitor. PoE2 Oracle's plates
+were on screen over the game in every window but the one at 17:19: the XP plate and its ⚙ in the
+first two sessions, and in the third the map plate too, as a map had been played since logging in.
+In the first session the character stood in the hideout in away mode. The game was started anew
+before the second session, with the owner at the PC: from 17:18 to 17:28 a maximized browser
+window covered the whole game, which is when the 17:19 window was taken; in the rest of the second
+session, from 17:28:41, and in all of the third, the game was in view and not covered at all. The
+game's log got no new line during any of the measuring minutes.
 
 **The method.**
 
@@ -168,14 +182,14 @@ covered at all. The game's log got no new line during any of the measuring minut
    20 seconds apart, with CPU counted over the whole minute. The tables give the median of the three
    readings. Memory moved less than 1.5% between them, but for PoE Overlay II with its window open:
    620–689 MB in the first window and 649–675 MB in the second.
-3. In the second session, the state of the desktop was checked from inside the user's session
-   before the measuring started, before every reading and at the end of each minute: whether the
-   game ran, whether it was in front or minimized, how much of it other windows covered (which
-   window is on top at 144 points across the game's window), which window was in front, and which
-   windows PoE2 Oracle showed. A minute in which the state had changed would have been measured
-   again; from 17:28:41 on it held in every reading. The 17:19 window came before the check could
-   see other windows over the game: a screenshot at 17:20 and a check at 17:23 found the game
-   covered by the browser, so that window is kept as a state of its own.
+3. In the second and third sessions, the state of the desktop was checked from inside the user's
+   session before the measuring started, before every reading and at the end of each minute:
+   whether the game ran, whether it was in front or minimized, how much of it other windows covered
+   (which window is on top at 144 points across the game's window), which window was in front, and
+   which windows PoE2 Oracle showed. A minute in which the state had changed would have been
+   measured again; from 17:28:41 on it held in every reading. The 17:19 window came before the
+   check could see other windows over the game: a screenshot at 17:20 and a check at 17:23 found the
+   game covered by the browser, so that window is kept as a state of its own.
 4. Each process was read the same way:
    - memory in Task Manager: the performance counter
      `Win32_PerfFormattedData_PerfProc_Process.WorkingSetPrivate`;
@@ -191,7 +205,7 @@ covered at all. The game's log got no new line during any of the measuring minut
    Overwolf's processes count, as it doesn't run without Overwolf. Each process was held open for
    the whole minute, so one that ended or started meanwhile counts too.
 6. PoE2 Oracle was read the same way in every window, and on its own: at 14:14 the earlier build,
-   at 17:19 and 17:28 the build of 15:32.
+   at 17:19 and 17:28 the build of 15:32, and at 19:00, 19:01 and 19:03 the build of 18:30.
 
 ## Caveats
 
@@ -201,21 +215,29 @@ covered at all. The game's log got no new line during any of the measuring minut
   themselves. Summed over several processes, it counts the same pages once for each, and so
   overstates an app of many processes; PoE2 Oracle, with one, has nothing to overstate. Windows'
   own DLLs and the graphics driver, shared by every program, are in each working set and in no
-  one's Memory. Commit is memory promised rather than used: PoE2 Oracle's 224 MB of it came with
-  37.5 MB in RAM.
+  one's Memory. Commit is memory promised rather than used: PoE2 Oracle's 162.6 MB of it came with
+  39.6 MB in RAM.
 - **GPU memory** is Windows' own count per process. PoE2 Oracle holds more dedicated GPU memory than
-  Exiled Exchange 2, PoE Overlay II and POE2 Currency Overlay, and less than Sidekick; its earlier
-  build held 159.6 MB, the most of all. It wasn't broken down by measurement; by GPUI's code, each
-  window holds GPU memory in proportion to its size in pixels, so the number grows with the screen,
-  and this PC runs 4K at 200%. Exiled Exchange 2 holds none: it turns off hardware acceleration
+  Exiled Exchange 2 and PoE Overlay II, and less than POE2 Currency Overlay and Sidekick; the build
+  of 15:32 held 70.5 MB, the earlier build 159.6 MB, the most of all. The build of 18:30 read
+  71.8 MB in the first of its three minutes: between 19:01:03 and 19:01:33, about 4.5 minutes after
+  it started, its GPU memory dropped to 40.1 MB and stayed there. Its log noted nothing at the time,
+  and why it dropped wasn't looked into; the table gives the median of the three minutes. The
+  memory wasn't broken down by measurement; by GPUI's code, each window holds GPU memory in
+  proportion to its size in pixels, so the number grows with the screen, and this PC runs 4K at
+  200%. Exiled Exchange 2 holds none: it turns off hardware acceleration
   (`app.disableHardwareAcceleration()`) and draws its overlay with the CPU. Overwolf's overlay in
   the game runs inside the game's own process and isn't counted for PoE Overlay II.
-- **Idle CPU.** PoE2 Oracle used 0.20% of one core in both of its windows with the game in view:
-  more than Exiled Exchange 2 (0.09%), POE2 Currency Overlay (0.12%) and Sidekick on its setup page
-  (0.15%), less than Sidekick ready to work (0.40%) and PoE Overlay II. On this 24-thread CPU that
-  is under 0.01% of the whole, which Task Manager's CPU column shows as 0. Its XP plates stay on
-  screen over the game, while none of the other apps showed anything over it at the time; with the
-  game covered and the plates hidden, PoE2 Oracle used 0.14%. Its earlier build used 0.70–0.76%.
+- **Idle CPU.** PoE2 Oracle used 0.122% of one core, the median of its three minutes, which ranged
+  from 0.116 to 0.128%: more than Exiled Exchange 2 (0.094%), about as much as POE2 Currency
+  Overlay, whose 0.119% is within that spread, and less than Sidekick (0.145% on its setup page,
+  0.398% ready to work) and PoE Overlay II. On this 24-thread CPU that is 0.005% of the whole, which
+  Task Manager's CPU column shows as 0. Its plates stay on screen over the game, while none of the
+  other apps showed anything over it at the time. Split by thread in two of its minutes, about a
+  third of it went to the graphics driver's threads, a third to Windows' thread pool, where GPUI
+  runs its timers and background work, a quarter to its UI thread and a tenth to GPUI's vsync
+  thread. The build of 15:32 used 0.20%, and 0.14% with the game covered and its plates hidden; the
+  earlier build used 0.70–0.76%.
 - **What was measured: idle.** The game ran in the background, and nobody opened an overlay or
   checked a price. What a price check costs in memory or CPU wasn't measured. POE2 Currency Overlay
   had its Price check tab open, as its settings kept it; on its Currency tab it asks for live rates
@@ -237,18 +259,22 @@ covered at all. The game's log got no new line during any of the measuring minut
   on top and letting clicks through, at zero opacity: it can't be seen until its hotkey makes it
   opaque. None of the others showed ads; POE2 Currency Overlay's window has a link to a Ko-fi
   donation page.
-- **Two builds, two sessions.** The site sets the build of 15:32 against apps measured in two
-  sessions: POE2 Currency Overlay next to it, the other three next to the earlier build, earlier
-  the same day and with the game started anew in between. The state was the same: the game in view
-  and not in front, PoE2 Oracle's plates on screen, every app idle.
-- **The game's state matters.** When another window covers the game, PoE2 Oracle hides its XP
-  plates, and it used less CPU: the 17:19 row. A minimized game is another state again, which
+- **Three builds, three sessions.** The site sets the build of 18:30 against apps measured next to
+  earlier builds: POE2 Currency Overlay next to the build of 15:32, the other three next to the
+  earlier build, earlier the same day, with the game started anew between the first and second
+  sessions. The state was the same: the game in view and not in front, PoE2 Oracle's plates on
+  screen, every app idle.
+- **The game's state and the plates matter.** When another window covers the game, PoE2 Oracle
+  hides its plates and uses less CPU: the build of 15:32 used 0.14% so, against 0.20% with the game
+  in view. The map plate shows only once a map has been played since logging in, and the build of
+  18:30 was measured with it: three windows over the game, where the builds before had two. If
+  anything, that counts against the build of 18:30. A minimized game is another state again, which
   wasn't measured.
 - **The first minutes against hours.** The other apps were measured 1.5 to 8.5 minutes after they
   started; PoE2 Oracle's earlier build after more than two hours, the build of 15:32 after 16 to 30
-  minutes. Apps on Electron, CEF and .NET usually grow as their caches, heaps and history of checks
-  fill, so for them these numbers are likely a lower bound. PoE Overlay II's were the same at 2–3
-  and at 4–5 minutes: not a start-up spike.
+  minutes and the build of 18:30 after 3.7 to 8.2 minutes. Apps on Electron, CEF and .NET usually
+  grow as their caches, heaps and history of checks fill, so for them these numbers are likely a
+  lower bound. PoE Overlay II's were the same at 2–3 and at 4–5 minutes: not a start-up spike.
 - **Exiled Exchange 2 0.16.7** is a build of the fork
   [mttzzz/Exiled-Exchange-2](https://github.com/mttzzz/Exiled-Exchange-2): Kvan7's
   [Exiled Exchange 2](https://github.com/Kvan7/Exiled-Exchange-2) 0.16.3 with an update channel and

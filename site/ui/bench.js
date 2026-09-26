@@ -15,8 +15,9 @@
 //   version, facts_measured  the version and the date of the timings and sizes
 //   measured                 the comparison's "Measured on <date>", naming PoE2 Oracle's date
 //                            apart once it differs from the others'
-//   lower                    where another app needs less than PoE2 Oracle, a sentence; empty
-//                            when none does
+//   lower                    where the comparison shows another app needing less than PoE2 Oracle,
+//                            a sentence; empty when none does. Values compare as the comparison
+//                            rounds them, so a difference it can't show isn't claimed either way
 //
 // `window.benchReady` settles once every one is filled.
 
@@ -76,12 +77,32 @@ const format = (value, digits) =>
 /** A number and its unit, which never part at a line break. */
 const unit = (number, name) => `${number}${nbsp}${words.units[name]}`;
 
+/** How many decimals the comparison shows of each metric's `value`: memory and GPU memory to one,
+ * idle CPU to two below 10 % and whole from there, processes whole. */
+const places = {
+    processes: () => 0,
+    memory: () => 1,
+    cpu: (value) => (value < 10 ? 2 : 0),
+    gpu: () => 1,
+};
+
+/** `metric`'s `value` rounded as the comparison shows it, by the same rounding as `format`'s. */
+const shown = (metric, value) => {
+    const digits = places[metric](value);
+    return Number(
+        new Intl.NumberFormat("en-US", {
+            minimumFractionDigits: digits,
+            maximumFractionDigits: digits,
+            useGrouping: false,
+        }).format(value),
+    );
+};
+
 const megabytes = (value, digits) => unit(format(value, digits), "mb");
 
 const range = ([low, high], name) => unit(`${format(low, 0)}–${format(high, 0)}`, name);
 
-/** Idle CPU: to two decimals below 10 %, whole above. */
-const percent = (value) => words.percent(format(value, value < 10 ? 2 : 0));
+const percent = (value) => words.percent(format(value, places.cpu(value)));
 
 const list = (items) => new Intl.ListFormat(locale, { type: "conjunction" }).format(items);
 
@@ -165,7 +186,7 @@ function line({ app, state, again }, ours, most) {
                 "span",
                 "bench-track",
                 h("span", { class: "bench-bar", "--share": (state.memory / most).toFixed(4) }),
-                h("span", "bench-value", megabytes(state.memory, 1)),
+                h("span", "bench-value", megabytes(state.memory, places.memory())),
             ),
             ratio && h("span", "bench-ratio", ratio),
         ),
@@ -177,22 +198,24 @@ function line({ app, state, again }, ours, most) {
                 { class: "bench-pips", "aria-hidden": "true" },
                 Array.from({ length: state.processes }, () => h("i")),
             ),
-            format(state.processes, 0),
+            format(state.processes, places.processes()),
         ),
         h("td", { role: "cell", class: "bench-number", "data-label": words.cpuCard }, percent(state.cpu)),
-        h("td", { role: "cell", class: "bench-number", "data-label": words.gpu }, megabytes(state.gpu, 1)),
+        h("td", { role: "cell", class: "bench-number", "data-label": words.gpu }, megabytes(state.gpu, places.gpu())),
     );
 }
 
-/** Each metric of the comparison where another app needs less than PoE2 Oracle, with the apps,
- * the one that needs least first. */
+/** Each metric of the comparison where another app needs less than PoE2 Oracle, as the comparison
+ * shows them (`shown`), with the apps, the one that needs least first. */
 function lower(apps) {
     const ours = apps.find((app) => app.id === "oracle").states[0];
     const parts = Object.entries(words.metrics).flatMap(([metric, name]) => {
         const names = apps
             .filter((app) => app.id !== "oracle")
             .flatMap((app) => {
-                const below = app.states.filter((state) => state[metric] < ours[metric]);
+                const below = app.states.filter(
+                    (state) => shown(metric, state[metric]) < shown(metric, ours[metric]),
+                );
                 if (below.length === 0) return [];
                 if (below.length === app.states.length) {
                     return [{ name: app.name, least: Math.min(...below.map((state) => state[metric])) }];
@@ -214,8 +237,8 @@ function values(apps, facts) {
             ? words.measured(date(ours.measured))
             : words.measuredApart(date(ours.measured), list(others.map(date)));
     return {
-        memory: megabytes(ours.states[0].memory, 1),
-        processes: format(ours.states[0].processes, 0),
+        memory: megabytes(ours.states[0].memory, places.memory()),
+        processes: format(ours.states[0].processes, places.processes()),
         ready: unit(format(facts.ready_s, 2), "s"),
         item_text: unit(format(facts.item_text_ms, 0), "ms"),
         processing: unit(format(facts.processing_ms, 0), "ms"),

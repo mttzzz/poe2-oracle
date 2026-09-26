@@ -6,9 +6,9 @@ PoE2 Oracle is a price checker and XP tracker for Path of Exile 2 on Windows: na
 light. It is written in Rust with [GPUI](https://github.com/zed-industries/zed/tree/main/crates/gpui)
 and its interface is drawn by the graphics card through Direct3D 11, with no Electron, browser or
 Overwolf inside; only signing in to pathofexile.com opens a page in Windows' own Edge component
-(WebView2). In Task Manager it is one process of 37.5 MB, and it is ready to price 0.27 s after it
+(WebView2). In Task Manager it is one process of 39.6 MB, and it is ready to price 0.27 s after it
 starts. Measured on the same PC in the same state, POE2 Currency Overlay, Exiled Exchange 2,
-Sidekick and PoE Overlay II took 3.5 to 17.7 times as much memory
+Sidekick and PoE Overlay II took 3.4 to 16.8 times as much memory
 ([how it was measured](https://oracle.pushka.biz/guide/en/performance.html)).
 
 Hover an item in the game and press `Ctrl+E`: a panel opens next to your inventory with the item's
