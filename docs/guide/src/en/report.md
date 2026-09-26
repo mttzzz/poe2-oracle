@@ -31,12 +31,13 @@ A switch in the window picks what the report is about:
 | **Item** | Shown when the window was opened from an item. | "What's wrong with this item's price or reading?" |
 | **Crash** | Shown only after a crash. | "What were you doing when it closed? (optional)" |
 
-Write in the box, in English or Russian; the counter under it counts up to 8000 characters.
-**Send** stays unavailable while the box is empty, except for a crash, where writing is optional,
-and while the text is over 8000 characters or the contact over 200.
+Write in the box, in English or Russian; it takes up to 8000 characters, and the counter under it
+counts them. **Send** stays unavailable while the box is empty, except for a crash, where writing is
+optional, and while the contact is over 200 characters.
 
 **Contact (optional)**: "Telegram, Discord or email — if you'd like an answer". Up to 200
-characters. Without it the report still arrives, but the developer has no way to answer you.
+characters: a longer one is cut to 200 when you leave the field. Without it the report still
+arrives, but the developer has no way to answer you.
 
 ## What's attached
 
@@ -69,7 +70,7 @@ one of:
   | Reason | What to do |
   |---|---|
   | "no connection to oracle.pushka.biz" | Check your internet connection, and whether a firewall, VPN or proxy blocks PoE2 Oracle. |
-  | "the service is unavailable, try later" | The service couldn't pass the report on right now. Try again later. |
+  | "the service is unavailable, try later" | The service couldn't take the report or pass it on right now: it was busy with other reports, the upload took too long, or neither of its channels to the developer answered. Try again later. |
   | "too many reports from your address, try again in *N* min" | Reports from one address are limited. Wait that long. |
   | "the attachment is too large" | What's attached is more than the service takes. Switch **Attach diagnostics** off and send again. |
   | "the service refused the report" | The service and this version of the app disagree on what a report may hold. Update PoE2 Oracle and try again. |
@@ -87,8 +88,8 @@ leaves the text box, a second press closes.
 If PoE2 Oracle stops on an error of its own, it writes the error down before it closes. The next
 start opens the report window by itself, with **Crash** picked and the line "PoE2 Oracle closed
 unexpectedly on *date*; what it reported is attached". Attached: PoE2 Oracle's version, the time,
-the error it stopped on and where in its code that happened, with your Windows user name and
-folders hidden, and the diagnostics report, on by default.
+the thread, the error it stopped on, where in its code that happened and the backtrace, with your
+Windows user name and folders hidden, and the diagnostics report, on by default.
 
 Writing what you were doing helps, but is optional. Send the report or close the window: either
 way it doesn't come back for that crash. If you quit PoE2 Oracle while the window is open (**Quit**

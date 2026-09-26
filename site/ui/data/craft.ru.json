@@ -1,0 +1,45 @@
+{
+    "panel": {
+        "icons": {
+            "divine": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvQ3VycmVuY3kvQ3VycmVuY3lNb2RWYWx1ZXMiLCJzY2FsZSI6MSwicmVhbG0iOiJwb2UyIn1d/2986e220b3/CurrencyModValues.png",
+            "exalted": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvQ3VycmVuY3kvQ3VycmVuY3lBZGRNb2RUb1JhcmUiLCJzY2FsZSI6MSwicmVhbG0iOiJwb2UyIn1d/ad7c366789/CurrencyAddModToRare.png"
+        },
+        "league": "Авто · Запретные ритуалы",
+        "rate": "492",
+        "item": {
+            "art": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvUmluZ3MvQmFzZXR5cGVzL0FtZXRoeXN0UmluZyIsInciOjEsImgiOjEsInNjYWxlIjoxLCJyZWFsbSI6InBvZTIifV0/352427171d/AmethystRing.png",
+            "name": "Крутящий ободок",
+            "base": "Кольцо с аметистом",
+            "rarity": "rare",
+            "lang": "ru"
+        },
+        "links": ["poe2db ↗", "вики ↗", "Craft of Exile ↗", "сообщить о проблеме"]
+    },
+    "craft": 2,
+    "callout": "Открывает это кольцо в Craft of Exile",
+    "carried": {
+        "title": "По id игры, а не по тексту клиента",
+        "lead": "Для этого кольца из русского клиента в ссылке:",
+        "labels": {
+            "i": "база",
+            "l": "уровень предмета",
+            "r": "редкость",
+            "ip": "собственное свойство",
+            "m": "модификаторы",
+            "language": "язык сайта"
+        }
+    },
+    "export": {
+        "i": "Metadata/Items/Rings/FourRing6",
+        "l": 79,
+        "r": "rare",
+        "ip": [[8]],
+        "m": [
+            { "k": "LightningDamagePercent5", "v": [26] },
+            { "k": "CastSpeedJewellery3", "v": [17] },
+            { "k": "Strength1", "v": [7] },
+            { "k": "ColdResist1", "v": [6] }
+        ]
+    },
+    "language": "ru"
+}

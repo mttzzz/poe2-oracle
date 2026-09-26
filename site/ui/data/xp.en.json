@@ -29,5 +29,14 @@
                 [{ "label": "map" }, { "value": "4:07" }, { "value": "+1.2%" }]
             ]
         }
+    ],
+    "notes": [
+        { "at": "64.8%", "text": "How much of the current level is done" },
+        { "at": "+12.4%/h", "text": "Percent of a level per hour of play, mostly over the last few minutes" },
+        { "at": "2h 50m", "text": "Play time to the next level at this rate" },
+        { "at": "gear", "text": "The gear opens the settings" },
+        { "at": "4:07", "text": "Time in the current map; it stops while you're out of it" },
+        { "at": "+1.2%", "text": "Experience this map gave, in percent of a level" },
+        { "at": "6:30", "text": "Average map time this session, since you logged in" }
     ]
 }

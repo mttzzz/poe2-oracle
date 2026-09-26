@@ -109,7 +109,7 @@ export function render(data, lang) {
 }
 
 /** The league select, the divine rate, the ⚙ and the ×. */
-function titleBar(data) {
+export function titleBar(data) {
     return h(
         "div",
         "oui-panel-title oui-titlebar",
@@ -169,7 +169,7 @@ function gear() {
  * The item's art, its name and base in its rarity's colour and its own client's face on the
  * banner that colour tints, its links, and the rule under it all.
  */
-function nameplate(item, links, lang) {
+export function nameplate(item, links, lang) {
     const color = NAME_COLORS[item.rarity] ?? NAME_COLORS.normal;
     return h(
         "div",

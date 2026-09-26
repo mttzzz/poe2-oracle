@@ -49,15 +49,20 @@ oracle.pushka.biz passes each report on to the developer and keeps none of it it
 
 - as an issue in the project's private GitHub repository, with everything above but the
   diagnostics report;
-- as a Telegram message to the developer, with the diagnostics report as a file.
+- as a Telegram message to the developer, with the diagnostics report and the item's or the
+  crash's text as files.
 
 Only the developer reads them. You need no account, on GitHub or anywhere else.
 
-Your IP address is used only to limit how many reports come from one address: it is not logged,
-and the count is forgotten when its time window ends, at the latest at the end of the day, Moscow
-time. The service's logs note a report's kind, its size and the app's version, never its text or
-the contact. It also counts, per day, the installers downloaded, the update checks it answered and
-the reports of each kind: numbers only, with no address, id or version.
+Your IP address is used only for limits: how many reports come from one address, and how many
+update connections one address holds at once (8). It is not logged. A report count is forgotten
+when its time window ends, at the latest at the end of the day, Moscow time; a connection's, when
+the connection closes. The service's logs note each report's kind, whether it came from the app or
+the site, the app's version, its issue number and the size of its diagnostics report, never its
+text or the contact. It also counts, per day, the installers downloaded, the update
+connections opened, the update checks it answered, the game data packs and other update files
+downloaded, and the reports of each kind: numbers only, with no address, id or version, kept for
+120 days.
 
 ## Signing in to pathofexile.com
 
@@ -121,6 +126,7 @@ of a [quick action](quick-actions.md).
 | Trade site catalogs, exchange and poe2scout prices, downloaded updates | `%LOCALAPPDATA%\poe2-oracle\cache` |
 | After a crash, what PoE2 Oracle reported, until you send that report or close its window | `%LOCALAPPDATA%\poe2-oracle\data\crash\last-crash.txt` |
 | After an update, which one it was (from which version to which), until the next start has said so | `%LOCALAPPDATA%\poe2-oracle\data\last-update.json` |
+| The installed game data pack, and the last damaged one set aside | `%LOCALAPPDATA%\poe2-oracle\data\game-data` |
 | Your pathofexile.com session, while you are signed in | Windows' Credential Manager: `PoE2 Oracle/pathofexile.com` |
 | The sign-in window's browser, while the window is open | `%LOCALAPPDATA%\poe2-oracle\data\login-browser` |
 | The start-with-Windows entry, when turned on | Registry: `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, value `PoE2 Oracle` |

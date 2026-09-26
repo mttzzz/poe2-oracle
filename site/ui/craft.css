@@ -1,0 +1,79 @@
+/* The price panel's link to Craft of Exile and what it carries (craft.js). */
+
+@import url("callout.css");
+@import url("panel.css");
+
+.oui-craft {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: round(calc(512 * var(--u)), 1px);
+}
+
+/* The Craft of Exile link, lit as under the pointer: style.rs `link` warms it to the light gold. */
+.oui-craft-panel .oui-craft-link {
+    color: var(--gold-light);
+}
+
+/* What the link carries: the site's words and the game's ids, in the page's text rather than the
+   app's, as wide as the panel. */
+.oui-craft-carried {
+    container-type: inline-size;
+    width: 100%;
+    margin-top: 1rem;
+    padding: 0.8rem 1rem 0.9rem;
+    border: 1px solid var(--border-gold);
+    border-radius: 4px;
+    background: #17130d;
+    color: var(--text-dim);
+    font-size: 0.8125rem;
+    line-height: 1.45;
+    -webkit-user-select: text;
+    user-select: text;
+}
+
+.oui-craft-title {
+    color: var(--gold);
+    font-family: var(--display);
+    font-weight: var(--display-weight);
+    font-size: 1.05rem;
+    line-height: 1.25;
+}
+
+.oui-craft-lead {
+    margin: 0.2rem 0 0.6rem;
+}
+
+.oui-craft-carried dl {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 0.15rem 1rem;
+    margin: 0;
+}
+
+.oui-craft-carried dd {
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    color: var(--text);
+    font-family: ui-monospace, "Cascadia Mono", Consolas, "DejaVu Sans Mono", monospace;
+    font-size: 0.78rem;
+    overflow-wrap: anywhere;
+}
+
+/* The rolls in the game's blue, as the panel prints a roll. */
+.oui-craft-rolls {
+    color: var(--text-value);
+}
+
+/* Too narrow for the names beside the values: each name over its value. */
+@container (max-width: 22rem) {
+    .oui-craft-carried dl {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 0;
+    }
+
+    .oui-craft-carried dd + dt {
+        margin-top: 0.3rem;
+    }
+}

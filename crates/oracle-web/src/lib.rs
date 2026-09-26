@@ -18,7 +18,10 @@
 //!
 //! Everything is configured from the environment ([`Config::from_env`]). Without a GitHub or a
 //! Telegram token the service runs dry on that side: it logs what it would have sent and sends
-//! nothing, which is how the dev lanes run it.
+//! nothing, which is how the dev lanes run it. A lane can instead point it at a stand-in for
+//! GitHub, which serves test releases and takes the issues (`GITHUB_API`, with a dummy token), and
+//! have it list the releases every few seconds (`LIST_RELEASES_EVERY`): `lanes/dev.sh` does both
+//! when the lane has test releases to offer.
 
 mod events;
 mod github;
@@ -80,12 +83,15 @@ pub struct Config {
     pub telegram_chat_id: Option<String>,
     /// `REDIS_URL`: where counters and rate limits are shared between replicas; in memory without.
     pub redis_url: Option<String>,
-    /// GitHub's REST API. Not in the environment: only tests point it elsewhere.
+    /// `GITHUB_API`: GitHub's REST API, without a trailing slash. Unset in production; the dev
+    /// lane points it at its stand-in, `lanes/fake-github.py`, and tests at theirs. Every call
+    /// goes there with [`Config::github_token`]: issues as well as releases.
     pub github_api: String,
     /// Telegram's Bot API. Not in the environment: only tests point it elsewhere.
     pub telegram_api: String,
-    /// How often the releases are listed: every two minutes. Not in the environment: only tests
-    /// shorten it.
+    /// `LIST_RELEASES_EVERY`: how often the releases are listed, in whole seconds, never under
+    /// [`LIST_RELEASES_AT_LEAST`]. Every two minutes unless set; the dev lane lists its stand-in's
+    /// every few seconds, and tests shorten it further.
     pub list_releases_every: Duration,
     /// The most event streams at once ([`events::AT_ONCE`]), or fewer when the open-file limit
     /// leaves room for fewer. Not in the environment: only tests lower it.
@@ -113,6 +119,10 @@ impl Default for Config {
         }
     }
 }
+
+/// The shortest `LIST_RELEASES_EVERY` the environment may set: a test release shows within
+/// seconds, and GitHub is never asked for the list every second.
+pub const LIST_RELEASES_AT_LEAST: Duration = Duration::from_secs(5);
 
 impl Config {
     /// The configuration the environment gives, over [`Config::default`]. An empty variable
@@ -146,6 +156,22 @@ impl Config {
             config.github_repo = repo.trim().to_owned();
         }
         config.github_token = var("GITHUB_TOKEN").map(|token| token.trim().to_owned());
+        if let Some(api) = var("GITHUB_API") {
+            config.github_api = api.trim().trim_end_matches('/').to_owned();
+        }
+        if let Some(value) = var("LIST_RELEASES_EVERY") {
+            let every = value.trim().parse().map(Duration::from_secs).map_err(|_| {
+                format!("LIST_RELEASES_EVERY is not a whole number of seconds: {value}")
+            })?;
+            if every < LIST_RELEASES_AT_LEAST {
+                return Err(format!(
+                    "LIST_RELEASES_EVERY is {} s; it may be no shorter than {} s",
+                    every.as_secs(),
+                    LIST_RELEASES_AT_LEAST.as_secs()
+                ));
+            }
+            config.list_releases_every = every;
+        }
         config.telegram_token = var("TELEGRAM_TOKEN").map(|token| token.trim().to_owned());
         config.telegram_chat_id = var("TELEGRAM_CHAT_ID").map(|chat| chat.trim().to_owned());
         config.redis_url = var("REDIS_URL");

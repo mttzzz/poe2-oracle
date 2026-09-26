@@ -141,7 +141,8 @@ The first public release.
   back by itself, and at once when Windows says the internet is back (Windows 10 2004 and later); a
   failed download is retried later, quietly. The settings show the version, the game data's
   version and what the updater is doing, with **Check now**. Turned off, the app doesn't connect
-  to oracle.pushka.biz at all. Pre-releases are never offered.
+  to oracle.pushka.biz for updates; only the reports you send go there. Pre-releases are never
+  offered.
 - **Game data between app releases:** the tables the app reads items with -- the ways the client
   prints a stat that the trade catalog lacks (English and Russian), the mod tiers, the Currency
   Exchange items, and items' English names, art and bases -- are built into the app and also come

@@ -6,8 +6,11 @@
 // ends and all. A plate reads its words the way the app puts them together (xp_tracker.rs Word):
 // values in the HUD's cream, the words saying what they are muted, the rate in its gold, a small
 // diamond between the parts. Like the app, a plate says as much as fits it, measured in its own
-// typeface: its `words`, else the first of its `shorter` wordings that fits.
+// typeface: its `words`, else the first of its `shorter` wordings that fits. Asked for (the page's
+// `data-notes`), the figure gets `notes` round it (callout.js): each pointing at the word of a
+// plate it explains, by that word's text, or at "gear" -- none for a word the wording left out.
 
+import { callouts } from "./callout.js";
 import { diamond, h } from "./dom.js";
 
 // Each capture at 840 px (a 2x screen at the figure's 420 CSS px) and halved to 420 px, which a
@@ -32,12 +35,13 @@ const PART_GAP = 2 * 5 + 4;
 // The plates' typeface: the interface language's game-styled one (fonts.rs interface_font).
 const FONTS = { en: '500 12px "Alegreya SC"', ru: '700 12px "Philosopher"' };
 
-/** Draws `data.plates` (see data/xp.en.json) in `lang`, "en" or "ru". */
-export function render(data, lang) {
+/** Draws `data.plates` (see data/xp.en.json) in `lang`, "en" or "ru", and `data.notes` round them
+ * when `options` (the page's `data-*`) has `notes`. */
+export function render(data, lang, options = {}) {
     const plates = ["flask", "skill"]
         .map((rail) => data.plates.find((plate) => plate.rail === rail))
         .filter(Boolean);
-    return h(
+    const drawing = h(
         "div",
         "oui-xp",
         plates.map((plate) =>
@@ -56,6 +60,17 @@ export function render(data, lang) {
                 plate.rail === "flask" ? levelPlate(plate, lang) : mapPlate(plate, lang),
             ),
         ),
+    );
+    return "notes" in options && data.notes ? annotate(drawing, data.notes) : drawing;
+}
+
+function annotate(drawing, notes) {
+    const words = [...drawing.querySelectorAll(".oui-xp-part > span")];
+    const target = (at) =>
+        at === "gear" ? drawing.querySelector(".oui-xp-gear") : words.find((word) => word.textContent === at);
+    return callouts(
+        drawing,
+        notes.map((note) => ({ text: note.text, side: note.side, target: target(note.at) })).filter((note) => note.target),
     );
 }
 

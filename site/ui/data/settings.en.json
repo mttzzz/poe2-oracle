@@ -64,6 +64,11 @@
                     "label": "Update automatically",
                     "note": "Stays connected to oracle.pushka.biz: new versions and game data install by themselves, the app restarting once none of its windows is open",
                     "control": { "type": "switch", "on": true }
+                },
+                {
+                    "label": "Version 0.1.0 · game data 2026092601",
+                    "note": ["Connected to oracle.pushka.biz", "You have the latest version"],
+                    "control": { "type": "button", "label": "Check now", "kind": "secondary" }
                 }
             ]
         }

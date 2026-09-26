@@ -4,8 +4,10 @@
  * capture of the HUD at 2x (a 2160-row game's pixels halved) with the app's own pixels of its
  * plate laid over it (xp.js) and the plate's words where the app puts them (overlay_layout.rs
  * hud_rails). The words' lengths are HUD pixels -- a 1080-row game's -- so at scale 1 a CSS px is
- * a HUD px.
+ * a HUD px. The notes round the figure, when the page asks for them, are callout.css's.
  */
+
+@import url("callout.css");
 
 .oui-xp {
     display: flex;

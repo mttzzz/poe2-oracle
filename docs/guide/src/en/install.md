@@ -4,23 +4,26 @@
 
 - Windows 10 or Windows 11, 64-bit. Nothing else to install first: the app needs no .NET and no
   Visual C++ Redistributable. Only the optional sign-in to pathofexile.com needs the Microsoft Edge
-  WebView2 Runtime; if Windows lacks it, the settings say so and offer **Download from Microsoft**.
+  WebView2 Runtime; if Windows lacks it, a click on **Sign in** in the settings says so and offers
+  **Download from Microsoft**.
 - Path of Exile 2 with the English or Russian client.
 - The game in **Windowed** or **Windowed Fullscreen** display mode. Over exclusive Fullscreen,
   Windows cannot show other programs' windows, so the panel would stay invisible.
 - An internet connection: prices come from the Path of Exile trade site, GGG's Currency Exchange
-  data (`web.poecdn.com`) and poe2scout.
+  data (`web.poecdn.com`) and poe2scout; updates and the reports you send go through
+  oracle.pushka.biz.
 
 ## Download
 
 On [oracle.pushka.biz](https://oracle.pushka.biz/), click **Download for Windows**: the button
 always downloads the latest installer, `PoE2-Oracle-Setup-<version>.exe`.
 
-Each release also has a `SHA256SUMS` file on the site, at
-`https://oracle.pushka.biz/download/v<version>/SHA256SUMS`: for version 0.1.0,
-<https://oracle.pushka.biz/download/v0.1.0/SHA256SUMS>. To check the download, run this in
-PowerShell in the folder with the installer and compare the result with the installer's line in
-`SHA256SUMS` (letter case doesn't matter):
+The latest release's `SHA256SUMS` file is on the site too, at
+`https://oracle.pushka.biz/download/v<version>/SHA256SUMS`: while 0.1.0 is the latest,
+<https://oracle.pushka.biz/download/v0.1.0/SHA256SUMS>. The site serves only the latest release's
+files: once a newer version is out, an older version's address answers 404. To check the download,
+run this in PowerShell in the folder with the installer and compare the result with the
+installer's line in `SHA256SUMS` (letter case doesn't matter):
 
 ```powershell
 Get-FileHash .\PoE2-Oracle-Setup-*.exe -Algorithm SHA256
@@ -39,11 +42,12 @@ not commonly downloaded; keep it.
   `%LOCALAPPDATA%\Programs\PoE2 Oracle`; you can pick another one.
 - It adds a **PoE2 Oracle** shortcut to the Start menu. There is no desktop shortcut.
 - The last page offers to run PoE2 Oracle and to start it with Windows. The start-with-Windows box
-  is ticked if Windows has a startup entry for PoE2 Oracle, even one turned off in Task Manager;
-  finishing with it ticked turns autostart on, leaving it unticked turns it off. With **Run PoE2
-  Oracle** ticked, the app starts with a welcome; see [First start](#first-start).
+  is ticked when PoE2 Oracle already starts with Windows from this folder and Task Manager hasn't
+  turned that off; finishing with it ticked turns autostart on (undoing a Task Manager
+  **Disable**), leaving it unticked turns it off. With **Run PoE2 Oracle** ticked, the app starts
+  with a welcome; see [First start](#first-start).
 - If PoE2 Oracle is running, the installer says "PoE2 Oracle is running and will be closed to
-  continue." and closes it first.
+  continue.": **OK** closes it, **Cancel** keeps you on the folder page.
 
 ## Set the game's display mode
 

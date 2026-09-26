@@ -18,7 +18,14 @@
 # site/ and the images are read from the checkout, so an edit shows on the next reload. The guide
 # and the server are built once, at start: after editing docs/guide or the server's crates, run
 # `lane dev restart`. The lane holds no GitHub or Telegram token, so the server runs dry: it logs a
-# report and answers it, and nothing leaves the pod.
+# report and answers it, it has no release to offer, and nothing leaves the pod.
+#
+# Unless the lane has test releases: when .tmp/lane-dev/fake-github/releases exists as the server
+# starts (lanes/publish-release.py lays releases out there), lanes/fake-github.py stands in for
+# GitHub inside the pod, and the server lists its releases every 10 s with a dummy token. Every
+# call the server makes to GitHub goes to that address, a report's issue included, which the
+# stand-in keeps in .tmp/lane-dev/fake-github/issues: still nothing leaves the pod, and Telegram
+# stays dry. Delete .tmp/lane-dev/fake-github and `lane dev restart` for the plain dry run again.
 set -euo pipefail
 
 work=.tmp/lane-dev
@@ -50,7 +57,19 @@ MDBOOK=$mdbook docs/guide/build.sh "$PWD/$work/guide"
 # Dry, whatever the lane's Secret may hold. No REDIS_URL either: counters and rate limits live in
 # memory, and `lane dev restart` clears them. Behind the lane's proxies every visitor has the same
 # address, so a day of testing would otherwise use up one client's report limits.
-unset GITHUB_TOKEN TELEGRAM_TOKEN TELEGRAM_CHAT_ID REDIS_URL
+unset GITHUB_TOKEN GITHUB_API LIST_RELEASES_EVERY TELEGRAM_TOKEN TELEGRAM_CHAT_ID REDIS_URL
+# Or GitHub's stand-in, when the lane has test releases (see the top).
+stand_in=$work/fake-github
+if [[ -d $stand_in/releases ]]; then
+  export GITHUB_API=http://127.0.0.1:3001 GITHUB_TOKEN=lane-stand-in LIST_RELEASES_EVERY=10
+  FAKE_GITHUB_TOKEN=$GITHUB_TOKEN python3 -u lanes/fake-github.py --dir "$stand_in" --port 3001 &
+  # Up before the server's first listing, which would otherwise fail and wait out an interval.
+  for _ in {1..50}; do
+    curl -sf -o /dev/null -H "Authorization: Bearer $GITHUB_TOKEN" "$GITHUB_API/repos/-/-/labels" &&
+      break
+    sleep 0.1
+  done
+fi
 # The lane's dev Service, Ingress and readiness probe all point at port 3000.
 export PORT=3000
 export PUBLIC_URL=http://$LANE_HOST

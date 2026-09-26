@@ -1,0 +1,161 @@
+/*
+ * Notes round a picture (callout.js): labels in bands above and below it, a gold leader from each
+ * to the part it explains -- or, where the labels don't fit, numbered markers on the parts and a
+ * numbered legend under the picture. The labels are the page's text at the page's size, not the
+ * drawing's scale (--u). A component's stylesheet imports this one.
+ */
+
+.oui-callouts {
+    position: relative;
+}
+
+.oui-callouts-lines {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    pointer-events: none;
+}
+
+.oui-callouts-notes {
+    /* The picture sets the drawing's width; the notes' words never widen it. */
+    contain: inline-size;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    counter-reset: oui-callout;
+}
+
+/* Until the first layout has put them in place. */
+.oui-callouts:not(.oui-callouts--laid) > .oui-callouts-notes {
+    visibility: hidden;
+}
+
+.oui-callout {
+    position: absolute;
+    color: var(--text-dim);
+    font-family: var(--body);
+    font-size: 0.8125rem;
+    font-weight: 400;
+    line-height: 1.35;
+    text-align: center;
+    text-wrap: balance;
+    counter-increment: oui-callout;
+    -webkit-user-select: text;
+    user-select: text;
+}
+
+.oui-callout--lit {
+    color: var(--text);
+}
+
+/* What a label explains, for a screen reader only. */
+.oui-callout-term {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+/* A leader: a gold hairline ending in an arrowhead, on a dark halo that keeps it clear of the
+   picture. */
+.oui-callout-lead line,
+.oui-callout-marker line {
+    stroke: var(--gold);
+    stroke-width: 1;
+}
+
+.oui-callout-lead polygon {
+    fill: var(--gold);
+}
+
+.oui-callout-lead .oui-callout-halo {
+    fill: rgb(0 0 0 / 0.6);
+    stroke: rgb(0 0 0 / 0.6);
+    stroke-width: 3;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.oui-callout--lit line:not(.oui-callout-halo) {
+    stroke: var(--gold-light);
+}
+
+.oui-callout--lit polygon:not(.oui-callout-halo) {
+    fill: var(--gold-light);
+}
+
+/* A marker: the note's number in gold, in a gold ring on the dark. */
+.oui-callout-marker circle {
+    fill: var(--bg-panel);
+    stroke: var(--gold);
+    stroke-width: 1;
+}
+
+.oui-callout-marker text {
+    fill: var(--gold);
+    font-family: var(--body);
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.oui-callout-marker.oui-callout--lit circle {
+    stroke: var(--gold-light);
+}
+
+.oui-callout-marker.oui-callout--lit text {
+    fill: var(--gold-light);
+}
+
+/* The legend: the notes under the picture, each after its number in a marker's ring. */
+.oui-callouts--legend .oui-callouts-notes {
+    display: grid;
+    gap: 0.4rem;
+    margin-top: 0.9rem;
+}
+
+.oui-callouts--legend .oui-callout {
+    position: static;
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    font-size: 0.875rem;
+    text-align: left;
+}
+
+.oui-callouts--legend .oui-callout::before {
+    content: counter(oui-callout) / "";
+    flex: none;
+    width: 16px;
+    height: 16px;
+    border: 1px solid var(--gold);
+    border-radius: 50%;
+    background: var(--bg-panel);
+    color: var(--gold);
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 14px;
+    text-align: center;
+}
+
+.oui-callouts--legend .oui-callout--lit::before {
+    border-color: var(--gold-light);
+    color: var(--gold-light);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    .oui-callout,
+    .oui-callout::before {
+        transition: color 0.15s, border-color 0.15s;
+    }
+
+    .oui-callout-lead line,
+    .oui-callout-lead polygon,
+    .oui-callout-marker circle,
+    .oui-callout-marker text {
+        transition: stroke 0.15s, fill 0.15s;
+    }
+}

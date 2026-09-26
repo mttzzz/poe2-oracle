@@ -1,10 +1,12 @@
 // Draws PoE2 Oracle's interface into the page from data, in place of screenshots: every element
 // with `data-oracle="<component>"` gets that component (panel, market, xp, settings, hero) drawn
 // from `data/<data-set or component>.<lang>.json` next to this file, `lang` being the element's
-// `data-lang` or the page's. A component's `render(data, lang)` returns its element, or a promise
-// of it. `data-scale` sets the app's UI scale (default 1), `data-alt` what a screen reader says
-// for the picture. `window.oracleUiReady` settles once every drawing is done, its fonts and icons
-// loaded.
+// `data-lang` or the page's. A component's `render(data, lang, options)` returns its element, or a
+// promise of it; `options` is the element's own `data-*` (its dataset), for a component that draws
+// more on request. `data-scale` sets the app's UI scale (default 1), `data-alt` what a screen reader
+// says for the picture: the drawing's `[data-picture]` if it marks one -- a picture with notes round
+// it, which stay text -- else all of it. `window.oracleUiReady` settles once every drawing is done,
+// its fonts and icons loaded.
 
 const here = new URL(".", import.meta.url);
 const loaded = new Set();
@@ -51,11 +53,12 @@ async function draw(element) {
     element.classList.add("oui");
     element.lang = lang;
     if (element.dataset.scale) element.style.setProperty("--oui-scale", element.dataset.scale);
+    element.replaceChildren(await module.render(data, lang, element.dataset));
     if (element.dataset.alt) {
-        element.setAttribute("role", "img");
-        element.setAttribute("aria-label", element.dataset.alt);
+        const picture = element.querySelector("[data-picture]") ?? element;
+        picture.setAttribute("role", "img");
+        picture.setAttribute("aria-label", element.dataset.alt);
     }
-    element.replaceChildren(await module.render(data, lang));
     if ("fit" in element.dataset) fitWidth(element, Number(element.dataset.scale ?? 1));
     await Promise.all(
         [...element.querySelectorAll("img")].map((image) =>

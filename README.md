@@ -20,8 +20,8 @@ for you, prices currency from the exchange's own trade record, and adds an XP ov
 timer and a few quick chat actions.
 
 The app's interface is in English and Russian: by default it follows the game client's language,
-and the settings can switch it. The game client can be English or Russian. A short tour shows the
-basics on the first launch.
+or Windows' display language until the game has run, and the settings can switch it. The game
+client can be English or Russian. A short tour shows the basics on the first launch.
 
 <img src="docs/guide/src/images/en/hero.webp" width="952" alt="The PoE2 Oracle price panel, a currency's market card and both XP overlay plates">
 
@@ -32,6 +32,10 @@ basics on the first launch.
   min/max values and mod tier, and the cheapest listings on the trade site (one page of 10 per
   search): price, item level, seller and how long ago it was listed. Searches go to
   www.pathofexile.com or ru.pathofexile.com, matching the item's language. `Esc` closes the panel.
+- **Craft of Exile in one click, from either client.** The panel's Craft of Exile link opens the
+  item in that site's crafting simulator with base, item level, rarity, implicits and mods set.
+  Craft of Exile's own import reads only English text; the link passes the game's own ids instead,
+  so an item from the Russian client arrives the same as one from the English client.
 - **Search profiles** set up which stats are searched and how far below your rolls, as PoE Overlay
   II's do: **Quick price** (up to four of the most valuable stats, picked by PoE Overlay II's
   scoring of tier, tags and roll), **Exact match**, **Broad −10%** and **Crafting base**. A
@@ -98,7 +102,8 @@ basics on the first launch.
 3. The installer isn't code-signed yet, so Windows SmartScreen may show "Windows protected your
    PC". Click **More info**, then **Run anyway**. To check that you have the published file, run
    `Get-FileHash .\PoE2-Oracle-Setup-<version>.exe` in PowerShell and compare the result with the
-   release's `SHA256SUMS`, `https://oracle.pushka.biz/download/v<version>/SHA256SUMS`.
+   latest release's `SHA256SUMS`, `https://oracle.pushka.biz/download/v<version>/SHA256SUMS` (the
+   site serves only the latest release's files).
 
 To uninstall, open Windows Settings → Apps → Installed apps (Apps & features on Windows 10) →
 PoE2 Oracle → Uninstall. Your settings and downloaded price data are kept unless you tick
@@ -172,7 +177,7 @@ PoE2 Oracle has no telemetry and no accounts of its own. It connects to:
 | www.pathofexile.com, ru.pathofexile.com | The trade site's API: leagues, stat and item catalogs, your searches (the item's stats) and the listings they find. Once you sign in, the site's session goes along, and the app also reads your account page (to check the sign-in) and your private leagues' pages on www.pathofexile.com |
 | api.poe2scout.com | Prices of uniques; the week's prices and pages of Currency Exchange items, and prices of those that haven't traded in your league lately |
 | web.poecdn.com | Item images, and GGG's hourly record of the trades made on the Currency Exchange (one file per hour for all leagues, the same for everyone) |
-| oracle.pushka.biz | PoE2 Oracle's own service. While **Update automatically** is on (the default): a connection kept open from about 10 seconds after start for as long as the app runs, which carries only the app's version (its User-Agent), so the service sees your IP address meanwhile; and the downloads of a new installer or game data pack with their signed checksums. The service counts checks and downloads per day, with no id. A report, only when you send one: your text, the contact if given, the app's version, languages, Windows version, league and interface scale, the item's name and text or the crash text when attached, and the diagnostics report when **Attach diagnostics** is on. The service keeps no copy: it passes the report on to the developer as an issue in the project's private GitHub repository and a Telegram message, the diagnostics report to Telegram only |
+| oracle.pushka.biz | PoE2 Oracle's own service. While **Update automatically** is on (the default): a connection kept open from about 10 seconds after start for as long as the app runs, which carries only the app's version (its User-Agent), so the service sees your IP address meanwhile; and the downloads of a new installer or game data pack with their signed checksums. The service counts connections, checks and downloads per day, with no id. A report, only when you send one: your text, the contact if given, the app's version, languages, Windows version, league and interface scale, the item's name and text or the crash text when attached, and the diagnostics report when **Attach diagnostics** is on. The service keeps no copy: it passes the report on to the developer as an issue in the project's private GitHub repository and a Telegram message, the diagnostics report to Telegram only |
 
 Signing in is optional. It happens on pathofexile.com's own page, in a window of the app (Microsoft
 Edge WebView2); PoE2 Oracle doesn't read or keep your password, only the site's session.
@@ -191,6 +196,7 @@ them). It keeps its files here:
 | What the app reported about its last crash, until you send or close that report | `%LOCALAPPDATA%\poe2-oracle\data\crash\last-crash.txt` |
 | Which update the app just made, until the next start has said so | `%LOCALAPPDATA%\poe2-oracle\data\last-update.json` |
 | Downloaded catalogs, prices and updates | `%LOCALAPPDATA%\poe2-oracle\cache` |
+| The installed game data pack, and the last damaged one set aside | `%LOCALAPPDATA%\poe2-oracle\data\game-data` |
 | The pathofexile.com session, once you sign in | Windows Credential Manager, `PoE2 Oracle/pathofexile.com`; **Sign out** in the settings or uninstalling removes it |
 
 The diagnostics report is made only when you ask for it, and it leaves your computer only in a

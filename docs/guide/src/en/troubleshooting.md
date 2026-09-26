@@ -11,8 +11,8 @@ Go through these in order.
 2. **Is the game the window in front, with the settings window closed?** The hotkey works only
    while the game or the price panel is active, and not at all while the settings window is open:
    it is off then, so that you can record a new one. Close the settings window, click into the game
-   once and try again. If you changed the hotkey, hover the tray icon to see the current one, or
-   look in the settings, section **Price check**.
+   once and try again. If you changed the hotkey, look in the settings, section **Price check**;
+   while the tray icon shows, hovering it names the hotkey too.
 3. **Does another program hold <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>C</kbd>?** PoE2 Oracle checks
    prices by pressing the game's own copy shortcut. If a graphics card overlay, a screen recorder
    or Discord has taken that combination, the game never receives it. The settings window then
@@ -89,12 +89,12 @@ pathofexile.com. If yours is missing:
 2. The card **Private leagues** under it lists what pathofexile.com shows for your account. Joined
    the league after signing in? Click **Refresh**. The list is also looked up by itself, every hour
    by default (**Refresh automatically**).
-3. "Couldn't reach pathofexile.com: …" means the site didn't answer; the reason follows. Click
+3. "Couldn't reach pathofexile.com: …" means the lookup failed; the reason follows: no connection,
+   or an answer other than the page, such as an HTTP error. The list you had stays. Click
    **Refresh** again later.
 4. Still missing? Open pathofexile.com in your browser, signed in to the same account, and go to
-   **Events** → **My Private Leagues**. PoE2 Oracle lists the PoE 2 leagues that page shows; a
-   league you left, or one that has ended, isn't there. If the page shows yours and the app
-   doesn't, [report a problem](#reporting-a-problem).
+   **Events** → **My Private Leagues**. PoE2 Oracle lists the PoE 2 leagues that page shows. If the
+   page shows yours and the app doesn't, [report a problem](#reporting-a-problem).
 
 ## Collecting a diagnostics report
 
@@ -130,7 +130,8 @@ for the item it shows. Either opens the report window; see [Reporting a problem]
 PoE2 Oracle won't start, use the form on the site: see [Without the app](report.md#without-the-app).
 
 Windows **Settings → Apps → Installed apps** shows the installed version under PoE2 Oracle; the
-first line of `summary.txt` in the report has it too.
+settings show it too, in **General** → **Updates** ("Version *X.Y.Z* · game data *N*"), and the
+first line of `summary.txt` in the report has it.
 
 ## Questions
 
@@ -147,10 +148,10 @@ the Windows display language before the game has ever run. Only PoE2 Oracle's ow
 item names, modifiers and the trade site's texts keep their own language.
 
 **Does it need my account, password or session cookie?**
-No. PoE2 Oracle prices items like a visitor who is not signed in. Signing in is optional: it opens
-private leagues and the "sum" rows. You sign in on pathofexile.com's own page in a window of the
-app; PoE2 Oracle doesn't read or keep your password, only the site's session, in Windows Credential
-Manager. See [Account](settings.md#account) and [Privacy](privacy.md).
+No. Without a sign-in, PoE2 Oracle prices items like a visitor who is not signed in. Signing in is
+optional: it opens private leagues and the "sum" rows. You sign in on pathofexile.com's own page in
+a window of the app; PoE2 Oracle doesn't read or keep your password, only the site's session, in
+Windows Credential Manager. See [Account](settings.md#account) and [Privacy](privacy.md).
 
 **Does it play for me?**
 No. Each hotkey press does one thing: it copies one item, sends one chat message or pastes one
@@ -164,5 +165,5 @@ you like and click **Send**, or close the window to skip it. See
 
 **Where are my settings? How do I start over?**
 In `%APPDATA%\poe2-oracle\config\settings.json`. Quit PoE2 Oracle (**Quit** in the tray icon's menu,
-or **Quit the app** in the settings, section **Help**), delete the file, and the next start begins
-with the defaults and the guided tour.
+**Close window** in the taskbar button's right-click menu, or **Quit the app** in the settings,
+section **Help**), delete the file, and the next start begins with the defaults and the guided tour.

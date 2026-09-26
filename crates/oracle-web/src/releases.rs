@@ -36,8 +36,8 @@ use crate::github::{GhAsset, GhRelease, GitHub, Listed, Page, RELEASES_PER_PAGE}
 use crate::stats::{self, Stat};
 use crate::upstream::describe;
 
-/// How often the releases are listed, unless tests say otherwise
-/// ([`crate::Config::list_releases_every`]).
+/// How often the releases are listed, unless the configuration says otherwise
+/// ([`crate::Config::list_releases_every`]: `LIST_RELEASES_EVERY`, or a test's own).
 pub const LIST_EVERY: Duration = Duration::from_secs(2 * 60);
 /// The most pages a listing reads, [`RELEASES_PER_PAGE`] releases each.
 const MAX_PAGES: usize = 10;

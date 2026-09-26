@@ -237,7 +237,8 @@ the built-in tables stay in use.
   its version is higher.
 - `min_app`: the oldest app version whose code reads them. When a table changes in a way older
   apps can't read (a new column, a tag or value their parser doesn't know), raise it to the
-  version about to be released: older apps then leave the pack alone.
+  version about to be released: older apps then refuse the pack (they download it once per run,
+  say why in their settings and keep their built-in tables).
 - `tables`: the SHA-256 of the tables' `sha256sum` listing.
 
 **Whenever a table changes, give it a new version.** `cargo test -p oracle-data` fails while the
@@ -259,7 +260,8 @@ To publish a pack, for the maintainer:
 3. Check the draft, then publish it, never as the latest release:
    `gh release edit data-<version> --draft=false --latest=false`, or leave **Set as the latest
    release** unticked on GitHub. oracle.pushka.biz serves published packs only; from then on,
-   running apps with automatic updates on download the pack at once and restart to load it.
+   running apps with automatic updates on hear of it within about two minutes, download it (after
+   an app update, if one is out too) and restart to load it once none of their windows is open.
 
 `cargo run -p oracle-data -- build <folder>` makes the same pack by hand: the same tables give the
 same bytes (entries in name order, fixed dates, one deflate backend), so a published pack can be
@@ -337,6 +339,8 @@ It takes its settings from the environment, all optional:
 | `IMAGES_DIR` | `/app/images` | `docs/guide/src/images`, served under `/images/` and `/guide/images/` |
 | `GITHUB_TOKEN` | — | A fine-grained token for this repository (Issues read and write, Contents read): files the report issues, lists the releases and downloads their files. Unset: no issues are filed, `/api/v1/releases/latest`, `/api/v1/data/latest` and `/download` answer 503, and the event stream announces no versions |
 | `GITHUB_REPO` | `mttzzz/poe2-oracle` | The repository the issues and releases belong to |
+| `GITHUB_API` | `https://api.github.com` | GitHub's REST API, trailing slash trimmed: every GitHub call, issues included, goes there with `GITHUB_TOKEN`. Only for a stand-in: the lane can point it at `lanes/fake-github.py` |
+| `LIST_RELEASES_EVERY` | `120` | How often the releases are listed, in whole seconds; under 5 or not a whole number stops the service at start with a configuration error |
 | `TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID` | — | The bot and the chat the reports and the digest go to; with either unset, nothing goes to Telegram |
 | `REDIS_URL` | — | Redis for the daily counters (kept 120 days), the report rate limits and the digest lock; unset, they're kept in memory and lost on a restart |
 | `RUST_LOG` | `info` | The log filter; the log goes to stdout |
@@ -363,6 +367,28 @@ that address's `/download/`, so set the service's `PUBLIC_URL` to the same addre
 release's `SHA256SUMS` still has to be signed with the real release key. The maintainer's lane runs
 the service the same way, dry, with `lane dev up` (`lanes/dev.sh`; `lane dev restart` after
 editing the guide or the server).
+
+The lane can also offer test releases, with no GitHub. `lanes/publish-release.py` lays a release
+out as the release workflows do (its files, `SHA256SUMS` and `SHA256SUMS.sig`, checked against the
+app's public key) in `.tmp/lane-dev/fake-github/releases/<tag>/`. The key's seed comes on stdin,
+or with `--key-file` from a file outside the checkout, and is never written anywhere:
+
+```sh
+lane exec -- lanes/publish-release.py v0.1.1 .tmp/PoE2-Oracle-Setup-0.1.1.exe < <seed file>
+lane exec -- lanes/publish-release.py data-2026092601 < <seed file>  # builds this checkout's pack
+lane exec -- lanes/publish-release.py --draft v0.1.1 <installer> < <seed file>
+lane exec -- lanes/publish-release.py --publish v0.1.1               # the draft goes public
+```
+
+A `v<version>` tag needs `PoE2-Oracle-Setup-<version>.exe` among its files, and a pre-release
+version is marked a pre-release. A `data-<N>` tag without files gets this checkout's pack, and its
+`<N>` must be `data-version.txt`'s. Publishing a tag again replaces its release. When
+`.tmp/lane-dev/fake-github/releases` exists as the dev server starts (so `lane dev restart` after
+the first release), `lanes/dev.sh` runs `lanes/fake-github.py` in the dev pod as GitHub's stand-in,
+with a dummy token, and the service lists it every 10 s (`GITHUB_API`, `LIST_RELEASES_EVERY`).
+Reports' issues then land in `.tmp/lane-dev/fake-github/issues`, Telegram stays dry, and nothing
+leaves the pod. To go back to the dry run, delete `.tmp/lane-dev/fake-github` and `lane dev
+restart`.
 
 Each guide page has the same file name in both languages, `docs/guide/src/en/<page>.md` and
 `src/ru/<page>.md`, and each book lists its pages in its own `SUMMARY.md`: the language switch in

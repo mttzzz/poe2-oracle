@@ -65,7 +65,11 @@ At the top of the panel:
   They open in your browser;
 - the link **Craft of Exile ↗**, for an item the site can craft (gear, jewels, flasks, charms and
   waystones, not uniques or unidentified items): it opens the item in Craft of Exile's crafting
-  simulator with its base, item level, rarity and modifiers, the site in the interface language;
+  simulator with its base, item level, rarity, implicits and modifiers, the site in the interface
+  language. It works from either client: Craft of Exile's own import reads only the English
+  client's text, so the link hands the item over by the game's own ids instead, the base's and each
+  modifier's with its rolls, which are the same in any language. A modifier whose id isn't certain
+  is left out rather than guessed;
 - the link **report a problem**, for when the item was read or priced wrong. It opens PoE2 Oracle's
   own report window, not a browser, with **Item** selected and the item's text attached (and, by
   default, diagnostics). You describe what is wrong and click **Send**; no GitHub account is

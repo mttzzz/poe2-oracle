@@ -5,9 +5,9 @@ body:
   - type: markdown
     attributes:
       value: |
-        For the maintainer's own notes. Players report from the app (**Report a problem or idea…** in its tray menu, **Write to the developer** in the **Help** section of its settings) or through the site's form at https://oracle.pushka.biz/report.html, and oracle.pushka.biz files those reports here as issues by itself. One problem per issue; if an item isn't recognised or gets wrong filters or a wrong price, use the item problem form instead. Never post passwords or a session cookie (`POESESSID`).
+        For the maintainer's own notes. Players report from the app (**Write to the developer** in the **Help** section of its settings, or **report a problem** under the item name on the price panel) or through the site's form at https://oracle.pushka.biz/report.html, and oracle.pushka.biz files those reports here as issues by itself. One problem per issue; if an item isn't recognised or gets wrong filters or a wrong price, use the item problem form instead. Never post passwords or a session cookie (`POESESSID`).
 
-        Для заметок самого сопровождающего. Игроки пишут из программы («Сообщить о проблеме или идее…» в меню значка в трее, «Написать разработчику» в разделе «Помощь» настроек) или через форму на сайте https://oracle.pushka.biz/ru/report.html, и такие сообщения oracle.pushka.biz сам заводит здесь задачами. Одна задача — одна проблема; если предмет не распознаётся или у него неверные фильтры или цена, заполните форму о предмете. Никогда не публикуйте пароли и cookie сессии (`POESESSID`).
+        Для заметок самого сопровождающего. Игроки пишут из программы («Написать разработчику» в разделе «Помощь» настроек или «сообщить о проблеме» под названием предмета на панели цены) или через форму на сайте https://oracle.pushka.biz/ru/report.html, и такие сообщения oracle.pushka.biz сам заводит здесь задачами. Одна задача — одна проблема; если предмет не распознаётся или у него неверные фильтры или цена, заполните форму о предмете. Никогда не публикуйте пароли и cookie сессии (`POESESSID`).
   - type: input
     id: version
     attributes:

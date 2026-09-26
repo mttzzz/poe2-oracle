@@ -17,6 +17,10 @@ level and how long the current map has run.
   exchange's trades, with poe2scout's chart of the week; unique items also show poe2scout's price.
   Listings of sellers who trade in person carry a ✉: a click copies the whisper to that seller.
   **Instant Buyout** listings, which a check searches by default, need none.
+- **[Craft of Exile in one click](price-check.md#the-nameplate).** The panel's **Craft of Exile ↗**
+  link opens the item in Craft of Exile's crafting simulator with its base, item level, rarity,
+  implicits and modifiers set, from either client: it hands the item over by the game's own ids,
+  while Craft of Exile's own import reads only the English client's text.
 - **Waystone marks.** Mark Waystone modifiers as danger, caution or wanted, and every Waystone you
   check shows them.
 - **[Quick actions](quick-actions.md).** Hotkeys that send chat commands such as `/hideout` or paste
