@@ -1,6 +1,7 @@
 //! Searching and what it finds: the profile select and «Минимум тира» above the stats, the
 //! «Поиск» plate with the sellers and price selects beside it, the search status -- with the
-//! broader searches offered when nothing matched -- and the listings table.
+//! broader searches offered when nothing matched -- and the listings table, each of its rows a
+//! part of the panel of its own (`part`).
 
 use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -41,7 +42,10 @@ use crate::ui::tour;
 use super::format::{amount_in, currency_img, format_value};
 use super::market::render_market_card;
 use super::menu::render_menu;
+use super::part::{Piece, Placer};
 
+/// A listing row's height.
+pub(super) const LISTING_ROW_HEIGHT: f32 = 30.;
 const PRICE_COLUMN: f32 = 150.;
 const LEVEL_COLUMN: f32 = 30.;
 const LISTED_COLUMN: f32 = 100.;
@@ -358,13 +362,35 @@ fn action_button(
 }
 
 /// The pricing outcome: the market card for a Currency Exchange item, otherwise the listings --
-/// for a unique poe2scout prices, its price there first, whatever the search says.
+/// for a unique poe2scout prices, its price there first, whatever the search says. What the
+/// search found down to the listings table's header is one part of the panel (`part`), each
+/// listing row another.
 pub(super) fn render_results(
+    state: &PriceCheckApp,
+    placer: &mut Placer,
+    cx: &mut App,
+) -> gpui::Div {
+    let listings = match &state.search {
+        SearchState::Matched { rows, .. } => rows.len(),
+        _ => 0,
+    };
+    let mut results = div()
+        .flex()
+        .flex_col()
+        .child(placer.place(Piece::Outcome, cx));
+    for index in 0..listings {
+        results = results.child(placer.place(Piece::Listing(index), cx));
+    }
+    results
+}
+
+/// What the search found (`render_search_outcome`), under poe2scout's price of a unique.
+pub(super) fn render_outcome(
     state: &PriceCheckApp,
     item: &ParsedItem,
     cx: &Context<PriceCheckApp>,
 ) -> AnyElement {
-    let outcome = render_outcome(state, item, cx);
+    let outcome = render_search_outcome(state, item, cx);
     match state.scout_unique_price(item) {
         Some(price) if !matches!(state.search, SearchState::NotSearched) => div()
             .flex()
@@ -435,7 +461,9 @@ fn render_listings_button(cx: &Context<PriceCheckApp>) -> impl IntoElement {
     .mt(rems_from_px(10.))
 }
 
-fn render_outcome(
+/// What the search found, or how it's going -- for listings, down to the table's header: each row
+/// is a part of the panel of its own (`render_listing`).
+fn render_search_outcome(
     state: &PriceCheckApp,
     item: &ParsedItem,
     cx: &Context<PriceCheckApp>,
@@ -493,9 +521,9 @@ fn render_outcome(
             .into_any_element(),
         SearchState::Matched {
             total,
-            rows,
             trade_url,
             relaxed,
+            ..
         } => div()
             .flex()
             .flex_col()
@@ -518,7 +546,7 @@ fn render_outcome(
                     ))
             }))
             .child(render_matched_line(*total, trade_url.clone()))
-            .child(render_results_table(state, rows, *relaxed, cx))
+            .child(render_table_head(state))
             .into_any_element(),
     }
 }
@@ -671,26 +699,44 @@ pub(super) fn render_link(label: impl Into<SharedString>, url: String) -> impl I
     )
 }
 
-/// EE2's results table, plus the seller column (the player can turn it off; the space then stays
-/// empty so the dates keep their place) and currency icons PoE Overlay II shows; a row lights up
-/// under the pointer. A seller who sells in person gets a ✉: clicking the row copies the whisper
-/// for the game's chat. For a signed-in player a row whose fetch carried the trade site's token
-/// ends its seller cell with the site's own button -- travel to the seller's hideout, a whisper
-/// to the seller -- and once pressed says how far the press came (`listing_action_note`).
-/// Hovering a row shows the listed item as the game's tooltip draws it (`ListingTooltip`); after
-/// a relaxed search (`relaxed`: at least `.0` of the `.1` stat rows) each row says how many it
-/// has.
-fn render_results_table(
+/// The header of EE2's results table, plus the seller column -- which the player can turn off;
+/// the space then stays empty so the dates keep their place.
+fn render_table_head(state: &PriceCheckApp) -> impl IntoElement {
+    let show_seller = state.settings.show_seller_column;
+    table_row()
+        .h(rems_from_px(22.))
+        .border_b_1()
+        .border_color(rgb(BORDER_GOLD))
+        .text_size(rems_from_px(11.))
+        .text_color(rgb(TEXT_MUTED))
+        .child(price_cell().child(tr!("Price")))
+        .child(level_cell().child(tr!("iLvl")))
+        .child(seller_cell().when(show_seller, |this| this.child(tr!("Seller"))))
+        .child(listed_cell().child(tr!("Listed")))
+}
+
+/// Row `index` of EE2's results table, with the seller and the currency icons PoE Overlay II
+/// shows; a row lights up under the pointer. A seller who sells in person gets a ✉: clicking the
+/// row copies the whisper for the game's chat. For a signed-in player a row whose fetch carried
+/// the trade site's token ends its seller cell with the site's own button -- travel to the
+/// seller's hideout, a whisper to the seller -- and once pressed says how far the press came
+/// (`listing_action_note`). Hovering a row shows the listed item as the game's tooltip draws it
+/// (`ListingTooltip`); after a relaxed search (at least so many of the checked stat rows) each
+/// row says how many it has. `None` for a row the listings shown now don't have.
+pub(super) fn render_listing(
     state: &PriceCheckApp,
-    rows: &[ListingRow],
-    relaxed: Option<(u32, u32)>,
+    index: usize,
     cx: &Context<PriceCheckApp>,
-) -> impl IntoElement {
+) -> Option<AnyElement> {
+    let SearchState::Matched { rows, relaxed, .. } = &state.search else {
+        return None;
+    };
+    let row = rows.get(index)?;
     let now_unix = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_secs() as i64);
     let show_seller = state.settings.show_seller_column;
-    // The stats the search asks for, for the rows' tooltips to check the listings against.
+    // The stats the search asks for, for the row's tooltip to check the listing against.
     let wanted: Rc<[WantedStat]> = WantedStat::from_filters(&state.filters).into();
     // Pseudo totals and free slots count toward a relaxed search too, but no listed mod shows
     // them: the rows' counts only add up to the banner's when every searched row is a mod's.
@@ -701,133 +747,115 @@ fn render_results_table(
     let signed_in = cx
         .try_global::<SessionStatus>()
         .is_some_and(SessionStatus::signed_in);
-    div()
-        .flex()
-        .flex_col()
-        .child(
-            table_row()
-                .h(rems_from_px(22.))
-                .border_b_1()
-                .border_color(rgb(BORDER_GOLD))
-                .text_size(rems_from_px(11.))
-                .text_color(rgb(TEXT_MUTED))
-                .child(price_cell().child(tr!("Price")))
-                .child(level_cell().child(tr!("iLvl")))
-                .child(seller_cell().when(show_seller, |this| this.child(tr!("Seller"))))
-                .child(listed_cell().child(tr!("Listed"))),
-        )
-        .children(rows.iter().enumerate().map(|(index, row)| {
-            let listed = relative_time::listed_ago(&row.indexed, now_unix).unwrap_or_default();
-            let action = row.action.as_ref().filter(|_| signed_in);
-            let pressed = action.and_then(|_| state.listing_action_state(index));
-            // A note in the seller's cell, over the listed-time column too, as neither fits the
-            // seller's alone: for a few seconds after a click that the whisper is on the
-            // clipboard, and after a press of the row's button how far it came.
-            let note = if state.whisper_copied(index) {
-                Some(RowNote {
-                    text: tr!("✓ copied — paste it into the chat").into(),
-                    color: PRICE_RISE,
-                    hint: None,
-                })
-            } else {
-                action
-                    .zip(pressed)
-                    .map(|(action, pressed)| listing_action_note(action.kind, pressed))
+    let listed = relative_time::listed_ago(&row.indexed, now_unix).unwrap_or_default();
+    let action = row.action.as_ref().filter(|_| signed_in);
+    let pressed = action.and_then(|_| state.listing_action_state(index));
+    // A note in the seller's cell, over the listed-time column too, as neither fits the
+    // seller's alone: for a few seconds after a click that the whisper is on the
+    // clipboard, and after a press of the row's button how far it came.
+    let note = if state.whisper_copied(index) {
+        Some(RowNote {
+            text: tr!("✓ copied — paste it into the chat").into(),
+            color: PRICE_RISE,
+            hint: None,
+        })
+    } else {
+        action
+            .zip(pressed)
+            .map(|(action, pressed)| listing_action_note(action.kind, pressed))
+    };
+    let button = action
+        .filter(|_| pressed.is_none_or(ActionState::pressable))
+        .map(|action| {
+            let anyway = pressed == Some(&ActionState::Answered(Outcome::InDemand));
+            listing_action_button(index, action.kind, anyway, cx)
+        });
+    let noted = note.is_some();
+    let (seller, seller_color, seller_hint): (SharedString, u32, Option<SharedString>) = match note
+    {
+        Some(note) => (note.text, note.color, note.hint),
+        None => {
+            let seller = match (&row.whisper, show_seller) {
+                (Some(_), true) => format!("✉ {}", row.account_name).into(),
+                (Some(_), false) => "✉".into(),
+                (None, true) => row.account_name.clone().into(),
+                (None, false) => SharedString::default(),
             };
-            let button = action
-                .filter(|_| pressed.is_none_or(ActionState::pressable))
-                .map(|action| {
-                    let anyway = pressed == Some(&ActionState::Answered(Outcome::InDemand));
-                    listing_action_button(index, action.kind, anyway, cx)
-                });
-            let noted = note.is_some();
-            let (seller, seller_color, seller_hint): (SharedString, u32, Option<SharedString>) =
-                match note {
-                    Some(note) => (note.text, note.color, note.hint),
-                    None => {
-                        let seller = match (&row.whisper, show_seller) {
-                            (Some(_), true) => format!("✉ {}", row.account_name).into(),
-                            (Some(_), false) => "✉".into(),
-                            (None, true) => row.account_name.clone().into(),
-                            (None, false) => SharedString::default(),
-                        };
-                        (seller, TEXT_DIM, None)
-                    }
-                };
-            let tooltip = listing_tooltip(state, row, wanted.clone());
-            let matched = count_matches
-                .then(|| listing_match::matched_count(&row.item.mods, &wanted))
-                .flatten()
-                .filter(|_| !noted);
-            let element = table_row()
-                .id(("listing", index))
-                .h(rems_from_px(30.))
-                .when(index < last, |this| {
-                    this.border_b_1().border_color(rgb(BORDER_ROW))
-                })
-                .tooltip(tooltip)
-                .when_some(row.whisper.clone(), |this, whisper| {
-                    this.cursor_pointer().on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(move |view, _event: &MouseDownEvent, _window, cx| {
-                            view.copy_whisper(index, whisper.clone(), cx);
-                        }),
-                    )
-                })
-                .child(render_price(state, row))
+            (seller, TEXT_DIM, None)
+        }
+    };
+    let tooltip = listing_tooltip(state, row, wanted.clone());
+    let matched = count_matches
+        .then(|| listing_match::matched_count(&row.item.mods, &wanted))
+        .flatten()
+        .filter(|_| !noted);
+    let element = table_row()
+        .id(("listing", index))
+        .h(rems_from_px(LISTING_ROW_HEIGHT))
+        .when(index < last, |this| {
+            this.border_b_1().border_color(rgb(BORDER_ROW))
+        })
+        .tooltip(tooltip)
+        .when_some(row.whisper.clone(), |this, whisper| {
+            this.cursor_pointer().on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |view, _event: &MouseDownEvent, _window, cx| {
+                    view.copy_whisper(index, whisper.clone(), cx);
+                }),
+            )
+        })
+        .child(render_price(state, row))
+        .child(
+            level_cell().text_color(rgb(TEXT_DIM)).child(
+                // Gems and currency list item level 0: nothing to show.
+                row.item
+                    .item_level
+                    .filter(|&level| level > 0)
+                    .map(|level| level.to_string())
+                    .unwrap_or_default(),
+            ),
+        )
+        .child(
+            seller_cell()
+                .flex()
+                .items_center()
+                .gap(rems_from_px(6.))
+                .text_size(rems_from_px(12.))
+                .text_color(rgb(seller_color))
                 .child(
-                    level_cell().text_color(rgb(TEXT_DIM)).child(
-                        // Gems and currency list item level 0: nothing to show.
-                        row.item
-                            .item_level
-                            .filter(|&level| level > 0)
-                            .map(|level| level.to_string())
-                            .unwrap_or_default(),
-                    ),
+                    div()
+                        .id(("listing-note", index))
+                        .min_w_0()
+                        .truncate()
+                        .when_some(seller_hint, |this, hint| this.tooltip(hints::hint(hint)))
+                        .child(seller),
                 )
-                .child(
-                    seller_cell()
-                        .flex()
-                        .items_center()
-                        .gap(rems_from_px(6.))
-                        .text_size(rems_from_px(12.))
-                        .text_color(rgb(seller_color))
-                        .child(
-                            div()
-                                .id(("listing-note", index))
-                                .min_w_0()
-                                .truncate()
-                                .when_some(seller_hint, |this, hint| {
-                                    this.tooltip(hints::hint(hint))
-                                })
-                                .child(seller),
-                        )
-                        .children(matched.map(|(has, of)| {
-                            div()
-                                .flex_none()
-                                .text_color(rgb(if has == of { PRICE_RISE } else { TEXT_MUTED }))
-                                .child(format!("{has}/{of}"))
-                        }))
-                        .children(button),
-                )
-                .when(!noted, |this| {
-                    this.child(
-                        listed_cell()
-                            .flex()
-                            .items_center()
-                            .justify_end()
-                            .gap(rems_from_px(5.))
-                            .text_size(rems_from_px(12.))
-                            .text_color(rgb(TEXT_DIM))
-                            .child(status_dot(row))
-                            .child(listed),
-                    )
-                });
-            ease_hover(("listing", index), element, |row, hover| {
-                row.bg(alpha(GOLD, 0.07 * hover))
-                    .shadow(inner_glow(GOLD, hover))
-            })
-        }))
+                .children(matched.map(|(has, of)| {
+                    div()
+                        .flex_none()
+                        .text_color(rgb(if has == of { PRICE_RISE } else { TEXT_MUTED }))
+                        .child(format!("{has}/{of}"))
+                }))
+                .children(button),
+        )
+        .when(!noted, |this| {
+            this.child(
+                listed_cell()
+                    .flex()
+                    .items_center()
+                    .justify_end()
+                    .gap(rems_from_px(5.))
+                    .text_size(rems_from_px(12.))
+                    .text_color(rgb(TEXT_DIM))
+                    .child(status_dot(row))
+                    .child(listed),
+            )
+        });
+    let listing = ease_hover(("listing", index), element, |row, hover| {
+        row.bg(alpha(GOLD, 0.07 * hover))
+            .shadow(inner_glow(GOLD, hover))
+    });
+    Some(listing.into_any_element())
 }
 
 /// What a row says in place of its seller and listed time while it has news, in its colour, with

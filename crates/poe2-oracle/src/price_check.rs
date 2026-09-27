@@ -595,6 +595,9 @@ pub struct PriceCheckApp {
     panel_drag: Option<PanelDrag>,
     /// Checks shown so far: each one plays the panel's appearance again (`ui::panel`).
     pub appearances: u64,
+    /// The panel's parts, which GPUI draws from their last frame while nothing in them changes
+    /// (`ui::panel`'s render places them).
+    pub(crate) panel_parts: crate::ui::panel::Parts,
     /// Which sellers the search asks for -- the trade site's "Instant Buyout" / "In Person"
     /// choice, PoE Overlay II's status dropdown. Starts at the settings' default sellers for every
     /// new item.
@@ -690,6 +693,7 @@ impl PriceCheckApp {
             panel_side: None,
             panel_drag: None,
             appearances: 0,
+            panel_parts: Default::default(),
             show_hidden: false,
             scope: None,
             corruption: None,
@@ -1127,6 +1131,13 @@ impl PriceCheckApp {
                 );
             }
         }
+        // One press of a quick action's key types once (`quick_action::KEY_PRESSES`): the
+        // keyboard hook counts the presses while any of their hotkeys is held, and only then.
+        esc_hook::count_presses(self.settings.quick_actions.iter().any(|action| {
+            action
+                .hotkey
+                .is_some_and(|hotkey| self.registered.contains(&hotkey))
+        }));
     }
 
     /// What a press of the hotkey with `id` is for. Nothing while the settings window is open:
@@ -2160,7 +2171,7 @@ pub fn create_app(
     view
 }
 
-/// Sets up the price-check hotkey (the player's, `Ctrl+E` by default) and installs the Esc hook,
+/// Sets up the price-check hotkey (the player's, `Ctrl+E` by default) and the Esc hook's thread,
 /// then spawns the long-lived tasks that bridge them onto GPUI's executor: the hotkey follows
 /// the foreground window (`PriceCheckApp::sync_hotkey_registration`), its presses run the
 /// price-check pipeline, and Esc presses close the panel. Each task awaits a channel its OS
@@ -2169,7 +2180,8 @@ pub fn create_app(
 /// hook's own requirement).
 ///
 /// The panel closes only on Esc (or its × button), never on mouse movement -- the player moves
-/// into it to use the filters -- and Esc is taken from the game only while the panel is open.
+/// into it to use the filters -- and Esc is taken from the game only while the panel is open: the
+/// keyboard hook is in only then, and while a quick action's hotkey is held (`esc_hook`).
 ///
 /// The tasks live as long as the app, so they hold only a `WeakEntity` and tolerate the window
 /// having closed.
@@ -2246,7 +2258,7 @@ pub fn register_hotkeys(cx: &mut App, view: Entity<PriceCheckApp>) -> Result<()>
     })
     .detach();
 
-    // Esc is taken from the game exactly while the panel is shown.
+    // Esc is taken from the game exactly while the panel is shown; the hook goes in with it.
     cx.observe(&view, |view, cx| esc_hook::set_armed(view.read(cx).visible))
         .detach();
     // Separate from the hotkey task, which stays busy through a check's clipboard poll: Esc must

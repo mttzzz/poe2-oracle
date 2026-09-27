@@ -4,13 +4,14 @@
 //! `text_field` the one-line text input the settings window edits strings with; `hint` the text
 //! tooltip chips and buttons explain themselves with; `item_card` a listed item drawn as the
 //! game's own tooltip; `style` the game-styled frames, ornaments, motion and controls, and
-//! `ornament` those ornaments' exact device pixels; `tour` the onboarding tour's spotlight over
-//! the other windows; `welcome` the dialog over the settings window after an install; and `toast`
-//! the plate over the game after an update.
+//! `ornament` those ornaments' exact device pixels, `part_height` how tall a part of the price
+//! panel drawn from its last frame stands; `tour` the onboarding tour's spotlight over the other
+//! windows; `welcome` the dialog over the settings window after an install; and `toast` the plate
+//! over the game after an update.
 //!
-//! Only `theme` and `ornament` build on every target -- the palette and the ornaments' pixels,
-//! which the native test pass checks and `examples/ornaments.rs` draws; the rest is Windows-only,
-//! like the platform layer it runs on.
+//! Only `theme`, `ornament` and `part_height` build on every target -- the palette, the
+//! ornaments' pixels, which the native test pass checks and `examples/ornaments.rs` draws, and
+//! the parts' heights; the rest is Windows-only, like the platform layer it runs on.
 
 #[cfg(target_os = "windows")]
 pub mod fonts;
@@ -21,6 +22,7 @@ pub mod item_card;
 pub mod ornament;
 #[cfg(target_os = "windows")]
 pub mod panel;
+pub mod part_height;
 #[cfg(target_os = "windows")]
 pub mod report_view;
 #[cfg(target_os = "windows")]

@@ -18,7 +18,8 @@
 //! - `paints`: the `WM_PAINT`s a gated window (`win32::Win32Overlay::gate_paints`) let through
 //!   `to GPUI`, and those it `swallowed`;
 //! - `gate`: what else reached a gated window's gate -- the pointer, the keyboard, moves, sizes,
-//!   shows -- and `app` for the app's own word that it changed (`Win32Overlay::open_paints`);
+//!   shows -- and `app` for the app's own word that it changed (`Win32Overlay::open_paints`,
+//!   `Win32Overlay::repaint`);
 //! - `taken`: what the thread took off its queue for the window -- posted messages, input,
 //!   `WM_PAINT`, `WM_TIMER` -- under «the thread» for those posted to no window;
 //! - `sent`: what other threads and programs sent the window, each a wake too.

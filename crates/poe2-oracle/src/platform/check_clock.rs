@@ -2,6 +2,8 @@
 //! adds up and words for the log. Every step it times runs on the UI thread -- the hotkey's task,
 //! the search's, and the panel's window procedure, inside which GPUI draws the panel's frames --
 //! so the check lives in a thread-local there, which the window procedure reaches without GPUI.
+//! Inside a frame, the end of the panel's paint ([`painted`]) splits its CPU, and the panel's parts
+//! say how many of them it laid out ([`parts_placed`]) and drew afresh ([`part_drawn`]).
 //!
 //! The CPU is counted in cycles of the time-stamp counter: what `QueryThreadCycleTime` and
 //! `QueryProcessCycleTime` count on every processor with an invariant counter -- all that run
@@ -32,6 +34,11 @@ thread_local! {
     static PANEL: Cell<isize> = const { Cell::new(0) };
     /// The panel's frames so far: its root view renders once a frame ([`rendered`]).
     static RENDERS: Cell<u64> = const { Cell::new(0) };
+    /// When the panel's paint ended in the frame being drawn, while a check is under way.
+    static PAINTED: Cell<Option<Reading>> = const { Cell::new(None) };
+    /// The panel's parts laid out so far, and those drawn afresh.
+    static PARTS_PLACED: Cell<u64> = const { Cell::new(0) };
+    static PARTS_DRAWN: Cell<u64> = const { Cell::new(0) };
 }
 
 /// Sets the clocks' origin: call as the app starts, so the counter's rate is known by the first
@@ -133,6 +140,23 @@ pub fn rendered() {
     RENDERS.set(RENDERS.get() + 1);
 }
 
+/// The panel's paint is done in the frame being drawn: what's left of the frame presents it.
+pub fn painted() {
+    if CHECK.with_borrow(Option::is_some) {
+        PAINTED.set(Some(now_thread()));
+    }
+}
+
+/// The panel laid out `count` of its parts in the frame being drawn.
+pub fn parts_placed(count: usize) {
+    PARTS_PLACED.set(PARTS_PLACED.get() + count as u64);
+}
+
+/// One of the panel's parts was drawn afresh in the frame being drawn.
+pub fn part_drawn() {
+    PARTS_DRAWN.set(PARTS_DRAWN.get() + 1);
+}
+
 /// Whether `message` to `hwnd` is one of the panel's that a check under way times.
 pub fn timed(hwnd: HWND, message: u32) -> Option<PanelMessage> {
     let panel = PANEL.get();
@@ -154,13 +178,22 @@ pub fn timed(hwnd: HWND, message: u32) -> Option<PanelMessage> {
 /// check if it has settled since.
 pub fn answer_panel(message: PanelMessage, answer: impl FnOnce() -> LRESULT) -> LRESULT {
     let renders = RENDERS.get();
+    let parts = (PARTS_PLACED.get(), PARTS_DRAWN.get());
+    PAINTED.set(None);
     let start = now_thread();
     let answered = answer();
     let end = now_thread();
     let drew = RENDERS.get() != renders;
+    let painted = PAINTED.take();
     let mut settled = false;
     with(|check| {
         check.panel_message(message, Spent::between(start, end), drew, end);
+        if drew && message != PanelMessage::Size {
+            if let Some(painted) = painted {
+                check.frame_split(Spent::between(start, painted), Spent::between(painted, end));
+            }
+            check.parts(PARTS_PLACED.get() - parts.0, PARTS_DRAWN.get() - parts.1);
+        }
         settled = check.settled(end.wall);
     });
     if settled {

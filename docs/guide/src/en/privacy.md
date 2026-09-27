@@ -100,6 +100,12 @@ never sees your password. It takes only the session the site gives that browser,
   clipboard for a moment, marked to stay out of Windows' clipboard history, and then restores
   yours. What was copied as private, such as a password from a password manager, is not put back:
   the clipboard is left empty instead, and you copy the password again when you need it.
+- **The keyboard**, through a keyboard hook that is on only while the price panel is open and, if
+  a [quick action](quick-actions.md) has a key, while the game is in front. Meanwhile the app notes
+  when each key goes down and up, so that holding a quick action's key sends it once, and while
+  the panel is open it takes <kbd>Esc</kbd>, which closes the panel and doesn't reach the game.
+  Nothing of it is saved or sent. The rest of the time the hook is off, and the app learns only of
+  its own hotkeys and, for the XP overlay, that a key was pressed (see **The screen** below).
 - **The game's settings file**, `Documents\My Games\Path of Exile 2\poe2_production_Config.ini`:
   the display mode, the client language (which the **Auto** interface language follows) and the key
   for advanced item descriptions. Read only.

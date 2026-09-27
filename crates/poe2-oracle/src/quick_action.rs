@@ -270,7 +270,9 @@ pub fn kept_actions<'a>(drafts: impl IntoIterator<Item = &'a mut ActionDraft>) -
 /// (`synth_input::press_keys`), which to the system is the key let go, so the keyboard's
 /// auto-repeat, once it starts, counts as a new press. Only the keyboard knows whether the player
 /// really let go: the low-level keyboard hook (`platform::esc_hook`) reports each key it sees go
-/// down or up, and what programs type -- this one's lift included -- doesn't count.
+/// down or up, and what programs type -- this one's lift included -- doesn't count. The hook is in
+/// while the quick actions' hotkeys are held; out, it sees nothing, and what it saw held is
+/// forgotten as it goes back in ([`KeyPresses::forget_held`]).
 pub struct KeyPresses {
     /// Per virtual-key code: how many times the key went down, times two, plus [`DOWN`] while it
     /// is down -- a held key's value names its press.
@@ -310,6 +312,18 @@ impl KeyPresses {
             (false, _) => value & !DOWN,
         };
         presses.store(next, Ordering::Relaxed);
+    }
+
+    /// The hook goes back in, having seen nothing while it was out: every key it last saw held
+    /// may have been let go since, and none is taken for held -- a key held all along counts as
+    /// pressed anew at its next auto-repeat. Only the hook's thread calls this.
+    pub fn forget_held(&self) {
+        for presses in &self.presses {
+            let value = presses.load(Ordering::Relaxed);
+            if value & DOWN != 0 {
+                presses.store(value & !DOWN, Ordering::Relaxed);
+            }
+        }
     }
 
     /// Whether the hotkey of `vk` firing may type: the first fire for the press of `vk` that is
@@ -486,6 +500,23 @@ mod tests {
         keys.record(F5, false, false);
         assert!(keys.claim(F5));
         assert!(keys.claim(F5));
+    }
+
+    #[test]
+    fn a_key_let_go_while_the_hook_was_out_types_at_its_next_press() {
+        let keys = KeyPresses::new();
+        let keyboard = |down| keys.record(F5, down, false);
+        keyboard(true);
+        assert!(keys.claim(F5));
+        // The game left the front with F5 held: the hook went out and never saw it let go. Back
+        // in, it forgets what it saw held, and the next press counts as one.
+        keys.forget_held();
+        keyboard(true);
+        assert!(keys.claim(F5));
+        // Pressed from here on, the key types once a press again.
+        keys.record(F5, false, true);
+        keyboard(true);
+        assert!(!keys.claim(F5));
     }
 
     fn saved(kind: QuickActionKind, text: &str, hotkey: Option<Hotkey>) -> ActionDraft {

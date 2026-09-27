@@ -25,8 +25,8 @@ use std::time::Duration;
 
 use gpui::{
     App, Bounds, Context, DisplayId, Entity, Focusable, IntoElement, Render, Task, TitlebarOptions,
-    Window, WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions, div, point,
-    prelude::*, px, size,
+    Window, WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions, canvas, div,
+    point, prelude::*, px, size,
 };
 use gpui_platform::application;
 use http_client::HttpClient;
@@ -121,8 +121,9 @@ struct PriceCheckRoot {
     xp: Option<Entity<XpOverlay>>,
     /// An overlay open is under way (the setting was just turned on), so it isn't started twice.
     xp_opening: bool,
-    /// Last cover handed to the XP overlay; `None` until the first sync.
+    /// Last cover and options handed to the XP overlay; `None` until the first sync.
     last_xp_cover: Option<XpCover>,
+    last_xp_options: Option<XpOverlayOptions>,
 }
 
 impl PriceCheckRoot {
@@ -345,6 +346,10 @@ impl PriceCheckRoot {
     /// what covers its plates: the setting off, or the price panel while it's shown. Turning the
     /// setting off only hides them; the sampling stops with the next launch, which never opens
     /// the overlay. The player's XP options follow it whenever they change.
+    ///
+    /// The overlay hears of each only once it changes: this runs as the panel draws, and an update
+    /// of the overlay from there would count it among what the panel's window shows -- each of its
+    /// redraws, the map clock's every sample in a map, would draw a frame of the panel.
     fn sync_xp(&mut self, cx: &mut Context<Self>) {
         let (enabled, panel, options) = {
             let state = self.inner.read(cx);
@@ -371,6 +376,7 @@ impl PriceCheckRoot {
                         Err(err) => log::warn!("the XP overlay is unavailable: {err:#}"),
                     }
                     root.last_xp_cover = None;
+                    root.last_xp_options = None;
                     root.sync_xp(cx);
                 })
                 .ok();
@@ -386,7 +392,10 @@ impl PriceCheckRoot {
                 xp.update(cx, |xp, cx| xp.set_cover(cover, cx));
                 self.last_xp_cover = Some(cover);
             }
-            xp.update(cx, |xp, cx| xp.set_options(options, cx));
+            if self.last_xp_options != Some(options) {
+                xp.update(cx, |xp, cx| xp.set_options(options, cx));
+                self.last_xp_options = Some(options);
+            }
         }
     }
 }
@@ -401,7 +410,12 @@ impl Render for PriceCheckRoot {
         // follows.
         let scale = self.inner.read(cx).settings.ui_scale;
         window.set_rem_size(px(BASE_REM_SIZE * scale));
-        div().size_full().child(self.inner.clone())
+        // The panel's paint ends with this, the last of the window's root: a price check under way
+        // splits the frame's CPU there (`check_clock::painted`).
+        div()
+            .size_full()
+            .child(self.inner.clone())
+            .child(canvas(|_, _, _| {}, |_, (), _, _| check_clock::painted()).absolute())
     }
 }
 
@@ -1068,6 +1082,7 @@ pub fn run() {
                         xp: None,
                         xp_opening: false,
                         last_xp_cover: None,
+                        last_xp_options: None,
                     }
                 })
             })

@@ -16,6 +16,11 @@
 //! memory with them -- and [`LipReport::Idle`] leaves the plates and the bar to the sampler's
 //! slower look.
 //!
+//! Each report wakes the UI thread, so a report goes only when a rail is seen or missed where it
+//! wasn't, at once ([`LipReport::Seen`]); the bar's reading, which changes as experience comes in,
+//! waits in a slot the sampler takes it from every two seconds ([`LipWatch::fill`]), and wakes
+//! nothing.
+//!
 //! A look waits for nothing but a new duplication's first frame. Measured 2026-09-27 on the test
 //! machine (the build of 93296e4, the game in front, idle), this thread took 1.45 ms of CPU a
 //! look at four looks a second, and four context switches a look: three steps of the input poll,
@@ -44,6 +49,7 @@
 //! `lip_schedule::INPUT_POLL` instead.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::time::{Duration, Instant};
 
@@ -96,12 +102,11 @@ use crate::xp_tracker::{XpBarGeometry, read_fill};
 const STAGING: usize = 3;
 
 /// What the watcher saw.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LipReport {
-    /// The latest looks: whether each rail's lip shows, as `overlay_layout::rail_seen` reads it,
-    /// and the fill the bar showed when last read (`xp_tracker::read_fill`), `None` when it was
-    /// covered or unreadable. Sent at the first look and whenever either changes.
-    Seen { rails: RailsSeen, fill: Option<f64> },
+    /// Whether each rail's lip shows in the latest look read, as `overlay_layout::rail_seen`
+    /// reads it: sent at the first look, and whenever that changes.
+    Seen(RailsSeen),
     /// Not watching -- the game isn't in front, there is no game to watch, or the desktop can't
     /// be duplicated -- so the sampler's look decides.
     Idle,
@@ -114,6 +119,31 @@ pub struct LipWatch {
     orders: Option<Sender<Order>>,
     /// The event that wakes the thread for an order.
     wake: Arc<Handle>,
+    /// The bar's latest reading ([`LipWatch::fill`]).
+    fill: Arc<FillSlot>,
+}
+
+/// The bar's fill as the looks last read it (`xp_tracker::read_fill`): its bits, or
+/// [`FillSlot::NONE`] when the bar was covered or unreadable, or not read yet.
+struct FillSlot(AtomicU64);
+
+impl FillSlot {
+    /// What no reading's bits are: a NaN's, which a fill never is.
+    const NONE: u64 = u64::MAX;
+
+    fn new() -> FillSlot {
+        FillSlot(AtomicU64::new(Self::NONE))
+    }
+
+    fn set(&self, fill: Option<f64>) {
+        self.0
+            .store(fill.map_or(Self::NONE, f64::to_bits), Ordering::Relaxed);
+    }
+
+    fn get(&self) -> Option<f64> {
+        let bits = self.0.load(Ordering::Relaxed);
+        (bits != Self::NONE).then(|| f64::from_bits(bits))
+    }
 }
 
 /// What the watching thread is told.
@@ -131,15 +161,24 @@ impl LipWatch {
         let event = unsafe { CreateEventW(None, false, false, PCWSTR::null()) }
             .context("the lip watcher's event")?;
         let wake = Arc::new(Handle(event));
+        let fill = Arc::new(FillSlot::new());
         let (orders, received) = mpsc::channel();
         let (reports, reported) = async_channel::unbounded();
         let woken = Arc::clone(&wake);
+        let read = Arc::clone(&fill);
         std::thread::Builder::new()
             .name("lip-watch".into())
-            .spawn(move || watch(&received, woken, &reports))
+            .spawn(move || watch(&received, woken, &reports, &read))
             .context("starting the lip watcher")?;
         let orders = Some(orders);
-        Ok((LipWatch { orders, wake }, reported))
+        Ok((LipWatch { orders, wake, fill }, reported))
+    }
+
+    /// The fill the bar showed when the looks last read it, `None` if it was covered or
+    /// unreadable -- a look reads the bar every `lip_schedule::BAR_EVERY` at the most. Meant only
+    /// while the watcher reports it watches ([`LipReport::Seen`]): the reading of that watch.
+    pub fn fill(&self) -> Option<f64> {
+        self.fill.get()
     }
 
     /// Watches the rails of a game whose client area is `game`, or nothing.
@@ -171,7 +210,12 @@ impl Drop for LipWatch {
     }
 }
 
-fn watch(orders: &Receiver<Order>, wake: Arc<Handle>, reports: &async_channel::Sender<LipReport>) {
+fn watch(
+    orders: &Receiver<Order>,
+    wake: Arc<Handle>,
+    reports: &async_channel::Sender<LipReport>,
+    slot: &FillSlot,
+) {
     let mut waiter = Waiter::new(wake);
     let mut when = WhenToWatch::default();
     let mut game = None;
@@ -179,8 +223,8 @@ fn watch(orders: &Receiver<Order>, wake: Arc<Handle>, reports: &async_channel::S
     // whether it shows the bar.
     let mut window: Option<HWND> = None;
     let mut duplication: Option<Duplication> = None;
-    // What was reported last: `None` for `Idle`, and before the first report.
-    let mut reported: Option<(RailsSeen, Option<f64>)> = None;
+    // The rails reported last: `None` for `Idle`, and before the first report.
+    let mut reported: Option<RailsSeen> = None;
     // The bar's fill as last read, while watching.
     let mut fill: Option<f64> = None;
     let mut last_error = String::new();
@@ -277,12 +321,13 @@ fn watch(orders: &Receiver<Order>, wake: Arc<Handle>, reports: &async_channel::S
                 if let Some(read) = look.fill {
                     fill = read;
                 }
-                if reported != Some((look.rails, fill)) {
-                    reported = Some((look.rails, fill));
-                    let _ = reports.try_send(LipReport::Seen {
-                        rails: look.rails,
-                        fill,
-                    });
+                // For the sampler, which reads it only while this watch's reports say it watches:
+                // stored before the first of them, so a watch's last reading, kept past its end,
+                // is never taken for the next one's.
+                slot.set(fill);
+                if reported != Some(look.rails) {
+                    reported = Some(look.rails);
+                    let _ = reports.try_send(LipReport::Seen(look.rails));
                 }
             }
             Ok(None) => {}
@@ -295,7 +340,7 @@ fn watch(orders: &Receiver<Order>, wake: Arc<Handle>, reports: &async_channel::S
         }
         let last_input = waiter.input.last(now);
         // Whether the latest look read showed every rail: nothing over them to go by itself.
-        let clear = reported.is_some_and(|(rails, _)| rails.flask && rails.skill);
+        let clear = reported.is_some_and(|rails| rails.flask && rails.skill);
         if open
             .next_look(now, last_input, clear)
             .is_some_and(|due| due <= now)

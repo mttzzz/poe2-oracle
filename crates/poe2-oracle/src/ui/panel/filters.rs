@@ -2,15 +2,15 @@
 //! row's first line (checkbox, tier and source badge, the stat with its rolled value, min/max
 //! inputs) and, for a checked mod the tier table knows, its roll slider; an unchecked property
 //! folded into a chip under its section's rows; and the toggle that unfolds the rows kept out of
-//! sight.
+//! sight. Each heading, row, section's chips and the toggle is a part of the panel (`part`).
 
 use std::ops::Range;
 
 use gpui::{
-    AnyElement, BorderStyle, Bounds, Context, CursorStyle, DispatchPhase, FocusHandle, FontWeight,
-    HighlightStyle, HitboxBehavior, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, Pixels, StyledText, Window, canvas, div, fill, point, prelude::*,
-    px, quad, rgb, size,
+    AnyElement, App, BorderStyle, Bounds, Context, CursorStyle, DispatchPhase, FocusHandle,
+    FontWeight, HighlightStyle, HitboxBehavior, IntoElement, KeyDownEvent, MouseButton,
+    MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, StyledText, Window, canvas, div, fill,
+    point, prelude::*, px, quad, rgb, size,
 };
 
 use poe2_domain::{ModGeneration, ParsedItem};
@@ -35,6 +35,7 @@ use crate::ui::theme::{
 };
 
 use super::format::format_value;
+use super::part::{Piece, Placer};
 use super::waystone::{is_waystone, mark_color, render_mark_button, waystone_mark_of};
 
 /// Indent of a filter row's second line: the checkbox plus the gap after it.
@@ -64,8 +65,8 @@ const SLIDER_NOTCH: f32 = 9.;
 /// The panel's sections, in the game tooltip's own order: base properties, implicits, the prefix
 /// and suffix slots (tiers inline, free slots included), anything else (enchants, runes, a
 /// unique's fixed mods), then the pseudo totals -- folded, since they repeat what's above.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Section {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(super) enum Section {
     Properties,
     Implicits,
     Prefixes,
@@ -73,6 +74,16 @@ enum Section {
     Other,
     Totals,
 }
+
+/// The sections in the order they're shown.
+const SECTIONS: [Section; 6] = [
+    Section::Properties,
+    Section::Implicits,
+    Section::Prefixes,
+    Section::Suffixes,
+    Section::Other,
+    Section::Totals,
+];
 
 fn section_of(filter: &SearchFilter) -> Section {
     match (filter.tag, filter.generation) {
@@ -113,114 +124,144 @@ pub(super) fn shows_property(state: &PriceCheckApp, trade_id: &str, value: f64) 
         })
 }
 
+/// The filter rows in their sections, each under its heading and with its unchecked properties
+/// folded into chips under its rows, then the toggle that unfolds the rows kept out of sight --
+/// each heading, row, chips and the toggle a part of the panel of its own (`part`).
 pub(super) fn render_sections(
     state: &PriceCheckApp,
+    placer: &mut Placer,
+    cx: &mut App,
+) -> gpui::Div {
+    let mut sections = div().flex().flex_col();
+    for section in SECTIONS {
+        let (chips, rows) = section_rows(state, section);
+        if rows.is_empty() && chips.is_empty() {
+            continue;
+        }
+        let mut shown = div()
+            .flex()
+            .flex_col()
+            .gap(rems_from_px(ROWS_GAP))
+            .child(placer.place(Piece::Heading(section), cx));
+        for row in rows {
+            shown = shown.child(placer.place(Piece::Filter(row), cx));
+        }
+        if !chips.is_empty() {
+            shown = shown.child(placer.place(Piece::PropertyChips(section), cx));
+        }
+        sections = sections.child(shown);
+    }
+    if folded_count(state) > 0 {
+        sections = sections.child(placer.place(Piece::HiddenToggle, cx));
+    }
+    sections
+}
+
+/// `section`'s filters in sight, as their rows' indices: those folded into chips, and those shown
+/// as rows.
+fn section_rows(state: &PriceCheckApp, section: Section) -> (Vec<usize>, Vec<usize>) {
+    state
+        .filters
+        .iter()
+        .enumerate()
+        .filter(|(_, filter)| {
+            section_of(filter) == section && (state.show_hidden || !is_folded(filter))
+        })
+        .map(|(row, _)| row)
+        .partition(|&row| is_chip(&state.filters[row]))
+}
+
+/// How many rows start folded away (`is_folded`).
+fn folded_count(state: &PriceCheckApp) -> usize {
+    state
+        .filters
+        .iter()
+        .filter(|filter| is_folded(filter))
+        .count()
+}
+
+/// `section`'s heading: its name, and for the affix slots how many the item has.
+pub(super) fn render_heading(
+    state: &PriceCheckApp,
     item: &ParsedItem,
-    window: &Window,
-    cx: &Context<PriceCheckApp>,
+    section: Section,
 ) -> impl IntoElement {
-    let waystone = is_waystone(item);
     let generation_count = |generation| {
         item.mods
             .iter()
             .filter(|modifier| modifier.info.generation == Some(generation))
             .count()
     };
-    let has_affixes = state
-        .filters
-        .iter()
-        .any(|filter| filter.generation.is_some());
-    let sections = [
-        (Section::Properties, tr!("Item properties").to_owned()),
-        (Section::Implicits, tr!("Implicit modifiers").to_owned()),
-        (
-            Section::Prefixes,
-            tr!(
-                "Prefixes · {count}",
-                count = generation_count(ModGeneration::Prefix)
-            ),
+    let title = match section {
+        Section::Properties => tr!("Item properties").to_owned(),
+        Section::Implicits => tr!("Implicit modifiers").to_owned(),
+        Section::Prefixes => tr!(
+            "Prefixes · {count}",
+            count = generation_count(ModGeneration::Prefix)
         ),
-        (
-            Section::Suffixes,
-            tr!(
-                "Suffixes · {count}",
-                count = generation_count(ModGeneration::Suffix)
-            ),
+        Section::Suffixes => tr!(
+            "Suffixes · {count}",
+            count = generation_count(ModGeneration::Suffix)
         ),
-        (
-            Section::Other,
+        Section::Other => {
+            let has_affixes = state
+                .filters
+                .iter()
+                .any(|filter| filter.generation.is_some());
             if has_affixes {
                 tr!("Other modifiers")
             } else {
                 tr!("Modifiers")
             }
-            .to_owned(),
-        ),
-        (Section::Totals, tr!("Totals (pseudo)").to_owned()),
-    ];
-    let folded = state
-        .filters
-        .iter()
-        .filter(|filter| is_folded(filter))
-        .count();
+            .to_owned()
+        }
+        Section::Totals => tr!("Totals (pseudo)").to_owned(),
+    };
+    div()
+        .pt(rems_from_px(HEADING_ABOVE))
+        .child(section_heading(fonts::interface_font(), &title))
+}
 
+/// Filter row `row` of `item`'s filters (`render_filter_row`); `None` for a row it has no more.
+pub(super) fn render_filter(
+    state: &PriceCheckApp,
+    item: &ParsedItem,
+    row: usize,
+    window: &Window,
+    cx: &Context<PriceCheckApp>,
+) -> Option<AnyElement> {
+    (row < state.filters.len() && row < state.filter_ui.len())
+        .then(|| render_filter_row(state, row, is_waystone(item), window, cx))
+}
+
+/// `section`'s unchecked properties as chips (`render_property_chips`), under its rows.
+pub(super) fn render_property_chips(
+    state: &PriceCheckApp,
+    section: Section,
+    cx: &Context<PriceCheckApp>,
+) -> impl IntoElement {
+    let (chips, _) = section_rows(state, section);
     div()
         .flex()
-        .flex_col()
-        .children(sections.into_iter().filter_map(|(section, title)| {
-            let (chips, rows): (Vec<usize>, Vec<usize>) = state
-                .filters
-                .iter()
-                .enumerate()
-                .filter(|(_, filter)| {
-                    section_of(filter) == section && (state.show_hidden || !is_folded(filter))
-                })
-                .map(|(row, _)| row)
-                .partition(|&row| is_chip(&state.filters[row]));
-            (!rows.is_empty() || !chips.is_empty()).then(|| {
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(rems_from_px(ROWS_GAP))
-                    .child(
-                        div()
-                            .pt(rems_from_px(HEADING_ABOVE))
-                            .child(section_heading(fonts::interface_font(), &title)),
-                    )
-                    .children(
-                        rows.into_iter()
-                            .map(|row| render_filter_row(state, row, waystone, window, cx)),
-                    )
-                    .when(!chips.is_empty(), |this| {
-                        this.child(
-                            div()
-                                .flex()
-                                .flex_wrap()
-                                .gap_x(rems_from_px(CHIP_GAP_X))
-                                .gap_y(rems_from_px(CHIP_GAP_Y))
-                                .pt(rems_from_px(2.))
-                                .children(
-                                    chips
-                                        .into_iter()
-                                        .map(|row| render_property_chip(state, row, cx)),
-                                ),
-                        )
-                    })
-            })
-        }))
-        .when(folded > 0, |this| {
-            this.child(render_hidden_toggle(folded, state.show_hidden, cx))
-        })
+        .flex_wrap()
+        .gap_x(rems_from_px(CHIP_GAP_X))
+        .gap_y(rems_from_px(CHIP_GAP_Y))
+        .pt(rems_from_px(2.))
+        .children(
+            chips
+                .into_iter()
+                .map(|row| render_property_chip(state, row, cx)),
+        )
 }
 
 /// Unfolds/folds the rows `is_folded` keeps out of sight -- PoE Overlay II's "show N hidden
 /// mods", EE2's "Hidden" toggle.
-fn render_hidden_toggle(
-    count: usize,
-    shown: bool,
+pub(super) fn render_hidden_toggle(
+    state: &PriceCheckApp,
     cx: &Context<PriceCheckApp>,
 ) -> impl IntoElement {
-    let label = if shown {
+    let count = folded_count(state);
+    let label = if state.show_hidden {
         tr!("▴ Hide totals and minor rows ({count})", count = count)
     } else {
         tr!("▾ Totals and minor rows: {count} more", count = count)
@@ -288,8 +329,11 @@ fn render_filter_row(
         div()
             .id("tier")
             .flex_none()
-            .when_some(filter.tier_info.as_ref(), |this, info| {
-                this.tooltip(game_hint(fonts::interface_font(), None, tier_hint(info)))
+            // Its lines are worked out as it opens, not in every frame drawing the row.
+            .when_some(filter.tier_info, |this, info| {
+                this.tooltip(move |window, cx| {
+                    game_hint(fonts::interface_font(), None, tier_hint(&info))(window, cx)
+                })
             })
             .child(render_tier(tier))
     });
@@ -491,8 +535,29 @@ fn render_roll_slider(
         .as_ref()
         .map(|roll| slider.fraction(roll.value) as f32);
     let view = cx.entity();
+    switch_in(
+        "slider-in",
+        div()
+            .id(("roll-slider", row))
+            .pl(rems_from_px(CHECK_COLUMN))
+            // Worded as it opens, not in every frame drawing the row.
+            .tooltip(move |window, cx| hints::hint(slider_hint(slider))(window, cx))
+            .child(ease_value(
+                "thumb",
+                thumb,
+                dragging,
+                div(),
+                move |holder, thumb| {
+                    holder.child(slider_track(row, slider.handle, thumb, notch, view.clone()))
+                },
+            )),
+    )
+}
+
+/// What a roll slider's tooltip says: its ends, its notch and its thumb.
+fn slider_hint(slider: Slider) -> String {
     let (low, high) = (format_value(slider.low), format_value(slider.high));
-    let hint = match slider.handle {
+    match slider.handle {
         Handle::Min => tr!(
             "The ends are this stat's lowest ({low}) and highest ({high}) rolls across all tiers, \
              the bright mark is this item's roll, the circle is the search's minimum.",
@@ -506,23 +571,7 @@ fn render_roll_slider(
             low = low,
             high = high
         ),
-    };
-    switch_in(
-        "slider-in",
-        div()
-            .id(("roll-slider", row))
-            .pl(rems_from_px(CHECK_COLUMN))
-            .tooltip(hints::hint(hint))
-            .child(ease_value(
-                "thumb",
-                thumb,
-                dragging,
-                div(),
-                move |holder, thumb| {
-                    holder.child(slider_track(row, slider.handle, thumb, notch, view.clone()))
-                },
-            )),
-    )
+    }
 }
 
 /// The slider's painted track and its mouse handling: `thumb` and `notch` are fractions of the

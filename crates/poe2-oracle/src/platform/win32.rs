@@ -65,7 +65,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::{BOOL, s, w};
 
 use super::game_window::{client_rect_on_screen, dpi_to_scale};
-use super::paint_gate::{self, GateEvent, PaintGate, Wants};
+use super::paint_gate::{self, GateEvent, OnChange, PaintGate, Wants};
 use super::{check_clock, paint_census, vsync_park};
 use crate::overlay_layout::PhysicalRect;
 
@@ -79,7 +79,7 @@ struct Wrapped {
     gpui_proc: isize,
     /// Answers `WM_MOUSEACTIVATE` with `MA_NOACTIVATE` ([`Win32Overlay::set_no_activate`]).
     no_activate: bool,
-    /// Paints only in bursts ([`Win32Overlay::gate_paints`]).
+    /// Paints only while they may be changing ([`Win32Overlay::gate_paints`]).
     gate: Option<PaintGate>,
     /// The least client area the player can size the window to, in pixels at 96 DPI
     /// ([`Win32Overlay::set_min_size`]).
@@ -445,15 +445,16 @@ impl Win32Overlay {
 
     /// Lets GPUI paint the window only while what it shows may be changing
     /// (`platform::paint_gate`): while it has the keyboard, and for a burst once the app says what
-    /// it shows has changed ([`Self::open_paints`]), once it's moved, resized or shown, or the
-    /// pointer or a key did something on it -- else a paint once a safety net, five seconds
-    /// (`paint_gate::SAFETY_NET_MS`), in case something changed that nobody said. `gpui_windows`
-    /// invalidates every window of the app on each refresh of the display (`platform.rs`'s
-    /// `begin_vsync_thread`), so each visible one would be drawn 60 to 165 times a second whether
-    /// or not it has anything new -- the XP overlay's plates are up all the while the game is
-    /// played, for words that change every few seconds -- and would wake the UI thread as often;
-    /// `redraw_filter`, installed at start, keeps the refreshes from even asking outside a burst,
-    /// and `vsync_park` lets them sleep while no window wants one. Bursts of `PAINT_BURST`.
+    /// it shows has changed ([`Self::open_paints`], [`Self::repaint`]), once it's moved, resized
+    /// or shown, or the pointer or a key did something on it -- else a paint once a safety net,
+    /// five seconds (`paint_gate::SAFETY_NET_MS`), in case something changed that nobody said.
+    /// `gpui_windows` invalidates every window of the app on each refresh of the display
+    /// (`platform.rs`'s `begin_vsync_thread`), so each visible one would be drawn 60 to 165 times a
+    /// second whether or not it has anything new -- the XP overlay's plates are up all the while
+    /// the game is played, for words that change every few seconds -- and would wake the UI thread
+    /// as often; `redraw_filter`, installed at start, keeps the refreshes from even asking outside
+    /// a burst, and `vsync_park` lets them sleep while no window wants one. Bursts of
+    /// `PAINT_BURST`.
     pub fn gate_paints(&self) -> Result<()> {
         self.gate_paints_for(
             PAINT_BURST,
@@ -466,8 +467,27 @@ impl Win32Overlay {
     /// while after what set it off, and in part without a word to it -- the price panel's
     /// listings' tooltips draw their items' art as it comes in.
     pub fn gate_paints_for(&self, burst: Duration, safety_net: Duration) -> Result<()> {
+        self.gate_with(burst, safety_net, OnChange::Burst)
+    }
+
+    /// [`Self::gate_paints`] for a still window, whose changes are drawn in one frame -- the XP
+    /// overlay's plates, whose words change with every sample of play: a change -- the app's word
+    /// ([`Self::repaint`]), a move, a resize, a show -- lets its next paints through, whenever
+    /// they come, not a burst (`paint_gate::OnChange::Paints`). The pointer and the keyboard still
+    /// open bursts, for a hover's ease, and the app opens one itself for a change that eases
+    /// ([`Self::open_paints`]).
+    pub fn gate_still_paints(&self) -> Result<()> {
+        self.gate_with(
+            PAINT_BURST,
+            Duration::from_millis(paint_gate::SAFETY_NET_MS),
+            OnChange::Paints,
+        )
+    }
+
+    fn gate_with(&self, burst: Duration, safety_net: Duration, on_change: OnChange) -> Result<()> {
         let now = unsafe { GetTickCount64() };
-        let gate = PaintGate::new(burst.as_millis() as u64, safety_net.as_millis() as u64, now);
+        let (burst, safety_net) = (burst.as_millis() as u64, safety_net.as_millis() as u64);
+        let gate = PaintGate::new(burst, safety_net, on_change, now);
         self.wrap(|wrapped| wrapped.gate = Some(gate))?;
         // It's in a burst: the vsync thread may be asleep.
         vsync_park::wake();
@@ -475,15 +495,27 @@ impl Win32Overlay {
     }
 
     /// Opens a burst of a [`Self::gate_paints`] window's paints, and asks for the first: what it
-    /// shows has changed.
+    /// shows has changed, and eases on -- a still window's too ([`Self::gate_still_paints`]).
     pub fn open_paints(&self) {
+        self.changed(PaintGate::open);
+    }
+
+    /// Lets a [`Self::gate_paints`] window's paints through for a change, and asks for the first:
+    /// what it shows has changed -- a burst, but for a still window ([`Self::gate_still_paints`]),
+    /// whose next paints go through.
+    pub fn repaint(&self) {
+        self.changed(|gate, now| gate.note(GateEvent::Changed, now));
+    }
+
+    /// The app's word that what the window shows changed, which `take` lets through its gate.
+    fn changed(&self, take: impl FnOnce(&mut PaintGate, u64)) {
         let now = unsafe { GetTickCount64() };
         let gated = WRAPPED
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .get_mut(&(self.hwnd.0 as isize))
             .and_then(|wrapped| wrapped.gate.as_mut())
-            .map(|gate| gate.note(GateEvent::Changed, now))
+            .map(|gate| take(gate, now))
             .is_some();
         if gated {
             paint_census::opened(self.hwnd, paint_census::BY_APP);

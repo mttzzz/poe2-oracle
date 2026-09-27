@@ -24,19 +24,23 @@
 //! follows the player's UI scale. The item's name is set in the stand-in for its tooltip face
 //! (`ui::fonts`), the panel's own headings in the face of the client in the interface language;
 //! everything else in GPUI's default system UI font (Segoe UI on Windows), which covers Cyrillic.
+//!
+//! The render here lays out the panel's skeleton; what's in it is drawn in parts GPUI keeps from
+//! frame to frame (`part`), so a hover or a tooltip redraws the part it's in and no more.
 
 mod filters;
 pub(crate) mod format;
 mod market;
 mod menu;
 mod nameplate;
+mod part;
 mod results;
 mod title_bar;
 mod waystone;
 
 use gpui::{
-    AnyElement, Context, IntoElement, MouseDownEvent, Render, Window, div, prelude::*, relative,
-    rgb,
+    AnyElement, App, Context, IntoElement, MouseDownEvent, Render, Window, div, prelude::*,
+    relative, rgb,
 };
 
 use poe2_domain::ParsedItem;
@@ -53,11 +57,12 @@ use crate::ui::theme::{
 };
 use crate::ui::tour;
 
+pub(crate) use part::Parts;
+
 use filters::render_sections;
-use nameplate::{render_chips, render_nameplate};
-use results::{render_results, render_search_row, render_toolbar};
-use title_bar::render_title_bar;
-use waystone::render_waystone_marks;
+use part::{Piece, Placer};
+use results::render_results;
+use waystone::is_waystone;
 
 impl Render for PriceCheckApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
@@ -78,7 +83,15 @@ impl Render for PriceCheckApp {
             )
             .into_any_element(),
             BootstrapState::Ready if !self.visible => return div(),
-            BootstrapState::Ready => render_ready(self, window, cx).into_any_element(),
+            BootstrapState::Ready => {
+                // Taken out while the frame places the parts, which this very state keeps.
+                let mut parts = std::mem::take(&mut self.panel_parts);
+                let mut placer = Placer::new(&mut parts, cx.entity(), cx);
+                let body = render_ready(self, &mut placer, cx);
+                placer.finish();
+                self.panel_parts = parts;
+                body
+            }
         };
 
         // Each check plays the panel's rise in again (`PriceCheckApp::appearances`). The tour's
@@ -104,11 +117,15 @@ impl Render for PriceCheckApp {
     }
 }
 
-fn render_ready(state: &PriceCheckApp, window: &Window, cx: &Context<PriceCheckApp>) -> AnyElement {
+fn render_ready(
+    state: &PriceCheckApp,
+    placer: &mut Placer,
+    cx: &mut Context<PriceCheckApp>,
+) -> AnyElement {
     let main = if let Some(problem) = &state.problem {
         render_problem(problem, cx).into_any_element()
     } else if let Some(item) = &state.item {
-        render_item(state, item, window, cx).into_any_element()
+        render_item(state, item, placer, cx).into_any_element()
     } else {
         centered_message(
             tr!(
@@ -124,7 +141,7 @@ fn render_ready(state: &PriceCheckApp, window: &Window, cx: &Context<PriceCheckA
         .flex_col()
         .flex_1()
         .min_h_0()
-        .child(render_title_bar(state, window, cx))
+        .child(placer.place(Piece::TitleBar, cx))
         .child(main)
         .into_any_element()
 }
@@ -135,10 +152,41 @@ fn render_ready(state: &PriceCheckApp, window: &Window, cx: &Context<PriceCheckA
 fn render_item(
     state: &PriceCheckApp,
     item: &ParsedItem,
-    window: &Window,
-    cx: &Context<PriceCheckApp>,
+    placer: &mut Placer,
+    cx: &mut App,
 ) -> impl IntoElement {
     let searched = !matches!(state.search, SearchState::NotSearched);
+    let mut content = div()
+        .flex()
+        .flex_col()
+        .px(rems_from_px(CONTENT_PADDING))
+        .pb(rems_from_px(14. - FRAME_CLEAR))
+        .child(placer.place(Piece::Chips, cx));
+    if state.priced_by_market {
+        let results = render_results(state, placer, cx);
+        content = content.child(tour::spot(Stop::Listings, results));
+    } else {
+        // The toolbar's part stays empty, and takes no room, for an item with neither a profile
+        // nor tier minimums.
+        let toolbar = placer.place(Piece::Toolbar, cx);
+        let sections = render_sections(state, placer, cx);
+        let waystone_marks = is_waystone(item).then(|| placer.place(Piece::WaystoneMarks, cx));
+        let search_row = placer.place(Piece::SearchRow, cx);
+        let results = render_results(state, placer, cx);
+        content = content
+            .child(toolbar)
+            .child(tour::spot(Stop::Filters, sections))
+            .children(waystone_marks)
+            .child(search_row)
+            .when(searched, |this| {
+                this.child(
+                    div()
+                        .pt(rems_from_px(10.))
+                        .child(ornament_rule(BORDER_GOLD)),
+                )
+            })
+            .child(tour::spot(Stop::Listings, results));
+    }
     // Scrolled rows stop at the frame's keep-out, and the last one rests 14 px above the edge.
     div()
         .id("price-check-scroll")
@@ -148,36 +196,8 @@ fn render_item(
         .min_h_0()
         .mb(rems_from_px(FRAME_CLEAR))
         .overflow_y_scroll()
-        .child(render_nameplate(item, state.trade_site(), cx))
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .px(rems_from_px(CONTENT_PADDING))
-                .pb(rems_from_px(14. - FRAME_CLEAR))
-                .child(render_chips(state, item, cx))
-                .map(|this| {
-                    if state.priced_by_market {
-                        this.child(tour::spot(Stop::Listings, render_results(state, item, cx)))
-                    } else {
-                        this.children(render_toolbar(state, window, cx))
-                            .child(tour::spot(
-                                Stop::Filters,
-                                render_sections(state, item, window, cx),
-                            ))
-                            .children(render_waystone_marks(state, item))
-                            .child(render_search_row(state, cx))
-                            .when(searched, |this| {
-                                this.child(
-                                    div()
-                                        .pt(rems_from_px(10.))
-                                        .child(ornament_rule(BORDER_GOLD)),
-                                )
-                            })
-                            .child(tour::spot(Stop::Listings, render_results(state, item, cx)))
-                    }
-                }),
-        )
+        .child(placer.place(Piece::Nameplate, cx))
+        .child(content)
 }
 
 /// What went wrong with a check, centred -- and, for an item the parser rejected, a button that

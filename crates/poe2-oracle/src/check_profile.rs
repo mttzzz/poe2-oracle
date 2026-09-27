@@ -12,6 +12,12 @@
 //!
 //! A check runs from the key's press until its panel settles: its search answered, or none made,
 //! and [`SETTLE`] without a frame since -- or until the panel hides or the next check starts.
+//!
+//! A frame's UI-thread CPU is split where the panel's own paint ends: its drawing -- GPUI's render,
+//! layout, prepaint and paint of the panel -- and its presenting -- a tooltip's paint, the scene
+//! sorted and the renderer's upload, draws and `Present`. The panel draws in parts GPUI keeps from
+//! frame to frame (`ui::panel::part`): the line says how many of the parts laid out in its frames
+//! were drawn afresh, the rest drawn from their last frame.
 
 use std::fmt::Write as _;
 use std::ops::AddAssign;
@@ -133,6 +139,12 @@ pub struct CheckProfile {
     searching: bool,
     /// When the check last did something that shows: the parse, a frame, the outcome.
     last_change: Duration,
+    /// The frames' UI-thread CPU up to the end of the panel's paint, and after it.
+    drawing: Spent,
+    presenting: Spent,
+    /// The panel's parts laid out in the frames, and those of them drawn afresh.
+    parts_placed: u64,
+    parts_drawn: u64,
 }
 
 impl CheckProfile {
@@ -154,6 +166,10 @@ impl CheckProfile {
             results: None,
             searching: false,
             last_change: start.wall,
+            drawing: Spent::default(),
+            presenting: Spent::default(),
+            parts_placed: 0,
+            parts_drawn: 0,
         }
     }
 
@@ -199,6 +215,19 @@ impl CheckProfile {
             (PanelMessage::Paint, false) => self.idle_paints.add(spent),
             (PanelMessage::Show, false) => {}
         }
+    }
+
+    /// A frame's CPU split where the panel's paint ended: its `drawing` up to there, its
+    /// `presenting` after.
+    pub fn frame_split(&mut self, drawing: Spent, presenting: Spent) {
+        self.drawing += drawing;
+        self.presenting += presenting;
+    }
+
+    /// A frame laid out `placed` of the panel's parts and drew `drawn` of them afresh.
+    pub fn parts(&mut self, placed: u64, drawn: u64) {
+        self.parts_placed += placed;
+        self.parts_drawn += drawn;
     }
 
     /// A search set off: the check isn't settled till its outcome is in.
@@ -287,18 +316,35 @@ impl CheckProfile {
             let _ = write!(line, " {};", steps.join(", "));
         }
 
-        let tallies = [
-            ("frames", self.frames),
-            ("idle paints", self.idle_paints),
-            ("resizes", self.resizes),
-        ];
-        let tallies: Vec<String> = tallies
-            .into_iter()
-            .filter(|(_, tally)| tally.count > 0)
-            .map(|(name, tally)| format!("{} {name} {}", tally.count, step(tally.spent)))
-            .collect();
+        let said =
+            |name: &str, tally: Tally| format!("{} {name} {}", tally.count, step(tally.spent));
+        let mut tallies = Vec::new();
+        if self.frames.count > 0 {
+            let mut frames = said("frames", self.frames);
+            if self.drawing.cycles + self.presenting.cycles > 0 {
+                let _ = write!(
+                    frames,
+                    " (drawing {}, presenting {})",
+                    cpu(self.drawing.cycles),
+                    cpu(self.presenting.cycles)
+                );
+            }
+            tallies.push(frames);
+        }
+        for (name, tally) in [("idle paints", self.idle_paints), ("resizes", self.resizes)] {
+            if tally.count > 0 {
+                tallies.push(said(name, tally));
+            }
+        }
         if !tallies.is_empty() {
             let _ = write!(line, " {};", tallies.join(", "));
+        }
+        if self.parts_placed > 0 {
+            let _ = write!(
+                line,
+                " {} of {} panel parts drawn afresh;",
+                self.parts_drawn, self.parts_placed
+            );
         }
 
         let _ = write!(
@@ -443,5 +489,28 @@ mod tests {
         assert!(line.contains("UI thread 2900.0, process 5800.0"), "{line}");
         assert!(line.contains("GPU memory 150.0 MiB"), "{line}");
         assert!(!line.contains("place"), "no window was placed: {line}");
+    }
+
+    #[test]
+    fn the_frames_say_their_drawing_and_presenting_and_the_parts_drawn_afresh() {
+        let rate = CycleRate(1e9);
+        let mut profile = CheckProfile::new(3, at(0));
+        profile.copied(at(15));
+        profile.parsed(at(15), at(18));
+        // A frame that drew the panel's 25 parts afresh, then one that drew one of them.
+        for (done, drawn) in [(40, 25), (60, 1)] {
+            frame(&mut profile, done);
+            profile.frame_split(
+                Spent::between(at(done - 5), at(done - 2)),
+                Spent::between(at(done - 2), at(done)),
+            );
+            profile.parts(25, drawn);
+        }
+        let line = profile.summary(at(3000), Some(rate), None);
+        assert!(
+            line.contains("2 frames 10.0/10.0 (drawing 6.0, presenting 4.0)"),
+            "{line}"
+        );
+        assert!(line.contains("26 of 50 panel parts drawn afresh"), "{line}");
     }
 }

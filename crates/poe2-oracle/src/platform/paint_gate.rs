@@ -7,7 +7,14 @@
 //! has anything new to draw. A gated window takes them only while what it shows may be changing:
 //! while it has the keyboard, and for a burst once it changed -- the app said so, or it was moved,
 //! resized or shown -- or the pointer or a key did something on it. A pointer at rest on it keeps
-//! nothing going: a hover's look and a tooltip come within a burst of the last move.
+//! nothing going: a hover's look and a tooltip come within a burst of the last move. A still
+//! window, whose changes are drawn in one frame -- the XP overlay's plates -- takes its next
+//! paints for a change instead ([`OnChange::Paints`]), whenever they come, and a burst only for
+//! the pointer, the keyboard, or its app's word that a change eases ([`PaintGate::open`]). In play
+//! the plates' words change at most of their samples, two seconds apart, and with a burst for each
+//! change the UI thread was woken 44 to 58 times a second as they updated (measured 2026-09-27 on
+//! the test machine in real play): a burst is a paint at each of the display's refreshes for 400
+//! ms, where the change is drawn at the first.
 //!
 //! Otherwise a paint goes through once a safety net ([`SAFETY_NET_MS`], five seconds; the price
 //! panel keeps a shorter one), so a change nobody told the gate of still shows within one and a
@@ -28,6 +35,23 @@ pub const SAFETY_NET_MS: u64 = 5_000;
 /// that never came -- a window shown without the thread being told. A shown window's next safety
 /// net's paint ends a sleep in time on its own.
 pub const MAX_PARK_MS: u64 = SAFETY_NET_MS;
+
+/// The paints a change owes a still window ([`OnChange::Paints`]): the one that draws it, and one
+/// more, for a draw put off -- `gpui_windows` defers a window's draw that comes while another is
+/// under way to the display's next refresh (`events.rs`' `draw_window`).
+pub const PAINTS_OWED: u8 = 2;
+
+/// What a change to a gated window ([`GateEvent::Changed`]) lets through.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OnChange {
+    /// A burst: the window's changes run on in transitions, or come in without a word to it --
+    /// the price panel's.
+    Burst,
+    /// Its next [`PAINTS_OWED`] paints, whenever they come -- one owed while it's hidden goes
+    /// through once it's shown: a still window, whose app opens a burst itself for a change that
+    /// eases.
+    Paints,
+}
 
 /// What happened to a gated window, as far as its paints go.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,8 +74,12 @@ pub struct PaintGate {
     burst_ms: u64,
     /// Its safety net: how often a paint goes through outside the bursts.
     safety_net_ms: u64,
+    /// What a change lets through.
+    on_change: OnChange,
     /// Until when paints go through, the last burst's end.
     open_until: u64,
+    /// Paints owed by a change ([`OnChange::Paints`]) and yet to go through.
+    owed: u8,
     /// When the last paint went through: the safety net's next comes half a safety net or more
     /// after it.
     last_passed: u64,
@@ -60,10 +88,10 @@ pub struct PaintGate {
 }
 
 impl PaintGate {
-    /// A gate whose bursts last `burst_ms` and whose safety net is `safety_net_ms` --
-    /// [`SAFETY_NET_MS`] or a whole part of it -- in a burst from `now`: the window is new, and
-    /// drawn once shown.
-    pub fn new(burst_ms: u64, safety_net_ms: u64, now: u64) -> PaintGate {
+    /// A gate whose bursts last `burst_ms`, whose safety net is `safety_net_ms` --
+    /// [`SAFETY_NET_MS`] or a whole part of it -- and whose changes let `on_change` through, in a
+    /// burst from `now`: the window is new, and drawn once shown.
+    pub fn new(burst_ms: u64, safety_net_ms: u64, on_change: OnChange, now: u64) -> PaintGate {
         debug_assert!(
             safety_net_ms > 0 && SAFETY_NET_MS.is_multiple_of(safety_net_ms),
             "a gate's safety net is a whole part of SAFETY_NET_MS"
@@ -71,7 +99,9 @@ impl PaintGate {
         PaintGate {
             burst_ms,
             safety_net_ms,
+            on_change,
             open_until: now + burst_ms,
+            owed: 0,
             last_passed: 0,
             active: false,
         }
@@ -84,7 +114,7 @@ impl PaintGate {
 
     /// What the window wants of the display's refreshes at `now`.
     pub fn wants(&self, now: u64) -> Wants {
-        if self.active || now < self.open_until {
+        if self.active || now < self.open_until || self.owed > 0 {
             Wants::EachRefresh
         } else {
             Wants::SafetyNet {
@@ -95,20 +125,27 @@ impl PaintGate {
     }
 
     /// Takes a paint at `now`: whether it goes through to GPUI. One that does is the safety net's
-    /// last.
+    /// last, and pays one that's owed.
     pub fn paint(&mut self, now: u64) -> bool {
         let due = self.due(now);
         if due {
             self.last_passed = now;
+            self.owed = self.owed.saturating_sub(1);
         }
         due
     }
 
-    /// Takes `event` at `now`. Every event but a hide opens a burst: the app's transitions run
-    /// past the change that set them off, and a hover or a focus eases out after it ends.
+    /// Takes `event` at `now`. Every event but a hide opens a burst -- the app's transitions run
+    /// past the change that set them off, and a hover or a focus eases out after it ends -- but a
+    /// still window's change ([`OnChange::Paints`]), which owes it its next paints.
     pub fn note(&mut self, event: GateEvent, now: u64) {
         match event {
-            GateEvent::Input | GateEvent::Changed => {}
+            GateEvent::Input => {}
+            GateEvent::Changed if self.on_change == OnChange::Paints => {
+                self.owed = PAINTS_OWED;
+                return;
+            }
+            GateEvent::Changed => {}
             GateEvent::Activated(active) => self.active = active,
             GateEvent::Hidden => {
                 // Out of sight, it may lose the keyboard without being told.
@@ -116,6 +153,12 @@ impl PaintGate {
                 return;
             }
         }
+        self.open(now);
+    }
+
+    /// Opens a burst at `now`, whatever the gate's changes let through: the app's word that what
+    /// the window shows eases from here on.
+    pub fn open(&mut self, now: u64) {
         self.open_until = now + self.burst_ms;
     }
 }
@@ -124,7 +167,7 @@ impl PaintGate {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Wants {
     /// A paint at each: its paints aren't gated, or go through all the while -- it has the
-    /// keyboard, or is in a burst.
+    /// keyboard, is in a burst, or is owed paints for a change.
     EachRefresh,
     /// Its safety net's paint, from `at` on: a safety net `every` milliseconds long.
     SafetyNet { at: u64, every: u64 },
@@ -196,20 +239,25 @@ mod tests {
 
     /// A gated window whose opening burst is long past at `now`, its last paint through at `now`
     /// too: quiet from here.
-    fn quiet(burst_ms: u64, safety_net_ms: u64, now: u64) -> PaintGate {
-        let mut gate = PaintGate::new(burst_ms, safety_net_ms, 0);
+    fn quiet(burst_ms: u64, safety_net_ms: u64, on_change: OnChange, now: u64) -> PaintGate {
+        let mut gate = PaintGate::new(burst_ms, safety_net_ms, on_change, 0);
         assert!(gate.paint(now));
         gate
     }
 
-    /// An XP plate, quiet since `now`.
+    /// An XP plate -- a still window -- quiet since `now`.
     fn plate(now: u64) -> PaintGate {
-        quiet(400, SAFETY_NET_MS, now)
+        quiet(400, SAFETY_NET_MS, OnChange::Paints, now)
+    }
+
+    /// A toast, quiet since `now`: its changes open bursts.
+    fn toast(now: u64) -> PaintGate {
+        quiet(400, SAFETY_NET_MS, OnChange::Burst, now)
     }
 
     /// The price panel, quiet since `now`.
     fn panel(now: u64) -> PaintGate {
-        quiet(2_000, PANEL_NET, now)
+        quiet(2_000, PANEL_NET, OnChange::Burst, now)
     }
 
     /// From when `wants` lets the window's next paint through; `None` for each refresh's.
@@ -240,13 +288,60 @@ mod tests {
 
     #[test]
     fn a_change_lets_every_paint_through_for_the_windows_own_burst() {
-        let (mut plate, mut panel) = (plate(10_000), panel(10_000));
-        plate.note(GateEvent::Changed, 10_100);
+        let (mut toast, mut panel) = (toast(10_000), panel(10_000));
+        toast.note(GateEvent::Changed, 10_100);
         panel.note(GateEvent::Changed, 10_100);
-        assert!(plate.paint(10_116) && plate.paint(10_132) && plate.paint(10_499));
-        assert!(!plate.due(10_500 + 1));
+        assert!(toast.paint(10_116) && toast.paint(10_132) && toast.paint(10_499));
+        assert!(!toast.due(10_500 + 1));
         assert!(panel.paint(11_000) && panel.paint(12_099));
         assert!(!panel.due(12_100 + 1));
+    }
+
+    #[test]
+    fn a_change_to_a_still_window_owes_it_its_next_two_paints_and_no_burst() {
+        let mut plate = plate(10_000);
+        plate.note(GateEvent::Changed, 10_100);
+        assert_eq!(plate.wants(10_100), Wants::EachRefresh);
+        assert!(plate.paint(10_116) && plate.paint(10_132));
+        // Well within the burst a change opens for a toast.
+        assert!(!plate.due(10_148));
+        assert_eq!(next_paint(plate.wants(10_148)), Some(15_000));
+    }
+
+    #[test]
+    fn paints_owed_while_hidden_go_through_once_shown() {
+        let mut plate = plate(10_000);
+        plate.note(GateEvent::Changed, 10_100);
+        plate.note(GateEvent::Hidden, 10_110);
+        // No refresh asks a hidden window for a paint (`redraw_filter`): the first asks after it's
+        // shown, seconds later and before its safety net's, draw what changed meanwhile.
+        assert!(plate.paint(13_000) && plate.paint(13_016));
+        assert!(!plate.due(13_032));
+    }
+
+    #[test]
+    fn the_apps_word_that_a_change_eases_opens_a_still_windows_burst() {
+        let mut plate = plate(10_000);
+        plate.note(GateEvent::Changed, 11_000);
+        plate.open(11_000);
+        // An ease's frames, at the 30 a second GPUI keeps a window without the keyboard to.
+        assert!((0..12).all(|frame| plate.paint(11_000 + frame * 33)));
+        assert!(!plate.due(11_401));
+    }
+
+    #[test]
+    fn paints_owed_keep_the_vsync_thread_going_until_they_went_through() {
+        let mut plate = plate(10_000);
+        plate.note(GateEvent::Changed, 10_100);
+        assert_eq!(
+            vsync([Some(plate.wants(10_100))], 10_000, 10_100),
+            Vsync::Refresh
+        );
+        assert!(plate.paint(10_116) && plate.paint(10_132));
+        assert_eq!(
+            vsync([Some(plate.wants(10_133))], 10_132, 10_133),
+            Vsync::Park { until: 15_000 }
+        );
     }
 
     #[test]
