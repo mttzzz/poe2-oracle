@@ -145,6 +145,19 @@ kbd {
     border: 1px solid var(--gold);
 }
 
+/* Read by screen readers, not shown: a pause between the hero's name and its claim. */
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+}
+
 /* Top bar */
 
 .topbar {
@@ -228,21 +241,51 @@ kbd {
     text-align: center;
 }
 
-.hero h1 {
-    margin: 0 0 1rem;
-    font-size: clamp(2.25rem, 6vw, 3.75rem);
-    /* A headline that wraps splits into even lines, never leaving one word on its own. */
-    text-wrap: balance;
+/* The app's name, big and next to its mark, then the claim under it: the name is what a visitor
+   should take away from the page. */
+.hero-title {
+    margin: 0 0 1.25rem;
 }
 
-/* The app's name above the claim. */
+.hero-brand {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.2em;
+    font-size: clamp(2.25rem, 11vw, 5.75rem);
+    line-height: 1.05;
+    white-space: nowrap;
+}
+
+/* The mark, favicon.png: the 256 px one the app's icon is drawn from. */
+.hero-brand img {
+    width: 0.95em;
+    height: 0.95em;
+    filter: drop-shadow(0 0 0.3em rgba(236, 201, 75, 0.28));
+}
+
 .hero-name {
-    margin: 0 0 0.4rem;
-    color: var(--text-dim);
-    font-family: var(--display);
-    font-weight: var(--display-weight);
-    font-size: 1.4rem;
-    letter-spacing: 0.02em;
+    color: var(--gold);
+    filter: drop-shadow(0 0.15rem 0.6rem rgba(0, 0, 0, 0.65));
+}
+
+/* Gold lit from the top, in the ramp of the mark's rim (packaging/icon/generate_icon.py, RIM). */
+@supports ((background-clip: text) or (-webkit-background-clip: text)) {
+    .hero-name {
+        background: linear-gradient(180deg, #f8de95 0%, var(--gold-bright) 40%, var(--gold) 72%, #a8702a 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+    }
+}
+
+.hero-claim {
+    display: block;
+    margin-top: 0.5rem;
+    color: var(--text);
+    font-size: clamp(1.5rem, 3.4vw, 2.3rem);
+    /* A claim that wraps splits into even lines, never leaving one word on its own. */
+    text-wrap: balance;
 }
 
 .hero .lead {
