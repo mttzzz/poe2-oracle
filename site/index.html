@@ -47,7 +47,7 @@
       <ul class="proof">
         <li><b data-bench="memory"></b> of memory in Task Manager</li>
         <li><b data-bench="processes"></b> process, and no helper processes</li>
-        <li><b data-bench="play_moving"></b> of a CPU core in the game, with the mouse moving</li>
+        <li><b data-bench="play_cpu"></b> of a CPU core while playing</li>
         <li><b data-bench="ready"></b> from launch to ready</li>
       </ul>
       <p class="proof-more"><a href="#fast">How it compares with other price checkers</a></p>
@@ -81,12 +81,23 @@
       <figure class="bench">
         <div data-bench-chart="play"></div>
         <figcaption><span data-bench="play_measured">Measured</span> on one PC: Core i7-13700KF, 32 GB
-          of RAM, GeForce RTX 4090, Windows 11, two 4K monitors at 200% scaling. Path of Exile 2 was in
-          front, with the character in the hideout and the inventory open. All four apps ran at once and
-          were measured in the same minutes: one with the mouse at rest, one with it moving in slow
-          circles over the inventory. CPU is in percent of one logical core, and the PC has 24.
-          <a href="guide/en/performance.html#in-the-game">How it was measured</a>, with memory, GPU
-          memory and the price checks in the game.</figcaption>
+          of RAM, GeForce RTX 4090, Windows 11, two 4K monitors at 200% scaling. The PC's owner played Path
+          of Exile 2 as usual with all four apps running, and we only read the counters: three minutes,
+          all four apps in the same minutes, with no input of ours. The bars show each app's median
+          minute. CPU is in percent of one logical core, and the PC has 24.
+          <a href="guide/en/performance.html#real-play">How it was measured</a></figcaption>
+      </figure>
+
+      <h4 class="fast-subheading">A controlled test</h4>
+      <p class="bench-lead" data-bench="test_summary"></p>
+      <figure class="bench">
+        <div data-bench-chart="test"></div>
+        <figcaption><span data-bench="test_measured">Measured</span> on the same PC, with the game in
+          front, the character in the hideout and the inventory open. All four apps ran at once and were
+          measured in the same minutes: one with the mouse at rest, one with it moving in slow circles
+          over the inventory. <a href="guide/en/performance.html#controlled-test">How it was
+          measured</a>, and <a href="guide/en/performance.html#price-checks">the price checks in the
+          game</a>, with memory before and after them.</figcaption>
       </figure>
 
       <h3 class="fast-heading">With the game in the background</h3>

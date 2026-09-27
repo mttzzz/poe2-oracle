@@ -8,9 +8,9 @@ and its interface is drawn by the graphics card through Direct3D 11, with no Ele
 Overwolf inside; only signing in to pathofexile.com opens a page in Windows' own Edge component
 (WebView2). In Task Manager it is one process of 39.6 MB, and it is ready to price 0.27 s after it
 starts. With the game in the background, POE2 Currency Overlay, Exiled Exchange 2, Sidekick and
-PoE Overlay II took 3.4 to 16.8 times as much memory on the same PC. In the game, with the mouse
-moving, PoE2 Oracle used the least CPU of the four price checkers running together: 0.35% of a
-core, against 0.71 to 1.97% ([how it was measured](https://oracle.pushka.biz/guide/en/performance.html)).
+PoE Overlay II took 3.4 to 16.8 times as much memory on the same PC. While the PC's owner played,
+with the four price checkers running together, PoE2 Oracle used the least CPU: 0.67% of a core,
+against 3.23 to 4.23% ([how it was measured](https://oracle.pushka.biz/guide/en/performance.html)).
 
 Hover an item in the game and press `Ctrl+E`: a panel opens next to your inventory with the item's
 stats as search filters and the cheapest current listings from the official trade site. Currency

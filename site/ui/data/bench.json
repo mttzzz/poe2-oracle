@@ -1,14 +1,16 @@
 {
-    "about": "PoE2 Oracle next to other price checkers, and its own speed and size: every number the landing pages (site/index.html, site/ru/index.html) show about them, drawn by site/ui/bench.js. apps[]: each app once, with what was measured of it in two states of the game. play: the game in front and the inventory open, all four apps running at once and measured in the same minutes; moving and still are CPU in % of one logical core with the mouse moving and at rest. background: the game in the background and in view, every app idle; states[] are the app's own states, each with processes (the app's process count), memory (Task Manager's Memory column, the private working set, summed over its processes) and gpu (their dedicated GPU memory), both in MB of 1024 x 1024 bytes, and cpu, idle CPU in % of one logical core. The pages list PoE2 Oracle first and the others from the least to the most: CPU with the mouse moving in play, memory in background. Values are kept to more places than the pages show: they round memory and GPU memory to one decimal and CPU to two below 10 %, compute ratios from the values kept, and compare apps as they show them. PoE2 Oracle's play row is the build of commit 5fc9b59, measured 27 September 09:40-09:46; its background row the build of 26 September 18:30. facts: PoE2 Oracle's start-up and price check timings from its log (medians; exchange_range_ms is a range) and its sizes in bytes. Static text repeats some of them and changes with them: the guide's tables and notes, docs/guide/src/{en,ru}/performance.md, which also hold the method, the PC and the caveats, and the opening paragraph of README.md and README.ru.md (39.6 MB, 0.27 s, 3.4 to 16.8 times the memory with the game in the background; 0.35 % against 0.71 to 1.97 % of a core in the game with the mouse moving).",
+    "about": "PoE2 Oracle next to other price checkers, and its own speed and size: every number the landing pages (site/index.html, site/ru/index.html) show about them, drawn by site/ui/bench.js. apps[]: each app once, with what was measured of it three ways. play: real play, the game in front and played as usual by the PC's owner, all four apps running and read in the same minutes; minutes are CPU in % of one logical core in each minute, the pages showing the median and the lowest and highest, and label, where there is one, the app's own state in those minutes. test: a controlled test with the game in front and the inventory open, all four apps read in the same minutes; moving and still are CPU in % of one logical core with the mouse moving and at rest. background: the game in the background and in view, every app idle; states[] are the app's own states, each with processes (the app's process count), memory (Task Manager's Memory column, the private working set, summed over its processes) and gpu (their dedicated GPU memory), both in MB of 1024 x 1024 bytes, and cpu, idle CPU in % of one logical core. build names the build of PoE2 Oracle a block measured, which the tables show by it. The pages list PoE2 Oracle first and the others from the least to the most: CPU in real play, CPU with the mouse moving in the test, memory in the background. Values are kept to more places than the pages show: they round memory and GPU memory to one decimal and CPU to two below 10 %, compute ratios from the values kept, and compare apps as they show them. facts: PoE2 Oracle's start-up and price check timings from its log (medians; exchange_range_ms is a range) and its sizes in bytes. Static text repeats some of them and changes with them: the guide's tables and notes, docs/guide/src/{en,ru}/performance.md, which also hold the method, the PC and the caveats, and the opening paragraph of README.md and README.ru.md (39.6 MB, 0.27 s, 3.4 to 16.8 times the memory with the game in the background; 0.67 % against 3.23 to 4.23 % of a core in real play).",
     "apps": [
         {
             "id": "oracle",
             "name": "PoE2 Oracle",
             "version": "0.1.0",
             "stack": { "en": "Rust, GPUI on Direct3D 11", "ru": "Rust, GPUI на Direct3D 11" },
-            "play": { "measured": "2026-09-27", "moving": 0.348, "still": 0.088 },
+            "play": { "measured": "2026-09-27", "build": "786f69b", "minutes": [0.6724, 0.6861, 0.6682] },
+            "test": { "measured": "2026-09-27", "build": "5fc9b59", "moving": 0.348, "still": 0.088 },
             "background": {
                 "measured": "2026-09-26",
+                "build": "64166d7",
                 "states": [
                     { "processes": 1, "memory": 39.56, "cpu": 0.122, "gpu": 40.06 }
                 ]
@@ -19,7 +21,8 @@
             "name": "Exiled Exchange 2",
             "version": "0.16.7",
             "stack": "Electron",
-            "play": { "measured": "2026-09-27", "moving": 1.00, "still": 0.081 },
+            "play": { "measured": "2026-09-27", "minutes": [3.7174, 4.2281, 4.7723] },
+            "test": { "measured": "2026-09-27", "moving": 1.00, "still": 0.081 },
             "background": {
                 "measured": "2026-09-26",
                 "states": [
@@ -32,7 +35,8 @@
             "name": "POE2 Currency Overlay",
             "version": "3.0.7",
             "stack": "Electron",
-            "play": { "measured": "2026-09-27", "moving": 0.71, "still": 0.099 },
+            "play": { "measured": "2026-09-27", "minutes": [2.8316, 3.2255, 3.6241] },
+            "test": { "measured": "2026-09-27", "moving": 0.71, "still": 0.099 },
             "background": {
                 "measured": "2026-09-26",
                 "states": [
@@ -60,7 +64,12 @@
             "name": "PoE Overlay II",
             "version": "1.67.0",
             "stack": "Overwolf 0.310.1.1",
-            "play": { "measured": "2026-09-27", "moving": 1.97, "still": 1.49 },
+            "play": {
+                "measured": "2026-09-27",
+                "label": { "en": "main window open, on the second monitor", "ru": "главное окно открыто, на втором мониторе" },
+                "minutes": [3.3007, 3.6996, 4.1036]
+            },
+            "test": { "measured": "2026-09-27", "moving": 1.97, "still": 1.49 },
             "background": {
                 "measured": "2026-09-26",
                 "states": [

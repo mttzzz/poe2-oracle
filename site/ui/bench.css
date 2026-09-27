@@ -1,9 +1,10 @@
 /*
- * PoE2 Oracle next to other price checkers (bench.js): two tables, each with a bar chart in its
- * first measured column, in the site's colours (style.css). --play is CPU in the game with the
- * mouse moving (the bars) and at rest; --background is memory (the bars), processes, idle CPU and
- * GPU memory with the game in the background. On a phone each row becomes a card: the app, its
- * bar, then the other columns side by side under their labels.
+ * PoE2 Oracle next to other price checkers (bench.js): three tables, each with a bar chart in its
+ * first measured column, in the site's colours (style.css). --play is CPU in real play (the bars,
+ * each app's median minute) and its lowest and highest minute; --test is CPU in the controlled test
+ * with the mouse moving (the bars) and at rest; --background is memory (the bars), processes, idle
+ * CPU and GPU memory with the game in the background. On a phone each row becomes a card: the app,
+ * its bar, then the other columns under their labels.
  */
 
 .bench {
@@ -58,11 +59,13 @@
 }
 
 .bench-table--play thead th:nth-child(1),
+.bench-table--test thead th:nth-child(1),
 .bench-table--background thead th:nth-child(1) {
     width: 23%;
 }
 
-.bench-table--play thead th:nth-child(3) {
+.bench-table--play thead th:nth-child(3),
+.bench-table--test thead th:nth-child(3) {
     width: 17%;
     text-align: right;
 }
@@ -120,13 +123,20 @@
 }
 
 .bench-stack,
+.bench-build,
 .bench-state {
     display: block;
     font-size: 0.85rem;
 }
 
-.bench-stack {
+.bench-stack,
+.bench-build {
     color: var(--text-muted);
+}
+
+/* The build of PoE2 Oracle a comparison measured: the three were measured with different ones. */
+.bench-build {
+    font-size: 0.8rem;
 }
 
 .bench-state {
@@ -241,7 +251,8 @@
 
     .bench-app,
     .bench-bars,
-    .bench-table--play .bench-number {
+    .bench-table--play .bench-number,
+    .bench-table--test .bench-number {
         grid-column: 1 / -1;
     }
 

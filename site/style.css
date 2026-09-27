@@ -397,6 +397,16 @@ kbd {
     margin-top: 3rem;
 }
 
+/* A second comparison under a heading's first, as the controlled test under real play. */
+.fast-subheading {
+    margin: 2.25rem 0 0.5rem;
+    color: var(--gold);
+    font-family: var(--display);
+    font-weight: var(--display-weight);
+    font-size: 1.15rem;
+    line-height: 1.2;
+}
+
 /* The comparison's outcome in words (ui/bench.js), above its table. */
 .bench-lead {
     max-width: 48rem;
