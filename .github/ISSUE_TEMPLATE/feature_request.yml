@@ -1,31 +1,31 @@
-name: Feature request / Предложить идею
-description: Suggest something PoE2 Oracle could do. / Предложите, что PoE2 Oracle мог бы делать.
+name: Idea
+description: "Something you'd like PoE2 Oracle to do. / Что бы вы хотели, чтобы PoE2 Oracle умела."
 labels: ["enhancement"]
 body:
   - type: markdown
     attributes:
       value: |
-        For the maintainer's own notes. Players send ideas from the app (**Write to the developer** in the **Help** section of its settings, kind **Idea**) or through the site's form at https://oracle.pushka.biz/report.html. Search the existing issues first and suggest one idea per issue.
+        You can also send an idea from the app: Settings → **Help** → **Write to the developer**, then pick **Idea**. Search the existing issues first, and suggest one idea per issue. Everything on this page is **public**.
 
-        Для заметок самого сопровождающего. Игроки присылают идеи из программы («Написать разработчику» в разделе «Помощь» настроек, вид «Идея») или через форму на сайте https://oracle.pushka.biz/ru/report.html. Сначала поищите среди существующих задач; одна задача — одна идея.
+        _Идею можно прислать и из программы: «Настройки» → «Помощь» → «Написать разработчику», вид «Идея». Сначала поищите среди задач; одна задача — одна идея. Всё на этой странице видно всем. Писать можно по-русски._
   - type: textarea
     id: need
     attributes:
-      label: What do you want to do? / Что вы хотите сделать?
-      description: The situation in the game and what gets in the way today. / Ситуация в игре и что сейчас мешает.
+      label: What do you want to do?
+      description: "What you do in the game and what gets in the way today. / Что вы делаете в игре и что сейчас мешает."
     validations:
       required: true
   - type: textarea
     id: proposal
     attributes:
-      label: How could PoE2 Oracle help? / Чем мог бы помочь PoE2 Oracle?
-      description: What the app would do or show. A sketch or a screenshot of another tool helps. / Что программа делала бы или показывала. Поможет набросок или скриншот другой программы.
+      label: How could PoE2 Oracle help?
+      description: "What the app would do or show. A sketch or a screenshot of another tool helps. / Что программа делала бы или показывала. Поможет набросок или скриншот другой программы."
     validations:
       required: true
   - type: textarea
     id: alternatives
     attributes:
-      label: How do you do it now? / Как вы делаете это сейчас?
-      description: Other tools or workarounds you use. / Другие программы или обходные пути.
+      label: How do you do it now?
+      description: "Other tools or workarounds you use. / Другие программы или обходные пути."
     validations:
       required: false

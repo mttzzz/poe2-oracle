@@ -30,7 +30,11 @@ app:
     cpu: 250m
 env:
   PUBLIC_URL: https://oracle.pushka.biz
+  # The releases and their downloads come from the app's repository. The reports go as issues to a
+  # private repository of their own: they hold what players wrote, their contacts and the texts of
+  # their items and crashes, and the app's repository may be public.
   GITHUB_REPO: mttzzz/poe2-oracle
+  GITHUB_REPORTS_REPO: mttzzz/poe2-oracle-reports
   RUST_LOG: info
 httpRoute:
   enabled: true

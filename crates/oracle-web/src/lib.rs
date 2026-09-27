@@ -7,10 +7,12 @@
 //!   `/guide/images/`; `/` and `/guide/` lead to the reader's language ([`site`]);
 //! - it takes the reports the app's report window and the site's form send
 //!   ([`oracle_protocol::Report`]) and passes each on twice: as an issue in the private GitHub
-//!   repository and as a Telegram message to the owner ([`reports`]);
-//! - it lists the repository's releases every two minutes and answers the app's updater with the
-//!   latest of each kind, the app's release and the data pack, and serves their files, which
-//!   GitHub itself hands out only with a token while the repository is private ([`releases`]);
+//!   repository for reports (`GITHUB_REPORTS_REPO`) and as a Telegram message to the owner
+//!   ([`reports`]);
+//! - it lists the app repository's releases (`GITHUB_REPO`) every two minutes and answers the
+//!   app's updater with the latest of each kind, the app's release and the data pack, and serves
+//!   their files, which GitHub itself hands out only with a token while the repository is private
+//!   ([`releases`]);
 //! - it keeps the running apps connected to an event stream that tells them the latest versions
 //!   as soon as it lists them, so a new release reaches them within minutes ([`events`]);
 //! - it counts downloads, stream connections, update checks and reports per Moscow day, and every
@@ -72,11 +74,18 @@ pub struct Config {
     /// `IMAGES_DIR`: the guide's pictures, `docs/guide/src/images`, which the landing pages show
     /// from `/images/` and the books from `/guide/images/`.
     pub images_dir: PathBuf,
-    /// `GITHUB_TOKEN`: the owner's fine-grained token for [`Config::github_repo`], with Issues
-    /// read/write and Contents read.
+    /// `GITHUB_TOKEN`: the owner's fine-grained token for [`Config::github_repo`] and
+    /// [`Config::github_reports_repo`], with Contents read (the releases) and Issues read/write
+    /// (the reports).
     pub github_token: Option<String>,
-    /// `GITHUB_REPO`: `owner/name` of the repository issues go to and releases come from.
+    /// `GITHUB_REPO`: `owner/name` of the repository the releases come from, and the reports go to
+    /// when [`Config::github_reports_repo`] names none.
     pub github_repo: String,
+    /// `GITHUB_REPORTS_REPO`: `owner/name` of the repository the reports go to as issues. A report
+    /// holds what the player wrote, a contact, the item's or crash's text, so this is a private
+    /// repository of their own, and [`Config::github_repo`] can be public. Unset, the reports go
+    /// to [`Config::github_repo`].
+    pub github_reports_repo: Option<String>,
     /// `TELEGRAM_TOKEN`: the owner's tg-inbox bot.
     pub telegram_token: Option<String>,
     /// `TELEGRAM_CHAT_ID`: the owner's chat with that bot.
@@ -109,6 +118,7 @@ impl Default for Config {
             images_dir: PathBuf::from("/app/images"),
             github_token: None,
             github_repo: "mttzzz/poe2-oracle".to_owned(),
+            github_reports_repo: None,
             telegram_token: None,
             telegram_chat_id: None,
             redis_url: None,
@@ -128,11 +138,13 @@ impl Config {
     /// The configuration the environment gives, over [`Config::default`]. An empty variable
     /// counts as unset, so a deploy template can leave a secret blank.
     pub fn from_env() -> Result<Config, String> {
-        let var = |name: &str| {
-            std::env::var(name)
-                .ok()
-                .filter(|value| !value.trim().is_empty())
-        };
+        Config::from_vars(|name| std::env::var(name).ok())
+    }
+
+    /// [`Config::from_env`] with each variable looked up by `lookup`, so that tests can give theirs
+    /// without touching the process's environment.
+    fn from_vars(lookup: impl Fn(&str) -> Option<String>) -> Result<Config, String> {
+        let var = |name: &str| lookup(name).filter(|value| !value.trim().is_empty());
         let mut config = Config::default();
         if let Some(port) = var("PORT") {
             config.port = port
@@ -153,7 +165,10 @@ impl Config {
             config.images_dir = dir.into();
         }
         if let Some(repo) = var("GITHUB_REPO") {
-            config.github_repo = repo.trim().to_owned();
+            config.github_repo = repository("GITHUB_REPO", &repo)?;
+        }
+        if let Some(repo) = var("GITHUB_REPORTS_REPO") {
+            config.github_reports_repo = Some(repository("GITHUB_REPORTS_REPO", &repo)?);
         }
         config.github_token = var("GITHUB_TOKEN").map(|token| token.trim().to_owned());
         if let Some(api) = var("GITHUB_API") {
@@ -176,6 +191,34 @@ impl Config {
         config.telegram_chat_id = var("TELEGRAM_CHAT_ID").map(|chat| chat.trim().to_owned());
         config.redis_url = var("REDIS_URL");
         Ok(config)
+    }
+
+    /// The repository the reports go to as issues: [`Config::github_reports_repo`], or else
+    /// [`Config::github_repo`].
+    fn reports_repo(&self) -> &str {
+        self.github_reports_repo
+            .as_deref()
+            .unwrap_or(&self.github_repo)
+    }
+}
+
+/// `value`, the variable `name`, trimmed, when it's a GitHub repository's `owner/name`: two parts
+/// of ASCII letters, digits, `-`, `_` and `.`, neither of them `.` or `..`. It goes into the path of
+/// every call to GitHub, so a URL, a missing or extra `/` or a stray character stops the service at
+/// start instead of sending the calls astray.
+fn repository(name: &str, value: &str) -> Result<String, String> {
+    let repo = value.trim();
+    let part = |part: &str| {
+        !matches!(part, "" | "." | "..")
+            && part
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+    };
+    match repo.split_once('/') {
+        Some((owner, repo_name)) if part(owner) && part(repo_name) => Ok(repo.to_owned()),
+        _ => Err(format!(
+            "{name} is not a GitHub repository's owner/name: {repo}"
+        )),
     }
 }
 
@@ -212,10 +255,12 @@ impl App {
             Some(url) => store::Store::redis(url)?,
             None => store::Store::memory(),
         };
+        let reports_repo = config.reports_repo().to_owned();
         let github = github::GitHub::new(
             http.clone(),
             config.github_api,
             config.github_repo,
+            reports_repo,
             config.github_token,
         );
         Ok(Arc::new(App {
@@ -350,6 +395,8 @@ pub async fn serve(
         address = %listener.local_addr()?,
         %public_url,
         github = mode(app.github.configured()),
+        releases_repo = %app.github.releases_repo(),
+        reports_repo = %app.github.reports_repo(),
         telegram = mode(app.telegram.configured()),
         counters,
         event_streams = app.streams.at_once(),
@@ -428,5 +475,77 @@ async fn shutdown_signal() {
             tokio::time::sleep(WITHDRAW_DELAY).await;
         }
         _ = tokio::signal::ctrl_c() => info!("interrupted"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The configuration of an environment that holds `vars` and nothing else.
+    fn config(vars: &[(&str, &str)]) -> Result<Config, String> {
+        Config::from_vars(|name| {
+            vars.iter()
+                .find(|(var, _)| *var == name)
+                .map(|(_, value)| (*value).to_owned())
+        })
+    }
+
+    #[test]
+    fn reports_go_to_their_own_repository_or_else_to_github_repo() {
+        let apart = config(&[
+            ("GITHUB_REPO", "mttzzz/poe2-oracle"),
+            ("GITHUB_REPORTS_REPO", " mttzzz/poe2-oracle-reports\n"),
+        ])
+        .unwrap();
+        assert_eq!(apart.reports_repo(), "mttzzz/poe2-oracle-reports");
+        assert_eq!(apart.github_repo, "mttzzz/poe2-oracle", "the releases stay");
+
+        // Unset, or left blank by a deploy template: the reports go where the releases come from.
+        for reports in [None, Some(""), Some("  ")] {
+            let mut vars = vec![("GITHUB_REPO", "someone/fork")];
+            vars.extend(reports.map(|value| ("GITHUB_REPORTS_REPO", value)));
+            assert_eq!(
+                config(&vars).unwrap().reports_repo(),
+                "someone/fork",
+                "{reports:?}"
+            );
+        }
+        assert_eq!(config(&[]).unwrap().reports_repo(), "mttzzz/poe2-oracle");
+
+        // Whatever GitHub allows in a name.
+        let allowed = config(&[("GITHUB_REPORTS_REPO", "Some-Org_1/poe2_oracle.reports-2")]);
+        assert_eq!(
+            allowed.unwrap().reports_repo(),
+            "Some-Org_1/poe2_oracle.reports-2"
+        );
+    }
+
+    #[test]
+    fn a_malformed_repository_stops_the_service_at_start() {
+        for name in ["GITHUB_REPO", "GITHUB_REPORTS_REPO"] {
+            for value in [
+                "poe2-oracle-reports",
+                "https://github.com/mttzzz/poe2-oracle-reports",
+                "github.com/mttzzz/poe2-oracle-reports",
+                "mttzzz/poe2-oracle-reports/issues",
+                "mttzzz/",
+                "/poe2-oracle-reports",
+                "mttzzz/..",
+                "../poe2-oracle",
+                "mttzzz/poe2 oracle",
+                "mttzzz/poe2-oracle?per_page=1",
+                "mttzzz/poe2%2Foracle",
+            ] {
+                let Err(problem) = config(&[(name, value)]) else {
+                    panic!("{name}={value} passed");
+                };
+                // Names the variable and shows the value, so the log says what to fix.
+                assert!(
+                    problem.starts_with(&format!("{name} ")) && problem.ends_with(value),
+                    "{problem}"
+                );
+            }
+        }
     }
 }

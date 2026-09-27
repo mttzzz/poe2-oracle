@@ -1,40 +1,45 @@
-name: Bug report / Сообщить об ошибке
-description: Something in PoE2 Oracle doesn't work as it should. / Что-то в PoE2 Oracle работает не так, как должно.
+name: Problem
+description: "Something in PoE2 Oracle doesn't work as it should. / Что-то в PoE2 Oracle работает не так, как должно."
 labels: ["bug"]
 body:
   - type: markdown
     attributes:
       value: |
-        For the maintainer's own notes. Players report from the app (**Write to the developer** in the **Help** section of its settings, or **report a problem** under the item name on the price panel) or through the site's form at https://oracle.pushka.biz/report.html, and oracle.pushka.biz files those reports here as issues by itself. One problem per issue; if an item isn't recognised or gets wrong filters or a wrong price, use the item problem form instead. Never post passwords or a session cookie (`POESESSID`).
+        **Quicker, and private: write from the app.** Settings → **Help** → **Write to the developer**. The report takes the app's version and, if you like, a diagnostics report along, and only the developer reads it. After a crash, the app opens that window by itself. Without the app, use the form at https://oracle.pushka.biz/report.html.
 
-        Для заметок самого сопровождающего. Игроки пишут из программы («Написать разработчику» в разделе «Помощь» настроек или «сообщить о проблеме» под названием предмета на панели цены) или через форму на сайте https://oracle.pushka.biz/ru/report.html, и такие сообщения oracle.pushka.biz сам заводит здесь задачами. Одна задача — одна проблема; если предмет не распознаётся или у него неверные фильтры или цена, заполните форму о предмете. Никогда не публикуйте пароли и cookie сессии (`POESESSID`).
+        Everything on this page is **public**: don't post your contacts, passwords or session cookie (`POESESSID`). One problem per issue. If an item is read or priced wrong, pick **Item** instead.
+
+        _Быстрее и закрыто — из программы: «Настройки» → «Помощь» → «Написать разработчику». Без программы — форма https://oracle.pushka.biz/ru/report.html. Всё на этой странице видно всем: не пишите сюда контакты, пароли и cookie сессии. Писать можно по-русски._
   - type: input
     id: version
     attributes:
-      label: Version / Версия
-      description: Windows Settings → Apps → Installed apps shows it next to PoE2 Oracle. / Видна в Параметры Windows → Приложения → Установленные приложения, рядом с PoE2 Oracle.
+      label: App version
+      description: "Settings → Help → About shows it. / Версия программы: «Настройки» → «Помощь» → «О программе»."
       placeholder: "0.1.0"
     validations:
       required: true
-  - type: input
+  - type: dropdown
     id: game-language
     attributes:
-      label: Game client language / Язык клиента игры
-      placeholder: English client / Russian client / Английский клиент / Русский клиент
+      label: Game client language
+      description: "/ Язык клиента игры"
+      options:
+        - English
+        - Russian / Русский
     validations:
       required: true
   - type: textarea
     id: what-happened
     attributes:
-      label: What happened? / Что произошло?
-      description: What you did, what you expected and what happened instead. A screenshot helps. / Что вы сделали, чего ожидали и что произошло на самом деле. Скриншот поможет.
+      label: What happened?
+      description: "What you did, what you expected and what happened instead. A screenshot helps. / Что вы сделали, чего ожидали и что произошло на самом деле. Скриншот поможет."
     validations:
       required: true
   - type: textarea
     id: steps
     attributes:
-      label: Steps to reproduce / Как воспроизвести
-      description: If you can make it happen again, how? / Если ошибку можно повторить — как?
+      label: How can it be repeated?
+      description: "If it happens again and again, the steps that lead to it. / Если это повторяется — шаги, которые к этому приводят."
       placeholder: |
         1.
         2.
@@ -42,17 +47,9 @@ body:
     validations:
       required: false
   - type: textarea
-    id: item-text
-    attributes:
-      label: Item text / Текст предмета
-      description: If an item is involved, hover it in the game, press Ctrl+Alt+C and paste the text here. / Если дело в предмете, наведите на него курсор в игре, нажмите Ctrl+Alt+C и вставьте текст сюда.
-      render: text
-    validations:
-      required: false
-  - type: textarea
     id: diagnostics
     attributes:
-      label: Diagnostics report / Отчёт диагностики
-      description: "**Collect report** in the **Help** section of the app's settings saves PoE2-Oracle-report-….zip to the desktop, with the Windows user name masked, and shows it in File Explorer. Drag the zip into this box. / «Собрать отчёт» в разделе «Помощь» настроек программы сохраняет PoE2-Oracle-report-….zip на рабочий стол, имя пользователя Windows в нём скрыто, и показывает его в Проводнике. Перетащите архив в это поле."
+      label: Diagnostics report (optional)
+      description: "Settings → Help → **Collect report** saves a zip to your desktop, with your Windows user name and folders hidden. Look inside before you attach it here: this page is public. / «Настройки» → «Помощь» → «Собрать отчёт» сохраняет архив на рабочий стол, имя пользователя Windows и папки в нём скрыты. Посмотрите, что внутри, прежде чем прикладывать: эта страница видна всем."
     validations:
       required: false

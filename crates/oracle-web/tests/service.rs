@@ -167,7 +167,8 @@ fn stored(id: &str) -> Option<&'static [u8]> {
     }
 }
 
-/// GitHub as the service calls it, for the token [`TOKEN`] only, listing `releases`.
+/// GitHub as the service calls it, for the token [`TOKEN`] only: labels and issues in whichever
+/// repository a call names, as in each one the token covers, and `releases` in mttzzz/poe2-oracle.
 fn github(releases: Releases) -> impl Answer {
     move |seen: &Seen| {
         if seen
@@ -184,19 +185,29 @@ fn github(releases: Releases) -> impl Answer {
                 .into_response();
         }
         let json = |status: StatusCode, value: Value| (status, axum::Json(value)).into_response();
+        // `owner/name` and the call under it.
+        let (repo, call) = seen
+            .path
+            .strip_prefix("/repos/")
+            .and_then(|path| {
+                let owner = path.find('/')?;
+                let name = owner + 1 + path[owner + 1..].find('/')?;
+                Some((&path[..name], &path[name + 1..]))
+            })
+            .unwrap_or_default();
         let file = seen
             .path
             .strip_prefix("/repos/mttzzz/poe2-oracle/releases/assets/")
             .filter(|id| stored(id).is_some());
         match (seen.method.as_str(), seen.path.as_str(), file) {
-            ("GET", "/repos/mttzzz/poe2-oracle/labels?per_page=100", _) => json(
+            ("GET", _, _) if call == "labels?per_page=100" => json(
                 StatusCode::OK,
                 json!([{ "name": "bug" }, { "name": "enhancement" }]),
             ),
-            ("POST", "/repos/mttzzz/poe2-oracle/labels", _) => json(StatusCode::CREATED, json!({})),
-            ("POST", "/repos/mttzzz/poe2-oracle/issues", _) => json(
+            ("POST", _, _) if call == "labels" => json(StatusCode::CREATED, json!({})),
+            ("POST", _, _) if call == "issues" => json(
                 StatusCode::CREATED,
-                json!({ "number": 42, "html_url": "https://github.com/mttzzz/poe2-oracle/issues/42" }),
+                json!({ "number": 42, "html_url": format!("https://github.com/{repo}/issues/42") }),
             ),
             // The list, with a validator: asked with it and unchanged, it's a bare 304.
             ("GET", LISTING, _) => {
@@ -641,6 +652,55 @@ async fn a_report_reaches_github_and_telegram_with_its_files() {
     let item = &telegram[2].body;
     assert!(contains(item, b"filename=\"item-42.txt\""));
     assert!(contains(item, b"Item Class: Helmets\r\nRarity: Rare"));
+}
+
+#[tokio::test]
+async fn a_report_is_filed_in_the_reports_repository_or_else_in_github_repo() {
+    for (reports_repo, filed_in) in [
+        (
+            Some("mttzzz/poe2-oracle-reports"),
+            "mttzzz/poe2-oracle-reports",
+        ),
+        (None, "mttzzz/poe2-oracle"),
+    ] {
+        let service = start_tuned(|config| {
+            config.github_reports_repo = reports_repo.map(str::to_owned);
+        })
+        .await;
+        let response = service
+            .post(
+                &app_report(ReportKind::Bug, "Панель не открывается"),
+                "203.0.113.4",
+            )
+            .await;
+        assert_eq!(response.status(), StatusCode::OK, "{reports_repo:?}");
+        assert_eq!(response.json::<Value>().await.unwrap(), json!({ "id": 42 }));
+
+        // The issue, and the labels it needed, in that repository, and nothing of the report in
+        // any other.
+        let issues = service
+            .github
+            .requests_to(Method::POST, &format!("/repos/{filed_in}/issues"));
+        assert_eq!(issues.len(), 1, "{reports_repo:?}");
+        let report_calls: Vec<String> = service
+            .github
+            .seen()
+            .into_iter()
+            .map(|seen| seen.path)
+            .filter(|path| !path.starts_with("/repos/mttzzz/poe2-oracle/releases"))
+            .collect();
+        assert!(
+            report_calls
+                .iter()
+                .all(|path| path.starts_with(&format!("/repos/{filed_in}/"))),
+            "{reports_repo:?}: {report_calls:?}"
+        );
+
+        // The releases still come from GITHUB_REPO.
+        let latest = service.get("/api/v1/releases/latest", &[]).await;
+        assert_eq!(latest.status(), StatusCode::OK, "{reports_repo:?}");
+        assert_eq!(latest.json::<Release>().await.unwrap().tag_name, "v0.1.0");
+    }
 }
 
 #[tokio::test]

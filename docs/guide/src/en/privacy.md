@@ -48,8 +48,8 @@ contact.
 
 oracle.pushka.biz passes each report on to the developer and keeps none of it itself:
 
-- as an issue in the project's private GitHub repository, with everything above but the
-  diagnostics report;
+- as an issue in a private GitHub repository, kept apart from the app's source code, with
+  everything above but the diagnostics report;
 - as a Telegram message to the developer, with the diagnostics report and the item's or the
   crash's text as files.
 

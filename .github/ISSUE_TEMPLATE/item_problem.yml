@@ -1,40 +1,45 @@
-name: Item problem / Проблема с предметом
-description: An item isn't recognised, or the panel shows wrong filters or a wrong price. / Предмет не распознаётся, или на панели неверные фильтры или цена.
-labels: ["bug", "item"]
+name: Item
+description: "An item the app can't read, or reads or prices wrong. / Предмет не читается, или программа читает либо оценивает его неверно."
+labels: ["item"]
 body:
   - type: markdown
     attributes:
       value: |
-        For the maintainer's own notes. Players report an item from the app: **report a problem** under the item name on the price panel, or **Report a problem** in the message about an item it couldn't read, sends the item's text with the report. The item's text is what lets us reproduce the problem, so it is required here. Search the existing issues first: the same item may already be reported.
+        **Quicker, and private: report it from the app.** Click **report a problem** under the item's name on the price panel, or **Report a problem** in the message about an item the app couldn't read. The item's text goes along, and only the developer reads it.
 
-        Для заметок самого сопровождающего. Игроки сообщают о предмете из программы: «сообщить о проблеме» под названием предмета на панели или «Сообщить о проблеме» в сообщении о предмете, который она не смогла прочитать, отправляет текст предмета вместе с сообщением. Без текста предмета проблему не воспроизвести, поэтому здесь он обязателен. Сначала поищите среди существующих задач: о таком предмете, возможно, уже сообщили.
+        Everything on this page is **public**: don't post your contacts, passwords or session cookie (`POESESSID`). Search the existing issues first: the same item may already be here.
+
+        _Быстрее и закрыто — из программы: «сообщить о проблеме» под названием предмета на панели цены или «Сообщить о проблеме» в сообщении о предмете, который программа не смогла прочитать. Всё на этой странице видно всем. Писать можно по-русски._
   - type: input
     id: version
     attributes:
-      label: Version / Версия
-      description: Windows Settings → Apps → Installed apps shows it next to PoE2 Oracle. / Видна в Параметры Windows → Приложения → Установленные приложения, рядом с PoE2 Oracle.
+      label: App version
+      description: "Settings → Help → About shows it. / Версия программы: «Настройки» → «Помощь» → «О программе»."
       placeholder: "0.1.0"
     validations:
       required: true
-  - type: input
+  - type: dropdown
     id: game-language
     attributes:
-      label: Game client language / Язык клиента игры
-      placeholder: English client / Russian client / Английский клиент / Русский клиент
+      label: Game client language
+      description: "/ Язык клиента игры"
+      options:
+        - English
+        - Russian / Русский
     validations:
       required: true
   - type: textarea
     id: item-text
     attributes:
-      label: Item text / Текст предмета
-      description: Hover the item in the game, press Ctrl+Alt+C and paste the text here. / Наведите курсор на предмет в игре, нажмите Ctrl+Alt+C и вставьте текст сюда.
+      label: Item text
+      description: "In the game, point at the item, press Ctrl+Alt+C and paste the text here. / В игре наведите курсор на предмет, нажмите Ctrl+Alt+C и вставьте текст сюда."
       render: text
     validations:
       required: true
   - type: textarea
     id: what-wrong
     attributes:
-      label: What is wrong? / Что не так?
-      description: What the panel showed and what you expected (the right filter, a price you saw on the trade site). A screenshot of the panel helps. / Что показала панель и чего вы ожидали (какой фильтр верный, какую цену вы видели на сайте торговли). Скриншот панели поможет.
+      label: What is wrong?
+      description: "What the panel showed and what you expected: the right filter, or a price you saw on the trade site. A screenshot of the panel helps. / Что показала панель и чего вы ожидали: какой фильтр верный или какую цену вы видели на сайте торговли. Скриншот панели поможет."
     validations:
       required: true

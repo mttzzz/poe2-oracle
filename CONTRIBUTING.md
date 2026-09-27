@@ -8,8 +8,9 @@ the app reads wrong; code is welcome too. Everyone taking part follows the
 
 ## Reporting a problem
 
-Players report from the app or from the site; this repository's issue forms are for the
-maintainer's own notes, since outsiders can't reach them while the repository is private.
+Players report from the app or from the site: the app's report window attaches what a fix needs,
+and only the maintainer reads what comes that way. The issue forms here are public, so use them only
+for what you're happy to share with everyone.
 
 1. **One problem per report.** Two unrelated bugs in one report tend to get only one of them fixed.
 2. **Report from the app**, which adds what is needed: **Write to the developer** in the **Help**
@@ -41,8 +42,9 @@ maintainer's own notes, since outsiders can't reach them while the repository is
    version (Windows Settings → Apps → Installed apps shows it next to PoE2 Oracle) and your game
    client language.
 
-Reports reach only the maintainer: oracle.pushka.biz files each one as an issue in this repository
-and sends a Telegram message, the diagnostics zip to Telegram only.
+Reports from the app and the site reach only the maintainer: oracle.pushka.biz files each one as an
+issue in a private repository and sends a Telegram message, the diagnostics zip to Telegram only.
+Issues opened in this repository are public.
 
 **Never post** passwords, your pathofexile.com session cookie (`POESESSID`) or any other token in
 reports, logs or screenshots: whoever has them can act as you on the site.
@@ -314,13 +316,14 @@ cargo run -p poe2-oracle --example plate_art -- site/ui/img
 
 `crates/oracle-web` is the service at oracle.pushka.biz. It serves the landing pages (`site/`), the
 guide (`docs/guide`, a book per language) and its images; takes reports on `POST /api/v1/reports`
-and passes each one on to the maintainer, as an issue in this repository and a Telegram message;
-serves the latest app release and the latest data pack, with their files, from this private
-repository (`/api/v1/releases/latest`, `/api/v1/data/latest`, `/download/<tag>/<file>`,
-`/download/latest`); tells the running apps about both over an event stream (`/api/v1/events`);
-and posts a daily digest of downloads, stream connections, update checks and reports. What the app
-and the service share is in `crates/oracle-protocol`: the service's address, the report, release
-and event types, and the report limits (`Report::check`, which both sides run).
+and passes each one on to the maintainer, as an issue in the private reports repository
+(`GITHUB_REPORTS_REPO`) and a Telegram message; serves the latest app release and the latest data
+pack, with their files, from this repository's releases (`GITHUB_REPO`: `/api/v1/releases/latest`,
+`/api/v1/data/latest`, `/download/<tag>/<file>`, `/download/latest`); tells the running apps about
+both over an event stream (`/api/v1/events`); and posts a daily digest of downloads, stream
+connections, update checks and reports. What the app and the service share is in
+`crates/oracle-protocol`: the service's address, the report, release and event types, and the
+report limits (`Report::check`, which both sides run).
 
 The service lists the repository's releases when it starts and every two minutes after, sending
 GitHub the last list's ETag, so an unchanged list costs no rate limit. Of the published releases
@@ -349,8 +352,9 @@ It takes its settings from the environment, all optional:
 | `SITE_DIR` | `/app/site` | The landing pages (`site/`); a `404.html` there is the 404 page |
 | `GUIDE_DIR` | `/app/guide` | The built guide (`docs/guide/build.sh`): a book per language in `en/` and `ru/`, served under `/guide/en/` and `/guide/ru/`; each answers a missing page with its own `404.html` |
 | `IMAGES_DIR` | `/app/images` | `docs/guide/src/images`, served under `/images/` and `/guide/images/` |
-| `GITHUB_TOKEN` | — | A fine-grained token for this repository (Issues read and write, Contents read): files the report issues, lists the releases and downloads their files. Unset: no issues are filed, `/api/v1/releases/latest`, `/api/v1/data/latest` and `/download` answer 503, and the event stream announces no versions |
-| `GITHUB_REPO` | `mttzzz/poe2-oracle` | The repository the issues and releases belong to |
+| `GITHUB_TOKEN` | — | One fine-grained token for both repositories, `GITHUB_REPO` and `GITHUB_REPORTS_REPO` (in production `mttzzz/poe2-oracle` and `mttzzz/poe2-oracle-reports`): Contents read, to list the releases and download their files; Issues read and write, to file the report issues and create their labels; Metadata read. GitHub gives a token's permissions on every repository it selects. Unset: no issues are filed, `/api/v1/releases/latest`, `/api/v1/data/latest` and `/download` answer 503, and the event stream announces no versions |
+| `GITHUB_REPO` | `mttzzz/poe2-oracle` | The repository the releases come from, `owner/name`; anything else stops the service at start with a configuration error |
+| `GITHUB_REPORTS_REPO` | `GITHUB_REPO` | The repository the report issues go to, `owner/name`, checked the same way; unset or blank, `GITHUB_REPO`. `deploy/values.yaml` sets the private `mttzzz/poe2-oracle-reports`, so reports stay private while this repository is public |
 | `GITHUB_API` | `https://api.github.com` | GitHub's REST API, trailing slash trimmed: every GitHub call, issues included, goes there with `GITHUB_TOKEN`. Only for a stand-in: the lane can point it at `lanes/fake-github.py` |
 | `LIST_RELEASES_EVERY` | `120` | How often the releases are listed, in whole seconds; under 5 or not a whole number stops the service at start with a configuration error |
 | `TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID` | — | The bot and the chat the reports and the digest go to; with either unset, nothing goes to Telegram |
@@ -411,17 +415,17 @@ the service serves from `IMAGES_DIR` under `/guide/images/`.
 ### Deploying the service
 
 `.github/workflows/deploy.yml` deploys on a push to `main` that touches the service's crates,
-`site/`, `docs/guide/`, the `Dockerfile` or `.dockerignore`, `deploy/`, `Cargo.lock` or the
-workflow itself, and by hand (workflow_dispatch). It builds the root `Dockerfile` (`oracle-web` in
-a workspace trimmed to the two crates it needs by `deploy/trim-workspace.sh`, so the app's GPUI
-dependency isn't fetched; the guide with the pinned mdBook; `site/` and the guide's images; on a
-distroless image) and rolls it out through the shared deploy workflow as the Helm release
-`oracle-pushka-biz` on the DigitalOcean cluster (`deploy/values.yaml`: one replica, port 8080,
-probe `/healthz`). The service's secrets (`GITHUB_TOKEN`, `TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID`,
-`REDIS_URL`) live in Infisical, project `oracle-pushka-biz`, environment `prod`, which syncs them
-into the Kubernetes Secret `oracle-pushka-biz-env-secret`; the workflow's own secrets (the
-registry, the Helm repository, DigitalOcean, the Telegram note) are this repository's Actions
-secrets.
+`site/`, `docs/guide/`, the `Dockerfile` or `.dockerignore`, `deploy/`, `Cargo.toml`, `Cargo.lock`
+or the workflow itself, and by hand (workflow_dispatch). It builds the root `Dockerfile`
+(`oracle-web` in a workspace trimmed to the two crates it needs by `deploy/trim-workspace.sh`, so
+the app's GPUI dependency isn't fetched; the guide with the pinned mdBook; `site/` and the guide's
+images; on a distroless image) and rolls it out through the shared deploy workflow as the Helm
+release `oracle-pushka-biz` on the DigitalOcean cluster (`deploy/values.yaml`: one replica, port
+8080, probe `/healthz`, and the two repositories, `GITHUB_REPO` and `GITHUB_REPORTS_REPO`). The
+service's secrets (`GITHUB_TOKEN`, `TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID`, `REDIS_URL`) live in
+Infisical, project `oracle-pushka-biz`, environment `prod`, which syncs them into the Kubernetes
+Secret `oracle-pushka-biz-env-secret`; the workflow's own secrets (the registry, the Helm
+repository, DigitalOcean, the Telegram note) are this repository's Actions secrets.
 
 ## Dependencies and licenses
 
@@ -436,9 +440,9 @@ cargo about generate -m crates/poe2-oracle/Cargo.toml about.hbs -o target/THIRD-
 
 ## Pull requests
 
-Write to the maintainer first (**Write to the developer** in the **Help** section of the app's
-settings) for anything bigger than a small fix, so the approach can be agreed before you spend time
-on it. Then:
+Open an issue first, or write to the maintainer from the app (**Write to the developer** in the
+**Help** section of its settings), for anything bigger than a small fix, so the approach can be
+agreed before you spend time on it. Then:
 
 - [ ] One change per pull request.
 - [ ] `cargo fmt`, clippy and the tests pass as in [Checks](#checks-what-ci-runs).

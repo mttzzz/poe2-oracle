@@ -1,5 +1,6 @@
-//! GitHub's REST API as the service uses it: an issue per report (with its labels), the
-//! repository's releases, and their files. Every call carries the owner's fine-grained token
+//! GitHub's REST API as the service uses it: an issue per report (with its labels) in the
+//! reports' repository (`GITHUB_REPORTS_REPO`, else `GITHUB_REPO`), and the app repository's
+//! releases and their files (`GITHUB_REPO`). Every call carries the owner's fine-grained token
 //! (`GITHUB_TOKEN`: Issues read/write, Contents read). Without one, issues are only logged and
 //! there is no release to offer.
 
@@ -22,7 +23,7 @@ const CALL_TIMEOUT: Duration = Duration::from_secs(10);
 pub const RELEASES_PER_PAGE: usize = 100;
 
 /// The labels reports carry, each with the color and description it's created with when the
-/// repository lacks it (`bug` and `enhancement` as GitHub's defaults have them).
+/// reports' repository lacks it (`bug` and `enhancement` as GitHub's defaults have them).
 const LABELS: [(&str, &str, &str); 6] = [
     ("bug", "d73a4a", "Something isn't working"),
     ("enhancement", "a2eeef", "New feature or request"),
@@ -35,12 +36,15 @@ const LABELS: [(&str, &str, &str); 6] = [
 pub struct GitHub {
     http: Client,
     api: String,
-    repo: String,
+    /// `owner/name` of the repository the releases come from.
+    releases_repo: String,
+    /// `owner/name` of the repository the reports go to as issues.
+    reports_repo: String,
     token: Option<String>,
     labels: Mutex<Labels>,
 }
 
-/// The repository's labels, as far as this process has learned them.
+/// The reports' repository's labels, as far as this process has learned them.
 #[derive(Default)]
 struct Labels {
     /// Listed once; labels created since are added.
@@ -113,11 +117,18 @@ fn uploaded() -> String {
 }
 
 impl GitHub {
-    pub fn new(http: Client, api: String, repo: String, token: Option<String>) -> GitHub {
+    pub fn new(
+        http: Client,
+        api: String,
+        releases_repo: String,
+        reports_repo: String,
+        token: Option<String>,
+    ) -> GitHub {
         GitHub {
             http,
             api,
-            repo,
+            releases_repo,
+            reports_repo,
             token,
             labels: Mutex::default(),
         }
@@ -127,22 +138,31 @@ impl GitHub {
         self.token.is_some()
     }
 
+    pub fn releases_repo(&self) -> &str {
+        &self.releases_repo
+    }
+
+    pub fn reports_repo(&self) -> &str {
+        &self.reports_repo
+    }
+
     /// A call answered in GitHub's JSON.
-    fn call(&self, method: Method, path: &str, token: &str) -> RequestBuilder {
-        self.request(method, path, token)
+    fn call(&self, method: Method, repo: &str, path: &str, token: &str) -> RequestBuilder {
+        self.request(method, repo, path, token)
             .header(header::ACCEPT, "application/vnd.github+json")
     }
 
-    /// A call to `path` under the repository, with the token. Headers add up rather than replace
-    /// each other, so each call names its own `Accept`.
-    fn request(&self, method: Method, path: &str, token: &str) -> RequestBuilder {
+    /// A call to `path` under the repository `repo`, with the token. Headers add up rather than
+    /// replace each other, so each call names its own `Accept`.
+    fn request(&self, method: Method, repo: &str, path: &str, token: &str) -> RequestBuilder {
         self.http
-            .request(method, format!("{}/repos/{}/{path}", self.api, self.repo))
+            .request(method, format!("{}/repos/{repo}/{path}", self.api))
             .bearer_auth(token)
             .header("X-GitHub-Api-Version", API_VERSION)
     }
 
-    /// Opens an issue with as many of `labels` as the repository has or lets this token create.
+    /// Opens an issue in the reports' repository with as many of `labels` as it has or lets this
+    /// token create.
     pub async fn open_issue(&self, title: &str, body: &str, labels: [&'static str; 2]) -> Filing {
         let Some(token) = &self.token else {
             info!(
@@ -156,7 +176,7 @@ impl GitHub {
         };
         let labels = self.usable_labels(token, labels).await;
         let sent = self
-            .call(Method::POST, "issues", token)
+            .call(Method::POST, &self.reports_repo, "issues", token)
             .timeout(CALL_TIMEOUT)
             .json(&json!({ "title": title, "body": body, "labels": labels }))
             .send()
@@ -164,19 +184,24 @@ impl GitHub {
         match answer::<Issue>(sent).await {
             Ok(issue) => Filing::Opened(issue),
             Err(problem) => {
-                warn!(%problem, "GitHub didn't open the issue");
+                warn!(repo = %self.reports_repo, %problem, "GitHub didn't open the issue");
                 Filing::Failed
             }
         }
     }
 
-    /// Those of `wanted` the repository has, creating the ones it lacks. Listed once per process;
-    /// a label GitHub refuses to create is left off from then on.
+    /// Those of `wanted` the reports' repository has, creating the ones it lacks. Listed once per
+    /// process; a label GitHub refuses to create is left off from then on.
     async fn usable_labels(&self, token: &str, wanted: [&'static str; 2]) -> Vec<&'static str> {
         let mut labels = self.labels.lock().await;
         if labels.existing.is_none() {
             let sent = self
-                .call(Method::GET, "labels?per_page=100", token)
+                .call(
+                    Method::GET,
+                    &self.reports_repo,
+                    "labels?per_page=100",
+                    token,
+                )
                 .timeout(CALL_TIMEOUT)
                 .send()
                 .await;
@@ -226,7 +251,7 @@ impl GitHub {
             .find(|(label, ..)| *label == name)
             .unwrap_or((name, "ededed", ""));
         let sent = self
-            .call(Method::POST, "labels", token)
+            .call(Method::POST, &self.reports_repo, "labels", token)
             .timeout(CALL_TIMEOUT)
             .json(&json!({ "name": name, "color": color, "description": description }))
             .send()
@@ -254,13 +279,15 @@ impl GitHub {
         }
     }
 
-    /// Page `page` (from 1) of the repository's releases, newest first as GitHub lists them,
+    /// Page `page` (from 1) of the app repository's releases, newest first as GitHub lists them,
     /// [`RELEASES_PER_PAGE`] to a page. With `etag`, the validator of the copy the caller holds, a
     /// page unchanged since is [`Listed::Unchanged`].
     pub async fn releases(&self, page: usize, etag: Option<&str>) -> Result<Listed, String> {
         let token = self.token.as_deref().ok_or("no GitHub token")?;
         let path = format!("releases?per_page={RELEASES_PER_PAGE}&page={page}");
-        let mut request = self.call(Method::GET, &path, token).timeout(CALL_TIMEOUT);
+        let mut request = self
+            .call(Method::GET, &self.releases_repo, &path, token)
+            .timeout(CALL_TIMEOUT);
         if let Some(etag) = etag {
             request = request.header(header::IF_NONE_MATCH, etag);
         }
@@ -288,7 +315,12 @@ impl GitHub {
     pub async fn download(&self, asset_id: u64) -> Result<Response, String> {
         let token = self.token.as_deref().ok_or("no GitHub token")?;
         let response = self
-            .request(Method::GET, &format!("releases/assets/{asset_id}"), token)
+            .request(
+                Method::GET,
+                &self.releases_repo,
+                &format!("releases/assets/{asset_id}"),
+                token,
+            )
             .header(header::ACCEPT, "application/octet-stream")
             .send()
             .await

@@ -1,8 +1,11 @@
 blank_issues_enabled: false
 contact_links:
-  - name: Security vulnerability / Уязвимость
+  - name: Write to the developer privately / Написать разработчику закрыто
+    url: https://oracle.pushka.biz/report.html
+    about: "Best from the app: Settings → Help → Write to the developer. Only the developer reads it. / Лучше из программы: «Настройки» → «Помощь» → «Написать разработчику». Читает только разработчик."
+  - name: Security problem / Уязвимость
     url: https://github.com/mttzzz/poe2-oracle/blob/main/SECURITY.md
-    about: Not in an issue. Reporters write privately from the app's report window or the site's form, as SECURITY.md says. / Не в задаче. Об уязвимостях пишут закрыто, из окна сообщения в программе или через форму на сайте, как сказано в SECURITY.md.
+    about: "Not in a public issue: SECURITY.md says how to report it privately. / Не в публичной задаче: как сообщить закрыто, сказано в SECURITY.md."
   - name: User guide / Руководство
     url: https://oracle.pushka.biz/guide/
-    about: Setup, every setting and troubleshooting. / Настройка, все параметры и решение проблем.
+    about: "Setup, every setting and fixes for common problems. / Установка, все настройки и решение частых проблем."
