@@ -1,15 +1,8 @@
-// The download buttons ([data-download]): what a press on one leads to, the release under them, and
-// the bar that brings a button back once the hero's has scrolled away. Every word is the page's.
+// The download buttons ([data-download]): what a press on one leads to, and the bar that brings a
+// button back once the hero's has scrolled away. Every word is the page's.
 //
 // A press downloads the installer, as the plain link does, and opens the hint for what comes next
 // ([data-after-download]) under that button's group ([data-cta]).
-//
-// [data-release] names the latest version and the installer's size once the site answers, and stays
-// hidden when it doesn't. They come from a HEAD of the download route, whose redirect names the
-// release and whose length is the installer's: GET /api/v1/releases/latest would count every visit
-// as an app's update check.
-
-const locale = document.documentElement.lang === "ru" ? "ru-RU" : "en-GB";
 
 const after = document.querySelector("[data-after-download]");
 const live = document.querySelector("[data-live]");
@@ -77,24 +70,3 @@ if (bar && buttons.length) {
     });
     for (const button of buttons) watch.observe(button);
 }
-
-/** Names the latest release under the buttons that download it. */
-async function release() {
-    const places = document.querySelectorAll("[data-release]");
-    if (!places.length || !buttons.length) return;
-    const answer = await fetch(buttons[0].href, { method: "HEAD" });
-    const tag = answer.redirected ? new URL(answer.url).pathname.split("/").at(-2) : "";
-    const version = decodeURIComponent(tag ?? "").replace(/^v/, "");
-    const bytes = Number(answer.headers.get("content-length"));
-    if (!answer.ok || !/^\d+\.\d+\.\d+/.test(version) || !(bytes > 0)) return;
-    const megabytes = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(bytes / 2 ** 20);
-    for (const place of places) {
-        place.querySelector("[data-release-version]").textContent = version;
-        place.querySelector("[data-release-size]").textContent = megabytes;
-        place.hidden = false;
-    }
-}
-
-release().catch(() => {
-    // No release to name: the line stays hidden.
-});
