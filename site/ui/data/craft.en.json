@@ -18,8 +18,8 @@
     "craft": 2,
     "callout": "Opens this ring in Craft of Exile",
     "carried": {
-        "title": "By the game's ids, not the client's text",
-        "lead": "For this ring from the Russian client, the link carries:",
+        "title": "The game's own codes, not the client's text",
+        "lead": "What the link carries for this ring from the Russian client:",
         "labels": {
             "i": "base",
             "l": "item level",

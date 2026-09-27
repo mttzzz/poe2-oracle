@@ -4,14 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PoE2 Oracle: price check and XP tracker for Path of Exile 2</title>
-<meta name="description" content="Free, native Windows app for Path of Exile 2: press Ctrl+E on an item to see what it sells for on the official trade site, and track your XP right on the game's HUD. One light process with no browser inside; the graphics card draws its interface.">
+<meta name="description" content="Free Windows app for Path of Exile 2: press Ctrl+E on an item to see what it sells for on the official trade site, and track your XP right on the game's HUD. Light: one process in Task Manager, no browser inside; the graphics card draws its windows.">
 <link rel="canonical" href="https://oracle.pushka.biz/">
 <link rel="alternate" hreflang="en" href="https://oracle.pushka.biz/">
 <link rel="alternate" hreflang="ru" href="https://oracle.pushka.biz/ru/">
 <link rel="alternate" hreflang="x-default" href="https://oracle.pushka.biz/">
 <meta property="og:type" content="website">
 <meta property="og:title" content="PoE2 Oracle">
-<meta property="og:description" content="A helper that stays out of your game's way: price check on a hotkey and an XP overlay on the game's HUD. Free, for Windows.">
+<meta property="og:description" content="A helper that stays out of your game's way: price check on a hotkey and an XP overlay right on the game's HUD. Free, for Windows.">
 <meta property="og:url" content="https://oracle.pushka.biz/">
 <meta property="og:image" content="https://oracle.pushka.biz/images/en/og.jpg">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -21,12 +21,25 @@
 <body>
 <a class="skip-link" href="#main">Skip to content</a>
 
+<div class="stickybar" data-stickybar>
+  <div class="wrap">
+    <a class="brand" href="#top"><img src="brand.png" alt="" width="32" height="32"><span class="stickybar-name">PoE2 Oracle</span></a>
+    <p class="stickybar-note">Free&nbsp;· Windows&nbsp;10 and&nbsp;11</p>
+    <div class="cta" data-cta>
+      <a class="button button-primary" href="download/latest" data-download>Download for Windows</a>
+    </div>
+  </div>
+</div>
+
 <header class="topbar">
   <div class="wrap">
     <a class="brand" href="./"><img src="brand.png" alt="" width="32" height="32">PoE2 Oracle</a>
     <nav aria-label="Main">
       <ul class="topnav">
-        <li><a href="guide/en/introduction.html">Guide</a></li>
+        <li class="topnav-section"><a href="#how">How it works</a></li>
+        <li class="topnav-section"><a href="#features">Features</a></li>
+        <li class="topnav-section"><a href="#fast">Comparison</a></li>
+        <li class="topnav-section"><a href="#faq">FAQ</a></li>
         <li class="lang-switch" aria-label="Language">
           <span aria-current="page">EN</span>
           <a href="ru/" lang="ru" hreflang="ru" title="Русский">RU</a>
@@ -37,32 +50,165 @@
 </header>
 
 <main id="main">
-  <section class="hero">
+  <section class="hero" id="top">
     <div class="wrap">
       <h1 class="hero-title">
         <span class="hero-brand"><img src="favicon.png" alt="" width="256" height="256"><span class="hero-name">PoE2 Oracle</span></span><span class="visually-hidden">: </span>
         <span class="hero-claim">A helper that stays out of your game's way</span>
       </h1>
       <p class="lead">Price check on <span class="keys"><kbd>Ctrl</kbd>+<kbd>E</kbd></span> and an XP
-        overlay on the game's HUD for Path of Exile 2, in one native Windows app with no browser inside.
-        Its whole interface is drawn by the graphics card.</p>
-      <ul class="proof">
-        <li><b data-bench="memory"></b> of memory after launch</li>
-        <li><b data-bench="processes"></b> process, and nothing else starts with it</li>
-        <li><b data-bench="cpu_less"></b> less CPU load while you play than other price checkers</li>
-        <li><b data-bench="ready"></b> from launch to ready</li>
-      </ul>
-      <p class="proof-more"><a href="#fast">How it compares with other price checkers</a></p>
-      <div class="actions">
-        <a class="button button-primary" href="download/latest">Download for Windows</a>
-        <a class="button" href="guide/en/introduction.html">Read the guide</a>
+        overlay right on the HUD of Path&nbsp;of&nbsp;Exile&nbsp;2, in one regular Windows app. Works with the
+        English and Russian clients.</p>
+      <div class="cta" data-cta>
+        <div class="actions">
+          <a class="button button-primary" href="download/latest" data-download>Download for Windows</a>
+          <a class="button button-quiet" href="#how">How it works</a>
+        </div>
+        <p class="cta-note">Free&nbsp;· no ads&nbsp;· no account needed</p>
+        <p class="cta-note">Windows&nbsp;10 and&nbsp;11, 64&#8209;bit<span data-release hidden>&nbsp;· version&nbsp;<span
+          data-release-version></span>&nbsp;· <span data-release-size></span>&nbsp;MB</span></p>
       </div>
-      <p class="fineprint">Free · Windows 10 and 11, 64-bit · English and Russian game clients</p>
-      <p class="fineprint">The installer isn't code-signed yet. If Windows says “Windows protected your
-        PC”, click <em>More info</em>, then <em>Run anyway</em>.</p>
       <figure class="shot">
         <div data-oracle="hero" data-lang="en" data-fit data-alt="The PoE2 Oracle price panel with a rare helmet's filters and listings, a currency's market card and both XP overlay plates, above the game's flask and skill panels"></div>
       </figure>
+      <ul class="proof">
+        <li><b data-bench="memory"></b> of memory after launch</li>
+        <li><b data-bench="processes"></b> process in Task Manager, and nothing else starts with it</li>
+        <li><b data-bench="cpu_less"></b> less CPU load while you play than other such apps</li>
+        <li><b data-bench="ready"></b> from launch to ready to price</li>
+      </ul>
+      <p class="proof-more"><a href="#fast">How it compares with other price checkers</a></p>
+    </div>
+  </section>
+
+  <section class="section section-alt" id="how">
+    <div class="wrap">
+      <h2>How it works</h2>
+      <ol class="how">
+        <li>
+          <h3>Install it</h3>
+          <p>Download and run the installer. Windows doesn't know it yet and may say “Windows protected
+            your PC”: click “More info”, then “Run anyway”. No administrator rights needed.</p>
+        </li>
+        <li>
+          <h3>Point at an item and press <span class="keys"><kbd>Ctrl</kbd>+<kbd>E</kbd></span></h3>
+          <p>In your inventory, your stash or a vendor's window. The game must be in Windowed or Windowed
+            Fullscreen mode: over exclusive Fullscreen, Windows shows no other programs.</p>
+        </li>
+        <li>
+          <h3>See the price over the game</h3>
+          <p>A panel opens next to your inventory or stash: the cheapest similar items on the official
+            trade site, and for currency, the price from trades on the game's exchange. <kbd>Esc</kbd>
+            closes it.</p>
+        </li>
+      </ol>
+      <p class="how-needs">You need Windows 10 or 11 (64-bit), Path of Exile 2 with the English or
+        Russian client, and an internet connection. <a href="guide/en/install.html">Full install guide</a></p>
+    </div>
+  </section>
+
+  <section class="section" id="features">
+    <div class="wrap">
+      <h2>What it does</h2>
+      <p class="intro">PoE2 Oracle runs in the background. The price panel opens over the game only when
+        you press the hotkey. The XP overlay is always in view: it shows right on the game's HUD, looks
+        like part of it, and can be turned off in the settings. To see prices, you don't need to sign in
+        to pathofexile.com or open a browser.</p>
+
+      <article class="feature">
+        <div class="feature-text">
+          <h3><span class="feature-name">Price check</span><span class="visually-hidden">: </span>Know the
+            price without leaving the game</h3>
+          <p>Point at an item and press <span class="keys"><kbd>Ctrl</kbd>+<kbd>E</kbd></span>: the panel
+            shows the cheapest similar listings on the official trade site, with their price, seller and
+            age. The item's modifiers become search filters with their tiers: pick how strictly to search
+            and adjust the minimum and maximum.</p>
+          <ul>
+            <li>Searches the English or the Russian trade site, to match your client</li>
+            <li>Hover a listing to see it in a tooltip like the game's, its modifiers compared with yours</li>
+            <li>If you need to deal with the seller in the game, a click on the listing copies a message
+              for them: paste it into chat and send it. Instant Buyout listings, which the check searches
+              by default, are bought with no messages</li>
+          </ul>
+        </div>
+        <figure class="feature-media">
+          <div data-oracle="panel" data-lang="en" data-fit data-alt="The price panel with filters and listings for a rare item"></div>
+        </figure>
+      </article>
+
+      <article class="feature">
+        <div class="feature-text">
+          <h3><span class="feature-name">Currency market</span><span class="visually-hidden">: </span>Currency
+            priced from real exchange trades</h3>
+          <p>Currency, omens, runes, essences and everything else traded on the game's Currency Exchange
+            are priced from the trades made on the exchange itself, which GGG publishes. The price shows
+            at once, with no wait for the trade site.</p>
+          <ul>
+            <li>The price in divine, exalted and chaos orbs from the latest hour of trading (up to three
+              hours for something rarely traded), the hourly volume and what your whole stack is worth</li>
+            <li>Beside it, a seven-day price chart from poe2scout</li>
+            <li>Unique items, and exchange items nobody traded in the last hours, are priced from
+              poe2scout</li>
+          </ul>
+        </div>
+        <figure class="feature-media">
+          <div data-oracle="market" data-lang="en" data-fit data-alt="The market card with a seven-day price chart for a currency item"></div>
+        </figure>
+      </article>
+
+      <article class="feature" id="craft-of-exile">
+        <div class="feature-text">
+          <h3><span class="feature-name">Craft of Exile</span><span class="visually-hidden">: </span>Your
+            item in Craft of&nbsp;Exile in one click, from&nbsp;either&nbsp;client</h3>
+          <p>The <strong>Craft of Exile ↗</strong> link on the price panel opens the item in Craft of
+            Exile's crafting simulator with its base, item level, rarity, implicits and mods already set.
+            Craft of Exile itself reads only the English client's text, so PoE2 Oracle sends the game's
+            own codes instead of text: they're the same in every language, so an item from the Russian
+            client arrives just as one from the English client does.</p>
+          <ul>
+            <li>Normal, magic and rare gear, flasks, charms, jewels and waystones get the link. Uniques,
+              currency, gems, relics, tablets and unidentified items don't</li>
+            <li>If the app doesn't know for sure which mod it is in the game, it leaves it out rather
+              than guess</li>
+            <li>If the app speaks Russian, Craft of Exile opens in Russian too</li>
+          </ul>
+        </div>
+        <figure class="feature-media">
+          <div data-oracle="craft" data-lang="en" data-fit data-alt="The top of the price panel for a rare ring copied in the Russian client, its Craft of Exile link lit, with a note on what it opens"></div>
+        </figure>
+      </article>
+
+      <article class="feature">
+        <div class="feature-text">
+          <h3><span class="feature-name">XP overlay</span><span class="visually-hidden">: </span>Levelling
+            speed and a map timer right on the game's HUD</h3>
+          <p>Two plates right on the game's HUD, in its own frames and colours. Above the flask panel: how
+            fast you gain experience and when the next level comes at that speed. Above the skill panel:
+            a timer for the current map.</p>
+          <ul>
+            <li>Time and experience of the current map, and your average time per map</li>
+            <li>Time in towns and hideouts stays out of the speed: there the line dims and shows only how
+              much of the level you have</li>
+            <li>The app takes experience from the XP bar on screen and from the log file the game keeps</li>
+          </ul>
+        </div>
+        <figure class="feature-media">
+          <div data-oracle="xp" data-lang="en" data-fit data-notes data-alt="The XP overlay's plates above the game's flask and skill panels, each value with a note on what it means"></div>
+        </figure>
+      </article>
+
+      <article class="feature">
+        <div class="feature-text">
+          <h3><span class="feature-name">Settings and quick actions</span><span class="visually-hidden">: </span>Make
+            it yours, and send /hideout with one&nbsp;key</h3>
+          <p>Pick the league, the hotkey, which sellers to search by default (Instant Buyout, online or
+            all) and the interface scale. Quick actions send a chat command such as <code>/hideout</code>,
+            or type a stash search, on a key of your choice: one press, one command.</p>
+        </div>
+        <figure class="feature-media">
+          <div data-oracle="settings" data-lang="en" data-fit data-alt="The PoE2 Oracle settings window"></div>
+        </figure>
+      </article>
     </div>
   </section>
 
@@ -90,7 +236,7 @@
       <h3 class="fast-heading">Quick to start, quick to price</h3>
       <ul class="facts">
         <li><b data-bench="ready"></b> from launch to ready to price</li>
-        <li><b data-bench="panel"></b> from <kbd>Ctrl</kbd>+<kbd>E</kbd> to the panel; currency and
+        <li><b data-bench="panel"></b> from <span class="keys"><kbd>Ctrl</kbd>+<kbd>E</kbd></span> to the panel; currency and
           other exchange items are priced at once, with no wait for the trade site</li>
         <li><b data-bench="listings"></b> to listings from the trade site, most of it waiting for
           pathofexile.com</li>
@@ -98,151 +244,172 @@
       </ul>
       <p class="fineprint facts-note">From PoE2 Oracle's own log on the same PC,
         <span data-bench="facts_measured"></span>.</p>
+
+      <div class="cta cta-band" data-cta>
+        <p class="cta-band-title">See for yourself: it's free</p>
+        <div class="actions">
+          <a class="button button-primary" href="download/latest" data-download>Download for Windows</a>
+        </div>
+        <p class="cta-note">Windows&nbsp;10 and&nbsp;11&nbsp;· no ads&nbsp;· no account needed</p>
+      </div>
     </div>
   </section>
 
-  <section class="section" id="features">
+  <section class="section" id="trust">
     <div class="wrap">
-      <h2>What it does</h2>
-      <p class="intro">PoE2 Oracle runs in the background. The XP overlay is always in view: it sits on
-        the game's own HUD, looks like part of it and can be turned off in the settings. The price panel
-        opens over the game only when you press the hotkey. Prices need no account and no browser.</p>
-
-      <article class="feature">
-        <div class="feature-text">
-          <h3>Price check</h3>
-          <p>The item's modifiers become search filters with their tiers. Pick how strictly to search,
-            adjust the bounds, search by the whole item class or just the base, and see the cheapest
-            listings with their price, seller and age.</p>
-          <ul>
-            <li>Searches the official trade site, the English or the Russian one to match your client</li>
-            <li>Tiers, pseudo totals, weapon DPS and defences as filters</li>
-            <li>Hover a listing to see it as the game's item tooltip, its modifiers compared with yours</li>
-            <li>For a seller who trades in person, a click copies the whisper; you send it yourself.
-              Instant Buyout listings, searched by default, need none</li>
-          </ul>
-        </div>
-        <figure class="feature-media">
-          <div data-oracle="panel" data-lang="en" data-fit data-alt="The price panel with filters and listings for a rare item"></div>
-        </figure>
-      </article>
-
-      <article class="feature" id="craft-of-exile">
-        <div class="feature-text">
-          <h3>Craft of Exile in one click, from&nbsp;either&nbsp;client</h3>
-          <p>The <strong>Craft of Exile ↗</strong> link on the price panel opens the item in Craft of
-            Exile's crafting simulator with its base, item level, rarity, implicits and mods already
-            set, with nothing to copy or paste. Craft of Exile's own import reads only the English
-            client's text: a copy from the Russian client loses every mod. PoE2 Oracle hands the item
-            over by the game's own ids instead, so it arrives the same from the Russian client as from
-            the English one.</p>
-          <ul>
-            <li>For normal, magic and rare gear, flasks, charms, jewels and waystones; uniques,
-              currency, gems, relics, tablets and unidentified items get no link</li>
-            <li>A mod whose id isn't certain is left out, never guessed</li>
-            <li>With the Russian interface, Craft of Exile opens in Russian</li>
-          </ul>
-        </div>
-        <figure class="feature-media">
-          <div data-oracle="craft" data-lang="en" data-fit data-alt="The top of the price panel for a rare ring copied in the Russian client, its Craft of Exile link lit, with a note on what it opens"></div>
-        </figure>
-      </article>
-
-      <article class="feature">
-        <div class="feature-text">
-          <h3>XP overlay</h3>
-          <p>Two plates right on the game's HUD rails, drawn in its own moulding and colours. Above the
-            flask panel: how fast you gain experience and when the next level comes. Above the skill
-            panel: a timer for the current map.</p>
-          <ul>
-            <li>Levelling speed in percent of a level per hour, and the time to the next level at that speed</li>
-            <li>Time and experience of the current map, and your average map time for the session</li>
-            <li>Time in towns and hideouts stays out of the speed: while you pause, the line dims and
-              shows only how much of the level you have</li>
-            <li>Experience is read from the XP bar on screen and from the game's log</li>
-          </ul>
-        </div>
-        <figure class="feature-media">
-          <div data-oracle="xp" data-lang="en" data-fit data-notes data-alt="The XP overlay's plates above the game's flask and skill panels, each value with a note on what it means"></div>
-        </figure>
-      </article>
-
-      <article class="feature">
-        <div class="feature-text">
-          <h3>Currency market</h3>
-          <p>Currency, omens, runes, essences and everything else traded on the in-game Currency
-            Exchange are priced from GGG's own record of the trades made on it: the value in divine,
-            exalted and chaos orbs from the latest hour of trading (up to three for a thinly traded
-            item), hourly volume and what your whole stack is worth, with poe2scout's seven-day chart
-            beside it. Unique items, and exchange items that haven't traded lately, show poe2scout's
-            price.</p>
-        </div>
-        <figure class="feature-media">
-          <div data-oracle="market" data-lang="en" data-fit data-alt="The market card with a seven-day price chart for a currency item"></div>
-        </figure>
-      </article>
-
-      <article class="feature">
-        <div class="feature-text">
-          <h3>Settings and quick actions</h3>
-          <p>Pick the league, the hotkey, the default sellers and the interface scale. Quick actions
-            put chat commands such as <code>/hideout</code> or a stash search on a hotkey of your
-            choice.</p>
-        </div>
-        <figure class="feature-media">
-          <div data-oracle="settings" data-lang="en" data-fit data-alt="The PoE2 Oracle settings window"></div>
-        </figure>
-      </article>
-
-      <ul class="also">
-        <li><strong>Updates</strong>New versions and new game data install by themselves, only
-          once their signature and SHA-256 checksums check out, and never while one of the app's
-          windows is open; a plate over the game says so after the restart.
-          <a href="guide/en/updates.html">How it works</a></li>
-        <li><strong>Problem reports</strong>Write to the developer from the app itself: its report
-          window sends your text, with the item's text or a diagnostics report attached if you
-          choose. After a crash it opens by itself on the next start. No account needed.
-          <a href="guide/en/report.html">How it works</a></li>
-        <li><strong>Privacy</strong>No telemetry; signing in is optional. It talks to the Path of
-          Exile trade site, GGG's server of pictures and exchange data, poe2scout, and oracle.pushka.biz
-          for updates and the reports you send.
-          <a href="guide/en/privacy.html">Details</a></li>
+      <h2>Why you can trust it</h2>
+      <ul class="trust">
+        <li>
+          <h3>No ads</h3>
+          <p>The whole app is free: no banners, no paid features, no subscription.</p>
+        </li>
+        <li>
+          <h3>No account</h3>
+          <p>Prices need no sign-up and no sign-in to pathofexile.com. Signing in is up to you, for
+            private leagues for example.</p>
+        </li>
+        <li>
+          <h3>Updates itself</h3>
+          <p>New versions of the app and new data about the game's items install by themselves, and only
+            checked ones: the app makes sure the developer made them and they arrived whole. While any of
+            the app's windows is open, the update waits; after the restart, a plate over the game says
+            so.</p>
+          <p><a href="guide/en/updates.html">How it works</a></p>
+        </li>
+        <li>
+          <h3>Collects no statistics</h3>
+          <p>The app sends no statistics about you or your play. Online, it talks only to the Path of
+            Exile trade site, GGG's server of pictures and exchange data, the poe2scout site and
+            oracle.pushka.biz: for updates and to deliver your messages.</p>
+          <p><a href="guide/en/privacy.html">Details</a></p>
+        </li>
+        <li>
+          <h3>A direct line to the developer</h3>
+          <p>Write to the developer right from the app: it sends your text and, if you like, the item's
+            text or details of how the app ran that help find a bug. After a crash, the message window
+            opens by itself on the next start. No account needed.</p>
+          <p><a href="guide/en/report.html">How it works</a></p>
+        </li>
       </ul>
     </div>
   </section>
 
-  <section class="section section-alt" id="start">
+  <section class="section section-alt" id="faq">
     <div class="wrap">
-      <div class="columns">
-        <div>
-          <h2>Requirements</h2>
-          <ul class="checklist">
-            <li>Windows 10 or Windows 11, 64-bit</li>
-            <li>Path of Exile 2 with the English or Russian client</li>
-            <li>The game in Windowed or Windowed Fullscreen mode: nothing can be shown over exclusive
-              fullscreen</li>
-            <li>An internet connection for prices</li>
-          </ul>
-        </div>
-        <div>
-          <h2>Getting started</h2>
-          <ol class="steps">
-            <li>Download the <a href="download/latest">latest installer</a>,
-              <code>PoE2-Oracle-Setup-&lt;version&gt;.exe</code>.</li>
-            <li>Run it. The installer isn't code-signed yet: if Windows says “Windows protected your
-              PC”, click <em>More info</em>, then <em>Run anyway</em>. No administrator rights are
-              needed.</li>
-            <li>In the game's graphics options, choose Windowed Fullscreen.</li>
-            <li>Point at an item in the game and press <span class="keys"><kbd>Ctrl</kbd>+<kbd>E</kbd></span>.</li>
-          </ol>
-          <p><a href="guide/en/install.html">Full install guide</a></p>
-        </div>
+      <h2>Questions</h2>
+      <div class="faq">
+        <details>
+          <summary>Does it change the game or read its memory? Can I get banned?</summary>
+          <div class="faq-answer">
+            <p>No, it changes neither the game nor its files, and it doesn't read the game's memory.
+              PoE2 Oracle copies an item's text with the game's own
+              <span class="keys"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>C</kbd></span>, as you would, and
+              draws its own windows over the game. The log file the game keeps, it only reads, for the XP
+              overlay; GGG's rules for developers allow that.</p>
+            <p>The same rules ask macros for one action per key press, and one chat message or command
+              counts as one action. That's how the quick actions work: one press, one command.</p>
+            <p>But GGG officially approves no third-party tool, this one included, so no one can promise
+              you won't be banned. <a href="https://www.pathofexile.com/developer/docs#policy">GGG's
+              rules for developers</a></p>
+          </div>
+        </details>
+        <details>
+          <summary>Is it really free? Any ads?</summary>
+          <div class="faq-answer">
+            <p>Yes, it's free, and there are no ads: no banners, no paid features, no subscription.</p>
+          </div>
+        </details>
+        <details>
+          <summary>Does it work with the Russian client?</summary>
+          <div class="faq-answer">
+            <p>Yes. PoE2 Oracle reads items from the English and Russian clients and searches the English
+              or the Russian trade site to match. The Craft of Exile link works from the Russian client
+              too.</p>
+            <p>The app speaks English and Russian: your game client's language, or Windows' until the
+              game has run once.
+              <a href="guide/en/settings.html#interface-language">Interface language</a> in the settings
+              changes it.</p>
+          </div>
+        </details>
+        <details>
+          <summary>Is it heavy on my PC? Will the game slow down?</summary>
+          <div class="faq-answer">
+            <p>Hardly: while you play, PoE2 Oracle puts <span data-bench="cpu_less"></span> less load on
+              the CPU than other price checkers, uses <span data-bench="memory"></span> of memory after
+              launch and runs as one process. <a href="#fast">The comparison and how it was measured</a></p>
+          </div>
+        </details>
+        <details>
+          <summary>Windows says “Windows protected your PC”. Is it a virus?</summary>
+          <div class="faq-answer">
+            <p>No. Windows warns about new programs without a digital signature this way, and PoE2
+              Oracle's installer doesn't have one yet. Click “More info”, then “Run anyway”. No
+              administrator rights needed.</p>
+            <p>How to check that the file came through whole: see the
+              <a href="guide/en/install.html#download">install guide</a>.</p>
+          </div>
+        </details>
+        <details>
+          <summary>Do I need an account or to sign in to pathofexile.com?</summary>
+          <div class="faq-answer">
+            <p>No. Prices need no sign-up and no sign-in: the app searches the trade site as any visitor
+              does. Signing in is up to you, for private leagues for example; the app never sees your
+              password.</p>
+          </div>
+        </details>
+        <details>
+          <summary>Does it collect statistics? What does it send over the internet?</summary>
+          <div class="faq-answer">
+            <p>No, it collects and sends no statistics about you or your play. Online, the app talks only
+              to the Path of Exile trade site, GGG's server of pictures and exchange data, the poe2scout
+              site and oracle.pushka.biz: for updates and to deliver your messages to the developer.</p>
+            <p>Without signing in, nothing in those requests points to you, apart from your IP address,
+              as with any request on the internet. <a href="guide/en/privacy.html">Privacy in detail</a></p>
+          </div>
+        </details>
+        <details>
+          <summary>Does it work in Fullscreen mode?</summary>
+          <div class="faq-answer">
+            <p>No: over exclusive Fullscreen, Windows shows no other programs' windows. In the game's
+              graphics options, choose Windowed Fullscreen: the game still fills the whole screen.</p>
+          </div>
+        </details>
       </div>
-      <p class="note">The app speaks English and Russian. At first it follows the game client's language,
-        or Windows' until the game has run;
-        <a href="guide/en/settings.html#interface-language">Interface language</a> in the settings changes it.</p>
+      <p class="faq-more">Didn't find your answer? See the <a href="guide/en/troubleshooting.html">guide</a>
+        or <a href="report.html">write to the developer</a>.</p>
     </div>
   </section>
+
+  <section class="section final" id="download">
+    <div class="wrap">
+      <h2>Get PoE2 Oracle, free</h2>
+      <p class="final-lead">No ads and no account. Nothing else to install, and no administrator rights
+        needed.</p>
+      <div class="cta" data-cta>
+        <div class="actions">
+          <a class="button button-primary" href="download/latest" data-download>Download for Windows</a>
+        </div>
+        <p class="cta-note">Windows&nbsp;10 and&nbsp;11, 64&#8209;bit<span data-release hidden>&nbsp;· version&nbsp;<span
+          data-release-version></span>&nbsp;· <span data-release-size></span>&nbsp;MB</span></p>
+      </div>
+    </div>
+  </section>
+
+  <div class="after-download" data-after-download hidden>
+    <p class="after-title">Your download has started</p>
+    <ol class="after-steps">
+      <li>Open the downloaded file, <b>PoE2-Oracle-Setup</b>, from your browser's downloads.</li>
+      <li>If Windows says “Windows protected your PC”, click “More info”, then “Run anyway”. No
+        administrator rights needed.</li>
+      <li>On the installer's last page, keep “Run PoE2 Oracle” ticked: the settings open with a
+        welcome.</li>
+    </ol>
+    <p class="after-note">Your browser may warn that the file is not commonly downloaded; keep it.
+      Didn't start? <a href="download/latest">Download again</a></p>
+    <button class="after-close" type="button" data-after-close aria-label="Close the tip">×</button>
+  </div>
+
+  <p class="visually-hidden" aria-live="polite" data-live></p>
 </main>
 
 <footer class="footer">
@@ -263,5 +430,6 @@
 <script type="module" src="lang.js"></script>
 <script type="module" src="ui/oracle-ui.js"></script>
 <script type="module" src="ui/bench.js"></script>
+<script type="module" src="ui/download.js"></script>
 </body>
 </html>

@@ -3,6 +3,8 @@
  * (report.html, ru/report.html).
  * Colours are the app's own (crates/poe2-oracle/src/ui/theme.rs): the near-black panel, gold
  * accents and the nameplate faces, Alegreya SC for English and Philosopher for Russian.
+ * The landing reads top to bottom as a player's questions come: what it is and the download, how it
+ * works, what it does, how light it is, why to trust it, the rest of the doubts, the download again.
  */
 
 @font-face {
@@ -61,6 +63,12 @@ html {
     background: var(--bg-deep);
 }
 
+@media (prefers-reduced-motion: no-preference) {
+    html {
+        scroll-behavior: smooth;
+    }
+}
+
 body {
     margin: 0;
     background: var(--bg);
@@ -86,6 +94,8 @@ h3 {
     font-weight: var(--display-weight);
     line-height: 1.2;
     color: var(--gold);
+    /* A heading that wraps splits into even lines, never leaving one word on its own. */
+    text-wrap: balance;
 }
 
 h2 {
@@ -118,6 +128,16 @@ kbd {
     font-size: 0.9em;
     line-height: 1.5;
     white-space: nowrap;
+}
+
+/* Keys pressed together (Ctrl+E, Ctrl+Alt+C) keep the plus between them clear of both caps.
+   Sibling selectors skip the "+" text, so this finds every keycap next to another. */
+kbd:has(+ kbd) {
+    margin-right: 0.25em;
+}
+
+kbd + kbd {
+    margin-left: 0.25em;
 }
 
 /* A key combination such as Ctrl+E stays on one line. */
@@ -232,6 +252,74 @@ kbd {
     color: var(--gold);
 }
 
+/* The landing's own sections in the top bar: a phone keeps only the language switch. */
+.topnav-section a {
+    white-space: nowrap;
+}
+
+/* On a phone the landing's header is the brand and the language switch: one row, whichever font
+   the brand is in while the page's own loads. A row that wrapped in the fallback font and then
+   didn't would move the whole page; the brand is cut short for that moment instead. */
+.topbar:has(.topnav-section) .wrap {
+    flex-wrap: nowrap;
+}
+
+.topbar:has(.topnav-section) .brand {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+/* The bar that brings the download button back once the hero's has scrolled away (ui/download.js
+   shows it). Fixed over the page, it moves nothing when it comes and goes. */
+.stickybar {
+    position: fixed;
+    inset: 0 0 auto;
+    z-index: 20;
+    background: rgba(6, 6, 7, 0.95);
+    border-bottom: 1px solid var(--border-gold);
+    box-shadow: 0 0.5rem 1.5rem rgba(0, 0, 0, 0.45);
+    transform: translateY(-100%);
+    visibility: hidden;
+    transition: transform 0.2s ease-out, visibility 0s linear 0.2s;
+}
+
+.stickybar.is-shown {
+    transform: none;
+    visibility: visible;
+    transition: transform 0.2s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .stickybar,
+    .stickybar.is-shown {
+        transition: none;
+    }
+}
+
+.stickybar .wrap {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem 1.25rem;
+    min-height: 3.5rem;
+}
+
+.stickybar .brand {
+    font-size: 1.2rem;
+}
+
+.stickybar-note {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+.stickybar .button {
+    min-height: 2.4rem;
+    padding: 0.3rem 1.1rem;
+    font-size: 1rem;
+}
+
 /* Hero */
 
 .hero {
@@ -284,25 +372,24 @@ kbd {
     margin-top: 0.5rem;
     color: var(--text);
     font-size: clamp(1.5rem, 3.4vw, 2.3rem);
-    /* A claim that wraps splits into even lines, never leaving one word on its own. */
-    text-wrap: balance;
 }
 
 .hero .lead {
     max-width: 44rem;
-    margin: 0 auto 2rem;
+    margin: 0 auto 1.75rem;
     color: var(--text-dim);
     font-size: 1.2rem;
+    text-wrap: pretty;
 }
 
-/* Measured numbers under the lead, filled in from ui/data/bench.json by ui/bench.js, as are the
+/* Measured numbers under the picture, filled in from ui/data/bench.json by ui/bench.js, as are the
    "Fast and light" section's. */
 .proof {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 0.75rem;
     max-width: 52rem;
-    margin: 0 auto 0.9rem;
+    margin: 2.5rem auto 0.9rem;
     padding: 0;
     list-style: none;
 }
@@ -335,7 +422,7 @@ kbd {
 }
 
 .proof-more {
-    margin: 0 0 2rem;
+    margin: 0;
     font-size: 0.95rem;
 }
 
@@ -379,15 +466,24 @@ kbd {
     color: var(--gold-bright);
 }
 
+/* A secondary action that stays secondary: no fill, a quiet edge. */
+.button-quiet {
+    background: transparent;
+}
+
 .fineprint {
     color: var(--text-muted);
     font-size: 0.9rem;
 }
 
-.hero .fineprint {
+/* Under a download button, what stops a download: what it costs, what it needs and, once the site
+   says (ui/download.js), the version and the installer's size. */
+.cta-note {
     max-width: 44rem;
-    margin-left: auto;
-    margin-right: auto;
+    margin: 0.35rem auto 0;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    text-wrap: balance;
 }
 
 .shot {
@@ -421,6 +517,20 @@ kbd {
     flex: none;
 }
 
+/* Until its drawing is in, the hero's picture keeps the room it will take, framed as it will be, so
+   that the numbers under it don't jump: data/hero.<lang>.json draws 941.5 x 864 px at scale 1 in
+   either language (measured in the page), and data-fit only ever scales that down to the figure's
+   width. A change to the hero's parts changes these numbers. Empty, not "not .oui": oracle-ui.js
+   marks the element before the drawing arrives. */
+.shot > [data-oracle="hero"]:empty {
+    width: min(100%, 941.5px);
+    margin: 0 auto;
+    aspect-ratio: 941.5 / 864;
+    border: 1px solid var(--border-gold);
+    border-radius: 6px;
+    background: linear-gradient(180deg, #15120f, #060607);
+}
+
 /* Sections */
 
 .section {
@@ -434,6 +544,64 @@ kbd {
 
 .section > .wrap > p.intro {
     max-width: 48rem;
+    color: var(--text-dim);
+}
+
+/* In-page links land below the bar that may cover the page's top. */
+.section[id] {
+    scroll-margin-top: 3.5rem;
+}
+
+/* How it works: three numbered steps side by side, from the download to the price. */
+.how {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1rem;
+    margin: 1.75rem 0 0;
+    padding: 0;
+    list-style: none;
+    counter-reset: how;
+}
+
+.how li {
+    position: relative;
+    padding: 1.2rem 1.25rem 1.3rem 4.25rem;
+    border: 1px solid var(--border-gold);
+    border-radius: 4px;
+    background: rgba(6, 6, 7, 0.5);
+    counter-increment: how;
+}
+
+.how li::before {
+    content: counter(how);
+    position: absolute;
+    left: 1.1rem;
+    top: 1.05rem;
+    display: grid;
+    place-items: center;
+    width: 2.3rem;
+    height: 2.3rem;
+    border: 1px solid var(--gold);
+    border-radius: 50%;
+    background: var(--bg-button);
+    color: var(--gold-bright);
+    font-family: var(--display);
+    font-weight: var(--display-weight);
+    font-size: 1.25rem;
+    line-height: 1;
+}
+
+.how h3 {
+    font-size: 1.25rem;
+}
+
+.how p {
+    margin: 0;
+    color: var(--text-dim);
+}
+
+.how-needs {
+    margin: 1.25rem 0 0;
     color: var(--text-dim);
 }
 
@@ -502,6 +670,25 @@ kbd {
     margin: 1rem 0 0;
 }
 
+/* The download again, once the comparison has made its case. */
+.cta-band {
+    margin-top: 3rem;
+    padding: 2rem 1.5rem;
+    border: 1px solid var(--border-gold);
+    border-radius: 4px;
+    background: radial-gradient(ellipse at top, var(--bg-warm), var(--bg) 75%);
+    text-align: center;
+}
+
+.cta-band-title {
+    margin: 0 0 1rem;
+    color: var(--gold);
+    font-family: var(--display);
+    font-weight: var(--display-weight);
+    font-size: 1.6rem;
+    line-height: 1.2;
+}
+
 .feature {
     display: grid;
     grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
@@ -533,72 +720,230 @@ kbd {
     margin: 0;
 }
 
-.also {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+/* The feature's name over its heading: what it gives. */
+.feature-name {
+    display: block;
+    margin-bottom: 0.4rem;
+    color: var(--text-muted);
+    font-family: var(--body);
+    font-size: 0.85rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    line-height: 1.3;
+    text-transform: uppercase;
+}
+
+/* Why you can trust it: one card per promise. The two short ones share the first row, the three
+   longer ones the next. */
+.trust {
+    display: flex;
+    flex-wrap: wrap;
     gap: 1rem;
-    margin: 3.5rem 0 0;
+    margin: 1.75rem 0 0;
     padding: 0;
     list-style: none;
 }
 
-.also li {
-    padding: 1rem 1.25rem;
+.trust li {
+    flex: 1 1 18rem;
+    padding: 1.1rem 1.25rem 1.2rem;
     border: 1px solid var(--border);
     border-radius: 4px;
     background: var(--bg-control);
     color: var(--text-dim);
 }
 
-.also strong {
-    display: block;
-    margin-bottom: 0.25rem;
+.trust li:nth-child(-n + 2) {
+    flex-basis: max(calc(50% - 0.5rem), 18rem);
+}
+
+.trust h3 {
+    margin-bottom: 0.4rem;
+    font-size: 1.25rem;
+}
+
+.trust p {
+    margin: 0 0 0.5rem;
+}
+
+.trust p:last-child {
+    margin-bottom: 0;
+}
+
+/* Questions and answers: each opens by itself, with the keyboard as with the mouse. The rows span
+   the section's whole width, as the blocks above them do; an answer keeps a line short enough to
+   read. */
+.faq {
+    margin: 1.5rem 0 0;
+    border-top: 1px solid var(--border);
+}
+
+.faq details {
+    border-bottom: 1px solid var(--border);
+}
+
+.faq summary {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 0.25rem;
+    color: var(--text);
+    font-size: 1.05rem;
+    font-weight: 600;
+    line-height: 1.4;
+    list-style: none;
+    cursor: pointer;
+}
+
+.faq summary::-webkit-details-marker {
+    display: none;
+}
+
+/* The sign is drawing only: a screen reader hears the question and whether it's open. */
+.faq summary::after {
+    content: "+" / "";
+    flex: none;
+    width: 1rem;
+    color: var(--gold);
+    font-size: 1.4rem;
+    font-weight: 400;
+    line-height: 1;
+    text-align: center;
+}
+
+.faq details[open] > summary::after {
+    content: "−" / "";
+}
+
+.faq summary:hover {
+    color: var(--gold-bright);
+}
+
+.faq summary:focus-visible {
+    outline: 2px solid var(--gold);
+    outline-offset: 2px;
+}
+
+.faq-answer {
+    max-width: 52rem;
+    padding: 0 0.25rem 1.1rem;
+    color: var(--text-dim);
+}
+
+.faq-answer p {
+    margin: 0 0 0.75rem;
+}
+
+.faq-answer p:last-child {
+    margin-bottom: 0;
+}
+
+.faq-more {
+    margin: 1.5rem 0 0;
+    color: var(--text-dim);
+}
+
+/* The last word: the download once more. */
+.final {
+    background: radial-gradient(ellipse at bottom, var(--bg-warm), var(--bg) 70%);
+    text-align: center;
+}
+
+.final h2 {
+    font-size: clamp(1.75rem, 4vw, 2.4rem);
+}
+
+.final-lead {
+    max-width: 40rem;
+    margin: 0 auto 1.5rem;
+    color: var(--text-dim);
+    font-size: 1.1rem;
+}
+
+/* After a press of a download button (ui/download.js), under it: the download has started, and
+   what comes next. */
+.after-download {
+    position: relative;
+    max-width: 34rem;
+    margin: 1rem auto 0;
+    padding: 1rem 2.75rem 1.1rem 1.25rem;
+    border: 1px solid var(--gold);
+    border-radius: 4px;
+    background: var(--bg-warm);
+    color: var(--text-dim);
+    text-align: left;
+}
+
+.after-title {
+    margin: 0 0 0.5rem;
+    color: var(--gold-bright);
+    font-weight: 600;
+}
+
+.after-steps {
+    margin: 0 0 0.75rem;
+    padding-left: 1.3rem;
+}
+
+.after-steps li {
+    margin-bottom: 0.4rem;
+}
+
+.after-steps li::marker {
+    color: var(--gold);
+    font-weight: 600;
+}
+
+/* The installer's name, whole on one line. */
+.after-steps b {
+    white-space: nowrap;
+}
+
+.after-note {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+.after-close {
+    position: absolute;
+    top: 0.4rem;
+    right: 0.4rem;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    border: 0;
+    border-radius: 3px;
+    background: none;
+    color: var(--text-dim);
+    font: inherit;
+    font-size: 1.4rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.after-close:hover {
+    background: var(--bg-control);
     color: var(--text);
 }
 
-.columns {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(20rem, 100%), 1fr));
-    gap: 2rem 3rem;
+.after-close:focus-visible {
+    outline: 2px solid var(--gold);
 }
 
-.checklist {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-}
-
-.checklist li {
+/* Pressed in the bar at the top, the same words hang under its button. */
+.stickybar .cta {
     position: relative;
-    margin-bottom: 0.75rem;
-    padding-left: 1.5rem;
-    color: var(--text-dim);
 }
 
-.checklist li::before {
-    content: "";
+.stickybar .after-download {
     position: absolute;
-    left: 0.2rem;
-    top: 0.6em;
-    width: 0.45rem;
-    height: 0.45rem;
-    transform: rotate(45deg);
-    background: var(--gold);
-}
-
-.steps {
+    top: calc(100% + 1.1rem);
+    right: 0;
+    width: min(32rem, calc(100vw - 2rem));
     margin: 0;
-    padding-left: 1.4rem;
-    color: var(--text-dim);
-}
-
-.steps li {
-    margin-bottom: 0.75rem;
-}
-
-.steps li::marker {
-    color: var(--gold);
-    font-weight: 600;
+    box-shadow: 0 0.75rem 2rem rgba(0, 0, 0, 0.6);
 }
 
 .note {
@@ -817,9 +1162,21 @@ button.button:disabled {
     .facts {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
+
+    .topnav-section {
+        display: none;
+    }
+
+    .how {
+        grid-template-columns: minmax(0, 1fr);
+    }
 }
 
 @media (max-width: 40rem) {
+    .hero .lead {
+        font-size: 1.05rem;
+    }
+
     .proof {
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 0.5rem;
@@ -846,5 +1203,48 @@ button.button:disabled {
 
     .claims b {
         font-size: 1.75rem;
+    }
+
+    .stickybar-note {
+        display: none;
+    }
+
+    .stickybar .brand {
+        font-size: 1.05rem;
+    }
+
+    .stickybar .button {
+        padding: 0.3rem 0.85rem;
+    }
+
+    .how li {
+        padding: 1rem 1rem 1.1rem 3.75rem;
+    }
+
+    .how li::before {
+        left: 0.85rem;
+        top: 0.9rem;
+    }
+
+    .cta-band {
+        padding: 1.5rem 1rem;
+    }
+
+    .after-download {
+        padding-right: 2.5rem;
+        padding-left: 1rem;
+    }
+}
+
+/* Too narrow for the name beside "Download for Windows": the bar keeps the mark, and the name stays
+   for a screen reader. */
+@media (max-width: 26rem) {
+    .stickybar-name {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
     }
 }

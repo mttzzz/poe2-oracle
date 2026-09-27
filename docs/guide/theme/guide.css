@@ -23,6 +23,17 @@ kbd {
     white-space: nowrap;
 }
 
+/* Keys pressed together (Ctrl+E) keep the plus between them clear of both caps, as on the site
+ * (site/style.css). Sibling selectors skip the "+" text, so this finds every keycap next to
+ * another. */
+kbd:has(+ kbd) {
+    margin-right: 0.25em;
+}
+
+kbd + kbd {
+    margin-left: 0.25em;
+}
+
 /* The header's language switch (guide.js), drawn as the site's (site/style.css, .lang-switch) in
  * the reader's theme. mdBook's rem is 10px. */
 .lang-switch {
