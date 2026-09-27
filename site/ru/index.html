@@ -43,11 +43,11 @@
       <h1>Нативная, быстрая и лёгкая</h1>
       <p class="lead">Проверка цены по <span class="keys"><kbd>Ctrl</kbd>+<kbd>E</kbd></span> и оверлей
         опыта в интерфейсе Path of Exile 2 — в одной нативной программе для Windows, без браузера
-        внутри. Интерфейс рисует видеокарта через Direct3D 11.</p>
+        внутри. Весь её интерфейс рисует видеокарта.</p>
       <ul class="proof">
-        <li><b data-bench="memory"></b> памяти в диспетчере задач</li>
-        <li><b data-bench="processes"></b> процесс — и ни одного вспомогательного</li>
-        <li><b data-bench="play_cpu"></b> ядра процессора во время игры</li>
+        <li><b data-bench="memory"></b> памяти после запуска</li>
+        <li><b data-bench="processes"></b> процесс — и больше ничего не запускается</li>
+        <li><b data-bench="cpu_less"></b> меньше нагрузки на процессор в игре, чем у других</li>
         <li><b data-bench="ready"></b> от запуска до готовности</li>
       </ul>
       <p class="proof-more"><a href="#fast">Сравнение с другими программами проверки цен</a></p>
@@ -67,76 +67,38 @@
   <section class="section section-alt" id="fast">
     <div class="wrap">
       <h2>Быстрая и лёгкая</h2>
-      <p class="intro">PoE2 Oracle — нативная программа для Windows, написанная на Rust, без Electron и
-        без браузера внутри. Это один процесс: панели и оверлеи рисует видеокарта через Direct3D 11 — на
-        GPUI, фреймворке интерфейса из редактора кода Zed, — а текст рисует DirectWrite. Единственный
-        браузер, который программа открывает, — необязательное окно входа на pathofexile.com: это
-        WebView2 самой Windows, и закрывается он вместе с окном.</p>
-      <p class="intro">Игре остаются память и процессор: в диспетчере задач программа — один процесс на
-        <span data-bench="memory"></span>, рядом с ней ничего не запускается, и доустанавливать ничего
-        не нужно.</p>
-
-      <h3 class="fast-heading">В игре</h3>
-      <p class="bench-lead" data-bench="play_summary"></p>
+      <p class="intro">PoE2 Oracle — обычная программа для Windows, без встроенного браузера, а весь её
+        интерфейс рисует видеокарта. После запуска она работает одним процессом и занимает меньше памяти,
+        чем другие программы проверки цен, а во время игры меньше нагружает процессор.</p>
+      <ul class="claims">
+        <li><b data-bench="memory_less"></b> меньше памяти после запуска, чем у других программ проверки
+          цен</li>
+        <li><b data-bench="cpu_less"></b> меньше нагрузки на процессор во время игры</li>
+        <li><b data-bench="processes"></b> процесс вместо <span data-bench="others_processes"></span></li>
+      </ul>
       <figure class="bench">
-        <div data-bench-chart="play"></div>
-        <figcaption><span data-bench="play_measured">Замер</span> на одном ПК: Core i7-13700KF, 32 ГБ
-          оперативной памяти, GeForce RTX 4090, Windows 11, два монитора 4K с масштабом 200&nbsp;%. Владелец ПК
-          играл в Path of Exile 2 как обычно, пока работали все четыре программы, а мы только снимали
-          показания: три минуты, все четыре программы в одни и те же минуты, сами ничего не нажимая.
-          Полоса — медиана трёх минут каждой программы. Процессор — в процентах одного логического ядра,
-          а их у этого ПК 24. <a href="../guide/ru/performance.html#настоящая-игра">Как мерили</a></figcaption>
+        <div data-bench-chart="compare"></div>
+        <figcaption>Замер на одном ПК <span data-bench="measured"></span>. Память (как её показывает
+          диспетчер задач) и процессы — через несколько минут после запуска, пока программа ждёт
+          проверки; каждую программу мерили отдельно. Нагрузка на процессор — во время игры, когда все
+          четыре программы работали одновременно. <a href="../guide/ru/performance.html">Подробно, как
+          мерили</a></figcaption>
       </figure>
-
-      <h4 class="fast-subheading">Контрольный замер</h4>
-      <p class="bench-lead" data-bench="test_summary"></p>
-      <figure class="bench">
-        <div data-bench-chart="test"></div>
-        <figcaption><span data-bench="test_measured">Замер</span> на том же ПК: игра на переднем плане,
-          персонаж в убежище с открытым инвентарём. Все четыре программы работали одновременно, и мерили
-          их в одни и те же минуты: одну — пока мышь стоит, другую — пока она медленно кружит по инвентарю.
-          <a href="../guide/ru/performance.html#контрольный-замер">Как мерили</a> и
-          <a href="../guide/ru/performance.html#проверки-цены">проверки цены в игре</a> — с памятью до и
-          после них.</figcaption>
-      </figure>
-
-      <h3 class="fast-heading">Пока игра в фоне</h3>
-      <figure class="bench">
-        <div data-bench-chart="background"></div>
-        <figcaption><span data-bench="background_measured">Замер</span> на том же ПК; Path of Exile 2
-          открыта в фоне и видна на экране, программы простаивают. Память — это столбец «Память»
-          диспетчера задач (частный рабочий набор), сложенный по всем процессам программы.
-          <a href="../guide/ru/performance.html#пока-игра-в-фоне">Как мерили и все остальные
-          числа</a></figcaption>
-      </figure>
-      <div class="bench-notes">
-        <p><span data-bench="background_lower"></span> Exiled Exchange 2 отключает аппаратное ускорение и
-          рисует процессором, поэтому видеопамять не занимает; внутриигровой оверлей Overwolf работает в
-          процессе самой игры и в замер не попал.</p>
-        <p>PoE Overlay II работает только на Overwolf, поэтому процессы Overwolf засчитаны ему.
-          Запущенный ярлыком с рабочего стола, он сам открыл главное окно — с двумя анимированными
-          рекламными баннерами и предложением перейти на Premium, чтобы их убрать. Пока это окно
-          открыто, встроенный браузер Overwolf всё время его перерисовывает и занимает больше целого
-          ядра процессора; со свёрнутым окном памяти нужно примерно вдвое меньше. У остальных программ
-          рекламы не было.</p>
-      </div>
+      <p class="bench-note">PoE Overlay II работает только на Overwolf, чьи процессы засчитаны ему, и
+        показывает рекламные баннеры с предложением перейти на Premium, чтобы их убрать; у остальных
+        программ рекламы не было.</p>
 
       <h3 class="fast-heading">Быстро запускается и быстро оценивает</h3>
       <ul class="facts">
         <li><b data-bench="ready"></b> от запуска до готовности оценивать предметы</li>
-        <li><b data-bench="item_text"></b> от команды копирования, которую программа посылает игре, до
-          текста предмета</li>
-        <li><b data-bench="processing"></b> на разбор предмета, его фильтры и показ панели</li>
-        <li><b data-bench="exchange"></b> на цену валюты и других товаров биржи или повтор недавнего
-          поиска — по уже загруженным данным</li>
-        <li><b data-bench="listings"></b> на поиск с лотами, из них
-          <span data-bench="listings_trade_site"></span> — ожидание двух ответов pathofexile.com</li>
-        <li><b data-bench="installer"></b> весит установщик, а сама программа — один exe примерно на
-          <span data-bench="exe"></span>; отдельно ставить ничего не нужно: ни .NET, ни Visual C++, ни
-          Chromium</li>
+        <li><b data-bench="panel"></b> от <kbd>Ctrl</kbd>+<kbd>E</kbd> до панели; валюту и другие товары
+          биржи программа оценивает сразу, не дожидаясь сайта торговли</li>
+        <li><b data-bench="listings"></b> до лотов с сайта торговли — большую часть этого времени
+          программа ждёт pathofexile.com</li>
+        <li><b data-bench="installer"></b> весит установщик, и больше ничего ставить не нужно</li>
       </ul>
-      <p class="fineprint facts-note">Время — по журналу PoE2 Oracle <span data-bench="version"></span> на
-        том же ПК, <span data-bench="facts_measured"></span>; одно число — медиана по проверкам цены.</p>
+      <p class="fineprint facts-note">По журналу самой PoE2 Oracle на том же ПК,
+        <span data-bench="facts_measured"></span>.</p>
     </div>
   </section>
 

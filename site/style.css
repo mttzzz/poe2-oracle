@@ -273,6 +273,7 @@ kbd {
 }
 
 .proof b,
+.claims b,
 .facts b {
     display: block;
     min-height: 1.15em;
@@ -391,46 +392,47 @@ kbd {
     color: var(--text-dim);
 }
 
-/* Fast and light: the comparison (ui/bench.css), its notes, and the timings and sizes. */
+/* Fast and light: the claims, the comparison (ui/bench.css) and its note, then the timings and
+   sizes. */
 
 .fast-heading {
     margin-top: 3rem;
 }
 
-/* A second comparison under a heading's first, as the controlled test under real play. */
-.fast-subheading {
-    margin: 2.25rem 0 0.5rem;
-    color: var(--gold);
-    font-family: var(--display);
-    font-weight: var(--display-weight);
-    font-size: 1.15rem;
-    line-height: 1.2;
-}
-
-/* The comparison's outcome in words (ui/bench.js), above its table. */
-.bench-lead {
-    max-width: 48rem;
-    margin: 0 0 0.25rem;
-    color: var(--text);
-    font-size: 1.05rem;
-}
-
-.bench-notes {
+/* The comparison's outcome, above its table: how many times less PoE2 Oracle needs. */
+.claims {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(22rem, 100%), 1fr));
-    gap: 0.75rem 2.5rem;
-    margin-top: 1.25rem;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1rem;
+    margin: 1.75rem 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.claims li {
+    padding: 1rem 1.25rem 1.1rem;
+    border: 1px solid var(--border-gold);
+    border-radius: 4px;
+    background: rgba(6, 6, 7, 0.5);
+    color: var(--text);
+    line-height: 1.4;
+}
+
+.claims b {
+    margin-bottom: 0.35rem;
+    font-size: 2rem;
+}
+
+.bench-note {
+    max-width: 48rem;
+    margin: 1rem 0 0;
     color: var(--text-dim);
     font-size: 0.95rem;
 }
 
-.bench-notes p {
-    margin: 0;
-}
-
 .facts {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 1rem;
     margin: 1rem 0 0;
     padding: 0;
@@ -511,7 +513,7 @@ kbd {
 
 .columns {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(20rem, 100%), 1fr));
     gap: 2rem 3rem;
 }
 
@@ -788,7 +790,16 @@ button.button:disabled {
         font-size: 1.6rem;
     }
 
+    .claims,
     .facts {
         grid-template-columns: minmax(0, 1fr);
+    }
+
+    .claims {
+        gap: 0.5rem;
+    }
+
+    .claims b {
+        font-size: 1.75rem;
     }
 }

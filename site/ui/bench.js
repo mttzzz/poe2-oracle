@@ -1,37 +1,27 @@
 // PoE2 Oracle next to other price checkers, and its own speed and size, all from data/bench.json:
 // the one file that holds every such number the landing pages show, so that a new measurement
-// changes that file and nothing else. Each app there has what was measured of it three ways:
-// `play`, real play with the game in front, its CPU in each minute; `test`, a controlled test with
-// the game in front, its CPU with the mouse moving and at rest; `background`, the game in the
-// background, its processes, memory, idle CPU and GPU memory, in one state of the app or more. A
-// block may name the build of the app it measured (`build`), which its table shows by the app, and
-// real play the app's own state in those minutes (`label`), which its row shows the same way.
-// [data-bench-chart="play" | "test" | "background"] each get that comparison, a table whose first
-// measured column is a bar chart; each [data-bench="<name>"] gets one value, in the page's language:
+// changes that file and nothing else. Each app there has what was measured of it two ways:
+// `background`, its memory and processes a few minutes after launch, while it waits for a price
+// check, in one state of the app or more; `play`, its CPU in each minute of real play, with all four
+// apps running. [data-bench-chart="compare"] gets the comparison of the apps measured both ways, a
+// table whose memory and CPU are bar charts; each [data-bench="<name>"] gets one value, in the
+// page's language:
 //
-//   memory, processes        PoE2 Oracle's memory with the game in the background, in MB to one
-//                            decimal as Task Manager shows it, and its process count
-//   play_cpu                 PoE2 Oracle's CPU in real play: its median minute
-//   play_summary,            how PoE2 Oracle's CPU compares with the others': in real play (their
-//   test_summary             median minutes), and in the controlled test with the mouse moving and
-//                            at rest, a sentence each: the least, about even with the apps within
-//                            one step of the table's last digit, or more than those below that
-//   play_measured,           each comparison's "Measured on <date>", naming PoE2 Oracle's date
-//   test_measured,           apart once it differs from the others'
-//   background_measured
-//   background_lower         where the background comparison shows another app needing less than
-//                            PoE2 Oracle, a sentence; empty when none does
-//   ready                    from launch to ready to price
-//   item_text, processing    a price check: the item's text after the copy, then reading it,
-//                            its filters and the panel
-//   exchange                 an exchange item's price, or a repeated search's, from loaded data
-//   listings,                a search with listings, and the part of it pathofexile.com took
-//   listings_trade_site
-//   installer, exe           the installer's size and the app's, in whole MB
-//   version, facts_measured  the version and the date of the timings and sizes
+//   memory, processes       PoE2 Oracle's memory after launch, in MB to one decimal as Task Manager
+//                           shows it, and its process count
+//   memory_less, cpu_less   how many times less memory after launch, and CPU while playing, PoE2
+//                           Oracle needs than the others: whole times, the least to the most
+//   others_processes        the others' process counts, the least to the most
+//   measured                the days of the comparison
+//   ready                   from launch to ready to price
+//   panel, listings         from the key press to the panel, and to a search's listings
+//   installer               the installer's size, in whole MB
+//   facts_measured          the days of those times
 //
-// Values compare as the tables round them, so a difference the tables can't show isn't claimed
-// either way. `window.benchReady` settles once every one is filled.
+// An app measured in several states is shown in the one that needs least memory, with the most
+// beside it. The table rounds ratios to one decimal and the claims to whole times; a claim the
+// numbers don't bear out is left empty and said in the console. `window.benchReady` settles once
+// every value is filled.
 
 import { h } from "./dom.js";
 
@@ -39,98 +29,41 @@ const lang = document.documentElement.lang === "ru" ? "ru" : "en";
 const locale = lang === "ru" ? "ru-RU" : "en-GB";
 const nbsp = "\u00a0";
 
-// `when` opens a comparison's sentence, its punctuation with it: English sets a comma after it,
-// Russian only after a clause («Пока мышь стоит,»), not after a phrase («В настоящей игре»).
+/** «раз» or «раза» after a number of times: a fraction and 2-4 take «раза» («в 3,4 раза», «в 4
+ * раза»), the rest «раз» («в 5 раз», «в 21 раз»). `whole` is the number when it is whole. */
+const timesWord = (whole) => {
+    const form = whole === null ? "other" : new Intl.PluralRules("ru").select(whole);
+    return form === "few" || form === "other" ? "раза" : "раз";
+};
+
 const words = {
     en: {
         app: "App",
-        build: (id) => `build ${id}`,
-        units: { mb: "MB", s: "s", ms: "ms" },
-        percent: (number) => `${number}%`,
-        percentRange: (low, high) => `${low}–${high}%`,
+        caption: "Memory after launch, CPU load while playing and processes of PoE2 Oracle and other price checkers",
+        memory: "Memory after launch",
+        cpu: "CPU load while playing",
+        processes: "Processes",
+        units: { mb: "MB", s: "s" },
         times: (number) => `${number}× as much`,
-        measured: (date) => `Measured on ${date}`,
-        measuredApart: (ours, others) => `PoE2 Oracle measured on ${ours}, the others on ${others}`,
+        less: (span) => `${span}×`,
+        least: "the least",
+        notMore: "no more than PoE2 Oracle's",
+        upTo: (value, state) => `up to ${value} ${state}`,
         date: (dayMonth, year) => `${dayMonth} ${year}`,
-        compare: {
-            least: (when, ours, others) =>
-                `${when} PoE2 Oracle used the least CPU: ${ours} of a core, against ${others} for the others.`,
-            even: (when, names, values) => `${when} ${names} were about even: ${values} of a core.`,
-            lower: (when, names, values, ours) =>
-                `${when} ${names} used less CPU than PoE2 Oracle: ${values} of a core, against ${ours}.`,
-        },
-        play: {
-            caption: "CPU of PoE2 Oracle and other price checkers in real play, the median of three minutes and the lowest and highest minute",
-            cpu: "CPU while playing, % of a core",
-            cpuCard: "CPU while playing",
-            minutes: "Lowest–highest minute",
-            when: "In real play,",
-        },
-        test: {
-            caption: "CPU of PoE2 Oracle and other price checkers with the game in front, with the mouse moving and at rest",
-            moving: "CPU with the mouse moving, % of a core",
-            movingCard: "CPU, mouse moving",
-            still: "Mouse at rest",
-            stillCard: "CPU, mouse at rest",
-            when: { moving: "With the mouse moving,", still: "With the mouse at rest," },
-        },
-        background: {
-            caption: "Processes, memory, idle CPU and GPU memory of PoE2 Oracle and other price checkers with the game in the background",
-            memory: "Memory in Task Manager",
-            processes: "Processes",
-            cpu: "Idle CPU, % of a core",
-            cpuCard: "Idle CPU",
-            gpu: "GPU memory",
-            lower: (parts) => `Where others need less than PoE2 Oracle: ${parts}.`,
-            metrics: { memory: "memory", processes: "processes", cpu: "idle CPU", gpu: "GPU memory" },
-        },
     },
     ru: {
         app: "Программа",
-        build: (id) => `сборка ${id}`,
-        units: { mb: "МБ", s: "с", ms: "мс" },
-        percent: (number) => `${number}${nbsp}%`,
-        percentRange: (low, high) => `${low}–${high}${nbsp}%`,
-        // «в 3,7 раза», «в 4 раза», «в 7 раз»: a fraction and 2-4 take «раза».
-        times: (number, whole) => {
-            const form = whole === null ? "other" : new Intl.PluralRules("ru").select(whole);
-            return `в ${number} ${form === "few" || form === "other" ? "раза" : "раз"} больше`;
-        },
-        measured: (date) => `Замер ${date}`,
-        measuredApart: (ours, others) => `PoE2 Oracle мерили ${ours}, остальные программы — ${others}`,
+        caption: "Память после запуска, нагрузка на процессор во время игры и процессы PoE2 Oracle и других программ проверки цен",
+        memory: "Память после запуска",
+        cpu: "Нагрузка на процессор в игре",
+        processes: "Процессы",
+        units: { mb: "МБ", s: "с" },
+        times: (number, whole) => `в ${number} ${timesWord(whole)} больше`,
+        less: (span, high) => `в ${span} ${timesWord(high)}`,
+        least: "меньше всех",
+        notMore: "не больше, чем у PoE2 Oracle",
+        upTo: (value, state) => `${state} — до ${value}`,
         date: (dayMonth, year) => `${dayMonth} ${year} года`,
-        compare: {
-            least: (when, ours, others) =>
-                `${when} процессора меньше всех нужно PoE2 Oracle: ${ours} ядра против ${others} у остальных.`,
-            even: (when, names, values) => `${when} ${names} примерно вровень: ${values} ядра.`,
-            lower: (when, names, values, ours) =>
-                `${when} меньше процессора, чем PoE2 Oracle, нужно ${names}: ${values} ядра против ${ours}.`,
-        },
-        play: {
-            caption: "Процессор PoE2 Oracle и других программ проверки цен в настоящей игре: медиана трёх минут и самая лёгкая и самая тяжёлая минута",
-            cpu: "ЦП во время игры, % ядра",
-            cpuCard: "ЦП во время игры",
-            minutes: "Разброс по минутам",
-            when: "В настоящей игре",
-        },
-        test: {
-            caption: "Процессор PoE2 Oracle и других программ проверки цен с игрой на переднем плане — пока мышь двигается и пока стоит",
-            moving: "ЦП, пока мышь двигается, % ядра",
-            movingCard: "ЦП, мышь двигается",
-            still: "Мышь стоит",
-            stillCard: "ЦП, мышь стоит",
-            when: { moving: "Пока мышь двигается,", still: "Пока мышь стоит," },
-        },
-        background: {
-            caption: "Процессы, память, процессор в простое и видеопамять PoE2 Oracle и других программ проверки цен, пока игра в фоне",
-            memory: "Память в диспетчере задач",
-            processes: "Процессы",
-            cpu: "ЦП в простое, % ядра",
-            cpuCard: "ЦП в простое",
-            gpu: "Видеопамять",
-            lower: (parts) => `Где другим нужно меньше, чем PoE2 Oracle: ${parts}.`,
-            metrics: { memory: "память", processes: "процессы", cpu: "процессор в простое", gpu: "видеопамять" },
-        },
     },
 }[lang];
 
@@ -143,40 +76,20 @@ const format = (value, digits) =>
 /** A number and its unit, which never part at a line break. */
 const unit = (number, name) => `${number}${nbsp}${words.units[name]}`;
 
-/** How many decimals the tables show of each metric's `value`: memory and GPU memory to one, CPU
- * to two below 10 % and whole from there, processes whole. */
-const places = {
-    processes: () => 0,
-    memory: () => 1,
-    cpu: (value) => (value < 10 ? 2 : 0),
-    gpu: () => 1,
-};
-
-/** `metric`'s `value` rounded as the tables show it, by the same rounding as `format`'s. */
-const shown = (metric, value) => {
-    const digits = places[metric](value);
-    return Number(
-        new Intl.NumberFormat("en-US", {
-            minimumFractionDigits: digits,
-            maximumFractionDigits: digits,
-            useGrouping: false,
-        }).format(value),
-    );
-};
-
 const megabytes = (value, digits) => unit(format(value, digits), "mb");
 
-const range = ([low, high], name) => unit(`${format(low, 0)}–${format(high, 0)}`, name);
+/** The least and the most of `values` as the page writes them, or one value when they're the same. */
+const span = (values, digits) => {
+    const [low, high] = [Math.min(...values), Math.max(...values)].map((value) => format(value, digits));
+    return low === high ? low : `${low}–${high}`;
+};
 
-const percent = (value) => words.percent(format(value, places.cpu(value)));
-
-/** CPU from `low` to `high`, or one value when the tables would show them the same. */
-const percentSpan = (low, high) =>
-    shown("cpu", low) === shown("cpu", high)
-        ? percent(low)
-        : words.percentRange(format(low, places.cpu(low)), format(high, places.cpu(high)));
-
-const list = (items) => new Intl.ListFormat(locale, { type: "conjunction" }).format(items);
+/** Milliseconds from `low` to `high`, in seconds: to one decimal where that keeps the ends above
+ * zero and apart, else to two. */
+function seconds([low, high]) {
+    const oneDecimal = Math.round(low / 100) > 0 && Math.round(low / 100) !== Math.round(high / 100);
+    return unit(span([low / 1000, high / 1000], oneDecimal ? 1 : 2), "s");
+}
 
 /** Text given once for both languages, or per language. */
 const text = (value) => (typeof value === "string" ? value : value[lang]);
@@ -187,14 +100,26 @@ const median = (values) => {
     return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
 };
 
-/** An app's CPU in real play: its median minute. */
+/** An app's CPU while playing: its median minute. */
 const playCpu = (app) => median(app.play.minutes);
 
-/** An ISO date (2026-09-26) as the page's language writes it. */
-function date(iso) {
-    const day = new Date(`${iso}T00:00:00Z`);
+/** The app's state after launch it is shown in, the one that needs least memory, and the one that
+ * needs most. */
+const launch = (app) => app.background.states.reduce((a, b) => (b.memory < a.memory ? b : a));
+const heaviest = (app) => app.background.states.reduce((a, b) => (b.memory > a.memory ? b : a));
+
+/** The days of `isos` (ISO dates), the first to the last, as the page's language writes them. */
+function period(isos) {
+    const days = [...new Set(isos)].sort().map((iso) => new Date(`${iso}T00:00:00Z`));
+    const [first, last] = [days[0], days[days.length - 1]];
     const dayMonth = new Intl.DateTimeFormat(locale, { day: "numeric", month: "long", timeZone: "UTC" });
-    return words.date(dayMonth.format(day), day.getUTCFullYear());
+    const year = (day) => day.getUTCFullYear();
+    if (days.length === 1) return words.date(dayMonth.format(first), year(first));
+    if (year(first) !== year(last)) {
+        return `${words.date(dayMonth.format(first), year(first))} – ${words.date(dayMonth.format(last), year(last))}`;
+    }
+    const from = first.getUTCMonth() === last.getUTCMonth() ? `${first.getUTCDate()}–` : `${dayMonth.format(first)} – `;
+    return words.date(`${from}${dayMonth.format(last)}`, year(last));
 }
 
 /** How many times `ours` `value` is, to one decimal; null when that rounds to 1 or less. */
@@ -205,17 +130,22 @@ function times(value, ours) {
     return words.times(format(rounded, whole ? 0 : 1), whole ? rounded : null);
 }
 
-/** PoE2 Oracle first, then the others by `key`, the least first. */
-const ordered = (apps, key) =>
-    [...apps].sort((a, b) => (a.id === "oracle" ? -1 : b.id === "oracle" ? 1 : key(a) - key(b)));
+/** The apps measured both ways: PoE2 Oracle first, then the others from the least memory after
+ * launch to the most. */
+function compared(apps) {
+    const measured = apps.filter((app) => app.background && app.play);
+    const ours = measured.find((app) => app.id === "oracle");
+    if (!ours) throw new Error("PoE2 Oracle isn't measured both ways");
+    const others = measured.filter((app) => app !== ours);
+    return [ours, ...others.sort((a, b) => launch(a).memory - launch(b).memory)];
+}
 
-/** A comparison's table, `kind` naming it for the style sheet. The roles keep it a table for screen
- * readers where a phone's layout makes its rows blocks: a browser drops the implicit ones with
- * `display`. */
-function table(kind, caption, headings, rows) {
+/** The comparison's table. The roles keep it a table for screen readers where a phone's layout
+ * makes its rows blocks: a browser drops the implicit ones with `display`. */
+function table(caption, headings, rows) {
     return h(
         "table",
-        { class: `bench-table bench-table--${kind}`, role: "table" },
+        { class: "bench-table", role: "table" },
         h("caption", null, caption),
         h(
             "thead",
@@ -230,42 +160,27 @@ function table(kind, caption, headings, rows) {
     );
 }
 
-/** A row: PoE2 Oracle's stands out, and a second state of the same app stays with its first. */
-const row = (mine, again, ...cells) =>
-    h(
-        "tr",
-        {
-            class: ["bench-row", mine && "bench-ours", again && "bench-again"].filter(Boolean).join(" "),
-            role: "row",
-        },
-        cells,
-    );
-
-/** The app's name, version and what it is built on, the build measured when the block names one,
- * and the app's own state when it has one; a second state of the same app repeats only its name. */
-const appCell = (app, { state, again = false, build } = {}) =>
+const appCell = (app) =>
     h(
         "th",
         { scope: "row", role: "rowheader", class: "bench-app" },
-        h("span", "bench-name", app.name, !again && h("span", "bench-version", ` ${app.version}`)),
-        !again && h("span", "bench-stack", text(app.stack)),
-        !again && build && h("span", "bench-build", words.build(build)),
-        state?.label && h("span", "bench-state", text(state.label)),
+        h("span", "bench-name", app.name, h("span", "bench-version", ` ${app.version}`)),
     );
 
-/** A bar `share` of the column's most long, its value beside it, and under it how many times
- * PoE2 Oracle's the value is, if more. */
-const barCell = (label, share, value, ratio) =>
+/** A bar `share` of the column's most long with its value beside it, and under them how many times
+ * PoE2 Oracle's the value is and the app's states, a line each, where they are known. */
+const barCell = (kind, label, share, value, ratio, states = []) =>
     h(
         "td",
-        { role: "cell", class: "bench-bars", "data-label": label },
+        { role: "cell", class: `bench-bars bench-${kind}`, "data-label": label },
         h(
             "span",
             "bench-track",
             h("span", { class: "bench-bar", "--share": share.toFixed(4) }),
-            h("span", "bench-value", value),
+            value && h("span", "bench-value", value),
         ),
         ratio && h("span", "bench-ratio", ratio),
+        states.map((state) => h("span", "bench-state", state)),
     );
 
 const processesCell = (label, count) =>
@@ -277,205 +192,102 @@ const processesCell = (label, count) =>
             { class: "bench-pips", "aria-hidden": "true" },
             Array.from({ length: count }, () => h("i")),
         ),
-        format(count, places.processes()),
+        format(count, 0),
     );
 
-const numberCell = (label, value) => h("td", { role: "cell", class: "bench-number", "data-label": label }, value);
-
-/** Real play: one row per app, the least CPU first, its bars each app's median minute scaled to the
- * most, then its lowest and highest minute; an app's state in those minutes, when it names one,
- * under its name. */
-function playChart(apps) {
-    const entries = ordered(
-        apps.filter((app) => app.play),
-        playCpu,
-    );
-    const ours = playCpu(entries.find((app) => app.id === "oracle"));
-    const most = Math.max(...entries.map(playCpu));
-    const w = words.play;
+/** One row per app: its memory after launch, the bars scaled to the most; its CPU while playing as
+ * how many times PoE2 Oracle's it is, the bars scaled the same way; and its processes. */
+function compareChart(apps) {
+    const entries = compared(apps);
+    const [ours, ...others] = entries;
+    const oursMemory = launch(ours).memory;
+    const oursCpu = playCpu(ours);
+    const mostMemory = Math.max(...entries.map((app) => launch(app).memory));
+    const mostCpu = Math.max(...entries.map(playCpu));
+    const leastCpu = others.every((app) => times(playCpu(app), oursCpu) !== null);
     return table(
-        "play",
-        w.caption,
-        [words.app, w.cpu, w.minutes],
+        words.caption,
+        [words.app, words.memory, words.cpu, words.processes],
         entries.map((app) => {
-            const mine = app.id === "oracle";
+            const mine = app === ours;
+            const state = launch(app);
+            const most = heaviest(app);
             const cpu = playCpu(app);
-            return row(
-                mine,
-                false,
-                appCell(app, { state: app.play, build: app.play.build }),
-                barCell(w.cpuCard, cpu / most, percent(cpu), mine ? null : times(cpu, ours)),
-                numberCell(w.minutes, percentSpan(Math.min(...app.play.minutes), Math.max(...app.play.minutes))),
-            );
-        }),
-    );
-}
-
-/** The controlled test: one row per app, the least CPU with the mouse moving first, its bars scaled
- * to the most. */
-function testChart(apps) {
-    const entries = ordered(
-        apps.filter((app) => app.test),
-        (app) => app.test.moving,
-    );
-    const ours = entries.find((app) => app.id === "oracle").test;
-    const most = Math.max(...entries.map((app) => app.test.moving));
-    const w = words.test;
-    return table(
-        "test",
-        w.caption,
-        [words.app, w.moving, w.still],
-        entries.map((app) => {
-            const mine = app.id === "oracle";
-            return row(
-                mine,
-                false,
-                appCell(app, { build: app.test.build }),
+            return h(
+                "tr",
+                { class: mine ? "bench-row bench-ours" : "bench-row", role: "row" },
+                appCell(app),
                 barCell(
-                    w.movingCard,
-                    app.test.moving / most,
-                    percent(app.test.moving),
-                    mine ? null : times(app.test.moving, ours.moving),
+                    "memory",
+                    words.memory,
+                    state.memory / mostMemory,
+                    megabytes(state.memory, 1),
+                    mine ? null : times(state.memory, oursMemory),
+                    most === state
+                        ? []
+                        : [text(state.label), words.upTo(megabytes(most.memory, 0), text(most.label))],
                 ),
-                numberCell(w.stillCard, percent(app.test.still)),
-            );
-        }),
-    );
-}
-
-/** The game in the background: one row per app and state, the least memory first, its bars scaled
- * to the most. */
-function backgroundChart(apps) {
-    const entries = ordered(
-        apps.filter((app) => app.background),
-        (app) => app.background.states[0].memory,
-    );
-    const ours = entries.find((app) => app.id === "oracle").background.states[0];
-    const rows = entries.flatMap((app) =>
-        app.background.states.map((state, index) => ({ app, state, again: index > 0 })),
-    );
-    const most = Math.max(...rows.map(({ state }) => state.memory));
-    const w = words.background;
-    return table(
-        "background",
-        w.caption,
-        [words.app, w.memory, w.processes, w.cpu, w.gpu],
-        rows.map(({ app, state, again }) => {
-            const mine = app.id === "oracle";
-            return row(
-                mine,
-                again,
-                appCell(app, { state, again, build: app.background.build }),
                 barCell(
-                    w.memory,
-                    state.memory / most,
-                    megabytes(state.memory, places.memory()),
-                    mine ? null : times(state.memory, ours.memory),
+                    "cpu",
+                    words.cpu,
+                    cpu / mostCpu,
+                    mine ? leastCpu && words.least : (times(cpu, oursCpu) ?? words.notMore),
+                    null,
+                    app.play.label ? [text(app.play.label)] : [],
                 ),
-                processesCell(w.processes, state.processes),
-                numberCell(w.cpuCard, percent(state.cpu)),
-                numberCell(w.gpu, megabytes(state.gpu, places.gpu())),
+                processesCell(words.processes, state.processes),
             );
         }),
     );
 }
 
-const charts = { play: playChart, test: testChart, background: backgroundChart };
+const charts = { compare: compareChart };
 
-/** How PoE2 Oracle's CPU, `valueOf` an app, compares with `others`', as the tables show them,
- * `when` opening the sentence: the apps more than a step of its last digit below it, else the apps
- * within a step as about even with it, else PoE2 Oracle as the least. */
-function compare(when, valueOf, ours, others) {
-    const hundredths = (value) => Math.round(shown("cpu", value) * 100);
-    const mine = hundredths(valueOf(ours));
-    const step = places.cpu(valueOf(ours)) === 2 ? 1 : 100;
-    const least = (a, b) => valueOf(a) - valueOf(b);
-    const lower = others.filter((app) => hundredths(valueOf(app)) < mine - step).sort(least);
-    const even = others.filter((app) => Math.abs(hundredths(valueOf(app)) - mine) <= step).sort(least);
-    const w = words.compare;
-    const value = (app) => percent(valueOf(app));
-    const names = (apps) => list(apps.map((app) => app.name));
-    const values = (apps) => list(apps.map(value));
-    if (lower.length) return w.lower(when, names(lower), values(lower), value(ours));
-    if (even.length) return w.even(when, names([ours, ...even]), values([ours, ...even]));
-    const rest = others.map(valueOf);
-    return w.least(when, value(ours), percentSpan(Math.min(...rest), Math.max(...rest)));
+/** How many times less PoE2 Oracle needs of `what` than the others, `ratios` being theirs over
+ * its: whole times, the least to the most. Empty, and said in the console, when one of them is under
+ * twice: the claim would need other words. */
+function less(what, ratios) {
+    if (ratios.some((ratio) => ratio < 2)) {
+        console.error(`bench: another app needs less than twice PoE2 Oracle's ${what}; reword the claim`);
+        return "";
+    }
+    const whole = ratios.map(Math.round);
+    return words.less(span(whole, 0), Math.max(...whole));
 }
 
-/** Each metric of the background comparison where another app needs less than PoE2 Oracle, as the
- * table shows them (`shown`), with the apps, the one that needs least first. */
-function backgroundLower(apps) {
-    const entries = apps.filter((app) => app.background);
-    const ours = entries.find((app) => app.id === "oracle").background.states[0];
-    const w = words.background;
-    const parts = Object.entries(w.metrics).flatMap(([metric, name]) => {
-        const names = entries
-            .filter((app) => app.id !== "oracle")
-            .flatMap((app) => {
-                const states = app.background.states;
-                const below = states.filter((state) => shown(metric, state[metric]) < shown(metric, ours[metric]));
-                if (below.length === 0) return [];
-                if (below.length === states.length) {
-                    return [{ name: app.name, least: Math.min(...below.map((state) => state[metric])) }];
-                }
-                return below.map((state) => ({ name: `${app.name}, ${text(state.label)}`, least: state[metric] }));
-            })
-            .sort((a, b) => a.least - b.least)
-            .map(({ name }) => name);
-        return names.length ? [`${name} (${list(names)})`] : [];
-    });
-    return parts.length ? w.lower(list(parts)) : "";
-}
-
-/** A comparison's "Measured on <date>" over `entries`, `of` giving an app's date; PoE2 Oracle's is
- * named apart once it differs from the others'. */
-function measured(entries, of) {
-    const ours = of(entries.find((app) => app.id === "oracle"));
-    const others = [...new Set(entries.filter((app) => app.id !== "oracle").map(of))];
-    return others.length === 1 && others[0] === ours
-        ? words.measured(date(ours))
-        : words.measuredApart(date(ours), list(others.map(date)));
+/** The others' process counts, the least to the most; empty, and said in the console, unless each
+ * runs more processes than PoE2 Oracle. */
+function othersProcesses(ours, others) {
+    const counts = others.map((app) => launch(app).processes);
+    if (counts.some((count) => count <= ours)) {
+        console.error("bench: another app runs no more processes than PoE2 Oracle; reword the claim");
+        return "";
+    }
+    return span(counts, 0);
 }
 
 function values(apps, facts) {
-    const oracle = apps.find((app) => app.id === "oracle");
-    const playing = apps.filter((app) => app.play);
-    const tested = apps.filter((app) => app.test);
-    const background = apps.filter((app) => app.background);
+    const entries = compared(apps);
+    const [ours, ...others] = entries;
+    const state = launch(ours);
     return {
-        memory: megabytes(oracle.background.states[0].memory, places.memory()),
-        processes: format(oracle.background.states[0].processes, places.processes()),
-        play_cpu: percent(playCpu(oracle)),
-        play_summary: compare(
-            words.play.when,
-            playCpu,
-            oracle,
-            playing.filter((app) => app !== oracle),
+        memory: megabytes(state.memory, 1),
+        processes: format(state.processes, 0),
+        memory_less: less(
+            "memory after launch",
+            others.map((app) => launch(app).memory / state.memory),
         ),
-        test_summary: ["moving", "still"]
-            .map((metric) =>
-                compare(
-                    words.test.when[metric],
-                    (app) => app.test[metric],
-                    oracle,
-                    tested.filter((app) => app !== oracle),
-                ),
-            )
-            .join(" "),
-        play_measured: measured(playing, (app) => app.play.measured),
-        test_measured: measured(tested, (app) => app.test.measured),
-        background_measured: measured(background, (app) => app.background.measured),
-        background_lower: backgroundLower(apps),
+        cpu_less: less(
+            "CPU while playing",
+            others.map((app) => playCpu(app) / playCpu(ours)),
+        ),
+        others_processes: othersProcesses(state.processes, others),
+        measured: period(entries.flatMap((app) => [app.background.measured, app.play.measured])),
         ready: unit(format(facts.ready_s, 2), "s"),
-        item_text: unit(format(facts.item_text_ms, 0), "ms"),
-        processing: unit(format(facts.processing_ms, 0), "ms"),
-        exchange: range(facts.exchange_range_ms, "ms"),
-        listings: unit(format(facts.listings_s, 2), "s"),
-        listings_trade_site: unit(format(facts.listings_trade_site_s, 2), "s"),
+        panel: seconds(facts.panel_ms),
+        listings: seconds(facts.listings_ms),
         installer: megabytes(facts.installer_bytes / 2 ** 20, 0),
-        exe: megabytes(facts.exe_bytes / 2 ** 20, 0),
-        version: facts.version,
-        facts_measured: date(facts.measured),
+        facts_measured: period(facts.measured),
     };
 }
 

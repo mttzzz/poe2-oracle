@@ -74,11 +74,13 @@ The other counters, from the same readings, the median of the three minutes:
 | PoE Overlay II + Overwolf, main window open | 9 / 327 | 372.5 | 38.8 |
 | Exiled Exchange 2 | 4 / 103 | 71.0 | 0.0 |
 
-- The memory column isn't a comparison. Exiled Exchange 2 and POE2 Currency Overlay had been running
-  since 08:09–08:10, and since the morning Windows had trimmed their working sets: Exiled Exchange 2
-  from 90 to 71 MB, POE2 Currency Overlay from 107 to 41 MB. PoE2 Oracle had been running since
-  10:20, and by its log the owner checked prices in it six times from 10:20 to 10:34, none of them
-  in a measured minute.
+- The memory column isn't a comparison. Windows trims the memory of programs that sit idle, so over
+  a session the numbers in Task Manager's Memory column change as you play. Exiled Exchange 2 and
+  POE2 Currency Overlay had been running since 08:09–08:10, and since the morning Windows had
+  trimmed Exiled Exchange 2 from 90 to 71 MB and POE2 Currency Overlay from 107 to 41 MB. PoE2
+  Oracle had been running since 10:20, and by its log the owner checked prices in it six times from
+  10:20 to 10:34, none of them in a measured minute. The site compares memory a few minutes after
+  each app's launch: see [With the game in the background](#with-the-game-in-the-background).
 
 ### Controlled test
 
@@ -189,6 +191,8 @@ Measured on 26 September 2026, in three sessions, on the PC described under
 [How it was measured](#how-it-was-measured). Path of Exile 2 was open in the background and in
 view, and nobody played or checked a price. The other apps ran one at a time, each next to the game
 and a build of PoE2 Oracle; the build the site shows was measured on its own, in the same state.
+The site's comparison shows this memory as memory after launch: each app was measured a few minutes
+after it started, waiting for a price check.
 
 | App | Version | Built on | Measured at |
 |---|---|---|---|
@@ -291,6 +295,12 @@ on 26 September 2026: 5 in the log of one run and 13 in the next.
 - The log doesn't note the time from the hotkey to the copy the app sends, nor the moment the panel
   shows on screen. Those, from the key press to the panel and the result on screen, were recorded
   on 27 September: see [Price checks](#price-checks).
+- The build of 786f69b times each check in its log by its own clock, from the key press to the
+  moment it shows the panel and draws the listings, so the screen shows each a frame or so later.
+  Over the six checks the PC's owner made while playing on 27 September (see
+  [Real play](#real-play)), the panel came 36–66 ms after the key press and the listings 628–788 ms
+  after it, 591–743 ms of that on the search and the fetch from pathofexile.com. The site gives
+  these times.
 
 **Start-up.** The app was ready to price 0.27 s after its process started: its first log line came
 36 ms after the process, and "ready to price items" 233 ms after that. The start before, right after

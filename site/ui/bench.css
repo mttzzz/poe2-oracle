@@ -1,14 +1,11 @@
 /*
- * PoE2 Oracle next to other price checkers (bench.js): three tables, each with a bar chart in its
- * first measured column, in the site's colours (style.css). --play is CPU in real play (the bars,
- * each app's median minute) and its lowest and highest minute; --test is CPU in the controlled test
- * with the mouse moving (the bars) and at rest; --background is memory (the bars), processes, idle
- * CPU and GPU memory with the game in the background. On a phone each row becomes a card: the app,
- * its bar, then the other columns under their labels.
+ * PoE2 Oracle next to other price checkers (bench.js): one table of the app, its memory after launch
+ * and its CPU load while playing, both as bar charts, and its processes, in the site's colours
+ * (style.css). On a phone each row becomes a card: the app, then each column under its label.
  */
 
 .bench {
-    margin: 1rem 0 0;
+    margin: 1.5rem 0 0;
     padding: 1.25rem 1.5rem 1.1rem;
     border: 1px solid var(--border);
     border-radius: 4px;
@@ -30,7 +27,7 @@
     font-variant-numeric: tabular-nums;
 }
 
-/* Said by a screen reader; the figure's heading says it on screen. */
+/* Said by a screen reader; the claims above the table say it on screen. */
 .bench-table caption {
     position: absolute;
     width: 1px;
@@ -44,7 +41,7 @@
 .bench-table td {
     padding: 0.8rem 0.75rem;
     text-align: left;
-    vertical-align: middle;
+    vertical-align: top;
 }
 
 .bench-table thead th {
@@ -58,39 +55,16 @@
     vertical-align: bottom;
 }
 
-.bench-table--play thead th:nth-child(1),
-.bench-table--test thead th:nth-child(1),
-.bench-table--background thead th:nth-child(1) {
-    width: 23%;
+.bench-table thead th:nth-child(1) {
+    width: 22%;
 }
 
-.bench-table--play thead th:nth-child(3),
-.bench-table--test thead th:nth-child(3) {
-    width: 17%;
-    text-align: right;
-}
-
-.bench-table--background thead th:nth-child(3) {
-    width: 12%;
-}
-
-.bench-table--background thead th:nth-child(4),
-.bench-table--background thead th:nth-child(5) {
-    width: 11%;
-    text-align: right;
+.bench-table thead th:nth-child(4) {
+    width: 15%;
 }
 
 .bench-row + .bench-row {
     border-top: 1px solid var(--border);
-}
-
-/* A second state of the same app stays with its first. */
-.bench-row + .bench-again {
-    border-top: 0;
-}
-
-.bench-again > * {
-    padding-top: 0.2rem;
 }
 
 .bench-ours {
@@ -99,11 +73,10 @@
 
 .bench-app {
     font-weight: 400;
-    line-height: 1.35;
+    line-height: 1.5;
 }
 
 .bench-name {
-    display: block;
     color: var(--text);
     font-weight: 600;
 }
@@ -112,47 +85,28 @@
     color: var(--gold);
 }
 
-.bench-again .bench-name {
-    color: var(--text-dim);
-    font-weight: 400;
-}
-
 .bench-version {
     color: var(--text-dim);
     font-weight: 400;
 }
 
-.bench-stack,
-.bench-build,
-.bench-state {
-    display: block;
-    font-size: 0.85rem;
-}
-
-.bench-stack,
-.bench-build {
-    color: var(--text-muted);
-}
-
-/* The build of PoE2 Oracle a comparison measured: the three were measured with different ones. */
-.bench-build {
-    font-size: 0.8rem;
-}
-
-.bench-state {
-    color: var(--text-dim);
-}
-
+/* --room is what the value beside the bar needs; CPU's value is a ratio in words. */
 .bench-track {
+    --room: 5.5rem;
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    min-height: 1.5em;
+}
+
+.bench-cpu .bench-track {
+    --room: 9.5rem;
 }
 
 /* The bar's length is the app's share of the column's most, of the room its value leaves. */
 .bench-bar {
     flex: none;
-    width: calc((100% - 5.5rem) * var(--share));
+    width: calc((100% - var(--room)) * var(--share));
     min-width: 3px;
     height: 1rem;
     border-radius: 2px;
@@ -173,15 +127,26 @@
     font-weight: 600;
 }
 
-.bench-ratio {
+.bench-ratio,
+.bench-state {
     display: block;
     margin-top: 0.1rem;
-    color: var(--text-muted);
     font-size: 0.85rem;
+    line-height: 1.35;
+}
+
+.bench-ratio {
+    color: var(--text-muted);
     white-space: nowrap;
 }
 
+/* The app's state, where its numbers depend on it. */
+.bench-state {
+    color: var(--text-dim);
+}
+
 .bench-processes {
+    line-height: 1.5;
     white-space: nowrap;
 }
 
@@ -203,15 +168,7 @@
     background: var(--gold);
 }
 
-.bench-number {
-    white-space: nowrap;
-}
-
-.bench-table td.bench-number {
-    text-align: right;
-}
-
-@media (max-width: 52rem) {
+@media (max-width: 60rem) {
     .bench {
         padding: 0.25rem 0.5rem 0.9rem;
     }
@@ -235,25 +192,28 @@
         clip-path: inset(50%);
     }
 
+    /* The app and its processes share the card's first line; the bars take a line each. */
     .bench-table tr {
         display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 0.5rem 0.75rem;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 0.6rem 1rem;
         padding: 0.9rem 0.5rem;
     }
 
     .bench-table th,
-    .bench-table td,
-    .bench-again > * {
+    .bench-table td {
         display: block;
         padding: 0;
     }
 
-    .bench-app,
-    .bench-bars,
-    .bench-table--play .bench-number,
-    .bench-table--test .bench-number {
+    .bench-bars {
         grid-column: 1 / -1;
+    }
+
+    .bench-processes {
+        grid-row: 1;
+        grid-column: 2;
+        text-align: right;
     }
 
     .bench-table td[data-label]::before {
@@ -262,14 +222,5 @@
         margin-bottom: 0.1rem;
         color: var(--text-muted);
         font-size: 0.8rem;
-        white-space: normal;
-    }
-
-    .bench-table td.bench-number {
-        text-align: left;
-    }
-
-    .bench-row + .bench-again {
-        padding-top: 0.25rem;
     }
 }
