@@ -27,7 +27,7 @@
 //! (`platform::lip_watch`) -- twenty times a second while the player moves the mouse or presses
 //! keys, thinning out to every two seconds once they keep still (`platform::lip_schedule`) -- so
 //! a plate steps aside the moment a tooltip covers its rail and comes back the moment it goes,
-//! and the bar is read off the same frames, every half second at the most: the sampler takes
+//! and the bar is read off the same frames, at about the sampler's own pace: the sampler takes
 //! that reading, and reads no pixels itself. Otherwise the sampler's look decides,
 //! a single miss let pass: behind another window the game still shows a tooltip under the
 //! cursor, and its plate steps aside two to four seconds later, back within two once it goes.

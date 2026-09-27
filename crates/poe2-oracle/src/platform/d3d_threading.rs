@@ -11,7 +11,7 @@
 //! that thread sleep (8 times a second), and six for each of the UI thread's, whose paints are all
 //! the work GPUI's device gets. The lip watcher's device (`lip_watch`, made each time it starts
 //! watching) came with 17 threads more, which took 119 ms a minute while it watched, measured the
-//! same day.
+//! same day; the watcher shares GPUI's device now wherever it can.
 //!
 //! `D3D11_CREATE_DEVICE_PREVENT_INTERNAL_THREADING_OPTIMIZATIONS` asks for a device without them:
 //! Direct3D hands it to the driver's `CreateDevice` as
@@ -25,15 +25,16 @@
 //! So this executable's import of `D3D11CreateDevice` is pointed at `create_device`, the way
 //! `redraw_filter` points `RedrawWindow`'s: it adds the flag ([`first_try`]) to GPUI's device,
 //! made as the application is built and again after a lost device (`gpui_windows`'
-//! `directx_devices.rs`), and to the lip watcher's. A device the driver won't make with it is
-//! made as asked. A software device -- WARP, or Microsoft's Basic Render Driver on a machine
-//! without a graphics card -- is left as asked: there the flag moves the rasterising itself onto
-//! the calling thread (Firefox leaves WARP out too).
+//! `directx_devices.rs`), and to a device of the lip watcher's own, where it can't share GPUI's.
+//! A device the driver won't make with it is made as asked. A software device -- WARP, or
+//! Microsoft's Basic Render Driver on a machine without a graphics card -- is left as asked: there
+//! the flag moves the rasterising itself onto the calling thread (Firefox leaves WARP out too).
 //!
 //! [`THREADING_ENV`]`=1` in the app's environment leaves the driver its threads: the other side
-//! of a comparison. Either way the hook hands GPUI's device to `gpu_memory`, which flushes and
-//! trims it once a window let go of its memory. `install` runs before GPUI starts, which makes
-//! its device while the application is built (`platform.rs`' `WindowsPlatform::new`).
+//! of a comparison. Either way the hook hands GPUI's device to `gpu_memory`, which turns on its
+//! multithread protection for the lip watcher to share it, and flushes and trims it once a window
+//! let go of its memory. `install` runs before GPUI starts, which makes its device while the
+//! application is built (`platform.rs`' `WindowsPlatform::new`).
 
 use std::ffi::OsStr;
 

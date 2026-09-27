@@ -1,6 +1,7 @@
 //! The lip watcher's schedule (`platform::lip_watch`, on Windows): when it watches the HUD's
-//! rails, when it next looks at them, and when it reads a look back. Kept apart from the Windows
-//! calls that feed it, so it builds and is tested on every target.
+//! rails, when it next looks at them, and when it reads a look back; and whether it gives up on
+//! duplicating the desktop on GPUI's Direct3D device ([`gpui_device_to_blame`]). Kept apart from
+//! the Windows calls that feed it, so it builds and is tested on every target.
 //!
 //! It watches while the game is in front and not minimised, and for [`LINGER`] after it leaves
 //! the front. Nothing is polled for that: Windows reports each change of the foreground window
@@ -28,9 +29,11 @@
 //! switches a look -- while it looked every 250 ms from a second after the last input on, and
 //! asked Windows every 100 ms when that input was. Now a still player's input ends the watcher's
 //! wait itself (raw input, `lip_watch`); only where it can't does the wait ask Windows every
-//! [`INPUT_POLL`] ([`wait_until`]). And the watcher never waits for the GPU: a look's copy is read
-//! back [`READ_AFTER`] after it, and later and later again while the GPU hasn't made it
-//! ([`read_retry`]).
+//! [`INPUT_POLL`] ([`wait_until`]). And the watcher never waits for the GPU, nor for a frame: a
+//! look's copy is read back once the GPU signals it has made it -- where it can't, [`READ_AFTER`]
+//! after the look, and later and later again while the GPU hasn't made it ([`read_due`]) -- and a
+//! new duplication is looked at every [`FIRST_FRAME_RETRY`] for its first frame
+//! ([`first_frame_look`]).
 
 use std::time::{Duration, Instant};
 
@@ -46,16 +49,22 @@ pub const SETTLE: Duration = Duration::from_millis(250);
 /// How long after the desktop couldn't be duplicated -- the secure desktop of a UAC prompt,
 /// another program's exclusive fullscreen -- it's tried again.
 pub const RETRY_AFTER: Duration = Duration::from_secs(3);
-/// How long a new duplication's first look waits for its first frame -- the desktop as it is --
-/// where every later look takes a frame only if one is there.
+/// How long a new duplication is looked at every `FIRST_FRAME_RETRY` till it has its first frame
+/// -- the desktop as it is, which comes with the desktop's next composition -- before its looks
+/// keep to their own pace. No look waits for a frame: on GPUI's Direct3D device, which the watcher
+/// shares where it can (`lip_watch`), `AcquireNextFrame` holds the device's lock while it waits,
+/// and GPUI's UI thread with it.
 pub const FIRST_FRAME_WAIT: Duration = Duration::from_millis(100);
+/// How often a new duplication is looked at for its first frame, for `FIRST_FRAME_WAIT`.
+pub const FIRST_FRAME_RETRY: Duration = Duration::from_millis(5);
 /// The least time between two looks at the desktop while the player moves the mouse or presses
 /// keys. The game presents far more often: a look at each of its frames cost 4 % of a core,
 /// measured 2026-09-24 on the test machine at 77 frames a second. 50 ms, not the 25 of before: a
-/// look waits for nothing now and is read back `READ_AFTER` after it, so the watcher reads a
-/// tooltip over a rail within about 55 ms of the frame that shows it, 30 on average, and the
-/// plate is gone at the next composition -- under the tenth of a second within which a response
-/// still reads as instant -- at half the looks' cost; 25 ms would read it within 30 and 17.
+/// look waits for nothing now and is read back once the GPU has made its copy, so the watcher
+/// reads a tooltip over a rail within about 55 ms of the frame that shows it, 30 on average, and
+/// the plate is gone at the next composition -- under the tenth of a second within which a
+/// response still reads as instant -- at half the looks' cost; 25 ms would read it within 30 and
+/// 17.
 pub const LOOK_INTERVAL: Duration = Duration::from_millis(50);
 /// How long after their last input the player still counts as moving: the looks keep to
 /// `LOOK_INTERVAL` through the game's next frames, the first of which shows a tooltip for the item
@@ -71,18 +80,40 @@ pub const STILL_LOOK_INTERVAL: Duration = Duration::from_millis(250);
 pub const UNCOVER_WATCH: Duration = Duration::from_secs(10);
 /// The longest time between two looks while it watches.
 pub const SAFETY_NET: Duration = Duration::from_secs(2);
-/// How long after a look its copy is first tried to be read back: the GPU makes it behind the
-/// game's own work.
+/// How long after a look its copy is first tried to be read back where the GPU doesn't signal
+/// that it has made it: the GPU makes it behind the game's own work.
 pub const READ_AFTER: Duration = Duration::from_millis(4);
-/// How often a look reads the experience bar too: the sampler takes a reading every two seconds,
-/// and a reading this old is as good as its own.
-pub const BAR_EVERY: Duration = Duration::from_millis(500);
+/// How long after a look its copy is tried to be read back if the GPU, asked to signal once it has
+/// made it, hasn't yet: a signal lost, or late behind a game that keeps the GPU busy, holds the
+/// looks up no longer.
+pub const SIGNAL_WAIT: Duration = LOOK_INTERVAL;
+/// How soon a copy is tried again when its own signal found it not readable yet: the GPU has made
+/// it, and `Map` knows a moment later.
+pub const SIGNAL_LAG: Duration = Duration::from_millis(1);
+/// How often a look reads the experience bar too: a little under the two seconds of the XP
+/// sampler (`ui::xp_overlay`), which alone takes the reading, so that while the player moves -- a
+/// look every `LOOK_INTERVAL` -- each sample finds one it hasn't taken yet. Every half second
+/// before, the bar's reading cost a third copy a look, `xp_bar::shows_the_game`'s check and
+/// `read_fill` four times as often, for readings nothing took.
+pub const BAR_EVERY: Duration = Duration::from_millis(1900);
 /// How often a still player is asked after -- when their last input was (`GetLastInputInfo`) --
 /// where their input can't wake the watcher.
 pub const INPUT_POLL: Duration = Duration::from_millis(100);
 /// How much later than raw input was asked for, and how long ago, input Windows saw has to be to
 /// tell that its raw input never came ([`input_missed`]).
 pub const INPUT_GRACE: Duration = Duration::from_millis(100);
+/// `E_ACCESSDENIED`, as duplicating the desktop fails while the secure desktop is up: a UAC
+/// prompt, the lock screen.
+pub const E_ACCESSDENIED: i32 = 0x8007_0005_u32 as i32;
+/// `DXGI_ERROR_NOT_CURRENTLY_AVAILABLE`, as duplicating the desktop fails while another program
+/// is in exclusive fullscreen, or as many duplications are made as Windows makes at once.
+pub const DXGI_ERROR_NOT_CURRENTLY_AVAILABLE: i32 = 0x887A_0022_u32 as i32;
+/// `DXGI_ERROR_UNSUPPORTED`, as duplicating the desktop fails in a desktop mode duplication can't
+/// take.
+pub const DXGI_ERROR_UNSUPPORTED: i32 = 0x887A_0004_u32 as i32;
+/// `DXGI_ERROR_SESSION_DISCONNECTED`, as duplicating the desktop fails while the session is
+/// disconnected.
+pub const DXGI_ERROR_SESSION_DISCONNECTED: i32 = 0x887A_0028_u32 as i32;
 
 /// Whether the watcher watches: while it's given a game, the game is in front and not minimised
 /// or left the front less than `LINGER` ago, and the desktop wasn't found impossible to duplicate
@@ -222,6 +253,78 @@ pub fn read_retry(misses: u32) -> Duration {
     READ_AFTER
         .saturating_mul(1 << misses.min(16))
         .min(LOOK_INTERVAL)
+}
+
+/// When the oldest copy still waiting to be read back -- its look at `look`, `signalled` whether
+/// the GPU is to signal once it has made it -- is next tried on the timer, `misses` tries having
+/// found it not made yet ([`read_missed`]), the last at `now`, and `early` whether that one was
+/// brought by the copy's own signal. Before any, `SIGNAL_WAIT` after the look where a signal is to
+/// come -- the signal itself ends the watcher's wait -- and `READ_AFTER` after it where none is;
+/// `SIGNAL_LAG` after a signal that came a moment early; else later and later ([`read_retry`]).
+pub fn read_due(look: Instant, signalled: bool, misses: u32, early: bool, now: Instant) -> Instant {
+    if early {
+        now + SIGNAL_LAG
+    } else if misses == 0 {
+        look + if signalled { SIGNAL_WAIT } else { READ_AFTER }
+    } else {
+        now + read_retry(misses)
+    }
+}
+
+/// Whether a try at reading back at `now` that found the oldest copy waiting -- its look at
+/// `look`, `signalled` whether the GPU is to signal once it has made it -- not made yet counts as
+/// a miss, the timer's tries coming later and later from then on ([`read_due`]). One the timer
+/// brought counts from the copy's own first try on, not one due for an older copy. One the GPU's
+/// signal brought (`by_signal`) counts if the signal was the copy's own, which came a moment
+/// before the copy could be read. Where the GPU signals with a fence, `made` is whether the fence
+/// says the copy is made, and that tells; elsewhere, a try that read older copies first
+/// (`read_older`) had their signal. A signal for an older copy, or for one the timer read already,
+/// leaves the copy to its own.
+pub fn read_missed(
+    look: Instant,
+    signalled: bool,
+    by_signal: bool,
+    made: Option<bool>,
+    read_older: bool,
+    now: Instant,
+) -> bool {
+    if by_signal {
+        made.unwrap_or(!read_older)
+    } else {
+        now >= read_due(look, signalled, 0, false, now)
+    }
+}
+
+/// When a new duplication, opened at `opened` and not given a frame yet, is looked at after a look
+/// at `last_look`, the looks' own pace ([`next_look`]) having the next at `paced`: every
+/// `FIRST_FRAME_RETRY` for `FIRST_FRAME_WAIT`, then at that pace -- a desktop that composes
+/// nothing new gives no frame to try for.
+pub fn first_frame_look(opened: Instant, last_look: Instant, paced: Instant) -> Instant {
+    let retry = last_look + FIRST_FRAME_RETRY;
+    if retry <= opened + FIRST_FRAME_WAIT {
+        retry.min(paced)
+    } else {
+        paced
+    }
+}
+
+/// Whether duplicating the game's monitor on GPUI's Direct3D device, which the watcher shares
+/// where it can (`lip_watch`), failed with `code`, an HRESULT, for a reason of the device's own,
+/// `lost` whether the device is lost since: the watcher makes a device of its own from then on.
+/// Not while it's lost: GPUI makes a new one, which the next try takes. Nor for what a device of
+/// the watcher's own would fail on too -- [`E_ACCESSDENIED`],
+/// [`DXGI_ERROR_NOT_CURRENTLY_AVAILABLE`], [`DXGI_ERROR_UNSUPPORTED`],
+/// [`DXGI_ERROR_SESSION_DISCONNECTED`] -- which is tried again on GPUI's device after
+/// `RETRY_AFTER`. Anything else is the device's: `E_INVALIDARG`, which DXGI gives for a device it
+/// won't duplicate on, or what nobody foresaw.
+pub fn gpui_device_to_blame(code: i32, lost: bool) -> bool {
+    let everywhere = [
+        E_ACCESSDENIED,
+        DXGI_ERROR_NOT_CURRENTLY_AVAILABLE,
+        DXGI_ERROR_UNSUPPORTED,
+        DXGI_ERROR_SESSION_DISCONNECTED,
+    ];
+    !lost && !everywhere.contains(&code)
 }
 
 /// Whether the latest input Windows saw, at `last_input`, never woke the watcher by `now`, raw
@@ -514,6 +617,119 @@ mod tests {
             tries += 1;
         }
         assert!(tries <= 5, "{tries}");
+    }
+
+    /// How long after its look a copy the GPU makes `made` after it is read back by the timer
+    /// alone ([`read_due`]), `signalled` whether the timer waits for a signal first.
+    fn read_on_timer(made: Duration, signalled: bool) -> Duration {
+        let look = Instant::now();
+        let mut misses = 0;
+        let mut at = read_due(look, signalled, misses, false, look);
+        while at < look + made {
+            misses += 1;
+            at = read_due(look, signalled, misses, false, at);
+        }
+        at - look
+    }
+
+    #[test]
+    fn a_copy_the_gpu_signals_is_left_to_its_signal_with_the_timer_behind_it() {
+        let look = Instant::now();
+        // A copy the GPU won't signal is tried `READ_AFTER` after its look, then later and later.
+        assert_eq!(read_due(look, false, 0, false, look), look + READ_AFTER);
+        let tried = look + READ_AFTER;
+        assert_eq!(
+            read_due(look, false, 1, false, tried),
+            tried + read_retry(1)
+        );
+        // One it will is left to the signal: no try on the timer before `SIGNAL_WAIT`...
+        assert_eq!(
+            read_due(look, true, 0, false, look + 2 * MS),
+            look + SIGNAL_WAIT
+        );
+        // ...and a signal that never comes costs that much at most: a copy made by then is read
+        // then, a later one by the tries after.
+        assert_eq!(read_on_timer(2 * MS, true), SIGNAL_WAIT);
+        let slow = SIGNAL_WAIT + 30 * MS;
+        let read = read_on_timer(slow, true);
+        assert!(read >= slow && read < slow + LOOK_INTERVAL, "{read:?}");
+    }
+
+    #[test]
+    fn only_a_try_meant_for_the_copy_counts_as_a_miss() {
+        let look = Instant::now();
+        let by_timer = |signalled, at| read_missed(look, signalled, false, None, false, at);
+        // The timer's try for an older copy, before this one's own first: no miss; its own
+        // first try on, a miss...
+        assert!(!by_timer(false, look + MS));
+        assert!(by_timer(false, look + READ_AFTER));
+        // ...and for a copy the GPU signals, from `SIGNAL_WAIT` on.
+        assert!(!by_timer(true, look + READ_AFTER));
+        assert!(by_timer(true, look + SIGNAL_WAIT));
+        // A try the GPU's signal brought counts if the signal was the copy's own -- it came a
+        // moment before the copy could be read, which is tried again at once, near enough, not
+        // at `SIGNAL_WAIT`. Where there's a fence, the fence tells whose it was, whatever the try
+        // read first...
+        let at = look + 2 * MS;
+        let by_signal = |made, read_older| read_missed(look, true, true, made, read_older, at);
+        assert!(by_signal(Some(true), true));
+        assert_eq!(read_due(look, true, 1, true, at), at + SIGNAL_LAG);
+        assert!(!by_signal(Some(false), false));
+        // ...and without one, a try that read nothing had the copy's signal, one that read older
+        // copies first had theirs.
+        assert!(by_signal(None, false));
+        assert!(!by_signal(None, true));
+    }
+
+    #[test]
+    fn a_new_duplication_is_looked_at_often_for_its_first_frame_then_at_its_pace() {
+        let opened = Instant::now();
+        // A still player: their looks two seconds apart.
+        let mut looks = vec![Duration::ZERO];
+        let mut at = opened;
+        while at < opened + Duration::from_secs(10) {
+            at = first_frame_look(opened, at, at + SAFETY_NET);
+            looks.push(at - opened);
+        }
+        let gaps = gaps(&looks);
+        let retries = looks
+            .iter()
+            .filter(|&&look| look <= FIRST_FRAME_WAIT)
+            .count();
+        // Every `FIRST_FRAME_RETRY` while `FIRST_FRAME_WAIT` lasts...
+        assert!(retries as u128 > FIRST_FRAME_WAIT.as_millis() / FIRST_FRAME_RETRY.as_millis());
+        assert!(
+            gaps[..retries - 1]
+                .iter()
+                .all(|&gap| gap == FIRST_FRAME_RETRY)
+        );
+        // ...then at their pace: a desktop that composes nothing new isn't tried that often for
+        // long.
+        assert!(gaps[retries - 1..].iter().all(|&gap| gap == SAFETY_NET));
+        // A look the pace brings sooner stands: input since the last look.
+        assert_eq!(first_frame_look(opened, opened, opened), opened);
+    }
+
+    #[test]
+    fn only_a_failure_of_gpuis_device_itself_gives_up_sharing_it() {
+        // What a device of the watcher's own would fail on too, tried again on GPUI's: the secure
+        // desktop, another program's exclusive fullscreen or the duplication limit, a desktop mode
+        // duplication can't take, a disconnected session.
+        for code in [
+            E_ACCESSDENIED,
+            DXGI_ERROR_NOT_CURRENTLY_AVAILABLE,
+            DXGI_ERROR_UNSUPPORTED,
+            DXGI_ERROR_SESSION_DISCONNECTED,
+        ] {
+            assert!(!gpui_device_to_blame(code, false), "{code:#010X}");
+        }
+        // `E_INVALIDARG`, DXGI's word for a device it won't duplicate on, and what nobody foresaw
+        // (`E_FAIL`) are the device's...
+        for code in [0x8007_0057_u32 as i32, 0x8000_4005_u32 as i32] {
+            assert!(gpui_device_to_blame(code, false), "{code:#010X}");
+            // ...but not while it's lost: GPUI makes a new one, which the next try takes.
+            assert!(!gpui_device_to_blame(code, true), "{code:#010X}");
+        }
     }
 
     #[test]

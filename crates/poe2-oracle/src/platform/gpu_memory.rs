@@ -1,4 +1,5 @@
-//! Gives back the GPU memory a window of the app let go of, and says how much the app holds.
+//! Gives back the GPU memory a window of the app let go of, and says how much the app holds; and
+//! keeps GPUI's Direct3D device, which the lip watcher shares (`lip_watch`), guarded for that.
 //!
 //! A hidden window taken down to a pixel (`Win32Overlay::shrink`) or closed releases its swap
 //! chain's buffers and its paths' two textures, 32 bytes a device pixel: 61 MiB for the price
@@ -17,11 +18,20 @@
 //! memory before and after. GPUI's device is the one `d3d_threading`'s `D3D11CreateDevice` hook
 //! saw made on the UI thread, or on GPUI's vsync thread, which makes a new one after a lost device
 //! ([`note_device`]).
+//!
+//! The lip watcher duplicates the game's monitor on that device where it can, rather than on one
+//! of its own, which would bring threads of the graphics driver with it. GPUI calls its device's
+//! immediate context on the UI thread whenever it likes, unguarded -- `gpui_windows`'
+//! `direct_write.rs` says it must stay on that thread -- so [`note_device`] turns on the device's
+//! multithread protection as it's made, before GPUI's first call: from then on each call on the
+//! context, and each DXGI call on the device, holds the device's lock, and the watcher holds it
+//! for each of its sequences of calls (`ID3D11Multithread::Enter`). Turned on later, it would
+//! race GPUI's calls.
 
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use windows::Win32::Graphics::Direct3D11::ID3D11Device;
+use windows::Win32::Graphics::Direct3D11::{ID3D11Device, ID3D11Multithread};
 use windows::Win32::Graphics::Dxgi::{
     DXGI_MEMORY_SEGMENT_GROUP_LOCAL, DXGI_QUERY_VIDEO_MEMORY_INFO, IDXGIAdapter3, IDXGIDevice,
     IDXGIDevice3,
@@ -38,23 +48,48 @@ static DEVICE: Mutex<Option<ID3D11Device>> = Mutex::new(None);
 
 /// The threads GPUI makes its device on: the UI thread, as the application is built, and its
 /// vsync thread after a lost device (`gpui_windows`' `handle_gpu_device_lost`). The lip watcher
-/// makes its own on its thread.
+/// makes a device of its own, where it doesn't share GPUI's, on its thread.
 const GPUI_DEVICE_THREADS: [&str; 2] = ["main", "VSyncProvider"];
 
-/// Keeps `device` for [`release`] if the thread that made it is GPUI's: from `d3d_threading`'s
-/// hook, right after `D3D11CreateDevice` made it. A device GPUI made anew replaces the old one.
+/// Keeps `device` for [`release`] and the lip watcher if the thread that made it is GPUI's, its
+/// multithread protection turned on first: from `d3d_threading`'s hook, right after
+/// `D3D11CreateDevice` made it and before GPUI has it. A device GPUI made anew replaces the old
+/// one.
 pub(super) fn note_device(device: &ID3D11Device) {
     let thread = std::thread::current();
     if !GPUI_DEVICE_THREADS.contains(&thread.name().unwrap_or_default()) {
         return;
+    }
+    if protect(device) {
+        log::debug!("gpu memory: GPUI's Direct3D device made, guarded for the lip watcher");
+    } else {
+        log::warn!(
+            "gpu memory: GPUI's Direct3D device has no multithread protection; the lip watcher \
+             makes a device of its own"
+        );
     }
     *DEVICE
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(device.clone());
 }
 
-/// GPUI's device, if the hook saw it made.
-fn device() -> Option<ID3D11Device> {
+/// Turns on `device`'s multithread protection (`ID3D11Multithread`, on its immediate context);
+/// whether it's on.
+fn protect(device: &ID3D11Device) -> bool {
+    // SAFETY: a device just made, which no other thread has yet.
+    unsafe {
+        device
+            .GetImmediateContext()
+            .and_then(|context| context.cast::<ID3D11Multithread>())
+            .is_ok_and(|lock| {
+                let _ = lock.SetMultithreadProtected(true);
+                lock.GetMultithreadProtected().as_bool()
+            })
+    }
+}
+
+/// GPUI's device, if the hook saw it made: the one GPUI draws with now.
+pub fn gpui_device() -> Option<ID3D11Device> {
     DEVICE
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -75,7 +110,7 @@ fn dedicated_of(device: &ID3D11Device) -> Option<u64> {
 
 /// The process's dedicated GPU memory in bytes, if GPUI's device is known.
 pub fn dedicated() -> Option<u64> {
-    dedicated_of(&device()?)
+    dedicated_of(&gpui_device()?)
 }
 
 /// Bytes as MiB, for the log.
@@ -88,7 +123,7 @@ pub fn mib(bytes: u64) -> f64 {
 /// flushes, and the device is trimmed. On the UI thread, where GPUI uses the context, and outside
 /// its drawing. Logs the dedicated GPU memory before and after; nothing without GPUI's device.
 pub fn release(what: &str) {
-    let Some(device) = device() else {
+    let Some(device) = gpui_device() else {
         log::debug!("{what}: no Direct3D device of GPUI's at hand to flush");
         return;
     };

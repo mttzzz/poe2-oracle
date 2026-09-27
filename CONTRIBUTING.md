@@ -128,9 +128,16 @@ Things that save time:
   and the messages taken off the thread's queue or sent from other threads, per second. For
   measuring idle cost; off, it only reads a flag.
 - `POE2_ORACLE_D3D_THREADING=1` leaves the graphics driver its own threads for the app's Direct3D
-  devices (GPUI's and the XP overlay's lip watcher's), which the app otherwise asks the driver not
-  to run (`src/platform/d3d_threading.rs`). For comparing the idle cost of the two; the log's
+  devices (GPUI's, which the XP overlay's lip watcher shares where it can, and the watcher's own
+  where it can't), which the app otherwise asks the driver not to run
+  (`src/platform/d3d_threading.rs`). For comparing the idle cost of the two; the log's
   `d3d threading:` line says which one a run has.
+- The log's `lip watch: watching the rails frame by frame` line says which Direct3D device the XP
+  overlay's lip watcher duplicates the screen on -- GPUI's, or one of its own and why -- and how its
+  copies are read back: on the GPU's fence or event, or on a timer (`src/platform/lip_watch.rs`).
+  With `RUST_LOG=warn,poe2_oracle=info,trade_client=info,poe2_oracle::platform::lip_watch=debug`
+  it also counts, every minute and as the watching stops, its looks, the read-backs the GPU's
+  signal brought and the timer's, and how long after its look a copy was read.
 - `POE2_ORACLE_API_BASE` is read at build time: the app then sends its reports and update checks to
   that address instead of `https://oracle.pushka.biz`, for testing against your own `oracle-web`
   (see [The web service](#the-web-service)). It must be https, without a trailing slash; a plain
