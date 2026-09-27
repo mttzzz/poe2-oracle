@@ -231,6 +231,8 @@ kbd {
 .hero h1 {
     margin: 0 0 1rem;
     font-size: clamp(2.25rem, 6vw, 3.75rem);
+    /* A headline that wraps splits into even lines, never leaving one word on its own. */
+    text-wrap: balance;
 }
 
 /* The app's name above the claim. */
