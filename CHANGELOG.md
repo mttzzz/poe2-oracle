@@ -73,7 +73,8 @@ so Windows may say "Windows protected your PC": click **More info**, then **Run 
   crash, the next start opens this window with what the app reported attached. Without the app, the
   form at https://oracle.pushka.biz/report.html takes a problem or an idea.
 - **Installer** for your Windows user, with no administrator rights needed: a Start menu shortcut
-  and, if you like, a start with Windows. Uninstalling keeps your settings unless you tick
-  **Settings and cache**.
+  and, if you like, a start with Windows. Its first page says what the app sends over the internet
+  and links the privacy policy. Uninstalling keeps your settings unless you tick **Settings and
+  cache**.
 
 [0.1.0]: https://github.com/mttzzz/poe2-oracle/releases/tag/v0.1.0

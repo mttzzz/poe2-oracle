@@ -37,6 +37,10 @@ fn main() {
     // class icon (`load_icon` in platform.rs at the pinned rev), so every GPUI window's taskbar
     // button and Alt+Tab entry show the mark too; being the only group, it is also the exe's icon
     // in Explorer. String values end in an explicit NUL, as in Zed's own resource script.
+    // ProductName and ProductVersion are the ones the installer and uninstaller carry too
+    // (packaging/installer.nsi), and what SignPath checks before signing (packaging/signpath).
+    // CompanyName is the project's name, as the installer's publisher; the copyright holder is
+    // LICENSE-MIT's.
     let script = format!(
         r#"#pragma code_page(65001)
 1 ICON "{icon}"
@@ -54,7 +58,7 @@ BEGIN
     BEGIN
         BLOCK "040904b0"
         BEGIN
-            VALUE "CompanyName", "mttzzz\0"
+            VALUE "CompanyName", "PoE2 Oracle\0"
             VALUE "FileDescription", "PoE2 Oracle\0"
             VALUE "FileVersion", "{version}\0"
             VALUE "InternalName", "poe2-oracle\0"

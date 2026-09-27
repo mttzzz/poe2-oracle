@@ -19,6 +19,19 @@ name: Release
 # job, which runs `gh release create` and nothing else, may write releases. Each job hands its
 # output on as an artifact. Actions are pinned to commits, their version in the comment beside
 # each.
+#
+# Authenticode signing through SignPath (SignPath Foundation's free certificate for open-source
+# projects) is on once the repository variable SIGNPATH_ORGANIZATION_ID is set; without it, the
+# release is built exactly as before, unsigned. On, the build makes only the exe and the
+# uninstaller (build-release.ps1 -Stage Binaries); sign-binaries has SignPath sign them, package
+# puts the signed pair into the installer (-Stage Installer), sign-installer has SignPath sign
+# the installer and takes SHA256SUMS of the signed file, and the sign job signs that as before.
+# packaging/signpath holds the two requests' artifact configurations. SignPath signs only what a
+# build made whose jobs all ran on GitHub-hosted runners and restored no cache of an earlier build,
+# so no job here uses one (CI keeps its own). The SIGNPATH_API_TOKEN secret, which can only submit
+# signing requests, reaches the two SignPath jobs alone, which check out and build nothing. Each
+# request waits until an approver approves it in SignPath, which e-mails them: 3 hours at most,
+# then the job fails, and "Re-run failed jobs" submits the request again.
 on:
   push:
     tags: ["v*"]
@@ -80,22 +93,21 @@ jobs:
     # windows-latest (Windows Server 2025, checked 2026-09-22) ships rustup, the Windows SDK
     # (fxc.exe for gpui's release-mode shaders, rc.exe for the exe's icon and version) and the
     # GitHub CLI. NSIS is not on it; build-release.ps1 fetches its pinned zip. Nor is cargo-about;
-    # build-release.ps1 installs its pinned version, which rust-cache keeps (~/.cargo/bin) for the
-    # next tag.
+    # build-release.ps1 installs its pinned version, compiled like everything else here without a
+    # cache.
     runs-on: windows-latest
     permissions:
       contents: read
+    outputs:
+      binaries: ${{ steps.binaries.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      # Before rust-cache, whose key names the compiler.
       - name: Install the pinned Rust
         shell: pwsh
         run: rustup toolchain install $env:RUSTUP_TOOLCHAIN --profile minimal
-
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
       # The app reads POE2_ORACLE_API_BASE at build time: a test service's address must never
       # ship. build-release.ps1 checks it too, and oracle-protocol's test-only feature.
@@ -108,19 +120,197 @@ jobs:
 
       # Unsigned, which the script warns about: this job never sees the key, the sign job signs.
       - name: Build the exe, the installer and SHA256SUMS
+        if: vars.SIGNPATH_ORGANIZATION_ID == ''
         shell: pwsh
         env:
           TAG: ${{ github.ref_name }}
         run: ./packaging/build-release.ps1 -Tag $env:TAG
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - if: vars.SIGNPATH_ORGANIZATION_ID == ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: dist
           path: target/dist
           if-no-files-found: error
 
-  sign:
+      # Signed through SignPath, the installer is made later, around the signed exe and uninstaller.
+      - name: Build the exe and the uninstaller to sign
+        if: vars.SIGNPATH_ORGANIZATION_ID != ''
+        shell: pwsh
+        env:
+          TAG: ${{ github.ref_name }}
+        run: ./packaging/build-release.ps1 -Tag $env:TAG -Stage Binaries
+
+      # SignPath takes the artifact as it is stored here: a zip of poe2-oracle.exe and
+      # uninstall.exe (packaging/signpath/binaries.xml).
+      - id: binaries
+        if: vars.SIGNPATH_ORGANIZATION_ID != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: unsigned-binaries
+          path: target/signing
+          if-no-files-found: error
+
+      - if: vars.SIGNPATH_ORGANIZATION_ID != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: notices
+          path: target/dist/THIRD-PARTY-NOTICES.html
+          if-no-files-found: error
+
+  # SignPath's first request: the exe and the uninstaller. The artifact configuration checks each
+  # file's ProductName and ProductVersion against the project's name and the tag's version.
+  sign-binaries:
     needs: build
+    if: vars.SIGNPATH_ORGANIZATION_ID != ''
+    runs-on: ubuntu-latest
+    # The wait for the approval, and a margin.
+    timeout-minutes: 190
+    permissions:
+      # The action reads this run's jobs and downloads the artifact with the job's token.
+      actions: read
+      contents: read
+    steps:
+      # A half-done setup must not end in an unsigned release by mistake.
+      - name: Check the SignPath settings
+        env:
+          SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+          SIGNPATH_PROJECT_SLUG: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          SIGNPATH_SIGNING_POLICY_SLUG: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+        run: |
+          missing=""
+          [ -n "$SIGNPATH_API_TOKEN" ] || missing="$missing the SIGNPATH_API_TOKEN secret,"
+          [ -n "$SIGNPATH_PROJECT_SLUG" ] || missing="$missing the SIGNPATH_PROJECT_SLUG variable,"
+          [ -n "$SIGNPATH_SIGNING_POLICY_SLUG" ] || missing="$missing the SIGNPATH_SIGNING_POLICY_SLUG variable,"
+          if [ -n "$missing" ]; then
+            echo "::error::SIGNPATH_ORGANIZATION_ID is set, so this release is to be signed through SignPath, but these are missing:${missing%,}. Add them under Settings > Secrets and variables > Actions, or delete SIGNPATH_ORGANIZATION_ID to release unsigned."
+            exit 1
+          fi
+
+      - name: Take the version from the tag
+        id: version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Have SignPath sign the exe and the uninstaller
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3.0
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: binaries
+          github-artifact-id: ${{ needs.build.outputs.binaries }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 10800
+          output-artifact-directory: signed
+          parameters: |
+            version: ${{ toJSON(steps.version.outputs.version) }}
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: signed-binaries
+          path: signed
+          if-no-files-found: error
+
+  # The installer around the signed exe and uninstaller: makensis only, nothing compiled.
+  package:
+    needs: sign-binaries
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    outputs:
+      installer: ${{ steps.installer.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: notices
+          path: target/dist
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: signed-binaries
+          path: target/signed
+
+      # Refuses a file without a valid signature, and a tag that isn't the exe's version.
+      - name: Build the installer around the signed files
+        shell: pwsh
+        env:
+          TAG: ${{ github.ref_name }}
+        run: ./packaging/build-release.ps1 -Tag $env:TAG -Stage Installer -SignedBinaries target/signed
+
+      # A zip of PoE2-Oracle-Setup-X.Y.Z.exe, for SignPath (packaging/signpath/installer.xml).
+      - id: installer
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: unsigned-installer
+          path: target/dist/PoE2-Oracle-Setup-*.exe
+          if-no-files-found: error
+
+  # SignPath's second request: the installer. Then its SHA256SUMS, of the signed file: the
+  # signature changes the installer's bytes. Windows, to check the signature before that.
+  sign-installer:
+    needs: package
+    runs-on: windows-latest
+    timeout-minutes: 190
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Take the version from the tag
+        id: version
+        shell: pwsh
+        env:
+          TAG: ${{ github.ref_name }}
+        run: Add-Content -Path $env:GITHUB_OUTPUT -Value "version=$($env:TAG.Substring(1))"
+
+      - name: Have SignPath sign the installer
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3.0
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: installer
+          github-artifact-id: ${{ needs.package.outputs.installer }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 10800
+          output-artifact-directory: dist
+          parameters: |
+            version: ${{ toJSON(steps.version.outputs.version) }}
+
+      # sha256sum's text format with an LF line ending, as build-release.ps1 writes it: what
+      # crates/auto-update parses.
+      - name: Check the installer's signature and write SHA256SUMS
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $name = "PoE2-Oracle-Setup-$env:VERSION.exe"
+          $installer = Join-Path $PWD "dist/$name"
+          $signature = Get-AuthenticodeSignature -LiteralPath $installer
+          if ($signature.Status -ne 'Valid') {
+            throw "SignPath returned $name without a valid signature ($($signature.Status)): $($signature.StatusMessage)"
+          }
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $installer).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText((Join-Path $PWD 'dist/SHA256SUMS'), "$hash  $name`n")
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dist
+          path: dist
+          if-no-files-found: error
+
+  # SHA256SUMS comes from build unsigned, from sign-installer signed through SignPath: the other
+  # one is skipped, so the condition names each.
+  sign:
+    needs: [build, sign-installer]
+    if: ${{ !cancelled() && needs.build.result == 'success' && (vars.SIGNPATH_ORGANIZATION_ID == '' || needs.sign-installer.result == 'success') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -169,8 +359,10 @@ jobs:
           path: dist/SHA256SUMS.sig
           if-no-files-found: error
 
+  # A skipped job among sign's needs would skip this one too, without the condition.
   publish:
     needs: sign
+    if: ${{ !cancelled() && needs.sign.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write

@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Code signing policy · PoE2 Oracle</title>
+<meta name="description" content="How PoE2 Oracle's releases are built and signed, who approves them, and how to check a download.">
+<link rel="canonical" href="https://oracle.pushka.biz/code-signing.html">
+<link rel="alternate" hreflang="en" href="https://oracle.pushka.biz/code-signing.html">
+<link rel="alternate" hreflang="ru" href="https://oracle.pushka.biz/ru/code-signing.html">
+<link rel="alternate" hreflang="x-default" href="https://oracle.pushka.biz/code-signing.html">
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="topbar">
+  <div class="wrap">
+    <a class="brand" href="./"><img src="brand.png" alt="" width="32" height="32">PoE2 Oracle</a>
+    <nav aria-label="Main">
+      <ul class="topnav">
+        <li><a href="guide/en/introduction.html">Guide</a></li>
+        <li class="lang-switch" aria-label="Language">
+          <span aria-current="page">EN</span>
+          <a href="ru/code-signing.html" lang="ru" hreflang="ru" title="Русский">RU</a>
+        </li>
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <section class="section">
+    <div class="wrap narrow policy">
+      <h1 class="page-title">Code signing policy</h1>
+      <p class="intro">How PoE2 Oracle's releases are built, who approves them, and how you can check
+        what you downloaded.</p>
+
+      <!-- PENDING: until SignPath Foundation accepts PoE2 Oracle. At acceptance, delete this note
+           and turn on the SIGNED block below. -->
+      <p class="note"><strong>Not signed yet.</strong> PoE2 Oracle's installer and app don't carry a
+        digital signature yet, so Windows may warn about them. The project is applying to SignPath
+        Foundation, which signs open-source projects for free. Until then, check your download
+        against its checksums, as shown below.</p>
+
+      <!-- SIGNED: SignPath Foundation's attribution, which its terms require on this page. Turn it
+           on at acceptance: remove this comment's first and last lines, and the PENDING note above.
+      <p class="note">Free code signing provided by <a href="https://about.signpath.io">SignPath.io</a>,
+        certificate by <a href="https://signpath.org">SignPath Foundation</a>.</p>
+      <p>The installer, the app and its uninstaller are signed with SignPath Foundation's
+        certificate, after the build and only once the maintainer approves the release in SignPath,
+        which checks that the files come from that build of this repository. Windows names the
+        signer "SignPath Foundation": right-click the installer, choose <em>Properties</em>, then
+        <em>Digital Signatures</em>.</p>
+      -->
+
+      <h2>How releases are built</h2>
+      <ul>
+        <li>Every release is built from the source code in the public repository
+          <a href="https://github.com/mttzzz/poe2-oracle">github.com/mttzzz/poe2-oracle</a>, by
+          GitHub Actions on GitHub's own machines, when the maintainer tags a version. The
+          workflow that does it,
+          <a href="https://github.com/mttzzz/poe2-oracle/blob/main/.github/workflows/release.yml">release.yml</a>,
+          is part of the repository: anyone can read how a release is made.</li>
+        <li>Nothing is carried over from earlier builds: there is no build cache, and the Rust
+          compiler's version is fixed, so every release is compiled afresh from its tagged source.</li>
+        <li>Building, signing and publishing run as separate steps, and each key reaches only the
+          step that uses it. A release first appears as a draft: the maintainer installs and tests
+          it, then publishes it by hand.</li>
+      </ul>
+
+      <h2>Who approves</h2>
+      <p>PoE2 Oracle has one maintainer, <a href="https://github.com/mttzzz">mttzzz</a>, who holds
+        all three roles:</p>
+      <ul>
+        <li><strong>Committers</strong>, who change the source code without a review: mttzzz.</li>
+        <li><strong>Reviewers</strong>, who review every change someone else proposes, such as a pull
+          request, before it's merged: mttzzz.</li>
+        <li><strong>Approvers</strong>, who approve each release for signing: mttzzz.</li>
+      </ul>
+      <p>He uses multi-factor authentication for GitHub and for SignPath.</p>
+
+      <h2>How to check a download</h2>
+      <p>Every release comes with two more files: <code>SHA256SUMS</code>, the installer's SHA-256
+        checksum, and <code>SHA256SUMS.sig</code>, an Ed25519 signature of that file made with PoE2
+        Oracle's release key. Only the release workflow can use the key, and the app carries its
+        public half: before installing an update, the app checks both, and refuses an update that
+        fails either check.</p>
+      <p>To check the installer you downloaded:</p>
+      <ol>
+        <li>Get the release's <code>SHA256SUMS</code> and <code>SHA256SUMS.sig</code>: from
+          <code>https://oracle.pushka.biz/download/v&lt;version&gt;/</code> while it is the latest
+          release, or from its page on
+          <a href="https://github.com/mttzzz/poe2-oracle/releases">GitHub</a>.</li>
+        <li>In PowerShell, in the folder with the installer, run
+          <code>Get-FileHash .\PoE2-Oracle-Setup-&lt;version&gt;.exe</code>. The hash must match the
+          installer's line in <code>SHA256SUMS</code>; letter case doesn't matter.</li>
+        <li>To check that the release key signed <code>SHA256SUMS</code>, run this in a copy of the
+          source code, with Rust installed:
+          <pre><code>cargo run -p release-sign -- verify SHA256SUMS SHA256SUMS.sig "$(cat crates/auto-update/release-signing-key.pub)"</code></pre></li>
+      </ol>
+      <p>More about it in the repository's
+        <a href="https://github.com/mttzzz/poe2-oracle/blob/main/SECURITY.md">security policy</a>.</p>
+
+      <h2>Privacy</h2>
+      <p>PoE2 Oracle sends no statistics. It talks to the Path of Exile trade site, GGG's server of
+        pictures and exchange data, poe2scout, and oracle.pushka.biz for updates; a report reaches
+        the developer only when you send one. The installer says so on its first page, and updates
+        can be turned off in the settings. What goes where, in detail:
+        <a href="guide/en/privacy.html">the privacy policy</a>.</p>
+      <p>The services the app talks to have privacy policies of their own:
+        <a href="https://www.pathofexile.com/legal/terms-of-use-and-privacy-policy">Grinding Gear
+        Games'</a> for the trade site and GGG's server, and
+        <a href="https://poe2scout.com/privacy">poe2scout's</a>.</p>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <div class="wrap">
+    <ul class="footer-links">
+      <li><a href="guide/en/introduction.html">Guide</a></li>
+      <li><a href="report.html">Report a problem</a></li>
+      <li><a href="ru/code-signing.html" lang="ru" hreflang="ru">По-русски</a></li>
+    </ul>
+    <p>PoE2 Oracle is a fan-made tool. This product isn't affiliated with or endorsed by Grinding
+      Gear Games in any way. Path of Exile is a trademark of Grinding Gear Games.</p>
+    <p>PoE2 Oracle is licensed under <a href="LICENSE-MIT.txt">MIT</a> or
+      <a href="LICENSE-APACHE.txt">Apache-2.0</a>, at your option; both texts come with the app.
+      This site uses the Alegreya SC and Philosopher fonts under the SIL Open Font License 1.1
+      (<a href="fonts/OFL-AlegreyaSC.txt">Alegreya SC</a>, <a href="fonts/OFL-Philosopher.txt">Philosopher</a>).</p>
+  </div>
+</footer>
+<script type="module" src="lang.js"></script>
+</body>
+</html>

@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Политика подписи кода · PoE2 Oracle</title>
+<meta name="description" content="Как собираются и подписываются выпуски PoE2 Oracle, кто их одобряет и как проверить скачанный файл.">
+<link rel="canonical" href="https://oracle.pushka.biz/ru/code-signing.html">
+<link rel="alternate" hreflang="en" href="https://oracle.pushka.biz/code-signing.html">
+<link rel="alternate" hreflang="ru" href="https://oracle.pushka.biz/ru/code-signing.html">
+<link rel="alternate" hreflang="x-default" href="https://oracle.pushka.biz/code-signing.html">
+<link rel="icon" type="image/png" href="../favicon.png">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<a class="skip-link" href="#main">К содержанию</a>
+
+<header class="topbar">
+  <div class="wrap">
+    <a class="brand" href="./"><img src="../brand.png" alt="" width="32" height="32">PoE2 Oracle</a>
+    <nav aria-label="Основное меню">
+      <ul class="topnav">
+        <li><a href="../guide/ru/introduction.html">Руководство</a></li>
+        <li class="lang-switch" aria-label="Язык">
+          <a href="../code-signing.html" lang="en" hreflang="en" title="English">EN</a>
+          <span aria-current="page">RU</span>
+        </li>
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <section class="section">
+    <div class="wrap narrow policy">
+      <h1 class="page-title">Политика подписи кода</h1>
+      <p class="intro">Как собираются выпуски PoE2 Oracle, кто их одобряет и как проверить скачанный
+        файл.</p>
+
+      <!-- PENDING: пока SignPath Foundation не приняла PoE2 Oracle. После одобрения удалить эту
+           заметку и включить блок SIGNED ниже. -->
+      <p class="note"><strong>Пока без подписи.</strong> Установщик и сама программа ещё не
+        подписаны цифровой подписью, поэтому Windows может о них предупреждать. Проект подаёт заявку
+        в SignPath Foundation — она бесплатно подписывает программы с открытым исходным кодом. Пока
+        подписи нет, сверяйте скачанный файл с контрольными суммами, как описано ниже.</p>
+
+      <!-- SIGNED: указание SignPath Foundation, которого требуют её условия на этой странице.
+           Включить после одобрения: удалить первую и последнюю строки этого комментария и заметку
+           PENDING выше.
+      <p class="note"><span lang="en">Free code signing provided by
+        <a href="https://about.signpath.io">SignPath.io</a>, certificate by
+        <a href="https://signpath.org">SignPath Foundation</a></span>: бесплатную подпись кода
+        предоставляет SignPath.io, сертификат — SignPath Foundation.</p>
+      <p>Установщик, программа и её деинсталлятор подписаны сертификатом SignPath Foundation —
+        после сборки и только когда сопровождающий одобрит выпуск в SignPath, а SignPath проверит,
+        что файлы получены этой сборкой из этого репозитория. Windows называет подписавшего
+        «SignPath Foundation»: щёлкните установщик правой кнопкой, выберите <em>Свойства</em>,
+        затем <em>Цифровые подписи</em>.</p>
+      -->
+
+      <h2>Как собираются выпуски</h2>
+      <ul>
+        <li>Каждый выпуск собирается из исходного кода в открытом репозитории
+          <a href="https://github.com/mttzzz/poe2-oracle">github.com/mttzzz/poe2-oracle</a> —
+          средствами GitHub Actions на машинах GitHub, когда сопровождающий ставит тег версии.
+          Сценарий сборки,
+          <a href="https://github.com/mttzzz/poe2-oracle/blob/main/.github/workflows/release.yml">release.yml</a>,
+          лежит в том же репозитории: как собирается выпуск, может прочитать любой.</li>
+        <li>Из прошлых сборок ничего не переносится: кэша сборки нет, версия компилятора Rust
+          закреплена, и каждый выпуск компилируется заново из исходников с его тегом.</li>
+        <li>Сборка, подпись и публикация — отдельные шаги, и каждый ключ доступен только тому шагу,
+          которому он нужен. Выпуск сначала появляется черновиком: сопровождающий ставит и проверяет
+          его, а публикует вручную.</li>
+      </ul>
+
+      <h2>Кто одобряет</h2>
+      <p>У PoE2 Oracle один сопровождающий — <a href="https://github.com/mttzzz">mttzzz</a>, и все
+        три роли у него:</p>
+      <ul>
+        <li><strong>Авторы</strong> (committers) меняют исходный код без проверки: mttzzz.</li>
+        <li><strong>Проверяющие</strong> (reviewers) проверяют каждое изменение от других людей,
+          например pull request, прежде чем его принять: mttzzz.</li>
+        <li><strong>Одобряющие</strong> (approvers) одобряют подпись каждого выпуска: mttzzz.</li>
+      </ul>
+      <p>Для входа в GitHub и в SignPath он использует многофакторную аутентификацию.</p>
+
+      <h2>Как проверить скачанный файл</h2>
+      <p>К каждому выпуску приложены ещё два файла: <code>SHA256SUMS</code> с контрольной суммой
+        SHA-256 установщика и <code>SHA256SUMS.sig</code> — подпись Ed25519 под этим файлом, сделанная
+        ключом выпусков PoE2 Oracle. Пользоваться ключом может только сценарий выпуска, а его
+        открытая половина вшита в программу: прежде чем поставить обновление, программа проверяет и
+        подпись, и сумму и отказывается от обновления, которое не прошло хотя бы одну проверку.</p>
+      <p>Чтобы проверить скачанный установщик:</p>
+      <ol>
+        <li>Возьмите <code>SHA256SUMS</code> и <code>SHA256SUMS.sig</code> выпуска: с
+          <code>https://oracle.pushka.biz/download/v&lt;версия&gt;/</code>, пока это последний
+          выпуск, или со страницы выпуска на
+          <a href="https://github.com/mttzzz/poe2-oracle/releases">GitHub</a>.</li>
+        <li>В PowerShell, в папке с установщиком, выполните
+          <code>Get-FileHash .\PoE2-Oracle-Setup-&lt;версия&gt;.exe</code>. Сумма должна совпасть
+          со строкой установщика в <code>SHA256SUMS</code>; регистр букв не важен.</li>
+        <li>Чтобы убедиться, что <code>SHA256SUMS</code> подписан ключом выпусков, выполните в копии
+          исходного кода, с установленным Rust:
+          <pre><code>cargo run -p release-sign -- verify SHA256SUMS SHA256SUMS.sig "$(cat crates/auto-update/release-signing-key.pub)"</code></pre></li>
+      </ol>
+      <p>Подробнее — в
+        <a href="https://github.com/mttzzz/poe2-oracle/blob/main/SECURITY.md#русский">политике
+        безопасности</a> репозитория.</p>
+
+      <h2>Конфиденциальность</h2>
+      <p>PoE2 Oracle не отправляет статистику. Он обращается к сайту торговли Path of Exile, серверу
+        GGG с картинками и данными биржи, poe2scout и к oracle.pushka.biz за обновлениями; сообщение
+        разработчику уходит, только когда вы его отправляете. Установщик говорит об этом на первой
+        странице, а обновления можно выключить в настройках. Что и куда уходит, подробно —
+        в <a href="../guide/ru/privacy.html">политике конфиденциальности</a>.</p>
+      <p>У сервисов, к которым обращается программа, свои политики конфиденциальности:
+        у <a href="https://ru.pathofexile.com/legal/terms-of-use-and-privacy-policy">Grinding Gear
+        Games</a> — для сайта торговли и сервера GGG, и у
+        <a href="https://poe2scout.com/privacy">poe2scout</a>.</p>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <div class="wrap">
+    <ul class="footer-links">
+      <li><a href="../guide/ru/introduction.html">Руководство</a></li>
+      <li><a href="report.html">Сообщить о проблеме</a></li>
+      <li><a href="../code-signing.html" lang="en" hreflang="en">In English</a></li>
+    </ul>
+    <p>PoE2 Oracle — фанатский инструмент. Он никак не связан с Grinding Gear Games и не одобрен ею.
+      Path of Exile — товарный знак Grinding Gear Games.</p>
+    <p>PoE2 Oracle распространяется по лицензии <a href="../LICENSE-MIT.txt">MIT</a> или
+      <a href="../LICENSE-APACHE.txt">Apache-2.0</a> — на ваш выбор; тексты обеих лицензий
+      устанавливаются вместе с программой. Сайт использует шрифты Alegreya SC и Philosopher по лицензии
+      SIL Open Font License 1.1
+      (<a href="../fonts/OFL-AlegreyaSC.txt">Alegreya SC</a>, <a href="../fonts/OFL-Philosopher.txt">Philosopher</a>).</p>
+  </div>
+</footer>
+<script type="module" src="../lang.js"></script>
+</body>
+</html>

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SignPath artifact configuration "binaries": the first signing request of a release signed through
+  SignPath (.github/workflows/release.yml, job sign-binaries). Paste it into the SignPath project as
+  an artifact configuration with the slug "binaries".
+
+  The artifact is the zip upload-artifact makes of target/signing: poe2-oracle.exe and the
+  uninstaller build-release.ps1 -Stage Binaries exported for the installer. SignPath Foundation's
+  terms want every signed file's product name to be the project's name and its product version the
+  same in all files of a build, enforced by metadata restrictions: the workflow passes the version,
+  the tag without its "v", as the parameter below.
+-->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <parameters>
+    <parameter name="version" required="true" />
+  </parameters>
+  <zip-file>
+    <pe-file-set product-name="PoE2 Oracle" product-version="${version}">
+      <include path="poe2-oracle.exe" />
+      <include path="uninstall.exe" />
+      <for-each>
+        <authenticode-sign />
+      </for-each>
+    </pe-file-set>
+  </zip-file>
+</artifact-configuration>

@@ -38,6 +38,8 @@ not commonly downloaded; keep it.
 ## Install
 
 - The installer is in English or Russian, following your Windows display language.
+- Its first page says what PoE2 Oracle sends over the internet and links the
+  [privacy policy](privacy.md); **Next** goes on to the folder.
 - It installs for your Windows user only and needs no administrator rights. The default folder is
   `%LOCALAPPDATA%\Programs\PoE2 Oracle`; you can pick another one.
 - It adds a **PoE2 Oracle** shortcut to the Start menu. There is no desktop shortcut.

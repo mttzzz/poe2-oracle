@@ -69,7 +69,7 @@ made for a newer version, found after going back to an older one; a damaged one 
 ## Uninstall
 
 1. Open Windows **Settings → Apps → Installed apps** (on Windows 10: **Apps & features**).
-2. Find **PoE2 Oracle** (publisher mttzzz) and choose **Uninstall**.
+2. Find **PoE2 Oracle** and choose **Uninstall**.
 3. If PoE2 Oracle is running, the uninstaller says "PoE2 Oracle is running and will be closed to
    continue.": **OK** closes it, **Cancel** stops the uninstall.
 

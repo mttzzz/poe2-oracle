@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SignPath artifact configuration "installer": the second signing request of a release signed
+  through SignPath (.github/workflows/release.yml, job sign-installer). Paste it into the SignPath
+  project as an artifact configuration with the slug "installer".
+
+  The artifact is the zip upload-artifact makes of the installer build-release.ps1 -Stage Installer
+  built around the signed exe and uninstaller. NSIS installers are no container SignPath signs into,
+  hence two requests. Product name and version are restricted as in binaries.xml.
+-->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <parameters>
+    <parameter name="version" required="true" />
+  </parameters>
+  <zip-file>
+    <pe-file path="PoE2-Oracle-Setup-${version}.exe" product-name="PoE2 Oracle" product-version="${version}">
+      <authenticode-sign />
+    </pe-file>
+  </zip-file>
+</artifact-configuration>

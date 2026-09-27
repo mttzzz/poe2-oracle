@@ -10,6 +10,13 @@
 ; THIRD-PARTY-NOTICES.html build-release.ps1 writes there first). The output is
 ; ${OUT_DIR}\PoE2-Oracle-Setup-${VERSION}.exe -- the asset name crates/auto-update looks for.
 ;
+; A release signed outside makensis (through SignPath: .github/workflows/release.yml) must sign the
+; uninstaller before the installer carries it, so it is built in two passes, as in the NSIS wiki's
+; "Signing an Uninstaller externally" (build-release.ps1 -Stage runs them): with EXPORT_UNINST=<file>
+; makensis also writes the uninstaller it generated to <file>; with IMPORT_UNINST=<file> the
+; installer carries <file>, that uninstaller signed, and generates none. Absolute paths; one of the
+; two at most.
+;
 ; Command line:
 ;   /S          silent (NSIS built-in): no UI, the autostart entry is left exactly as it was
 ;   /relaunch   with /S: start PoE2 Oracle once done -- the new copy, or the old one if installing
@@ -33,9 +40,26 @@ AllowSkipFiles off
 !endif
 !define /ifndef APP_EXE_PATH "..\target\release\poe2-oracle.exe"
 !define /ifndef OUT_DIR "..\target\dist"
+!ifdef EXPORT_UNINST & IMPORT_UNINST
+  !error "EXPORT_UNINST and IMPORT_UNINST are the two passes of a signed build: define one of them"
+!endif
+!ifdef EXPORT_UNINST
+  ; %1 is the uninstaller makensis just generated, in a temporary file; a copy of it leaves what the
+  ; installer then packs as it was. cp for a makensis built for Linux.
+  !ifdef NSIS_WIN32_MAKENSIS
+    !uninstfinalize 'copy /Y "%1" "${EXPORT_UNINST}"' = 0
+  !else
+    !uninstfinalize 'cp "%1" "${EXPORT_UNINST}"' = 0
+  !endif
+!endif
 
 !define PRODUCT_NAME "PoE2 Oracle"
-!define PUBLISHER "mttzzz"
+; The publisher in "Installed apps" and the CompanyName of the installer and the uninstaller: the
+; project's name, as on the exe (crates/poe2-oracle/build.rs). The publisher Windows names when it
+; checks a signed file is the certificate's subject instead; with SignPath's, "SignPath Foundation".
+!define PUBLISHER "${PRODUCT_NAME}"
+; The copyright holder, as in LICENSE-MIT.
+!define COPYRIGHT "Copyright (c) 2026 mttzzz"
 !define APP_EXE "poe2-oracle.exe"
 !define UNINSTALLER "uninstall.exe"
 ; Beside the exe: the app's two license texts (the repository's LICENSE-MIT and LICENSE-APACHE,
@@ -79,6 +103,9 @@ InstallDir "$LOCALAPPDATA\Programs\${PRODUCT_NAME}"
 InstallDirRegKey HKCU "${UNINSTALL_KEY}" "InstallLocation"
 BrandingText "${PRODUCT_NAME} ${VERSION}"
 
+; The installer's version information, which makensis gives the uninstaller too. ProductName and
+; ProductVersion are what SignPath checks before it signs either (packaging/signpath): the project's
+; name and the full version, as on the exe.
 VIProductVersion "${VERSION_CORE}.0"
 VIFileVersion "${VERSION_CORE}.0"
 VIAddVersionKey /LANG=0 "ProductName" "${PRODUCT_NAME}"
@@ -86,7 +113,7 @@ VIAddVersionKey /LANG=0 "ProductVersion" "${VERSION}"
 VIAddVersionKey /LANG=0 "FileVersion" "${VERSION}"
 VIAddVersionKey /LANG=0 "FileDescription" "${PRODUCT_NAME} Setup"
 VIAddVersionKey /LANG=0 "CompanyName" "${PUBLISHER}"
-VIAddVersionKey /LANG=0 "LegalCopyright" "Copyright (c) 2026 ${PUBLISHER}"
+VIAddVersionKey /LANG=0 "LegalCopyright" "${COPYRIGHT}"
 
 !include "MUI2.nsh"
 !include "LogicLib.nsh"
@@ -96,6 +123,11 @@ VIAddVersionKey /LANG=0 "LegalCopyright" "Copyright (c) 2026 ${PUBLISHER}"
 !define MUI_ICON "${ICON}"
 !define MUI_UNICON "${ICON}"
 !define MUI_ABORTWARNING
+
+; First what the app sends over the internet, with a link to the privacy policy: SignPath
+; Foundation's terms ask software that sends data to services the user didn't name to show its
+; privacy policy while installing. A silent run (/S: the app's updates, winget) shows no page.
+Page custom PrivacyPage
 
 ; Leaving the folder page closes a running copy, before anything is installed: Cancel in its
 ; question keeps the player on the page instead of ending the installation.
@@ -120,8 +152,12 @@ VIAddVersionKey /LANG=0 "LegalCopyright" "Copyright (c) 2026 ${PUBLISHER}"
 !define MUI_PAGE_CUSTOMFUNCTION_LEAVE FinishPageLeave
 !insertmacro MUI_PAGE_FINISH
 
-!insertmacro MUI_UNPAGE_COMPONENTS
-!insertmacro MUI_UNPAGE_INSTFILES
+; The uninstaller's pages, sections and functions go only where makensis generates it: an
+; IMPORT_UNINST build carries it ready-made.
+!ifndef IMPORT_UNINST
+  !insertmacro MUI_UNPAGE_COMPONENTS
+  !insertmacro MUI_UNPAGE_INSTFILES
+!endif
 
 ; The first language is the fallback for any Windows display language other than these two.
 !insertmacro MUI_LANGUAGE "English"
@@ -141,6 +177,16 @@ LangString SettingsSection ${LANG_ENGLISH} "Settings and cache"
 LangString SettingsSection ${LANG_RUSSIAN} "Настройки и кэш"
 LangString SettingsDescription ${LANG_ENGLISH} "Also delete your settings and the downloaded price data. Leave unticked to keep them for a reinstall."
 LangString SettingsDescription ${LANG_RUSSIAN} "Удалить также настройки и загруженные данные о ценах. Оставьте без отметки, чтобы сохранить их для переустановки."
+LangString PrivacyTitle ${LANG_ENGLISH} "Privacy"
+LangString PrivacyTitle ${LANG_RUSSIAN} "Конфиденциальность"
+LangString PrivacySubtitle ${LANG_ENGLISH} "What PoE2 Oracle sends over the internet."
+LangString PrivacySubtitle ${LANG_RUSSIAN} "Что PoE2 Oracle отправляет через интернет."
+LangString PrivacyText ${LANG_ENGLISH} "PoE2 Oracle collects no statistics. It gets prices and pictures from the Path of Exile trade site, GGG's server and poe2scout, and updates from oracle.pushka.biz, which sees your IP address and the app's version.$\r$\n$\r$\nUpdates can be turned off in the settings, section General (Update automatically). Reports reach the developer only when you send them."
+LangString PrivacyText ${LANG_RUSSIAN} "PoE2 Oracle не собирает статистику. Цены и картинки он берёт с сайта торговли Path of Exile, сервера GGG и poe2scout, а обновления — с oracle.pushka.biz, который видит ваш IP-адрес и версию программы.$\r$\n$\r$\nОбновления можно выключить в настройках, раздел «Общие» («Обновлять автоматически»). Сообщения разработчику уходят, только когда вы их отправляете."
+LangString PrivacyLink ${LANG_ENGLISH} "Privacy policy: oracle.pushka.biz/guide/en/privacy.html"
+LangString PrivacyLink ${LANG_RUSSIAN} "Политика конфиденциальности: oracle.pushka.biz/guide/ru/privacy.html"
+LangString PrivacyUrl ${LANG_ENGLISH} "https://oracle.pushka.biz/guide/en/privacy.html"
+LangString PrivacyUrl ${LANG_RUSSIAN} "https://oracle.pushka.biz/guide/ru/privacy.html"
 
 ; Sets _RESULT to 0 when this user runs a PoE2 Oracle process: `find` exits 0 when tasklist listed
 ; one. Every tool by full path, since a Unix `find` earlier on PATH (Git's usr\bin) would answer
@@ -232,7 +278,9 @@ LangString SettingsDescription ${LANG_RUSSIAN} "Удалить также нас
   FunctionEnd
 !macroend
 !insertmacro CLOSE_RUNNING_APP_FUNCTION ""
-!insertmacro CLOSE_RUNNING_APP_FUNCTION "un."
+!ifndef IMPORT_UNINST
+  !insertmacro CLOSE_RUNNING_APP_FUNCTION "un."
+!endif
 
 Var Relaunch
 
@@ -255,7 +303,11 @@ Section "-${PRODUCT_NAME}"
   File "/oname=${LICENSE_MIT}" "..\LICENSE-MIT"
   File "/oname=${LICENSE_APACHE}" "..\LICENSE-APACHE"
   File "${OUT_DIR}\${NOTICES}"
-  WriteUninstaller "$INSTDIR\${UNINSTALLER}"
+  !ifdef IMPORT_UNINST
+    File "/oname=${UNINSTALLER}" "${IMPORT_UNINST}"
+  !else
+    WriteUninstaller "$INSTDIR\${UNINSTALLER}"
+  !endif
   CreateShortcut "$SMPROGRAMS\${PRODUCT_NAME}.lnk" "$INSTDIR\${APP_EXE}"
 
   WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayName" "${PRODUCT_NAME}"
@@ -290,6 +342,27 @@ Function .onInstFailed
       Exec '"$INSTDIR\${APP_EXE}"'
     ${EndIf}
   ${EndIf}
+FunctionEnd
+
+Function PrivacyPage
+  !insertmacro MUI_HEADER_TEXT "$(PrivacyTitle)" "$(PrivacySubtitle)"
+  nsDialogs::Create 1018
+  Pop $R0
+  ${If} $R0 == error
+    Abort
+  ${EndIf}
+  ${NSD_CreateLabel} 0u 0u 100% 80u "$(PrivacyText)"
+  Pop $R0
+  ${NSD_CreateLink} 0u 88u 100% 12u "$(PrivacyLink)"
+  Pop $R0
+  ${NSD_OnClick} $R0 OpenPrivacyPolicy
+  nsDialogs::Show
+FunctionEnd
+
+; The privacy page's link, clicked: its handle comes on the stack.
+Function OpenPrivacyPolicy
+  Pop $R0
+  ExecShell "open" "$(PrivacyUrl)"
 FunctionEnd
 
 Function DirectoryLeave
@@ -343,6 +416,7 @@ FunctionEnd
 Function AutostartBoxAction
 FunctionEnd
 
+!ifndef IMPORT_UNINST
 Section "un.${PRODUCT_NAME}" UninstallProgram
   SectionIn RO
   Call un.CloseRunningApp
@@ -370,3 +444,4 @@ SectionEnd
   !insertmacro MUI_DESCRIPTION_TEXT ${UninstallProgram} "$(ProgramDescription)"
   !insertmacro MUI_DESCRIPTION_TEXT ${UninstallSettings} "$(SettingsDescription)"
 !insertmacro MUI_UNFUNCTION_DESCRIPTION_END
+!endif

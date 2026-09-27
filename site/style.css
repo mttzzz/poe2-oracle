@@ -1,6 +1,7 @@
 /*
- * PoE2 Oracle's site: the landing pages (index.html, ru/index.html) and the report form
- * (report.html, ru/report.html).
+ * PoE2 Oracle's site: the landing pages (index.html, ru/index.html), the report form
+ * (report.html, ru/report.html) and the code signing policy (code-signing.html,
+ * ru/code-signing.html).
  * Colours are the app's own (crates/poe2-oracle/src/ui/theme.rs): the near-black panel, gold
  * accents and the nameplate faces, Alegreya SC for English and Philosopher for Russian.
  * The landing reads top to bottom as a player's questions come: what it is and the download, how it
@@ -1139,6 +1140,57 @@ button.button:disabled {
 
 .report-sent {
     margin-top: 2rem;
+}
+
+/* Code signing policy: a text page with sections, lists and commands. */
+
+.policy h2 {
+    margin-top: 2.5rem;
+    font-size: 1.6rem;
+}
+
+.policy ul,
+.policy ol {
+    margin: 0 0 1rem;
+    padding-left: 1.4rem;
+}
+
+.policy li {
+    margin-bottom: 0.5rem;
+}
+
+.policy li::marker {
+    color: var(--gold);
+}
+
+.policy strong {
+    color: var(--text);
+}
+
+.policy code {
+    padding: 0.05em 0.35em;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    background: var(--bg-control);
+    font-family: Consolas, "Cascadia Mono", "DejaVu Sans Mono", monospace;
+    font-size: 0.9em;
+    overflow-wrap: anywhere;
+}
+
+.policy pre {
+    margin: 0.6rem 0 0;
+    padding: 0.75rem 1rem;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg-control);
+}
+
+.policy pre code {
+    padding: 0;
+    border: 0;
+    background: none;
+    overflow-wrap: normal;
 }
 
 @media (max-width: 52rem) {

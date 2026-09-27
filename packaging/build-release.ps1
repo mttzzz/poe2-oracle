@@ -24,9 +24,27 @@
   the script warns about: installed apps refuse to update to it until it is signed.
   .github\workflows\release.yml runs this same script, unsigned, and signs in a job of its own.
 
+  A release signed through SignPath (Authenticode; release.yml, packaging\signpath) needs two
+  signing requests, since the installer must carry the exe and the uninstaller signed already:
+  -Stage Binaries builds what the first one signs, -Stage Installer packs the signed files into the
+  installer that the second one signs. SHA256SUMS is taken of that signed installer afterwards.
+
 .PARAMETER Tag
   The release tag being built (vX.Y.Z). The build stops unless it is "v" + the workspace version,
   so a release never carries an exe reporting another version than its tag.
+
+.PARAMETER Stage
+  Release, the default: all of the above.
+  Binaries: the exe and the uninstaller to sign, as target\signing\poe2-oracle.exe and
+  target\signing\uninstall.exe (packaging\installer.nsi's EXPORT_UNINST), and
+  target\dist\THIRD-PARTY-NOTICES.html. No installer, no SHA256SUMS.
+  Installer: target\dist\PoE2-Oracle-Setup-<version>.exe carrying the signed exe and uninstaller
+  from -SignedBinaries (IMPORT_UNINST) and the THIRD-PARTY-NOTICES.html target\dist must hold
+  already. Nothing is compiled: the version is the one the signed exe reports. No SHA256SUMS.
+
+.PARAMETER SignedBinaries
+  With -Stage Installer only: the folder holding poe2-oracle.exe and uninstall.exe, both with a
+  valid Authenticode signature.
 
 .EXAMPLE
   powershell -NoProfile -ExecutionPolicy Bypass -File packaging\build-release.ps1
@@ -36,12 +54,23 @@
   powershell -NoProfile -ExecutionPolicy Bypass -File packaging\build-release.ps1 -Tag v0.1.0
 #>
 [CmdletBinding()]
-param([string]$Tag)
+param(
+    [string]$Tag,
+    [ValidateSet('Release', 'Binaries', 'Installer')]
+    [string]$Stage = 'Release',
+    [string]$SignedBinaries
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 # Windows PowerShell 5.1 redraws its progress bar per received chunk, slowing downloads many-fold.
 $ProgressPreference = 'SilentlyContinue'
+
+if (($Stage -eq 'Installer') -ne [bool]$SignedBinaries) {
+    throw '-SignedBinaries goes with -Stage Installer, which needs it: the folder of the signed poe2-oracle.exe and uninstall.exe'
+}
+# Relative to where the caller is, not to the repository root this script works in.
+if ($SignedBinaries) { $SignedBinaries = (Resolve-Path -LiteralPath $SignedBinaries).Path }
 
 $NsisVersion = '3.12'
 # nsis-3.12.zip as SourceForge serves it; its MD5 matched the one SourceForge publishes (2026-09-22).
@@ -100,6 +129,17 @@ function Install-CargoAbout {
         '--features', 'cli')
 }
 
+# A signed installer must carry a signed exe and uninstaller: after the install, Windows (Smart App
+# Control, SmartScreen) and antivirus judge the installed files, not the installer.
+function Assert-Signed {
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw "$Path is missing" }
+    $signature = Get-AuthenticodeSignature -LiteralPath $Path
+    if ($signature.Status -ne 'Valid') {
+        throw "$Path has no valid Authenticode signature ($($signature.Status)): $($signature.StatusMessage)"
+    }
+}
+
 $root = Split-Path -Parent $PSScriptRoot
 # Every build script and proc-macro of the app's dependency graph runs in this environment, so the
 # release key's seed leaves it at once; release-sign alone gets it back, and the caller's session
@@ -111,6 +151,32 @@ $unsigned = 'RELEASE_SIGNING_KEY is not set, so this release is UNSIGNED: target
     'SHA256SUMS alone: cargo run -p release-sign -- sign target\dist\SHA256SUMS --key-file <seed file>'
 Push-Location $root
 try {
+    $dist = Join-Path $root 'target\dist'
+    if ($Stage -eq 'Installer') {
+        # The Binaries stage built these files and checked the service settings and the tag; here,
+        # their signatures, and the version is the one the exe reports.
+        $exe = Join-Path $SignedBinaries 'poe2-oracle.exe'
+        $uninstaller = Join-Path $SignedBinaries 'uninstall.exe'
+        Assert-Signed $exe
+        Assert-Signed $uninstaller
+        $version = (Get-Item -LiteralPath $exe).VersionInfo.ProductVersion
+        if ($Tag -and $Tag -ne "v$version") {
+            throw "Tag $Tag does not match the version $version of $exe"
+        }
+        $notices = Join-Path $dist 'THIRD-PARTY-NOTICES.html'
+        if (-not (Test-Path -LiteralPath $notices)) {
+            throw "$notices is missing: the installer carries the one -Stage Binaries wrote"
+        }
+        # An installer or SHA256SUMS left from another build would describe other files.
+        Get-ChildItem -LiteralPath $dist | Where-Object { $_.Name -ne 'THIRD-PARTY-NOTICES.html' } |
+            Remove-Item -Recurse -Force
+        $makensis = Get-MakeNsis
+        Invoke-Native $makensis @('/INPUTCHARSET', 'UTF8', "/DVERSION=$version", "/DAPP_EXE_PATH=$exe",
+            "/DIMPORT_UNINST=$uninstaller", "/DOUT_DIR=$dist", (Join-Path $PSScriptRoot 'installer.nsi'))
+        Get-ChildItem $dist | Format-Table Name, Length -AutoSize
+        return
+    }
+
     # Read at build time into the app (option_env!): a test service's address left in this shell
     # would ship in the exe.
     if (Test-Path Env:POE2_ORACLE_API_BASE) {
@@ -135,7 +201,7 @@ try {
         throw "oracle-protocol is built with its test-only dev-endpoints feature: $protocol"
     }
     # Said now too, while the long build can still be stopped to set the key.
-    if (-not $signingKey) { Write-Warning $unsigned }
+    if ($Stage -eq 'Release' -and -not $signingKey) { Write-Warning $unsigned }
 
     # Before the long build, so a cargo-about that can't be installed stops the release early.
     Install-CargoAbout
@@ -144,7 +210,6 @@ try {
     $exe = Join-Path $root 'target\release\poe2-oracle.exe'
 
     $makensis = Get-MakeNsis
-    $dist = Join-Path $root 'target\dist'
     if (Test-Path $dist) { Remove-Item -Recurse -Force $dist }
     New-Item -ItemType Directory -Path $dist | Out-Null
     # Into the installer, next to the exe: the data, the fonts and every crate of the shipped
@@ -154,6 +219,24 @@ try {
         '-c', (Join-Path $root 'about.toml'),
         '-o', (Join-Path $dist 'THIRD-PARTY-NOTICES.html'),
         (Join-Path $root 'about.hbs'))
+    if ($Stage -eq 'Binaries') {
+        # What the first signing request signs: the exe, and the uninstaller makensis generates for
+        # this installer.
+        $binaries = Join-Path $root 'target\signing'
+        if (Test-Path $binaries) { Remove-Item -Recurse -Force $binaries }
+        New-Item -ItemType Directory -Path $binaries | Out-Null
+        Copy-Item -LiteralPath $exe -Destination $binaries
+        $uninstaller = Join-Path $binaries 'uninstall.exe'
+        Invoke-Native $makensis @('/INPUTCHARSET', 'UTF8', "/DVERSION=$version", "/DAPP_EXE_PATH=$exe",
+            "/DEXPORT_UNINST=$uninstaller", "/DOUT_DIR=$dist", (Join-Path $PSScriptRoot 'installer.nsi'))
+        if (-not (Test-Path -LiteralPath $uninstaller)) {
+            throw "makensis exported no uninstaller to $uninstaller"
+        }
+        # This pass's installer carries the unsigned uninstaller: -Stage Installer makes the real one.
+        Remove-Item -LiteralPath (Join-Path $dist "PoE2-Oracle-Setup-$version.exe")
+        Get-ChildItem $binaries, $dist | Format-Table Name, Length -AutoSize
+        return
+    }
     Invoke-Native $makensis @('/INPUTCHARSET', 'UTF8', "/DVERSION=$version", "/DAPP_EXE_PATH=$exe",
         "/DOUT_DIR=$dist", (Join-Path $PSScriptRoot 'installer.nsi'))
 
