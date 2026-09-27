@@ -30,11 +30,12 @@
 //! asked Windows every 100 ms when that input was. Now a still player's input ends the watcher's
 //! wait itself (raw input, `lip_watch`); only where it can't does the wait ask Windows every
 //! [`INPUT_POLL`] ([`wait_until`]). And the watcher never waits for the GPU, nor for a frame: a
-//! look's copy is read back once the GPU signals it has made it -- where it can't, [`READ_AFTER`]
-//! after the look, and later and later again while the GPU hasn't made it ([`read_due`]) -- and a
-//! new duplication is looked at every [`FIRST_FRAME_RETRY`] for its first frame
-//! ([`first_frame_look`]).
+//! look's copy is read back [`READ_AFTER`] after it, and later and later again while the GPU
+//! hasn't made it ([`next_read`]) -- the GPU's own signal that a copy is made cost more than the
+//! tries it saved (`lip_watch`) -- and a new duplication is looked at every [`FIRST_FRAME_RETRY`]
+//! for its first frame ([`first_frame_look`]).
 
+use std::ffi::OsStr;
 use std::time::{Duration, Instant};
 
 /// How long the watcher keeps watching once the game has left the front: the tooltip the player
@@ -60,11 +61,10 @@ pub const FIRST_FRAME_RETRY: Duration = Duration::from_millis(5);
 /// The least time between two looks at the desktop while the player moves the mouse or presses
 /// keys. The game presents far more often: a look at each of its frames cost 4 % of a core,
 /// measured 2026-09-24 on the test machine at 77 frames a second. 50 ms, not the 25 of before: a
-/// look waits for nothing now and is read back once the GPU has made its copy, so the watcher
-/// reads a tooltip over a rail within about 55 ms of the frame that shows it, 30 on average, and
-/// the plate is gone at the next composition -- under the tenth of a second within which a
-/// response still reads as instant -- at half the looks' cost; 25 ms would read it within 30 and
-/// 17.
+/// look waits for nothing now and is read back `READ_AFTER` after it, so the watcher reads a
+/// tooltip over a rail within about 55 ms of the frame that shows it, 30 on average, and the
+/// plate is gone at the next composition -- under the tenth of a second within which a response
+/// still reads as instant -- at half the looks' cost; 25 ms would read it within 30 and 17.
 pub const LOOK_INTERVAL: Duration = Duration::from_millis(50);
 /// How long after their last input the player still counts as moving: the looks keep to
 /// `LOOK_INTERVAL` through the game's next frames, the first of which shows a tooltip for the item
@@ -80,16 +80,9 @@ pub const STILL_LOOK_INTERVAL: Duration = Duration::from_millis(250);
 pub const UNCOVER_WATCH: Duration = Duration::from_secs(10);
 /// The longest time between two looks while it watches.
 pub const SAFETY_NET: Duration = Duration::from_secs(2);
-/// How long after a look its copy is first tried to be read back where the GPU doesn't signal
-/// that it has made it: the GPU makes it behind the game's own work.
+/// How long after a look its copy is first tried to be read back: the GPU makes it behind the
+/// game's own work.
 pub const READ_AFTER: Duration = Duration::from_millis(4);
-/// How long after a look its copy is tried to be read back if the GPU, asked to signal once it has
-/// made it, hasn't yet: a signal lost, or late behind a game that keeps the GPU busy, holds the
-/// looks up no longer.
-pub const SIGNAL_WAIT: Duration = LOOK_INTERVAL;
-/// How soon a copy is tried again when its own signal found it not readable yet: the GPU has made
-/// it, and `Map` knows a moment later.
-pub const SIGNAL_LAG: Duration = Duration::from_millis(1);
 /// How often a look reads the experience bar too: a little under the two seconds of the XP
 /// sampler (`ui::xp_overlay`), which alone takes the reading, so that while the player moves -- a
 /// look every `LOOK_INTERVAL` -- each sample finds one it hasn't taken yet. Every half second
@@ -255,44 +248,28 @@ pub fn read_retry(misses: u32) -> Duration {
         .min(LOOK_INTERVAL)
 }
 
-/// When the oldest copy still waiting to be read back -- its look at `look`, `signalled` whether
-/// the GPU is to signal once it has made it -- is next tried on the timer, `misses` tries having
-/// found it not made yet ([`read_missed`]), the last at `now`, and `early` whether that one was
-/// brought by the copy's own signal. Before any, `SIGNAL_WAIT` after the look where a signal is to
-/// come -- the signal itself ends the watcher's wait -- and `READ_AFTER` after it where none is;
-/// `SIGNAL_LAG` after a signal that came a moment early; else later and later ([`read_retry`]).
-pub fn read_due(look: Instant, signalled: bool, misses: u32, early: bool, now: Instant) -> Instant {
-    if early {
-        now + SIGNAL_LAG
-    } else if misses == 0 {
-        look + if signalled { SIGNAL_WAIT } else { READ_AFTER }
-    } else {
-        now + read_retry(misses)
-    }
+/// The environment variable that, set to `own`, keeps the lip watcher off GPUI's Direct3D device
+/// (`lip_watch`): it duplicates the desktop on a device of its own, as before it shared GPUI's. For
+/// comparing the two; the log's `lip watch: watching the rails` line says which a run has.
+pub const DEVICE_ENV: &str = "POE2_ORACLE_LIP_DEVICE";
+
+/// Whether `value`, the environment's [`DEVICE_ENV`], keeps the watcher on a device of its own.
+pub fn own_device(value: Option<&OsStr>) -> bool {
+    value.is_some_and(|value| value == "own")
 }
 
-/// Whether a try at reading back at `now` that found the oldest copy waiting -- its look at
-/// `look`, `signalled` whether the GPU is to signal once it has made it -- not made yet counts as
-/// a miss, the timer's tries coming later and later from then on ([`read_due`]). One the timer
-/// brought counts from the copy's own first try on, not one due for an older copy. One the GPU's
-/// signal brought (`by_signal`) counts if the signal was the copy's own, which came a moment
-/// before the copy could be read. Where the GPU signals with a fence, `made` is whether the fence
-/// says the copy is made, and that tells; elsewhere, a try that read older copies first
-/// (`read_older`) had their signal. A signal for an older copy, or for one the timer read already,
-/// leaves the copy to its own.
-pub fn read_missed(
-    look: Instant,
-    signalled: bool,
-    by_signal: bool,
-    made: Option<bool>,
-    read_older: bool,
-    now: Instant,
-) -> bool {
-    if by_signal {
-        made.unwrap_or(!read_older)
-    } else {
-        now >= read_due(look, signalled, 0, false, now)
+/// When the oldest copy still waiting to be read back -- its look at `look` -- is tried next, a try
+/// at `now` having found it not made yet, and how many tries in a row have then found it so,
+/// `misses` before this one. A try before the copy's own first, `READ_AFTER` after its look, was
+/// due for an older copy and doesn't count: the copy is tried at its first. From then on each try
+/// counts, and the next comes later and later ([`read_retry`]).
+pub fn next_read(look: Instant, misses: u32, now: Instant) -> (u32, Instant) {
+    let first = look + READ_AFTER;
+    if now < first {
+        return (misses, first);
     }
+    let misses = misses.saturating_add(1);
+    (misses, now + read_retry(misses))
 }
 
 /// When a new duplication, opened at `opened` and not given a frame yet, is looked at after a look
@@ -619,66 +596,54 @@ mod tests {
         assert!(tries <= 5, "{tries}");
     }
 
-    /// How long after its look a copy the GPU makes `made` after it is read back by the timer
-    /// alone ([`read_due`]), `signalled` whether the timer waits for a signal first.
-    fn read_on_timer(made: Duration, signalled: bool) -> Duration {
+    /// How long after its look a copy the GPU makes `made` after it is read back, through the tries
+    /// its schedule makes ([`next_read`]).
+    fn read_after(made: Duration) -> Duration {
         let look = Instant::now();
-        let mut misses = 0;
-        let mut at = read_due(look, signalled, misses, false, look);
+        let (mut misses, mut at) = (0, look + READ_AFTER);
         while at < look + made {
-            misses += 1;
-            at = read_due(look, signalled, misses, false, at);
+            (misses, at) = next_read(look, misses, at);
         }
         at - look
     }
 
     #[test]
-    fn a_copy_the_gpu_signals_is_left_to_its_signal_with_the_timer_behind_it() {
-        let look = Instant::now();
-        // A copy the GPU won't signal is tried `READ_AFTER` after its look, then later and later.
-        assert_eq!(read_due(look, false, 0, false, look), look + READ_AFTER);
-        let tried = look + READ_AFTER;
-        assert_eq!(
-            read_due(look, false, 1, false, tried),
-            tried + read_retry(1)
-        );
-        // One it will is left to the signal: no try on the timer before `SIGNAL_WAIT`...
-        assert_eq!(
-            read_due(look, true, 0, false, look + 2 * MS),
-            look + SIGNAL_WAIT
-        );
-        // ...and a signal that never comes costs that much at most: a copy made by then is read
-        // then, a later one by the tries after.
-        assert_eq!(read_on_timer(2 * MS, true), SIGNAL_WAIT);
-        let slow = SIGNAL_WAIT + 30 * MS;
-        let read = read_on_timer(slow, true);
-        assert!(read >= slow && read < slow + LOOK_INTERVAL, "{read:?}");
+    fn a_copy_is_read_at_its_first_try_or_within_a_look_interval_of_being_made() {
+        // Made by its first try: read at it.
+        assert_eq!(read_after(2 * MS), READ_AFTER);
+        assert_eq!(read_after(READ_AFTER), READ_AFTER);
+        // Made later: read at the first try after, `LOOK_INTERVAL` after at the most.
+        for made in [5, 20, 60, 150].map(Duration::from_millis) {
+            let read = read_after(made);
+            assert!(
+                read >= made && read <= made + LOOK_INTERVAL,
+                "{made:?}: {read:?}"
+            );
+        }
     }
 
     #[test]
-    fn only_a_try_meant_for_the_copy_counts_as_a_miss() {
+    fn only_a_try_from_the_copys_own_first_on_counts_as_a_miss() {
         let look = Instant::now();
-        let by_timer = |signalled, at| read_missed(look, signalled, false, None, false, at);
-        // The timer's try for an older copy, before this one's own first: no miss; its own
-        // first try on, a miss...
-        assert!(!by_timer(false, look + MS));
-        assert!(by_timer(false, look + READ_AFTER));
-        // ...and for a copy the GPU signals, from `SIGNAL_WAIT` on.
-        assert!(!by_timer(true, look + READ_AFTER));
-        assert!(by_timer(true, look + SIGNAL_WAIT));
-        // A try the GPU's signal brought counts if the signal was the copy's own -- it came a
-        // moment before the copy could be read, which is tried again at once, near enough, not
-        // at `SIGNAL_WAIT`. Where there's a fence, the fence tells whose it was, whatever the try
-        // read first...
-        let at = look + 2 * MS;
-        let by_signal = |made, read_older| read_missed(look, true, true, made, read_older, at);
-        assert!(by_signal(Some(true), true));
-        assert_eq!(read_due(look, true, 1, true, at), at + SIGNAL_LAG);
-        assert!(!by_signal(Some(false), false));
-        // ...and without one, a try that read nothing had the copy's signal, one that read older
-        // copies first had theirs.
-        assert!(by_signal(None, false));
-        assert!(!by_signal(None, true));
+        // A try due for an older copy that found this one not made, before its own first try:
+        // no miss, and the copy is tried at its first, not a retry after this try.
+        assert_eq!(next_read(look, 0, look + MS), (0, look + READ_AFTER));
+        // Its own first try on, a miss each, the next later and later.
+        let first = look + READ_AFTER;
+        assert_eq!(next_read(look, 0, first), (1, first + read_retry(1)));
+        let second = first + read_retry(1);
+        assert_eq!(next_read(look, 1, second), (2, second + read_retry(2)));
+        // A try due for an older copy after this one's first was due counts too.
+        let late = look + 30 * MS;
+        assert_eq!(next_read(look, 0, late), (1, late + read_retry(1)));
+    }
+
+    #[test]
+    fn only_own_keeps_the_watcher_on_a_device_of_its_own() {
+        assert!(own_device(Some(OsStr::new("own"))));
+        for value in [None, Some(""), Some("gpui"), Some("Own")] {
+            assert!(!own_device(value.map(OsStr::new)), "{value:?}");
+        }
     }
 
     #[test]
