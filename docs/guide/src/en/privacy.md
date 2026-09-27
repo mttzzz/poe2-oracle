@@ -107,11 +107,13 @@ account page.
   to character selection for the [XP overlay](xp-overlay.md). Read only.
 - **The screen**, for the XP overlay: the strip of pixels where the experience bar is, and a few
   rows along the top of the flask and skill panels' rails, where the plates stand. While the game
-  is in front, and for two seconds after you switch away, the rails are looked at many times a
-  second, so that a plate steps aside the moment a tooltip covers its rail, and the bar twice a
-  second; while the game is behind another window, the rails every two seconds and the bar every
-  ten, or two seconds after a look that finds it changed or can't read it; while it is minimised,
-  not at all. Nothing of it is saved or sent.
+  is in front, and for two seconds after you switch away, the rails are looked at twenty times a
+  second while you move the mouse or press keys, so that a plate steps aside the moment a tooltip
+  covers its rail, and less and less often once you leave them alone, down to every two seconds;
+  the bar at most twice a second. For that it notes when you use the mouse or the keyboard, never
+  which key or where. While the game is behind another window, the rails are looked at every two
+  seconds and the bar every ten, or two seconds after a look that finds it changed or can't read
+  it; while it is minimised, not at all. Nothing of it is saved or sent.
 
 ## What it types into the game
 

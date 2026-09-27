@@ -92,5 +92,7 @@ rate: it is back as it was when you play again.
   panel hides one only while the panel stands over it: dragged there, or wide enough to reach it by
   itself (a 4:3 or 5:4 game window, a large **Interface scale**). While the game is in front, a
   plate steps aside the moment a tooltip, the chat or another part of the game's interface covers
-  its rail, and is back the moment it goes. Behind another window the game still shows a tooltip
-  under the pointer; a plate then steps aside within four seconds, and is back within two.
+  its rail, and is back the moment it goes. What the game puts over a rail while you leave the
+  mouse and keyboard alone, such as a loading screen that comes a while after a click, takes a
+  plate down within two seconds. Behind another window the game still shows a tooltip under the
+  pointer; a plate then steps aside within four seconds, and is back within two.

@@ -191,7 +191,8 @@ Everything else stays on your computer, unless it goes into a report you send. T
 item text the game copies, the game's own log (`Client.txt`: level-ups, area changes), the game's
 settings file and, on the screen, the pixels of the experience bar and of thin strips along the top
 of the flask and skill panels, where the XP overlay's plates sit (to see when a tooltip covers
-them). It keeps its files here:
+them), more often while you use the mouse or the keyboard, which it notes without reading the keys
+or where the pointer goes. It keeps its files here:
 
 | What | Where |
 |---|---|

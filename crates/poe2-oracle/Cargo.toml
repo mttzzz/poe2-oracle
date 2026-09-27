@@ -124,7 +124,9 @@ zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2
 # clipboard_poll.rs). `Win32_Media` (1 ms timer ticks during that wait, the same file).
 # `Win32_Graphics_Direct3D`, `Win32_Graphics_Direct3D11`, `Win32_Graphics_Dxgi` and
 # `Win32_Graphics_Dxgi_Common` (desktop duplication, which reads the HUD rails' lips frame by frame
-# for the XP overlay -- src/platform/lip_watch.rs; gpui_windows' renderer builds them already).
+# for the XP overlay -- src/platform/lip_watch.rs; gpui_windows' renderer builds them already);
+# its raw input, which wakes it on the player's input (`RegisterRawInputDevices`), is
+# `Win32_UI_Input`'s, which `Win32_UI_Input_KeyboardAndMouse` turns on.
 # `Win32_System_Diagnostics_Debug` and `Win32_System_SystemServices` (this executable's own PE
 # headers, whose import of `RedrawWindow` src/platform/redraw_filter.rs points at its filter).
 # `Win32_System_Com` and `Win32_UI_Shell` (`ITaskbarList`, which drops or restores the taskbar

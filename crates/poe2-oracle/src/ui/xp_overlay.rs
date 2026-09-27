@@ -24,9 +24,11 @@
 //! while its rail is seen where it goes (`overlay_layout::rail_seen`): not over a tooltip, a
 //! loading screen, a full-screen panel, another program, or a HUD laid out otherwise. While the
 //! game is in front and not minimised, and a moment after, the lips are watched frame by frame
-//! (`platform::lip_watch`), so a plate steps aside the moment a tooltip covers its rail and comes
-//! back the moment it goes, and the bar is read off the same frames every half second: the
-//! sampler takes that reading, and reads no pixels itself. Otherwise the sampler's look decides,
+//! (`platform::lip_watch`) -- twenty times a second while the player moves the mouse or presses
+//! keys, thinning out to every two seconds once they keep still (`platform::lip_schedule`) -- so
+//! a plate steps aside the moment a tooltip covers its rail and comes back the moment it goes,
+//! and the bar is read off the same frames, every half second at the most: the sampler takes
+//! that reading, and reads no pixels itself. Otherwise the sampler's look decides,
 //! a single miss let pass: behind another window the game still shows a tooltip under the
 //! cursor, and its plate steps aside two to four seconds later, back within two once it goes.
 //! Out of the front, though, no experience comes in: the sampler looks at the bar only every ten
@@ -797,8 +799,8 @@ impl XpOverlay {
     }
 
     /// Takes the lip watcher's word on the rails and puts the plates in line with it at once:
-    /// a tooltip over a rail takes its plate down in the frame it appears, and back when it goes.
-    /// The bar's fill waits for the next sample, which the tracker takes it from.
+    /// a tooltip over a rail takes its plate down as soon as a look reads it, and back when it
+    /// goes. The bar's fill waits for the next sample, which the tracker takes it from.
     fn on_lips(&mut self, report: LipReport, cx: &mut Context<Self>) {
         log::debug!("lip watch: {report:?}");
         match report {
