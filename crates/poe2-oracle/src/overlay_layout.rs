@@ -349,47 +349,33 @@ pub fn rail_lip(plate: PhysicalRect, game_height: i32) -> PhysicalRect {
 /// Whether `bgra` -- [`rail_lip`]'s strip, 32-bit BGRA rows top to bottom, `width` pixels each --
 /// shows the rail: in most columns the lip's brightest row is the molding's light grey, well
 /// above the row under the lip. The game's world, or a window over the rail, reads as neither.
-///
-/// The lip watcher reads two strips a look, up to twenty looks a second (`platform::lip_watch`):
-/// each pixel's luma is worked out once, and the columns are read only till the verdict is
-/// settled -- enough of them read as the lip, or too few are left to.
 pub fn rail_seen(bgra: &[u8], width: usize) -> bool {
     let rows = bgra.len() / 4 / width.max(1);
     if width == 0 || rows < 2 {
         return false;
     }
-    let luma = |at: usize| {
-        let pixel = &bgra[at..at + 3];
-        0.299 * f64::from(pixel[2]) + 0.587 * f64::from(pixel[1]) + 0.114 * f64::from(pixel[0])
+    let pixel = |x: usize, y: usize| {
+        let at = (y * width + x) * 4;
+        [bgra[at + 2], bgra[at + 1], bgra[at]]
     };
-    let needed = LIP_MIN_SHARE * width as f64;
-    let mut seen = 0usize;
-    for x in 0..width {
-        if seen as f64 >= needed {
-            return true;
-        }
-        if ((seen + width - x) as f64) < needed {
-            return false;
-        }
-        // The lip's brightest pixel in the column, the lowest of equals.
-        let (mut highlight, mut light) = (x * 4, luma(x * 4));
-        for y in 1..rows - 1 {
-            let at = (y * width + x) * 4;
-            let bright = luma(at);
-            if bright >= light {
-                (highlight, light) = (at, bright);
-            }
-        }
-        let rgb = &bgra[highlight..highlight + 3];
-        let chroma = rgb.iter().max().unwrap_or(&0) - rgb.iter().min().unwrap_or(&0);
-        if light >= LIP_MIN_LUMA
-            && chroma <= LIP_MAX_CHROMA
-            && light - luma(((rows - 1) * width + x) * 4) >= LIP_MIN_STEP
-        {
-            seen += 1;
-        }
-    }
-    seen as f64 >= needed
+    let luma =
+        |[r, g, b]: [u8; 3]| 0.299 * f64::from(r) + 0.587 * f64::from(g) + 0.114 * f64::from(b);
+    let seen = (0..width)
+        .filter(|&x| {
+            let Some(highlight) = (0..rows - 1)
+                .map(|y| pixel(x, y))
+                .max_by(|a, b| luma(*a).total_cmp(&luma(*b)))
+            else {
+                return false;
+            };
+            let chroma =
+                highlight.iter().max().unwrap_or(&0) - highlight.iter().min().unwrap_or(&0);
+            luma(highlight) >= LIP_MIN_LUMA
+                && chroma <= LIP_MAX_CHROMA
+                && luma(highlight) - luma(pixel(x, rows - 1)) >= LIP_MIN_STEP
+        })
+        .count();
+    seen as f64 >= LIP_MIN_SHARE * width as f64
 }
 
 /// Which of the game's side panels a check sits beside: the inventory, on the game's right, for a
@@ -642,32 +628,6 @@ mod tests {
         assert!(!rail_seen(&world, 460));
         // Light grey all the way down -- stone, fog -- has no lip over a darker row.
         assert!(!rail_seen(&[150, 150, 150, 255].repeat(460 * 5), 460));
-    }
-
-    #[test]
-    fn a_rail_is_seen_by_its_share_of_lip_columns_wherever_they_are() {
-        // Ten columns of five rows: a lip column is the molding's light grey over the groove's
-        // dark, any other the groove's dark all the way down.
-        let strip = |lip: &[bool]| -> Vec<u8> {
-            let (light, dark) = ([190, 190, 190, 255], [40, 40, 40, 255]);
-            (0..5)
-                .flat_map(|row| {
-                    lip.iter()
-                        .flat_map(move |&column| if column && row < 4 { light } else { dark })
-                })
-                .collect()
-        };
-        let run = |from: usize, count: usize| -> Vec<bool> {
-            (0..10).map(|x| (from..from + count).contains(&x)).collect()
-        };
-        // Six of ten, `LIP_MIN_SHARE`, count wherever they are -- the last ones too -- and five
-        // don't, the first ones either.
-        for from in 0..=4 {
-            assert!(rail_seen(&strip(&run(from, 6)), 10), "six from {from}");
-        }
-        for from in 0..=5 {
-            assert!(!rail_seen(&strip(&run(from, 5)), 10), "five from {from}");
-        }
     }
 
     #[test]

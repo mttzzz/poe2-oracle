@@ -118,7 +118,7 @@ never sees your password. It takes only the session the site gives that browser,
   is in front, and for two seconds after you switch away, the rails are looked at twenty times a
   second while you move the mouse or press keys, so that a plate steps aside the moment a tooltip
   covers its rail, and less and less often once you leave them alone, down to every two seconds;
-  the bar about every two seconds. For that it notes when you use the mouse or the keyboard, never
+  the bar at most twice a second. For that it notes when you use the mouse or the keyboard, never
   which key or where. While the game is behind another window, the rails are looked at every two
   seconds and the bar every ten, or two seconds after a look that finds it changed or can't read
   it; while it is minimised, not at all. Nothing of it is saved or sent.

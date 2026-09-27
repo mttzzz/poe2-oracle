@@ -128,23 +128,9 @@ Things that save time:
   and the messages taken off the thread's queue or sent from other threads, per second. For
   measuring idle cost; off, it only reads a flag.
 - `POE2_ORACLE_D3D_THREADING=1` leaves the graphics driver its own threads for the app's Direct3D
-  devices (GPUI's, which the XP overlay's lip watcher shares where it can, and the watcher's own
-  where it can't), which the app otherwise asks the driver not to run
-  (`src/platform/d3d_threading.rs`). For comparing the idle cost of the two; the log's
+  devices (GPUI's and the XP overlay's lip watcher's), which the app otherwise asks the driver not
+  to run (`src/platform/d3d_threading.rs`). For comparing the idle cost of the two; the log's
   `d3d threading:` line says which one a run has.
-- `POE2_ORACLE_LIP_DEVICE=own` keeps the XP overlay's lip watcher off GPUI's Direct3D device: it
-  duplicates the screen on a device of its own, as it did before it shared GPUI's
-  (`src/platform/lip_watch.rs`). For comparing the two. Sharing GPUI's device and reading the
-  copies back on a timer measured cheapest: on 2026-09-27, on the test machine during real play, a
-  minute each, the watcher's thread took 113 µs a look, against 141 µs with the GPU signalling
-  each copy (an `ID3D11Fence`) and 146 µs on a device of its own, which also brings a second set of
-  the graphics driver's threads.
-- The log's `lip watch: watching the rails frame by frame` line says which Direct3D device the lip
-  watcher duplicates the screen on: GPUI's, or one of its own and why. With
-  `RUST_LOG=warn,poe2_oracle=info,trade_client=info,poe2_oracle::platform::lip_watch=debug` it
-  also counts, every minute and as the watching stops, its looks, the copies read back, the tries
-  that found a copy not made yet and how long after its look a copy was read; and it times each
-  Direct3D and DXGI call its looks and read-backs make.
 - `POE2_ORACLE_API_BASE` is read at build time: the app then sends its reports and update checks to
   that address instead of `https://oracle.pushka.biz`, for testing against your own `oracle-web`
   (see [The web service](#the-web-service)). It must be https, without a trailing slash; a plain

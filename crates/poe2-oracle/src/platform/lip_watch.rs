@@ -12,52 +12,28 @@
 //! front and not minimised, and a moment after (`platform::lip_schedule`, which paces the looks
 //! too). The thread learns of the foreground from Windows' reports, handed on by the overlay
 //! ([`LipWatch::foreground`]), and asks nothing while it doesn't watch: it sleeps till told
-//! otherwise. Once it stops, the duplication is let go -- the video memory of its frames with it,
-//! and its Direct3D device if it made one -- and [`LipReport::Idle`] leaves the plates and the bar
-//! to the sampler's slower look.
+//! otherwise. Once it stops, the duplication and its Direct3D device are let go -- their video
+//! memory with them -- and [`LipReport::Idle`] leaves the plates and the bar to the sampler's
+//! slower look.
 //!
 //! Each report wakes the UI thread, so a report goes only when a rail is seen or missed where it
 //! wasn't, at once ([`LipReport::Seen`]); the bar's reading, which changes as experience comes in,
 //! waits in a slot the sampler takes it from every two seconds ([`LipWatch::fill`]), and wakes
 //! nothing.
 //!
-//! A look waits for nothing. Measured 2026-09-27 on the test machine (the build of 93296e4, the
-//! game in front, idle), this thread took 1.45 ms of CPU a look at four looks a second, and four
-//! context switches a look: three steps of the input poll, and one wait in the look itself -- `Map`
-//! of the staging texture right after the copy was queued, which waited inside the graphics
-//! driver, on this thread, for the GPU to get to the copy behind the game's own work. So a look
-//! takes the latest frame without waiting for one (`AcquireNextFrame` with no timeout: none new
-//! since the last look, or one where only the pointer moved, and nothing on screen changed),
-//! queues the copy of the rows into one of [`STAGING`] staging textures, sends it to the GPU and
-//! lets the frame go at once. Held till the next look instead, the frame would spare Windows
-//! copying each composed frame into it, but that look would first wait for a composition:
+//! A look waits for nothing but a new duplication's first frame. Measured 2026-09-27 on the test
+//! machine (the build of 93296e4, the game in front, idle), this thread took 1.45 ms of CPU a
+//! look at four looks a second, and four context switches a look: three steps of the input poll,
+//! and one wait in the look itself -- `Map` of the staging texture right after the copy was
+//! queued, which waited inside the graphics driver, on this thread, for the GPU to get to the copy
+//! behind the game's own work. So a look takes the latest frame without waiting for one
+//! (`AcquireNextFrame` with no timeout: none new since the last look, or one where only the
+//! pointer moved, and nothing on screen changed), queues the copy of the rows into one of
+//! [`STAGING`] staging textures, sends it to the GPU and lets the frame go at once; the copy is
+//! read back `lip_schedule::READ_AFTER` later with `D3D11_MAP_FLAG_DO_NOT_WAIT`, and tried again
+//! later while the GPU hasn't made it. Held till the next look instead, the frame would spare
+//! Windows copying each composed frame into it, but that look would first wait for a composition:
 //! Lightpack found half its looks lost so (psieg/Lightpack#373).
-//!
-//! The copy is read back `lip_schedule::READ_AFTER` after the look, `D3D11_MAP_FLAG_DO_NOT_WAIT`
-//! and all, and tried again later and later while the GPU hasn't made it
-//! (`lip_schedule::next_read`). Waiting for the GPU's signal that a copy is made instead -- an
-//! `ID3D11Fence` set at each look -- cost more than the tries it saved: measured 2026-09-27 on the
-//! test machine during real play, a minute each, this thread took 141 µs a look with the signal,
-//! and 142 with it asked for only where the first try missed, against 113 µs on the timer. With the
-//! log at debug, what the looks and read-backs come to is counted, and each of their calls timed
-//! ([`Tally`]).
-//!
-//! The duplication is made on GPUI's own Direct3D device where it can be ([`Owner`]): a device of
-//! the watcher's own brings a set of the graphics driver's threads, one of which wakes 75-80 times
-//! a second whatever the watcher does. Measured the same way, on a device of its own this thread
-//! took 146 µs a look, and those threads 20 ms a minute. GPUI uses its device's immediate context
-//! on its UI thread when it likes, so the sharing rests on: the device's multithread protection,
-//! turned on as GPUI's device is made (`gpu_memory::note_device`), which makes each call on the
-//! context and each DXGI call on the device hold the device's lock; the watcher holding that lock
-//! through each of its sequences of calls -- a look, a read-back ([`Owner::lock`]) -- and never
-//! waiting under it, for a frame or anything else (`lip_schedule::FIRST_FRAME_WAIT`); nothing done
-//! to the context's state, which is GPUI's (no `ClearState`); and the game's monitor on GPUI's
-//! graphics card, which a duplication has to be made on. Where that can't be -- another card, a
-//! device without the protection, or a duplication DXGI won't make on GPUI's device
-//! (`lip_schedule::gpui_device_to_blame`), which isn't asked again -- or where
-//! `POE2_ORACLE_LIP_DEVICE=own` says not to, the watcher makes a device of its own, as before, and
-//! says why in the log. A device lost to the driver takes the duplication with it, and the next
-//! opens on the device GPUI makes anew.
 //!
 //! Between looks the thread sleeps on a high-resolution timer, on its orders, and -- while the
 //! player keeps still (`lip_schedule::still`) -- on their input: raw input from the mouse and the
@@ -72,34 +48,30 @@
 //! that isn't), a still wait asks Windows when the last input was every
 //! `lip_schedule::INPUT_POLL` instead.
 
-use std::borrow::Cow;
-use std::mem::ManuallyDrop;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, Result, bail};
 use windows::Win32::Foundation::{
-    CloseHandle, E_ACCESSDENIED, ERROR_CLASS_ALREADY_EXISTS, GetLastError, HANDLE, HMODULE, HWND,
-    LPARAM, LRESULT, WAIT_FAILED, WAIT_OBJECT_0, WPARAM,
+    CloseHandle, ERROR_CLASS_ALREADY_EXISTS, GetLastError, HANDLE, HMODULE, HWND, LPARAM, LRESULT,
+    WAIT_FAILED, WAIT_OBJECT_0, WPARAM,
 };
 use windows::Win32::Graphics::Direct3D::D3D_DRIVER_TYPE_UNKNOWN;
 use windows::Win32::Graphics::Direct3D11::{
     D3D11_BOX, D3D11_CPU_ACCESS_READ, D3D11_CREATE_DEVICE_FLAG, D3D11_MAP_FLAG_DO_NOT_WAIT,
     D3D11_MAP_READ, D3D11_MAPPED_SUBRESOURCE, D3D11_SDK_VERSION, D3D11_TEXTURE2D_DESC,
-    D3D11_USAGE_STAGING, D3D11CreateDevice, ID3D11Device, ID3D11DeviceContext, ID3D11Multithread,
-    ID3D11Texture2D,
+    D3D11_USAGE_STAGING, D3D11CreateDevice, ID3D11Device, ID3D11DeviceContext, ID3D11Texture2D,
 };
 use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_MODE_ROTATION_IDENTITY, DXGI_MODE_ROTATION_UNSPECIFIED,
     DXGI_SAMPLE_DESC,
 };
 use windows::Win32::Graphics::Dxgi::{
-    CreateDXGIFactory1, DXGI_ERROR_NOT_CURRENTLY_AVAILABLE, DXGI_ERROR_SESSION_DISCONNECTED,
-    DXGI_ERROR_UNSUPPORTED, DXGI_ERROR_WAIT_TIMEOUT, DXGI_ERROR_WAS_STILL_DRAWING,
-    DXGI_OUTDUPL_FRAME_INFO, IDXGIAdapter1, IDXGIDevice, IDXGIFactory1, IDXGIOutput1, IDXGIOutput5,
-    IDXGIOutputDuplication, IDXGIResource,
+    CreateDXGIFactory1, DXGI_ERROR_WAIT_TIMEOUT, DXGI_ERROR_WAS_STILL_DRAWING,
+    DXGI_OUTDUPL_FRAME_INFO, IDXGIFactory1, IDXGIOutput1, IDXGIOutput5, IDXGIOutputDuplication,
+    IDXGIResource,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::SystemInformation::GetTickCount;
@@ -121,7 +93,6 @@ use windows::core::{Interface, PCWSTR, w};
 
 use crate::overlay_layout::{PhysicalRect, hud_rails, rail_lip, rail_seen};
 use crate::platform::game_window::{self, Foreground};
-use crate::platform::gpu_memory;
 use crate::platform::lip_schedule::{self, WhenToWatch};
 use crate::platform::xp_bar::{RailsSeen, shows_the_game};
 use crate::xp_tracker::{XpBarGeometry, read_fill};
@@ -129,100 +100,6 @@ use crate::xp_tracker::{XpBarGeometry, read_fill};
 /// How many looks' copies may wait for the GPU at once: a look that finds as many waiting is let
 /// go, and the next comes once one is read.
 const STAGING: usize = 3;
-
-/// How often, while it watches, the debug log gets what the looks and their read-backs came to
-/// ([`Tally`]); the rest as the duplication goes.
-const TALLY_EVERY: Duration = Duration::from_secs(60);
-
-/// Whether DXGI wouldn't duplicate the game's monitor on GPUI's Direct3D device for a reason of the
-/// device's own (`lip_schedule::gpui_device_to_blame`): the watcher makes a device of its own from
-/// then on, as long as the app runs.
-static GPUI_DEVICE_REFUSED: AtomicBool = AtomicBool::new(false);
-
-// The values `lip_schedule` knows them by, which build everywhere.
-const _: () = assert!(
-    lip_schedule::E_ACCESSDENIED == E_ACCESSDENIED.0
-        && lip_schedule::DXGI_ERROR_NOT_CURRENTLY_AVAILABLE == DXGI_ERROR_NOT_CURRENTLY_AVAILABLE.0
-        && lip_schedule::DXGI_ERROR_UNSUPPORTED == DXGI_ERROR_UNSUPPORTED.0
-        && lip_schedule::DXGI_ERROR_SESSION_DISCONNECTED == DXGI_ERROR_SESSION_DISCONNECTED.0
-);
-
-/// Whether the watcher may share GPUI's Direct3D device, as the environment asks
-/// (`lip_schedule::DEVICE_ENV`), and whether it times its calls: read once, as its thread starts.
-#[derive(Debug, Clone, Copy)]
-struct Setup {
-    /// Whether GPUI's Direct3D device may be shared.
-    share: bool,
-    /// Whether the looks' and read-backs' calls are timed for the debug log ([`Tally`]).
-    timed: bool,
-}
-
-impl Setup {
-    fn from_env() -> Setup {
-        let device = std::env::var_os(lip_schedule::DEVICE_ENV);
-        let share = !lip_schedule::own_device(device.as_deref());
-        if share && let Some(device) = &device {
-            log::warn!(
-                "lip watch: {}={} isn't `own`: GPUI's device is shared where it can be",
-                lip_schedule::DEVICE_ENV,
-                device.display()
-            );
-        }
-        Setup {
-            share,
-            timed: log::log_enabled!(log::Level::Debug),
-        }
-    }
-}
-
-/// A kind of Direct3D or DXGI call a look or a read-back makes, timed for the debug log
-/// ([`Tally`]).
-#[derive(Debug, Clone, Copy)]
-enum Call {
-    /// The wait for GPUI's device's lock (`ID3D11Multithread::Enter`).
-    Lock,
-    /// `AcquireNextFrame`.
-    Acquire,
-    /// The rows' `CopySubresourceRegion`, and a staging texture made at its first use.
-    Copies,
-    /// `ReleaseFrame`.
-    Release,
-    /// `Flush`.
-    Flush,
-    /// `Map`, of a copy made or not.
-    Map,
-    /// The rows read out of a mapped copy (`read_look`).
-    Read,
-    /// `Unmap`.
-    Unmap,
-}
-
-impl Call {
-    /// Each, in the order of its discriminant.
-    const ALL: [Call; 8] = [
-        Call::Lock,
-        Call::Acquire,
-        Call::Copies,
-        Call::Release,
-        Call::Flush,
-        Call::Map,
-        Call::Read,
-        Call::Unmap,
-    ];
-
-    fn name(self) -> &'static str {
-        match self {
-            Call::Lock => "lock",
-            Call::Acquire => "acquire",
-            Call::Copies => "copy",
-            Call::Release => "release",
-            Call::Flush => "flush",
-            Call::Map => "map",
-            Call::Read => "read",
-            Call::Unmap => "unmap",
-        }
-    }
-}
 
 /// What the watcher saw.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -339,7 +216,6 @@ fn watch(
     reports: &async_channel::Sender<LipReport>,
     slot: &FillSlot,
 ) {
-    let setup = Setup::from_env();
     let mut waiter = Waiter::new(wake);
     let mut when = WhenToWatch::default();
     let mut game = None;
@@ -353,9 +229,8 @@ fn watch(
     let mut fill: Option<f64> = None;
     let mut last_error = String::new();
     // The first duplication of the run is logged, as a sign in the diagnostics report that the
-    // fast look works, with the device it's made on; each later one, on every return to the game,
-    // only at debug -- unless the device changed.
-    let mut announced: Option<String> = None;
+    // fast look works; each later one, on every return to the game, only at debug.
+    let mut announced = false;
     loop {
         loop {
             let order = match orders.try_recv() {
@@ -386,8 +261,8 @@ fn watch(
             when.asked(window.is_some_and(game_window::in_front), now);
         }
         let Some(client) = game.filter(|_| when.watching(now)) else {
-            // Nothing to look at: the duplication goes, with its device if it's the watcher's own,
-            // and the thread sleeps till an order comes, or the watching may start by itself.
+            // Nothing to look at: the duplication and its device go, and the thread sleeps till
+            // an order comes, or the watching may start by itself.
             if duplication.take().is_some() {
                 log::debug!("lip watch: the duplication let go");
             }
@@ -408,7 +283,7 @@ fn watch(
             duplication = None;
             // A game across two monitors: what's read must all be on the one duplicated, else
             // the next round would open it again, and again.
-            let opened = Duplication::open(client, setup).and_then(|opened| {
+            let opened = Duplication::open(client).and_then(|opened| {
                 if !opened.shows(rects()) {
                     bail!("the rails and the bar aren't all on the game's monitor");
                 }
@@ -417,14 +292,11 @@ fn watch(
             match opened {
                 Ok(opened) => {
                     let monitor = opened.monitor;
-                    let how = opened.how();
-                    if announced.as_ref() == Some(&how) {
+                    if announced {
                         log::debug!("lip watch: duplicating the monitor at {monitor:?}");
                     } else {
-                        log::info!(
-                            "lip watch: watching the rails frame by frame on {monitor:?}, {how}"
-                        );
-                        announced = Some(how);
+                        log::info!("lip watch: watching the rails frame by frame on {monitor:?}");
+                        announced = true;
                     }
                     last_error.clear();
                     duplication = Some(opened);
@@ -466,7 +338,6 @@ fn watch(
                 continue;
             }
         }
-        open.tally.log_if_due(now);
         let last_input = waiter.input.last(now);
         // Whether the latest look read showed every rail: nothing over them to go by itself.
         let clear = reported.is_some_and(|rails| rails.flask && rails.skill);
@@ -493,16 +364,14 @@ fn watch(
     }
 }
 
-/// The duplication of the monitor the game is on, and what reading its lips and bar takes, on
-/// GPUI's Direct3D device or on one of its own ([`Owner`]).
+/// The duplication of the monitor the game is on, and what reading its lips and bar takes: a
+/// Direct3D device of its own, let go with it.
 struct Duplication {
     /// The monitor's area of the desktop, physical pixels.
     monitor: PhysicalRect,
-    /// Let go of first as the duplication goes, under the device's lock (`Drop`).
-    duplication: ManuallyDrop<IDXGIOutputDuplication>,
+    duplication: IDXGIOutputDuplication,
     context: ID3D11DeviceContext,
     device: ID3D11Device,
-    owner: Owner,
     /// The textures the looks are copied into to be read -- the flask lip's rows, the skill lip's
     /// under them, the bar's under those -- each with the look it holds until it's read.
     staging: [Staging; STAGING],
@@ -510,22 +379,18 @@ struct Duplication {
     size: (u32, u32),
     /// How many looks were copied: each copy's number, in the order they're read back.
     copies: u64,
-    /// When it was made: its first frame is looked for from then.
-    opened: Instant,
     /// When the last look was: the next is paced from it.
     last_look: Option<Instant>,
-    /// Whether a look took a frame of the desktop yet, not one where only the pointer moved.
+    /// Whether a look took a frame yet.
     framed: bool,
-    /// When the oldest copy waiting is next tried to be read back, while one waits.
+    /// When a copy is next tried to be read back, while one waits for it.
     read_at: Option<Instant>,
-    /// The tries in a row that found the oldest copy not made yet (`lip_schedule::next_read`).
+    /// The tries in a row that found the GPU not done with the oldest copy.
     misses: u32,
     /// When the bar was last copied.
     bar_read: Option<Instant>,
     /// One lip's or the bar's rows, reused from look to look.
     rows: Vec<u8>,
-    /// What the looks and their read-backs came to, for the debug log.
-    tally: Tally,
 }
 
 /// A staging texture, made at its first use.
@@ -540,8 +405,6 @@ struct Staging {
 struct Copied {
     /// Its place in the order the copies were made.
     number: u64,
-    /// When its look was.
-    at: Instant,
     lips: [PhysicalRect; 2],
     /// The bar if it was due a reading: copied if the game itself showed it, else `None`, which
     /// reads as covered.
@@ -556,141 +419,9 @@ struct Look {
     fill: Option<Option<f64>>,
 }
 
-/// Whose Direct3D device a duplication is made on.
-enum Owner {
-    /// GPUI's (`gpu_memory::gpui_device`), its multithread protection on: the lock each of the
-    /// watcher's sequences of calls holds ([`Owner::lock`]).
-    Gpui(ID3D11Multithread),
-    /// One of the watcher's own, made for the duplication and let go with it; why GPUI's isn't
-    /// shared.
-    Own(Cow<'static, str>),
-}
-
-impl Owner {
-    /// Holds the device's lock till the returned guard goes, if the device is GPUI's: GPUI's calls
-    /// on it, on the UI thread, wait till then -- microseconds, since nothing waits under it.
-    fn lock(&self) -> Option<Locked> {
-        let Owner::Gpui(lock) = self else {
-            return None;
-        };
-        // SAFETY: the lock of a device whose multithread protection is on (`device_on`), entered
-        // and left on this thread.
-        unsafe { lock.Enter() };
-        Some(Locked(lock.clone()))
-    }
-}
-
-/// GPUI's device's lock, held till this goes.
-struct Locked(ID3D11Multithread);
-
-impl Drop for Locked {
-    fn drop(&mut self) {
-        // SAFETY: entered on this thread by `Owner::lock`.
-        unsafe { self.0.Leave() };
-    }
-}
-
-/// What the looks and their read-backs came to since `since`, for the debug log: how many copies
-/// were read back and how long after their looks, how many tries found a copy not made yet, and
-/// -- if timed -- what each kind of call took.
-struct Tally {
-    since: Instant,
-    looks: u32,
-    /// Looks that found a new frame and copied it.
-    copied: u32,
-    /// Copies read back.
-    read_back: u32,
-    /// Tries that found a copy not made yet, from its own first on (`lip_schedule::next_read`).
-    misses: u32,
-    /// The time from a look to its copy's read-back: all of them, and the longest.
-    waited: Duration,
-    longest: Duration,
-    /// Each kind of call's time all together, and how many, in `Call::ALL`'s order: `None` unless
-    /// the calls are timed.
-    calls: Option<[(Duration, u32); Call::ALL.len()]>,
-}
-
-impl Tally {
-    fn new(since: Instant, timed: bool) -> Tally {
-        Tally {
-            since,
-            looks: 0,
-            copied: 0,
-            read_back: 0,
-            misses: 0,
-            waited: Duration::ZERO,
-            longest: Duration::ZERO,
-            calls: timed.then_some([(Duration::ZERO, 0); Call::ALL.len()]),
-        }
-    }
-
-    /// Now, if the calls are timed: a call's start, for [`Tally::took`].
-    fn clock(&self) -> Option<Instant> {
-        self.calls.is_some().then(Instant::now)
-    }
-
-    /// A call of the kind `call`, started at `started`, is done.
-    fn took(&mut self, call: Call, started: Option<Instant>) {
-        if let (Some(calls), Some(started)) = (&mut self.calls, started) {
-            let (spent, count) = &mut calls[call as usize];
-            *spent += started.elapsed();
-            *count += 1;
-        }
-    }
-
-    /// A copy read back `waited` after its look.
-    fn read(&mut self, waited: Duration) {
-        self.read_back += 1;
-        self.waited += waited;
-        self.longest = self.longest.max(waited);
-    }
-
-    /// Logs the tally at `now` and starts a new one, once it's `TALLY_EVERY` old.
-    fn log_if_due(&mut self, now: Instant) {
-        if now.saturating_duration_since(self.since) >= TALLY_EVERY {
-            self.log(now);
-            *self = Tally::new(now, self.calls.is_some());
-        }
-    }
-
-    /// Logs the tally at `now`, at debug, if a look came since it started.
-    fn log(&self, now: Instant) {
-        if self.looks == 0 {
-            return;
-        }
-        let calls = self
-            .calls
-            .map(|calls| {
-                let each: Vec<String> = Call::ALL
-                    .iter()
-                    .zip(calls)
-                    .filter(|(_, (_, count))| *count > 0)
-                    .map(|(call, (spent, count))| {
-                        format!("{} {count}×{:.1?}", call.name(), spent / count)
-                    })
-                    .collect();
-                format!("; calls, how many and each on average: {}", each.join(", "))
-            })
-            .unwrap_or_default();
-        log::debug!(
-            "lip watch: in {:.1?}, {} looks, {} copied, {} read back, {} tries found a copy not \
-             made yet; a copy read {:.1?} after its look on average, {:.1?} at most{calls}",
-            now.saturating_duration_since(self.since),
-            self.looks,
-            self.copied,
-            self.read_back,
-            self.misses,
-            self.waited.checked_div(self.read_back).unwrap_or_default(),
-            self.longest
-        );
-    }
-}
-
 impl Duplication {
-    /// Duplicates the monitor under the middle of the game's client area, on GPUI's device where
-    /// it may be shared and `setup` doesn't say not to, else on one of the watcher's own
-    /// ([`device_on`]).
-    fn open(client: PhysicalRect, setup: Setup) -> Result<Duplication> {
+    /// Duplicates the monitor under the middle of the game's client area.
+    fn open(client: PhysicalRect) -> Result<Duplication> {
         let (x, y) = (client.x + client.width / 2, client.y + client.height / 2);
         let factory: IDXGIFactory1 =
             unsafe { CreateDXGIFactory1() }.context("CreateDXGIFactory1")?;
@@ -720,81 +451,52 @@ impl Duplication {
                 {
                     bail!("the game's monitor is rotated");
                 }
+                let mut device = None;
+                let mut context = None;
+                unsafe {
+                    D3D11CreateDevice(
+                        &adapter,
+                        D3D_DRIVER_TYPE_UNKNOWN,
+                        HMODULE::default(),
+                        D3D11_CREATE_DEVICE_FLAG(0),
+                        None,
+                        D3D11_SDK_VERSION,
+                        Some(&mut device),
+                        None,
+                        Some(&mut context),
+                    )
+                }
+                .context("D3D11CreateDevice")?;
+                let (Some(device), Some(context)) = (device, context) else {
+                    bail!("D3D11CreateDevice returned no device");
+                };
                 // 8-bit BGRA whatever the desktop is, HDR included; outputs before Windows 10
                 // 1703 duplicate the legacy way.
-                let newer = output.cast::<IDXGIOutput5>().ok();
-                let legacy: IDXGIOutput1 = output.cast().context("IDXGIOutput1")?;
-                let duplicate = |device: &ID3D11Device| unsafe {
-                    match &newer {
-                        Some(newer) => {
-                            newer.DuplicateOutput1(device, 0, &[DXGI_FORMAT_B8G8R8A8_UNORM])
-                        }
-                        None => legacy.DuplicateOutput(device),
-                    }
-                };
-                // Twice at the most: once DXGI wouldn't duplicate on GPUI's device, `device_on`
-                // makes one of the watcher's own, tried at once.
-                let (device, owner, duplication) = loop {
-                    let (device, owner) = device_on(&adapter, setup.share)?;
-                    let duplicated = {
-                        let _locked = owner.lock();
-                        duplicate(&device)
-                    };
-                    match duplicated {
-                        Err(err)
-                            if matches!(owner, Owner::Gpui(_))
-                                && lip_schedule::gpui_device_to_blame(
-                                    err.code().0,
-                                    unsafe { device.GetDeviceRemovedReason() }.is_err(),
-                                ) =>
-                        {
-                            log::warn!(
-                                "lip watch: duplicating the game's monitor on GPUI's Direct3D \
-                                 device failed ({}: {}); on a device of its own from now on",
-                                err.code(),
-                                err.message().trim_end()
-                            );
-                            GPUI_DEVICE_REFUSED.store(true, Ordering::Relaxed);
-                        }
-                        duplicated => {
-                            let duplication =
-                                duplicated.context("duplicating the game's monitor")?;
-                            break (device, owner, duplication);
-                        }
-                    }
-                };
-                let context =
-                    unsafe { device.GetImmediateContext() }.context("GetImmediateContext")?;
-                let opened = Instant::now();
+                let duplication = match output.cast::<IDXGIOutput5>() {
+                    Ok(output) => unsafe {
+                        output.DuplicateOutput1(&device, 0, &[DXGI_FORMAT_B8G8R8A8_UNORM])
+                    },
+                    Err(_) => unsafe { output.cast::<IDXGIOutput1>()?.DuplicateOutput(&device) },
+                }
+                .context("duplicating the game's monitor")?;
                 return Ok(Duplication {
                     monitor,
-                    duplication: ManuallyDrop::new(duplication),
+                    duplication,
                     context,
                     device,
-                    owner,
                     staging: Default::default(),
                     size: (0, 0),
                     copies: 0,
-                    opened,
                     last_look: None,
                     framed: false,
                     read_at: None,
                     misses: 0,
                     bar_read: None,
                     rows: Vec::new(),
-                    tally: Tally::new(opened, setup.timed),
                 });
             }
         }
         bail!("no monitor shows the game")
-    }
-
-    /// The device it's made on, for the log.
-    fn how(&self) -> String {
-        match &self.owner {
-            Owner::Gpui(_) => "on GPUI's Direct3D device".to_owned(),
-            Owner::Own(why) => format!("on a Direct3D device of its own ({why})"),
-        }
     }
 
     /// Whether the monitor shows every one of `rects` whole.
@@ -825,19 +527,13 @@ impl Duplication {
 
     /// When the next look is due (`lip_schedule::next_look`), the player's last input at
     /// `last_input` and `clear` whether the latest look read showed every rail: at `now` for the
-    /// first, soon after for the first frame (`lip_schedule::first_frame_look`); `None` while
-    /// every staging texture holds a copy -- a read-back frees one.
+    /// first; `None` while every staging texture holds a copy -- a read-back frees one.
     fn next_look(&self, now: Instant, last_input: Instant, clear: bool) -> Option<Instant> {
         self.room()?;
-        let Some(last) = self.last_look else {
-            return Some(now);
-        };
-        let paced = lip_schedule::next_look(last, last_input, clear);
-        Some(if self.framed {
-            paced
-        } else {
-            lip_schedule::first_frame_look(self.opened, last, paced)
-        })
+        Some(
+            self.last_look
+                .map_or(now, |last| lip_schedule::next_look(last, last_input, clear)),
+        )
     }
 
     /// Takes a look at `now`: queues the copy of `lips` out of the desktop's latest frame into a
@@ -856,68 +552,50 @@ impl Duplication {
             return Ok(());
         };
         self.last_look = Some(now);
-        self.tally.looks += 1;
-        // The bar counts only where the game itself shows it: a window over it -- the price
-        // panel spans its middle -- would read as a wrong fill (see `xp_bar::shows_the_game`).
-        // Windows is asked that before the device's lock is taken.
-        let reading = bar
-            .filter(|_| lip_schedule::bar_due(self.bar_read, now))
-            .map(|geometry| {
-                game.is_some_and(|game| shows_the_game(game, geometry.capture))
-                    .then(|| geometry.clone())
-            });
-        let _locked = self.lock();
         let mut info = DXGI_OUTDUPL_FRAME_INFO::default();
         let mut resource = None;
-        // Only a frame that's there, a new duplication's first too: a wait would hold the lock.
-        let started = self.tally.clock();
-        let acquired = unsafe {
-            self.duplication
-                .AcquireNextFrame(0, &mut info, &mut resource)
+        // A new duplication's first frame is waited for; any later is taken only if it's there.
+        let wait = if self.framed {
+            0
+        } else {
+            lip_schedule::FIRST_FRAME_WAIT.as_millis() as u32
         };
-        self.tally.took(Call::Acquire, started);
-        match acquired {
+        match unsafe {
+            self.duplication
+                .AcquireNextFrame(wait, &mut info, &mut resource)
+        } {
             Err(err) if err.code() == DXGI_ERROR_WAIT_TIMEOUT => return Ok(()),
             other => other.context("AcquireNextFrame")?,
         }
+        self.framed = true;
         // A present time of zero: only the pointer moved.
         let copied = match resource {
             Some(frame) if info.LastPresentTime != 0 => {
-                self.framed = true;
-                let started = self.tally.clock();
-                let copied = self.copy(slot, &frame, lips, bar, reading, now);
-                self.tally.took(Call::Copies, started);
-                copied.map(Some)
+                self.copy(slot, &frame, lips, bar, game, now).map(Some)
             }
             _ => Ok(None),
         };
         // Windows holds the next frame back until this one is released. The copies are queued
         // on the GPU before the release, so they read this frame.
-        let started = self.tally.clock();
-        let released = unsafe { self.duplication.ReleaseFrame() };
-        self.tally.took(Call::Release, started);
-        released.context("ReleaseFrame")?;
+        unsafe { self.duplication.ReleaseFrame() }.context("ReleaseFrame")?;
         if let Some(copied) = copied? {
-            // On the GPU's way now, not with whatever the device is asked next.
-            let started = self.tally.clock();
+            // On the GPU's way now, not with whatever this device is asked next.
             unsafe { self.context.Flush() };
-            self.tally.took(Call::Flush, started);
-            self.tally.copied += 1;
             self.staging[slot].copied = Some(copied);
             self.read_at = self.read_at.or(Some(now + lip_schedule::READ_AFTER));
         }
         Ok(())
     }
 
-    /// Queues the copy of `lips`, and of the bar if it's due a `reading` and shown, out of
-    /// `frame` into staging texture `slot`, which has room for `bar`: what's copied.
+    /// Queues the copy of `lips`, and of `bar` if it's due a reading and shown, out of `frame`
+    /// into staging texture `slot`: what's copied.
     fn copy(
         &mut self,
         slot: usize,
         frame: &IDXGIResource,
         lips: &[PhysicalRect; 2],
         bar: Option<&XpBarGeometry>,
-        reading: Option<Option<XpBarGeometry>>,
+        game: Option<HWND>,
         now: Instant,
     ) -> Result<Copied> {
         let frame: ID3D11Texture2D = frame.cast().context("the frame as a texture")?;
@@ -939,10 +617,18 @@ impl Duplication {
                 texture
             }
         };
-        if reading.is_some() {
+        // The bar counts only where the game itself shows it: a window over it -- the price
+        // panel spans its middle -- would read as a wrong fill (see `xp_bar::shows_the_game`).
+        let bar = bar
+            .filter(|_| lip_schedule::bar_due(self.bar_read, now))
+            .map(|geometry| {
+                game.is_some_and(|game| shows_the_game(game, geometry.capture))
+                    .then(|| geometry.clone())
+            });
+        if bar.is_some() {
             self.bar_read = Some(now);
         }
-        let shown = reading.as_ref().and_then(Option::as_ref);
+        let shown = bar.as_ref().and_then(Option::as_ref);
         // The lips first, then the bar.
         let mut top = 0;
         for rect in lips.iter().chain(shown.map(|bar| &bar.capture)) {
@@ -965,25 +651,14 @@ impl Duplication {
         self.copies += 1;
         Ok(Copied {
             number: self.copies,
-            at: now,
             lips: *lips,
-            bar: reading,
+            bar,
         })
-    }
-
-    /// Holds GPUI's device's lock, as [`Owner::lock`] does, the wait timed.
-    fn lock(&mut self) -> Option<Locked> {
-        let started = self.tally.clock();
-        let locked = self.owner.lock();
-        if locked.is_some() {
-            self.tally.took(Call::Lock, started);
-        }
-        locked
     }
 
     /// Reads back the copies the GPU has made by `now`, oldest first, if a read-back is due: the
     /// latest look read -- its rails -- with the bar's latest reading among them; `None` if none
-    /// was. A copy the GPU hasn't made yet is tried again later (`lip_schedule::next_read`):
+    /// was. A copy the GPU hasn't made yet is tried again later (`lip_schedule::read_retry`):
     /// nothing here waits for it.
     fn collect(&mut self, now: Instant) -> Result<Option<Look>> {
         if self.read_at.is_none_or(|at| now < at) {
@@ -996,145 +671,50 @@ impl Duplication {
                 continue;
             };
             let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
-            let map = {
-                let _locked = self.lock();
-                let started = self.tally.clock();
-                let map = unsafe {
-                    self.context.Map(
-                        &texture,
-                        0,
-                        D3D11_MAP_READ,
-                        D3D11_MAP_FLAG_DO_NOT_WAIT.0 as u32,
-                        Some(&mut mapped),
-                    )
-                };
-                self.tally.took(Call::Map, started);
-                map
-            };
-            match map {
+            match unsafe {
+                self.context.Map(
+                    &texture,
+                    0,
+                    D3D11_MAP_READ,
+                    D3D11_MAP_FLAG_DO_NOT_WAIT.0 as u32,
+                    Some(&mut mapped),
+                )
+            } {
                 Err(err) if err.code() == DXGI_ERROR_WAS_STILL_DRAWING => break,
                 other => other.context("Map")?,
             }
             self.misses = 0;
-            // The rows are read with the lock let go: the mapping stays till `Unmap`.
-            let look = self.staging[slot].copied.take().map(|copied| {
-                self.tally.read(now.saturating_duration_since(copied.at));
-                let started = self.tally.clock();
-                let look = read_look(&mut self.rows, &mapped, &copied);
-                self.tally.took(Call::Read, started);
-                look
-            });
-            {
-                let _locked = self.lock();
-                let started = self.tally.clock();
-                unsafe { self.context.Unmap(&texture, 0) };
-                self.tally.took(Call::Unmap, started);
-            }
+            let look = self.staging[slot]
+                .copied
+                .take()
+                .map(|copied| read_look(&mut self.rows, &mapped, &copied));
+            unsafe { self.context.Unmap(&texture, 0) };
             if let Some(look) = look {
                 let fill = look.fill.or(latest.and_then(|latest| latest.fill));
                 latest = Some(Look { fill, ..look });
             }
         }
-        // The oldest copy left, if any, is one the GPU hasn't made yet.
-        let left = self
-            .oldest()
-            .and_then(|slot| Some(self.staging[slot].copied.as_ref()?.at));
-        self.read_at = left.map(|look| {
-            let (misses, at) = lip_schedule::next_read(look, self.misses, now);
-            self.tally.misses += u32::from(misses > self.misses);
-            self.misses = misses;
-            at
-        });
-        if self.read_at.is_none() {
-            self.misses = 0;
-        }
+        self.read_at = match self.oldest() {
+            Some(_) => {
+                self.misses += 1;
+                Some(now + lip_schedule::read_retry(self.misses))
+            }
+            None => {
+                self.misses = 0;
+                None
+            }
+        };
         Ok(latest)
     }
 }
 
-/// The device to duplicate an output of `adapter` on, and whose it is: GPUI's where it may be
-/// shared -- `share`, the environment doesn't say not to; the hook saw it made; it's on this
-/// graphics card; its multithread protection is on; and DXGI never refused to duplicate on it
-/// ([`GPUI_DEVICE_REFUSED`]) -- else a new one of the watcher's own. An error while GPUI's device
-/// is lost: the next try takes the one GPUI makes anew.
-fn device_on(adapter: &IDXGIAdapter1, share: bool) -> Result<(ID3D11Device, Owner)> {
-    let why: Cow<'static, str> = match gpu_memory::gpui_device() {
-        _ if !share => format!("{}=own", lip_schedule::DEVICE_ENV).into(),
-        None => "GPUI's isn't known".into(),
-        Some(_) if GPUI_DEVICE_REFUSED.load(Ordering::Relaxed) => {
-            "duplicating on GPUI's device failed".into()
-        }
-        Some(device) => {
-            // SAFETY: device and adapter methods, which any thread may call: GPUI's device isn't
-            // single-threaded (`gpui_windows`' `directx_devices.rs`). Its context's lock is only
-            // asked about.
-            let (lost, card, ours, lock) = unsafe {
-                let card = device
-                    .cast::<IDXGIDevice>()
-                    .and_then(|dxgi| dxgi.GetAdapter())
-                    .and_then(|card| card.GetDesc())
-                    .map(|desc| desc.AdapterLuid);
-                let lock = device
-                    .GetImmediateContext()
-                    .and_then(|context| context.cast::<ID3D11Multithread>())
-                    .ok()
-                    .filter(|lock| lock.GetMultithreadProtected().as_bool());
-                (
-                    device.GetDeviceRemovedReason().is_err(),
-                    card,
-                    adapter.GetDesc1().map(|desc| desc.AdapterLuid),
-                    lock,
-                )
-            };
-            if lost {
-                bail!("GPUI's Direct3D device is lost; tried again on the one GPUI makes anew");
-            }
-            let same_card = card
-                .ok()
-                .zip(ours.ok())
-                .is_some_and(|(card, ours)| card == ours);
-            match (same_card, lock) {
-                (false, _) => "GPUI's is on another graphics card".into(),
-                (true, None) => "GPUI's has no multithread protection".into(),
-                (true, Some(lock)) => return Ok((device, Owner::Gpui(lock))),
-            }
-        }
-    };
-    let mut device = None;
-    unsafe {
-        D3D11CreateDevice(
-            adapter,
-            D3D_DRIVER_TYPE_UNKNOWN,
-            HMODULE::default(),
-            D3D11_CREATE_DEVICE_FLAG(0),
-            None,
-            D3D11_SDK_VERSION,
-            Some(&mut device),
-            None,
-            None,
-        )
-    }
-    .context("D3D11CreateDevice")?;
-    let device = device.context("D3D11CreateDevice returned no device")?;
-    Ok((device, Owner::Own(why)))
-}
-
 impl Drop for Duplication {
-    /// Direct3D destroys what's let go only once nothing on its context holds it, as the context
-    /// flushes: the watcher's objects go first, then the context is flushed, so they don't stay
-    /// till GPUI's next paint. A device of the watcher's own is cleared first and goes with its
-    /// last reference -- its video memory, the frame's, and whatever the graphics driver keeps
-    /// for it -- not some time later; GPUI's context, whose state is GPUI's, is only flushed.
+    /// Direct3D destroys what's let go only once nothing on its context holds it: cleared and
+    /// flushed first, the device goes with the last reference -- its video memory, the frame's,
+    /// and whatever the graphics driver keeps for it -- not some time later.
     fn drop(&mut self) {
-        self.tally.log(Instant::now());
-        let _locked = self.owner.lock();
-        // SAFETY: never used again: the duplication goes with `self`.
-        unsafe { ManuallyDrop::drop(&mut self.duplication) };
-        self.staging = Default::default();
         unsafe {
-            if let Owner::Own(_) = self.owner {
-                self.context.ClearState();
-            }
+            self.context.ClearState();
             self.context.Flush();
         }
     }
