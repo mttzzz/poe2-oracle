@@ -47,8 +47,8 @@
       <ul class="proof">
         <li><b data-bench="memory"></b> of memory in Task Manager</li>
         <li><b data-bench="processes"></b> process, and no helper processes</li>
+        <li><b data-bench="play_moving"></b> of a CPU core in the game, with the mouse moving</li>
         <li><b data-bench="ready"></b> from launch to ready</li>
-        <li><b data-bench="item_text"></b> to read the item from the game</li>
       </ul>
       <p class="proof-more"><a href="#fast">How it compares with other price checkers</a></p>
       <div class="actions">
@@ -72,24 +72,36 @@
         Direct3D 11, with GPUI, the UI framework of the Zed code editor, and DirectWrite draws the text.
         The only browser it ever opens is the optional sign-in window for pathofexile.com, which is
         Windows' own WebView2 and closes with the window.</p>
-      <p class="intro">While you play, that leaves your memory to the game: Task Manager shows one
-        process of <span data-bench="memory"></span>. Nothing else starts with it, and there's nothing
-        else to install.</p>
+      <p class="intro">That leaves the game its memory and CPU: Task Manager shows one process of
+        <span data-bench="memory"></span>, nothing else starts with it, and there's nothing else to
+        install.</p>
 
-      <h3 class="fast-heading">Next to other price checkers</h3>
+      <h3 class="fast-heading">In the game</h3>
+      <p class="bench-lead" data-bench="play_summary"></p>
       <figure class="bench">
-        <div data-bench-chart></div>
-        <figcaption><span data-bench="measured">Measured</span> on one PC: Core i7-13700KF, 32 GB of RAM,
-          GeForce RTX 4090, Windows 11, two 4K monitors at 200% scaling, with Path of Exile 2 open in the
-          background and in view, and every app idle. Memory is Task Manager's Memory column, the private
-          working set, summed over all of an app's processes; idle CPU is in percent of one logical core,
-          and the PC has 24. <a href="guide/en/performance.html">How it was measured, and every other
-          number</a></figcaption>
+        <div data-bench-chart="play"></div>
+        <figcaption><span data-bench="play_measured">Measured</span> on one PC: Core i7-13700KF, 32 GB
+          of RAM, GeForce RTX 4090, Windows 11, two 4K monitors at 200% scaling. Path of Exile 2 was in
+          front, with the character in the hideout and the inventory open. All four apps ran at once and
+          were measured in the same minutes: one with the mouse at rest, one with it moving in slow
+          circles over the inventory. CPU is in percent of one logical core, and the PC has 24.
+          <a href="guide/en/performance.html#in-the-game">How it was measured</a>, with memory, GPU
+          memory and the price checks in the game.</figcaption>
+      </figure>
+
+      <h3 class="fast-heading">With the game in the background</h3>
+      <figure class="bench">
+        <div data-bench-chart="background"></div>
+        <figcaption><span data-bench="background_measured">Measured</span> on the same PC, with Path of
+          Exile 2 open in the background and in view, and every app idle. Memory is Task Manager's Memory
+          column, the private working set, summed over all of an app's processes.
+          <a href="guide/en/performance.html#with-the-game-in-the-background">How it was measured, and
+          every other number</a></figcaption>
       </figure>
       <div class="bench-notes">
-        <p><span data-bench="lower"></span> Exiled Exchange 2 turns off hardware acceleration and draws
-          with the CPU, so it holds no GPU memory; Overwolf's overlay in the game runs inside the game's
-          own process and isn't counted.</p>
+        <p><span data-bench="background_lower"></span> Exiled Exchange 2 turns off hardware acceleration
+          and draws with the CPU, so it holds no GPU memory; Overwolf's overlay in the game runs inside
+          the game's own process and isn't counted.</p>
         <p>PoE Overlay II runs only on Overwolf, so Overwolf's processes count as its own. Started from
           its desktop shortcut, it opened its main window by itself, with two animated banner ads and an
           offer of Premium to remove them. While that window stays open, Overwolf's built-in browser keeps

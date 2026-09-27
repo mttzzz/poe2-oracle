@@ -1,7 +1,9 @@
 /*
- * PoE2 Oracle next to other price checkers (bench.js): a table whose memory column is a bar chart,
- * in the site's colours (style.css). On a phone each row becomes a card: the app, its bar, then
- * processes, idle CPU and GPU memory side by side under their labels.
+ * PoE2 Oracle next to other price checkers (bench.js): two tables, each with a bar chart in its
+ * first measured column, in the site's colours (style.css). --play is CPU in the game with the
+ * mouse moving (the bars) and at rest; --background is memory (the bars), processes, idle CPU and
+ * GPU memory with the game in the background. On a phone each row becomes a card: the app, its
+ * bar, then the other columns side by side under their labels.
  */
 
 .bench {
@@ -55,16 +57,22 @@
     vertical-align: bottom;
 }
 
-.bench-table thead th:nth-child(1) {
+.bench-table--play thead th:nth-child(1),
+.bench-table--background thead th:nth-child(1) {
     width: 23%;
 }
 
-.bench-table thead th:nth-child(3) {
+.bench-table--play thead th:nth-child(3) {
+    width: 17%;
+    text-align: right;
+}
+
+.bench-table--background thead th:nth-child(3) {
     width: 12%;
 }
 
-.bench-table thead th:nth-child(4),
-.bench-table thead th:nth-child(5) {
+.bench-table--background thead th:nth-child(4),
+.bench-table--background thead th:nth-child(5) {
     width: 11%;
     text-align: right;
 }
@@ -131,7 +139,7 @@
     gap: 0.5rem;
 }
 
-/* The bar's length is the app's share of the most memory, of the room its value leaves. */
+/* The bar's length is the app's share of the column's most, of the room its value leaves. */
 .bench-bar {
     flex: none;
     width: calc((100% - 5.5rem) * var(--share));
@@ -232,7 +240,8 @@
     }
 
     .bench-app,
-    .bench-memory {
+    .bench-bars,
+    .bench-table--play .bench-number {
         grid-column: 1 / -1;
     }
 

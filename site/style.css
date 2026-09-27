@@ -397,6 +397,14 @@ kbd {
     margin-top: 3rem;
 }
 
+/* The comparison's outcome in words (ui/bench.js), above its table. */
+.bench-lead {
+    max-width: 48rem;
+    margin: 0 0 0.25rem;
+    color: var(--text);
+    font-size: 1.05rem;
+}
+
 .bench-notes {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(min(22rem, 100%), 1fr));

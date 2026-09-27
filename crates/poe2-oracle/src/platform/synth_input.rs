@@ -14,11 +14,13 @@
 //! does reach PoE2 through `SendInput` for a local, physically-pressed hotkey.
 //!
 //! Also plays the keys of a quick action ([`press_keys`], planned by `crate::quick_action`): the
-//! Enter, Ctrl+V and the like around a paste into the game's chat or stash search.
+//! Enter, Ctrl+V and the like around a paste into the game's chat or stash search -- and tells
+//! which of those combinations another program holds ([`taken_combos`]).
 
 use std::thread::sleep;
 use std::time::Duration;
 
+use windows::Win32::Foundation::ERROR_HOTKEY_ALREADY_REGISTERED;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     HOT_KEY_MODIFIERS, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBD_EVENT_FLAGS, KEYBDINPUT,
     KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT,
@@ -28,8 +30,9 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 };
 
 use crate::quick_action::Key;
+use crate::settings::Hotkey;
 
-/// A throwaway id for [`copy_combo_taken`]'s probe registration; any id works for a thread-bound
+/// A throwaway id for [`held_elsewhere`]'s probe registration; any id works for a thread-bound
 /// hotkey that is released at once.
 const PROBE_HOTKEY_ID: i32 = 0x0C0C;
 
@@ -99,15 +102,24 @@ pub fn press_keys(held: &[VIRTUAL_KEY], keys: &[Key]) {
     }
     for &key in keys {
         sleep(KEY_STEP_GAP);
-        match key {
-            Key::Enter => tap(VK_RETURN),
-            Key::CtrlEnter => with_ctrl(VK_RETURN),
-            Key::CtrlA => with_ctrl(VK_A),
-            Key::CtrlF => with_ctrl(VK_F),
-            Key::CtrlV => with_ctrl(VK_V),
-            Key::Home => tap(VK_HOME),
-            Key::Delete => tap(VK_DELETE),
+        let vk = virtual_key(key);
+        if key.with_ctrl() {
+            with_ctrl(vk);
+        } else {
+            tap(vk);
         }
+    }
+}
+
+/// The key a quick action's `key` presses -- with Ctrl held for one of `Key::COMBOS`.
+fn virtual_key(key: Key) -> VIRTUAL_KEY {
+    match key {
+        Key::Enter | Key::CtrlEnter => VK_RETURN,
+        Key::CtrlA => VK_A,
+        Key::CtrlF => VK_F,
+        Key::CtrlV => VK_V,
+        Key::Home => VK_HOME,
+        Key::Delete => VK_DELETE,
     }
 }
 
@@ -161,21 +173,41 @@ fn tap(vk: VIRTUAL_KEY) {
 /// Whether another program holds the item-copy combo (`Ctrl` + `advanced_mod_desc_key` + `C`) as
 /// a global hotkey. The game then never receives it and every check times out with nothing to
 /// show -- EE2's most-reported failure ("nothing happens"), caused by GPU overlays and screen
-/// recorders binding that combination. Probed by registering the combo for a moment: the system
-/// refuses a combination someone else holds. `false` when it can't tell: an advanced-description
-/// key that isn't a modifier makes a combo `RegisterHotKey` can't express.
+/// recorders binding that combination. `false` when it can't tell: an advanced-description key
+/// that isn't a modifier makes a combo `RegisterHotKey` can't express.
 pub fn copy_combo_taken(advanced_mod_desc_key: VIRTUAL_KEY) -> bool {
-    let Some(modifier) = modifier_flag(advanced_mod_desc_key) else {
-        return false;
-    };
-    let modifiers = MOD_CONTROL | modifier | MOD_NOREPEAT;
+    modifier_flag(advanced_mod_desc_key)
+        .is_some_and(|modifier| held_elsewhere(MOD_CONTROL | modifier, VK_C))
+}
+
+/// The combinations among `keys` (`Key::COMBOS`) that another program holds as a global hotkey:
+/// that program gets every press of one, those of a quick action in the game too -- POE2 Currency
+/// Overlay holds Ctrl+F, which a stash search presses, while it runs. A bare key is never asked
+/// about, nor a combination in `own`, the hotkeys this app holds right now: it would answer for
+/// itself.
+pub fn taken_combos(keys: impl IntoIterator<Item = Key>, own: &[Hotkey]) -> Vec<Key> {
+    keys.into_iter()
+        .filter(|&key| {
+            let vk = virtual_key(key);
+            let is_own = own.iter().any(|hotkey| {
+                hotkey.ctrl && !hotkey.shift && !hotkey.alt && hotkey.key.virtual_key() == vk.0
+            });
+            key.with_ctrl() && !is_own && held_elsewhere(MOD_CONTROL, vk)
+        })
+        .collect()
+}
+
+/// Whether another program holds `modifiers` + `vk` as a global hotkey. Probed by registering
+/// the combination for a moment: the system refuses one someone else holds.
+fn held_elsewhere(modifiers: HOT_KEY_MODIFIERS, vk: VIRTUAL_KEY) -> bool {
+    let modifiers = modifiers | MOD_NOREPEAT;
     // SAFETY: a thread-bound registration (no window), released before returning.
-    match unsafe { RegisterHotKey(None, PROBE_HOTKEY_ID, modifiers, u32::from(VK_C.0)) } {
+    match unsafe { RegisterHotKey(None, PROBE_HOTKEY_ID, modifiers, u32::from(vk.0)) } {
         Ok(()) => {
             let _ = unsafe { UnregisterHotKey(None, PROBE_HOTKEY_ID) };
             false
         }
-        Err(_) => true,
+        Err(err) => err.code() == ERROR_HOTKEY_ALREADY_REGISTERED.to_hresult(),
     }
 }
 

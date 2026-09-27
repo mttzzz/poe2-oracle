@@ -76,3 +76,12 @@ the same way. Any other text, such as `@last thanks`, is sent as you wrote it.
   is still typing is ignored.
 - If another program already holds the key you press, the row says so, for example "F7 is taken by
   another program — F5 stays", and the action keeps its previous key (a new one, none).
+- The actions press combinations in the game: <kbd>Ctrl</kbd>+<kbd>F</kbd> for a stash search,
+  <kbd>Ctrl</kbd>+<kbd>V</kbd> to paste, <kbd>Ctrl</kbd>+<kbd>A</kbd> and
+  <kbd>Ctrl</kbd>+<kbd>Enter</kbd> for some chat texts. A program that holds one of them as its own
+  hotkey gets that press, and the action may not work. Each time you open this section, it checks,
+  and a gold-framed box at its top names such a combination: "Ctrl+F, which quick actions press in
+  the game, is taken by another program…". Free it in that program's settings.
+- If the game runs as administrator and PoE2 Oracle doesn't, Windows keeps its keys from the game:
+  an action's key then opens the price panel, which says so. See
+  [Troubleshooting](troubleshooting.md#the-hotkey-does-nothing).

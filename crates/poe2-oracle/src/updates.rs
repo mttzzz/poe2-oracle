@@ -50,8 +50,6 @@ use crate::update_rules::{self, Failures, Marker, Outcome, Retry, Showing, Targe
 const START_DELAY: Duration = Duration::from_secs(10);
 /// How often the start looks again whether the catalogs are in, once [`START_DELAY`] is over.
 const CATALOG_POLL: Duration = Duration::from_secs(2);
-/// Tells the service which app and version is connected.
-const USER_AGENT: &str = concat!("PoE2-Oracle/", env!("CARGO_PKG_VERSION"));
 /// The longest reason a failure is shown with in the settings window, in characters.
 const MAX_REASON_CHARS: usize = 160;
 
@@ -308,7 +306,7 @@ impl Updater {
         // No read timeout: the stream is quiet between the service's pings, and the follower
         // itself drops one that has heard nothing for too long.
         let client: Arc<dyn HttpClient> =
-            match ReqwestClient::proxy_and_user_agent(None, USER_AGENT) {
+            match ReqwestClient::proxy_and_user_agent(None, crate::brand::USER_AGENT) {
                 Ok(client) => Arc::new(client),
                 Err(err) => {
                     log::warn!("building the client the updates come through failed: {err:#}");

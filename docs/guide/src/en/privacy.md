@@ -3,13 +3,14 @@
 PoE2 Oracle has no account of its own and sends no telemetry or analytics. It talks only to the
 services below: for prices and pictures, for updates and, only when you send one yourself, for a
 report to the developer. Signing in to pathofexile.com is optional; signed in, the app searches the
-trade site with your session (see [Signing in to pathofexile.com](#signing-in-to-pathofexilecom)).
+trade site, and presses its buttons on listings when you do, with your session (see
+[Signing in to pathofexile.com](#signing-in-to-pathofexilecom)).
 
 ## What is sent where
 
 | Service | When | What is sent |
 |---|---|---|
-| Path of Exile trade site: `www.pathofexile.com` and `ru.pathofexile.com` | The list of leagues and both sites' catalogs (modifiers, exchange items, item bases): at start and while running, when the saved copy is older than an hour (leagues) or six hours (catalogs). On a price check, unless the Currency Exchange prices the item: the search, then the found listings; the same search again within two minutes reuses them. An exchange item is searched only when neither GGG's record nor poe2scout prices it, or when you ask for its listings. Signed in, also the site's account page, to check the session: at start, when you sign in and when the trade site refuses a **sum** row; and, on `www.pathofexile.com`, your Private Leagues page and the page of each of your PoE 2 private leagues: once the site accepts the session (or doesn't answer its check), each time you open the settings, when you click **Refresh** in **Account**, and by themselves every hour by default (**Refresh automatically**: 15 minutes, 1 hour, 6 hours or off). | For catalogs and pages, nothing but the request. For a check, the search itself: league, item class or base, the selected filter rows with their bounds, the sellers and price choices. Items from a Russian client are searched on `ru.pathofexile.com`, from an English one on `www.pathofexile.com`. |
+| Path of Exile trade site: `www.pathofexile.com` and `ru.pathofexile.com` | The list of leagues and both sites' catalogs (modifiers, exchange items, item bases): at start and while running, when the saved copy is older than an hour (leagues) or six hours (catalogs). On a price check, unless the Currency Exchange prices the item: the search, then the found listings; the same search again within two minutes reuses them. An exchange item is searched only when neither GGG's record nor poe2scout prices it, or when you ask for its listings. Signed in, also the site's account page, to check the session: at start, when you sign in and when the trade site refuses a **sum** row; and, on `www.pathofexile.com`, your Private Leagues page and the page of each of your PoE 2 private leagues: once the site accepts the session (or doesn't answer its check), each time you open the settings, when you click **Refresh** in **Account**, and by themselves every hour by default (**Refresh automatically**: 15 minutes, 1 hour, 6 hours or off). Signed in, also each time you press **To hideout** or **Whisper** on a listing: one request per press. | For catalogs and pages, nothing but the request. For a check, the search itself: league, item class or base, the selected filter rows with their bounds, the sellers and price choices. For a press of **To hideout** or **Whisper**, the token the site gave with that listing, and after **In demand** that you go anyway. Items from a Russian client are searched on `ru.pathofexile.com`, from an English one on `www.pathofexile.com`. |
 | `api.poe2scout.com` | At start, when you change the league, and after a check, when the saved prices are older than 30 minutes. | The league, to get the prices of unique items, the Currency Exchange's last seven days and item pages, and the prices of exchange items not traded lately. |
 | `web.poecdn.com` (the game's server for pictures and exchange data) | When the panel shows an item picture or a currency icon. At start, when you change the league, and during checks at most every 10 minutes: each complete hour of GGG's record of the Currency Exchange's trades not downloaded yet. | Requests for those pictures, and for the hours of exchange data, which are the same for every league and player: nothing about you or your league. |
 | `oracle.pushka.biz`, PoE2 Oracle's own service | Updates, while **Update automatically** is on (the default): a connection opened about 10 seconds after start and kept open for as long as the app runs, opened again when it drops; downloads when a newer version or newer game data is out. Reports: only when you click **Send** in the [report window](report.md). | Updates: the connection's request, which carries no cookie, account or id, only the app's User-Agent with its version; over it the service sends the latest app and game data versions, and a keep-alive line every 25 seconds. When something newer is out: a request for the latest release or game data pack, then the installer or the pack, its `SHA256SUMS` and that file's signature, which the service passes on from the project's private GitHub repository. Reports: see [Reports](#reports). |
@@ -17,9 +18,9 @@ trade site with your session (see [Signing in to pathofexile.com](#signing-in-to
 Signed out, no request for prices, pictures or updates carries your account, a cookie or anything
 else that identifies you; a report carries what [Reports](#reports) lists, and only when you send
 it. Signed in, the requests to the trade site carry your pathofexile.com session, the cookie
-`POESESSID`; no other request does. Each request carries a fixed User-Agent string that is the same
-for every player: a common web browser's for the Path of Exile sites, poe2scout and the game's
-picture and exchange server, and `PoE2-Oracle/<version>` for oracle.pushka.biz. As with any
+`POESESSID`; no other request does. Each request carries the same fixed User-Agent string for every
+player, `PoE2-Oracle/<version> (+https://oracle.pushka.biz)`: it names the app, as GGG asks of
+tools that call its sites, and says nothing about you. As with any
 request on the internet, each service sees your IP address.
 
 While **Update automatically** is on, the connection to oracle.pushka.biz stays open, so the
@@ -66,21 +67,22 @@ downloaded, and the reports of each kind: numbers only, with no address, id or v
 
 ## Signing in to pathofexile.com
 
-Signing in is needed only for private leagues and the **sum** rows among the filters (see
-[Account](settings.md#account)). **Sign in** opens pathofexile.com's own sign-in page in a
-window of the app, a Microsoft Edge WebView2 browser, where you sign in as on the site: with your
-password, or through Steam, PlayStation or Xbox. PoE2 Oracle never sees your password. It takes
-only the session the site gives that browser, the cookie `POESESSID`, and checks it on the site's
-account page.
+Signing in is needed only for private leagues, the **sum** rows among the filters (see
+[Account](settings.md#account)) and the trade site's buttons on listings (see
+[The trade site's buttons](price-check.md#the-trade-sites-buttons)). **Sign in** opens
+pathofexile.com's own sign-in page in a window of the app, a Microsoft Edge WebView2 browser, where
+you sign in as on the site: with your password, or through Steam, PlayStation or Xbox. PoE2 Oracle
+never sees your password. It takes only the session the site gives that browser, the cookie
+`POESESSID`, and checks it on the site's account page.
 
 - **What is kept.** The session alone, in Windows' Credential Manager, as the generic credential
   `PoE2 Oracle/pathofexile.com` (user name `POESESSID`). Windows keeps it encrypted for your Windows
   user on this computer, and it never goes to another one. It is not in the settings file, the logs
   or the diagnostics report.
 - **Where it goes.** In the `Cookie` of the requests to `https://www.pathofexile.com` and
-  `https://ru.pathofexile.com` (searches, listings, leagues, catalogs, the account page, your
-  private leagues' pages). Never to poe2scout, the game's picture and exchange server or
-  oracle.pushka.biz, and never in a report.
+  `https://ru.pathofexile.com` (searches, listings, the buttons on listings, leagues, catalogs, the
+  account page, your private leagues' pages). Never to poe2scout, the game's picture and exchange
+  server or oracle.pushka.biz, and never in a report.
 - **The sign-in window.** It opens https pages only, and its title names the site of the page it
   shows: signing in through Steam, PlayStation or Xbox goes through their pages. Its browser runs
   in private mode, in a folder of its own, `%LOCALAPPDATA%\poe2-oracle\data\login-browser`, which

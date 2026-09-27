@@ -31,6 +31,15 @@ The first public release.
   requirements, sockets, item level and every mod with its tier and roll range, the searched ones
   marked. When nothing is found, the panel offers broader searches (**Broad −10%**, **Match N of
   M**) rather than spending the trade site's limit on its own.
+- **Each price check timed in the log:** one line per check once its panel settles, with the
+  times from the key press to the panel shown, its first frame and the results, and each step's
+  wall time and UI-thread CPU (copy, parse, placing and showing the panel, the trade search and
+  fetch, frames drawn, idle paints, resizes), the UI thread's and the whole process's CPU, and
+  the dedicated GPU memory. The copy's log line also says how long sending the combo and giving
+  the clipboard back took.
+- **GPU memory given back after hiding:** half a second after the price panel or the tour's
+  window is hidden and taken down to a pixel, or a window closes, the app flushes and trims its
+  Direct3D device and logs its dedicated GPU memory before and after.
 - **Search profiles** in the row above the filters: **Quick price** (up to 4 most valuable stats,
   your rolls as minimums), **Exact match**, **Broad −10%** and **Crafting base** (implicit and
   fractured stats on the same base). **Tier minimum** sets each checked stat's minimum to the
@@ -45,6 +54,13 @@ The first public release.
   of its base.
 - **Whispers:** a click on a listing whose seller trades in person copies the trade site's whisper
   for the game chat.
+- **The trade site's buttons on listings**, while you're signed in to pathofexile.com: **To
+  hideout** on an instant buyout (the site's Travel to Hideout: it takes your character in the
+  game to the seller's hideout; **Anyway** when the site says the item is in demand) and
+  **Whisper** for a seller online or away (the site's Direct Whisper, sent from your character).
+  One press is one request, never repeated on its own, and the row says how it went: done, the
+  listing or the seller gone, the buttons expired, sign in again, the request limit, or no answer.
+  The app presses nothing in the game.
 - **Currency Exchange items** priced from GGG's own hourly record of the exchange's trades, in a
   market card: value in divine, exalted and chaos orbs, the week's chart and change from
   poe2scout, hourly volume, the most traded pair and the value of the copied stack. An item nobody
@@ -84,11 +100,17 @@ The first public release.
   front (within a few seconds while it's behind another window), and say as much as they have
   room for.
 - **Quick actions:** up to 12 hotkeys that type a chat command (`/hideout` is preset and waits for
-  its key; `@last thanks` answers whoever whispered last) or paste a stash search string.
+  its key; `@last thanks` answers whoever whispered last) or paste a stash search string. Opened,
+  the settings' **Quick actions** section warns if another program holds a combination the actions
+  press, such as `Ctrl+F` for a stash search.
 - **Settings window:** league, client language, hotkeys, quick actions, default sellers, seller
   column, interface scale (80 to 150 %, the price panel and the settings window), XP overlay, start
   with Windows, automatic updates, reports to the developer and the diagnostics report. It warns
-  when the game runs in exclusive fullscreen or another program holds the item-copy combination.
+  when the game runs as administrator (and the app doesn't) or in exclusive fullscreen, or another
+  program holds the item-copy combination.
+- **A game run as administrator** takes no keys from an app that isn't: a press of the price-check
+  hotkey or a quick action's key then opens the panel with what's wrong and the fix (start the game
+  normally, or the app as administrator too) instead of doing nothing.
 - **Title-bar buttons** (⚙ and × on the panel, × on the settings window) light up gold under the
   pointer, with a soft glow behind the glyph.
 - **Guided tour** at launch, until finished or skipped, and again from Settings → Help →

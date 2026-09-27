@@ -32,7 +32,7 @@ use windows::core::{BOOL, PCWSTR, w};
 use crate::logging::{LOG_FILE, PREVIOUS_LOG_FILE};
 use crate::paths;
 use crate::platform::game_config::{self, DisplayMode, GameConfig};
-use crate::platform::{game_window, synth_input};
+use crate::platform::{elevation, game_window, synth_input};
 use crate::report::{DiagnosticsZip, LOG_TAIL_BYTES, Masker, log_tail};
 use crate::tr;
 
@@ -145,6 +145,9 @@ pub fn open_logs_folder() {
 /// Something in the player's setup that keeps checks from working: the settings window lists
 /// these at its top, and the report carries them too.
 pub enum SetupProblem {
+    /// The game runs as administrator and this app doesn't: Windows keeps the app's keys from it
+    /// (`platform::elevation`).
+    GameElevated,
     /// The game runs in exclusive Fullscreen, over which nothing shows.
     Fullscreen,
     /// Another program holds the combination the game copies items with, as the player reads it.
@@ -155,6 +158,12 @@ impl SetupProblem {
     /// The problem worded for the player, in the interface language.
     pub fn text(&self) -> String {
         match self {
+            SetupProblem::GameElevated => tr!(
+                "The game runs as administrator and PoE2 Oracle doesn't, so Windows won't let \
+                 PoE2 Oracle press keys in the game: price checks and quick actions don't work. \
+                 Start the game normally, or run PoE2 Oracle as administrator too."
+            )
+            .to_owned(),
             SetupProblem::Fullscreen => tr!(
                 "The game runs in “Fullscreen” mode: the panel can't show over it. Choose \
                  “Windowed Fullscreen” in the game's graphics options."
@@ -173,6 +182,9 @@ impl SetupProblem {
 /// What in the player's setup keeps checks from working.
 pub fn setup_problems(config: &GameConfig) -> Vec<SetupProblem> {
     let mut problems = Vec::new();
+    if elevation::game_keys_blocked() {
+        problems.push(SetupProblem::GameElevated);
+    }
     if config.display_mode == Some(DisplayMode::Fullscreen) {
         problems.push(SetupProblem::Fullscreen);
     }

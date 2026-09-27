@@ -34,6 +34,7 @@ use gpui::{
 
 use crate::overlay_layout::{PhysicalRect, hud_rails};
 use crate::platform::game_window::GameScreen;
+use crate::platform::gpu_memory;
 use crate::platform::win32::Win32Overlay;
 use crate::price_check::{BootstrapState, PriceCheckApp, SearchState};
 use crate::settings::{self, AppIcon, Hotkey};
@@ -981,7 +982,7 @@ impl Screen {
         if bounds.is_none() && show.is_none() {
             return;
         }
-        cx.spawn(async move |_, _| {
+        cx.spawn(async move |this, cx| {
             if let Some(rect) = bounds
                 && let Err(err) = overlay.set_bounds(rect)
             {
@@ -990,10 +991,23 @@ impl Screen {
             if let Some(shown) = show {
                 overlay.set_shown(shown);
             }
-            if show == Some(false)
-                && let Err(err) = overlay.shrink()
-            {
+            if show != Some(false) {
+                return;
+            }
+            if let Err(err) = overlay.shrink() {
                 log::warn!("{err:#}");
+                return;
+            }
+            // What the shrink let go of is freed once the GPU is done with the pixel's frame
+            // (`gpu_memory`) -- unless the window is back by then.
+            cx.background_executor()
+                .timer(gpu_memory::RELEASE_AFTER)
+                .await;
+            if this
+                .read_with(cx, |screen, _| !screen.shown)
+                .unwrap_or(false)
+            {
+                gpu_memory::release("tour window hidden");
             }
         })
         .detach();

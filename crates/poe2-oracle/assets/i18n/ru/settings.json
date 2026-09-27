@@ -141,6 +141,7 @@
   "Couldn't save the sign-in: {error}": "Не удалось сохранить вход: {error}",
   "{hotkey} is taken by another program — {kept} stays": "{hotkey} занято другой программой — осталось {kept}",
   "{hotkey} is taken by another program — the action has no key now": "{hotkey} занято другой программой — действие без клавиши",
+  "{combo}, which quick actions press in the game, is taken by another program: it gets every press of the combination, so those actions may not work. Free it in that program's settings.": "Сочетание {combo}, которое быстрые действия нажимают в игре, занято другой программой: каждое его нажатие достаётся ей, и эти действия могут не сработать. Освободите его в настройках той программы.",
   "/hideout, /exit, @last thanks…": "/hideout, /exit, @last спасибо…",
   "Search text, e.g. from poe2.re": "Строка поиска, например с poe2.re",
   "Auto · {language}": "Авто · {language}",
@@ -156,6 +157,7 @@
   "The /convertracereward command destroys the item, turning it into a skin — quick actions don't send it": "Команда /convertracereward уничтожает предмет, превращая его в облик — быстрые действия её не отправляют",
   "The /ResetAtlas command resets the Atlas — quick actions don't send it": "Команда /ResetAtlas сбрасывает атлас — быстрые действия её не отправляют",
   "{host} — PoE2 Oracle: signing in to pathofexile.com": "{host} — PoE2 Oracle: вход на pathofexile.com",
+  "The game runs as administrator and PoE2 Oracle doesn't, so Windows won't let PoE2 Oracle press keys in the game: price checks and quick actions don't work. Start the game normally, or run PoE2 Oracle as administrator too.": "Игра запущена от имени администратора, а PoE2 Oracle — нет, и Windows не даёт PoE2 Oracle нажимать клавиши в игре: проверка цены и быстрые действия не работают. Запускайте игру обычно или запускайте от имени администратора и PoE2 Oracle.",
   "The game runs in “Fullscreen” mode: the panel can't show over it. Choose “Windowed Fullscreen” in the game's graphics options.": "Игра в режиме «Полноэкранный»: поверх него панель не видна. Выберите в настройках графики игры режим «Оконный полноэкранный».",
   "{combo}, which the game copies items with, is taken by another program — price checks won't work until it's freed (most often a graphics card overlay, screen recording or Discord).": "Сочетание {combo}, которым игра копирует предмет, занято другой программой — проверка цены не сработает, пока его не освободить (чаще всего это оверлей видеокарты, запись экрана или Discord)."
 }

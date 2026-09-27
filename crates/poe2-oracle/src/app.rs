@@ -21,7 +21,7 @@
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicIsize, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use gpui::{
     App, Bounds, Context, DisplayId, Entity, Focusable, IntoElement, Render, Task, TitlebarOptions,
@@ -40,6 +40,7 @@ use windows::Win32::UI::HiDpi::{
 use windows::Win32::UI::WindowsAndMessaging::KillTimer;
 
 use crate::brand;
+use crate::check_profile::Spent;
 use crate::diagnostics;
 use crate::i18n::{self, Lang};
 use crate::launch::{Knock, Launch};
@@ -50,7 +51,8 @@ use crate::platform::instance::{self, Request};
 use crate::platform::taskbar::{self, ButtonEvent, TaskbarButton};
 use crate::platform::win32::Win32Overlay;
 use crate::platform::{
-    autostart, d3d_threading, game_config, game_window, paint_census, redraw_filter, vsync_park,
+    autostart, check_clock, d3d_threading, game_config, game_window, gpu_memory, paint_census,
+    redraw_filter, vsync_park,
 };
 use crate::presence::{self, Shows, Step, Tries};
 use crate::price_check::{self, BootstrapState, PriceCheckApp};
@@ -67,7 +69,6 @@ use crate::ui::welcome;
 use crate::ui::xp_overlay::{self, XpCover, XpOverlay, XpOverlayOptions};
 use crate::updates;
 
-const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 /// A server that goes quiet this long -- before its answer or in the middle of it -- fails the
 /// request, and the caller's own retry or error takes over (the catalog load retries), instead of
 /// "Loading…" for the rest of the run. Each part of the answer that arrives starts it anew, so a
@@ -153,6 +154,8 @@ impl PriceCheckRoot {
                     }
                 })
                 .detach();
+                // A price check under way times the panel's frames and resizes.
+                overlay.time_for_checks();
                 self.overlay = Some(overlay);
             }
             Err(err) => log::warn!("Win32Overlay::from_window failed: {err:?}"),
@@ -214,38 +217,55 @@ impl PriceCheckRoot {
         // clickable (or not) when it appears. Never applied synchronously: this runs inside
         // `render`/an `observe` callback, and `SetWindowPos`/`ShowWindow` send `WM_SIZE`/
         // `WM_SHOWWINDOW` synchronously into GPUI's own window state.
-        cx.spawn(async move |_, _| {
-            let start = Instant::now();
+        cx.spawn(async move |this, cx| {
             if let Some(enabled) = click_through
                 && let Err(err) = overlay.set_click_through(enabled)
             {
                 log::warn!("set_click_through({enabled}) failed: {err:?}");
             }
-            if let Some(PanelResize::Place(rect)) = resize
-                && let Err(err) = overlay.set_bounds(rect)
-            {
-                log::warn!("{err:#}");
+            // Both timed for a price check under way: back from a pixel, placing makes a new swap
+            // chain and textures, and showing draws GPUI's first frame (`WM_SHOWWINDOW`).
+            if let Some(PanelResize::Place(rect)) = resize {
+                let start = check_clock::now_thread();
+                if let Err(err) = overlay.set_bounds(rect) {
+                    log::warn!("{err:#}");
+                }
+                let end = check_clock::now_thread();
+                check_clock::with(|check| check.placed(Spent::between(start, end)));
             }
-            let placed = start.elapsed();
             if let Some(shown) = shown {
+                let start = check_clock::now_thread();
                 overlay.set_shown(shown);
-            }
-            // Back from a pixel -- a new swapchain and textures -- and GPUI's first frame, which
-            // `WM_SHOWWINDOW` draws.
-            if shown == Some(true) {
-                log::debug!(
-                    "price panel placed in {placed:?}, drawn and shown in {:?}",
-                    start.elapsed()
-                );
+                let end = check_clock::now_thread();
+                if shown {
+                    check_clock::with(|check| check.shown(Spent::between(start, end), end));
+                }
             }
             // Once out of sight: its one-pixel frame shows nothing.
-            if resize == Some(PanelResize::Shrink)
-                && let Err(err) = overlay.shrink()
-            {
-                log::warn!("{err:#}");
-            }
+            let shrunk = resize == Some(PanelResize::Shrink)
+                && overlay
+                    .shrink()
+                    .inspect_err(|err| log::warn!("{err:#}"))
+                    .is_ok();
             if focus_game {
                 game_window::focus_game();
+            }
+            if shown == Some(false) {
+                // Hidden, the check is over, what hiding cost included.
+                check_clock::finish();
+            }
+            // What the shrink let go of is freed once the GPU is done with the pixel's frame
+            // (`gpu_memory`) -- unless the panel is back by then.
+            if shrunk {
+                cx.background_executor()
+                    .timer(gpu_memory::RELEASE_AFTER)
+                    .await;
+                let hidden = this
+                    .read_with(cx, |root, _| matches!(root.size, PanelWindow::Shrunk(_)))
+                    .unwrap_or(false);
+                if hidden {
+                    gpu_memory::release("price panel hidden");
+                }
             }
         })
         .detach();
@@ -373,6 +393,8 @@ impl PriceCheckRoot {
 
 impl Render for PriceCheckRoot {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // A frame of the panel: a price check under way counts it (`check_clock`).
+        check_clock::rendered();
         self.ensure_overlay(window, cx);
         self.sync_window(cx);
         // The player's UI scale: the panel sizes its text and layout in rems, so all of it
@@ -828,6 +850,12 @@ pub fn close_window(window: &Window, cx: &mut App) {
             handle
                 .update(cx, |_, window, _| window.remove_window())
                 .ok();
+            // GPUI destroys the window from a task of its own; what it let go of is freed once
+            // the device flushes (`gpu_memory`).
+            cx.background_executor()
+                .timer(gpu_memory::RELEASE_AFTER)
+                .await;
+            gpu_memory::release("window closed");
         })
         .detach();
     })
@@ -907,6 +935,8 @@ pub fn run() {
     // Before GPUI starts too: it makes its Direct3D device while the application is built, and
     // that device, like the lip watcher's, goes without the graphics driver's threads.
     d3d_threading::install();
+    // The clocks price checks are timed on: the counter's rate is measured from here.
+    check_clock::start();
     // On this thread, GPUI's UI thread, and only with `POE2_ORACLE_PAINT_CENSUS=1`.
     paint_census::start();
     // Before anything reads a game table: the installed data pack's tables, when it's sound and
@@ -926,8 +956,12 @@ pub fn run() {
     // 2026-09-23). Its answers are read only through `SessionHttpClient`, which reads them the way
     // the read timeout needs.
     let inner_client: Arc<dyn HttpClient> = Arc::new(
-        ReqwestClient::proxy_user_agent_and_read_timeout(None, USER_AGENT, Some(READ_TIMEOUT))
-            .expect("failed to build HTTP client"),
+        ReqwestClient::proxy_user_agent_and_read_timeout(
+            None,
+            crate::brand::USER_AGENT,
+            Some(READ_TIMEOUT),
+        )
+        .expect("failed to build HTTP client"),
     );
     application()
         .with_http_client(Arc::new(SessionHttpClient::new(
@@ -951,6 +985,16 @@ pub fn run() {
                 tour_when_ready(&inner, cx);
             }
 
+            // Before the app holds a hotkey of its own: whatever holds a combination the quick
+            // actions press is another program. Быстрые действия warns of it when opened.
+            let actions = &inner.read(cx).settings.quick_actions;
+            let combos = crate::quick_action::combos(actions);
+            for key in crate::platform::synth_input::taken_combos(combos, &[]) {
+                log::warn!(
+                    "{}, which quick actions press, is taken by another program",
+                    key.label()
+                );
+            }
             price_check::register_hotkeys(cx, inner.clone())
                 .expect("failed to set up the price-check hotkey and Esc hook");
             // Before any window opens: the settings and report windows open under the taskbar

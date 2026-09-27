@@ -44,10 +44,10 @@ use crate::i18n::{self, Lang};
 use crate::league_chip;
 use crate::league_lookup::LookupLine;
 use crate::login::{self, Login, LoginProblem};
-use crate::platform::autostart;
 use crate::platform::win32::Win32Overlay;
+use crate::platform::{autostart, synth_input};
 use crate::price_check::{BootstrapState, PriceCheckApp};
-use crate::quick_action::{self, ActionDraft};
+use crate::quick_action::{self, ActionDraft, Key};
 use crate::report;
 use crate::session::{self, SessionStatus};
 use crate::settings::{
@@ -249,6 +249,10 @@ pub struct SettingsView {
     /// an action left without one).
     refused: Option<(Recorder, Hotkey, Option<Hotkey>)>,
     actions: Vec<ActionRow>,
+    /// The combinations a quick action may press (`Key::COMBOS`) that another program held when
+    /// Быстрые действия last opened ([`Self::probe_combos`]); the section warns of those its
+    /// actions press.
+    taken_combos: Vec<Key>,
     report: ReportState,
     /// The notices file next to the exe; `None` for a copy that wasn't installed.
     notices: Option<PathBuf>,
@@ -363,6 +367,7 @@ impl SettingsView {
             capture_error: None,
             refused: None,
             actions,
+            taken_combos: Vec::new(),
             report: ReportState::Idle,
             notices: third_party_notices(),
             overlay,
@@ -576,7 +581,25 @@ impl SettingsView {
         self.marker_slides += 1;
         self.section = section;
         self.league_menu = false;
+        if section == Section::QuickActions {
+            self.probe_combos(cx);
+        }
         cx.notify();
+    }
+
+    /// Asks which combinations a quick action may press another program holds
+    /// (`synth_input::taken_combos`): each is registered for a moment, so only as Быстрые действия
+    /// opens, not on every render. One this app holds itself isn't asked about -- a click from
+    /// the game can open the section before the app lets go of its hotkeys.
+    fn probe_combos(&mut self, cx: &App) {
+        let own = self.app.read(cx).held_hotkeys();
+        self.taken_combos = synth_input::taken_combos(Key::COMBOS, own);
+        for key in &self.taken_combos {
+            log::warn!(
+                "{}, which quick actions may press, is taken by another program",
+                key.label()
+            );
+        }
     }
 
     /// Esc closes what is open, innermost first, then the window. A field or a capturing recorder
@@ -1143,31 +1166,29 @@ impl SettingsView {
     /// The setup problems, in a gold-edged card; nothing when there are none.
     fn render_intro(&self) -> Option<AnyElement> {
         let problems = &self.intro.problems;
-        if problems.is_empty() {
+        (!problems.is_empty()).then(|| warning_card(problems.iter().map(SetupProblem::text)))
+    }
+
+    /// The combinations the quick actions press that another program holds
+    /// ([`Self::probe_combos`]), in a gold-edged card; nothing when there are none.
+    fn render_taken_combos(&self, cx: &Context<Self>) -> Option<AnyElement> {
+        if self.taken_combos.is_empty() {
             return None;
         }
-        Some(
-            div()
-                .flex()
-                .flex_col()
-                .gap(rems_from_px(8.))
-                .px(rems_from_px(18.))
-                .py(rems_from_px(16.))
-                .rounded(rems_from_px(CARD_RADIUS))
-                .bg(rgb(BG_CARD))
-                .border_1()
-                .border_color(rgb(BORDER_GOLD))
-                .children(problems.iter().map(|problem| {
-                    div()
-                        .flex()
-                        .gap(rems_from_px(8.))
-                        .text_size(rems_from_px(13.))
-                        .text_color(rgb(TEXT_WARNING))
-                        .child(div().flex_none().child("⚠"))
-                        .child(problem.text())
-                }))
-                .into_any_element(),
-        )
+        let pressed = quick_action::combos(&self.app.read(cx).settings.quick_actions);
+        let warnings: Vec<String> = pressed
+            .into_iter()
+            .filter(|key| self.taken_combos.contains(key))
+            .map(|key| {
+                tr!(
+                    "{combo}, which quick actions press in the game, is taken by another program: \
+                     it gets every press of the combination, so those actions may not work. Free \
+                     it in that program's settings.",
+                    combo = key.label()
+                )
+            })
+            .collect();
+        (!warnings.is_empty()).then(|| warning_card(warnings))
     }
 
     fn render_general(
@@ -1577,6 +1598,7 @@ impl SettingsView {
             .flex()
             .flex_col()
             .gap(rems_from_px(14.))
+            .children(self.render_taken_combos(cx))
             .child(
                 div()
                     .flex()
@@ -2188,6 +2210,31 @@ fn note(text: impl Into<SharedString>, color: u32) -> AnyElement {
         .text_size(rems_from_px(12.))
         .text_color(rgb(color))
         .child(text.into())
+        .into_any_element()
+}
+
+/// Warnings, each marked ⚠, in a gold-edged card: the setup problems, the combinations another
+/// program holds.
+fn warning_card(lines: impl IntoIterator<Item = String>) -> AnyElement {
+    div()
+        .flex()
+        .flex_col()
+        .gap(rems_from_px(8.))
+        .px(rems_from_px(18.))
+        .py(rems_from_px(16.))
+        .rounded(rems_from_px(CARD_RADIUS))
+        .bg(rgb(BG_CARD))
+        .border_1()
+        .border_color(rgb(BORDER_GOLD))
+        .children(lines.into_iter().map(|line| {
+            div()
+                .flex()
+                .gap(rems_from_px(8.))
+                .text_size(rems_from_px(13.))
+                .text_color(rgb(TEXT_WARNING))
+                .child(div().flex_none().child("⚠"))
+                .child(line)
+        }))
         .into_any_element()
 }
 

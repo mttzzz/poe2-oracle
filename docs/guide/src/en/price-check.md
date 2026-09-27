@@ -262,13 +262,43 @@ current value. Each click on them moves to the next value and searches again at 
   Exalted Orb also shows roughly what it is worth in one of those two.
 - An envelope **✉** before the seller's name means the seller trades in person. A coloured dot
   shows their status: pink online, orange away, red offline. Listings without the envelope are
-  instant buyout: buy those through the trade site.
+  instant buyout: you buy those in the seller's hideout, which **To hideout** takes you to (see
+  [The trade site's buttons](#the-trade-sites-buttons)).
 
 ### Copying the whisper
 
 Click a row with **✉** to copy the trade site's whisper message for that listing. For a few
 seconds the row reads **✓ copied — paste it into the chat**. Open the chat in the game, paste with
-<kbd>Ctrl</kbd>+<kbd>V</kbd> and send it yourself. PoE2 Oracle never sends it for you.
+<kbd>Ctrl</kbd>+<kbd>V</kbd> and send it yourself: copying sends nothing.
+
+### The trade site's buttons
+
+While you are signed in to pathofexile.com (see [Account](settings.md#account)), a listing also
+shows the trade site's own button for it at the end of the seller's cell:
+
+- **To hideout** on an instant-buyout listing is the site's **Travel to Hideout**: the trade site
+  takes your character in the game to the seller's hideout, where you buy the item. The seller
+  needn't be online.
+- **Whisper** on a listing whose seller is online or away is the site's **Direct Whisper**: the
+  trade site sends the seller the listing's whisper from your character.
+
+The site does it through your game session; PoE2 Oracle presses nothing in the game. Each press is
+one request to the site, and a press is never repeated on its own. The row then says how it went,
+in place of the seller and the listing's age:
+
+- **✓ Teleporting to the seller's hideout** or **✓ Whisper sent**: the site did it.
+- **In demand**, with the button **Anyway**: the site says the item is already in demand. **Anyway**
+  travels to the seller's hideout all the same, as the site's own "Teleport anyway?".
+- **✗ The listing is gone — search again** or **✗ The seller is gone — search again**: the site
+  won't do it for this listing any more. Hover the note for the site's own words, when it gave any.
+- **✗ Expired — search again**: the site takes a listing's buttons for a few minutes after the
+  search. The app doesn't send them after that.
+- **✗ Sign in again: settings, “Account”**: the site no longer accepts the app's sign-in.
+- **Request limit — in N s**: the site's request limit for these buttons. The button stays: press
+  it again once the time is up.
+- **✗ No answer from the site**: no connection, or the site failed. The button stays.
+
+Signed out, the buttons don't show; nor on listings a search found before you signed in.
 
 ### Listing details
 
@@ -410,6 +440,7 @@ trade site."
 | "Nobody traded this item on the Currency Exchange in … in the last hours." | This exchange item has not been traded in your league in the last hours; poe2scout's price or the trade site's listings are shown instead. See [When the exchange has no recent trades](#when-the-exchange-has-no-recent-trades). |
 | "GGG's Currency Exchange data is unavailable right now." | GGG's exchange data could not be reached; poe2scout's price or the trade site's listings are shown instead. |
 | "No listings on the trade site" | The trade site has no listings of this exchange item. |
+| "The game runs as administrator, and Windows doesn't let PoE2 Oracle press keys in it…" | The game runs as administrator and PoE2 Oracle doesn't, so nothing was copied. Start the game normally, or run PoE2 Oracle as administrator too. See [Troubleshooting](troubleshooting.md#the-hotkey-does-nothing). |
 | "The game doesn't copy the item: another program takes Ctrl+Alt+C…" | Another program holds the copy shortcut, so the game never copied the item. See [Troubleshooting](troubleshooting.md#the-hotkey-does-nothing). |
 | "Couldn't read the item…" | The item text could not be read. The button **Report a problem** under the message opens PoE2 Oracle's report window with **Item** selected and the item's text attached: describe what went wrong and click **Send**. See [Reporting a problem](report.md) and [Troubleshooting](troubleshooting.md#an-item-is-not-recognised). |
 

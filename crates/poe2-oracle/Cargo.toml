@@ -132,6 +132,8 @@ zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2
 # `Win32_System_Com` and `Win32_UI_Shell` (`ITaskbarList`, which drops or restores the taskbar
 # button of a window the app's own button takes over or gives back -- src/platform/taskbar.rs;
 # gpui_windows builds both already).
+# `Win32_System_WindowsProgramming` (the UI thread's and the process's CPU cycles a price check's
+# steps are timed in -- src/platform/check_clock.rs).
 windows = { version = "0.62", features = [
     "Win32_Foundation",
     "Win32_Globalization",
@@ -155,6 +157,7 @@ windows = { version = "0.62", features = [
     "Win32_System_SystemServices",
     "Win32_System_Threading",
     "Win32_System_Time",
+    "Win32_System_WindowsProgramming",
     "Win32_UI_Accessibility",
     "Win32_UI_HiDpi",
     "Win32_UI_Shell",

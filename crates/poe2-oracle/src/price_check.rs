@@ -15,6 +15,7 @@
 //! never `Result`-wrapped (unlike the `WeakEntity::upgrade()` the long-lived event tasks in
 //! `register_hotkeys` still need, since THEY genuinely must tolerate the window closing).
 
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -35,6 +36,7 @@ use trade_client::private_leagues::{self, PrivateLeague};
 use trade_client::rate_limit::RateLimiter;
 use trade_client::rates::PriceUnit;
 use trade_client::scout::ScoutPrices;
+use trade_client::whisper::{self, Action, Answer, Outcome};
 use trade_client::{
     AccountStatus, GroupedListing, League, ListedItem, ListingStatus, PriceCurrency, RarityFilter,
     SearchOutcome, SearchRoute, SearchScope, StatMatch, TradeApiError, TradeSite,
@@ -52,7 +54,9 @@ use crate::league_lookup::{LeagueLookup, Ticket};
 use crate::overlay_layout::{self, PanelSide, PhysicalRect};
 use crate::paths;
 use crate::platform::game_window::{Foreground, GameScreen};
-use crate::platform::{clipboard_poll, esc_hook, game_config, game_window, synth_input};
+use crate::platform::{
+    check_clock, clipboard_poll, elevation, esc_hook, game_config, game_window, synth_input,
+};
 use crate::report;
 use crate::roll_slider::{self, Handle, Slider};
 use crate::session::SessionStatus;
@@ -64,6 +68,10 @@ const FOREGROUND_SETTLE: Duration = Duration::from_millis(250);
 
 /// How long a listing row says its whisper was copied.
 const WHISPER_COPIED_SHOWN: Duration = Duration::from_secs(4);
+
+/// How long before its token lapses a listing's action is no longer sent: the request's own trip,
+/// so that a press at the last moment doesn't reach the site with a lapsed token.
+const TOKEN_MARGIN: Duration = Duration::from_secs(5);
 
 /// How often a drag of the panel by its title bar looks at the pointer: each frame at 120 Hz.
 const PANEL_DRAG_POLL: Duration = Duration::from_millis(8);
@@ -120,14 +128,25 @@ pub struct ListingRow {
     pub listed_times: u32,
     /// The message to the seller, ready for the game's chat; `None` for instant buyout.
     pub whisper: Option<String>,
+    /// The trade site's own button the player may press on this listing -- travel to an instant
+    /// buyout's hideout, or a whisper to a seller in person -- when the fetch carried its token,
+    /// which only a signed-in one does.
+    pub action: Option<ListingAction>,
     /// The listed item, drawn the way the game's tooltip draws it when the row is hovered --
     /// shared, so a hover hands it to its tooltip without a copy.
     pub item: Arc<ListedItem>,
 }
 
-impl From<GroupedListing> for ListingRow {
-    fn from(group: GroupedListing) -> Self {
+impl ListingRow {
+    /// `group`'s row, its action's token timed from `fetched`: when the fetch that listed it went
+    /// out.
+    fn new(group: GroupedListing, fetched: Instant) -> Self {
         let listing = group.listing;
+        let action = Action::offered(&listing).map(|(kind, token)| ListingAction {
+            kind,
+            expires: whisper::token_lifetime(token).map(|lifetime| fetched + lifetime),
+            token: token.to_owned(),
+        });
         let (price_amount, price_currency) = listing.price.unwrap_or((0.0, String::new()));
         ListingRow {
             price_amount,
@@ -138,8 +157,53 @@ impl From<GroupedListing> for ListingRow {
             instant_buyout: listing.instant_buyout,
             listed_times: group.listed_times,
             whisper: listing.whisper,
+            action,
             item: Arc::new(listing.item),
         }
+    }
+}
+
+/// The trade site's own button on a listing (`trade_client::whisper::Action::offered`), with the
+/// token the fetch gave the signed-in account for it.
+#[derive(Debug, Clone)]
+pub struct ListingAction {
+    pub kind: Action,
+    token: String,
+    /// When the site stops taking the token: its lifetime from the fetch
+    /// (`whisper::token_lifetime`); `None` when the token doesn't say.
+    expires: Option<Instant>,
+}
+
+impl ListingAction {
+    /// The token lapses before a press sent now would reach the site.
+    fn lapsed(&self) -> bool {
+        self.expires
+            .is_some_and(|expires| Instant::now() + TOKEN_MARGIN >= expires)
+    }
+}
+
+/// How far a press of a listing's action has come (`PriceCheckApp::press_listing_action`), as its
+/// row says it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ActionState {
+    /// Sent; the site hasn't answered yet.
+    Sending,
+    /// What it came to: the site's answer, or -- before anything was sent -- the rate limit's or
+    /// the missing session's.
+    Answered(Outcome),
+    /// The token lapsed before the press: nothing was sent.
+    Lapsed,
+}
+
+impl ActionState {
+    /// Whether the row's action may be pressed again: once after a travel "in demand" -- the
+    /// site's own "Teleport anyway?" -- and after a rate limit or no answer. Never while a press is
+    /// out, nor after the site acted or said why it won't.
+    pub fn pressable(&self) -> bool {
+        matches!(
+            self,
+            ActionState::Answered(Outcome::InDemand | Outcome::RateLimited(_) | Outcome::NoAnswer)
+        )
     }
 }
 
@@ -195,6 +259,9 @@ pub enum SearchState {
 /// change of language reaches it too.
 #[derive(Debug)]
 pub enum Problem {
+    /// The game runs as administrator and this app doesn't: Windows keeps the app's keys from it
+    /// (`platform::elevation`), so a hotkey's copy combo or quick action never arrives.
+    GameElevated,
     /// No item text came, and another program holds the copy combo named.
     ComboTaken(String),
     /// The parser rejected the item text -- a gamble offer too -- and where the text was kept
@@ -209,6 +276,13 @@ impl Problem {
     /// The problem in the interface language.
     pub fn message(&self) -> String {
         match self {
+            Problem::GameElevated => tr!(
+                "The game runs as administrator, and Windows doesn't let PoE2 Oracle press keys \
+                 in it: items aren't copied and quick actions aren't typed. Start the game \
+                 normally, without “Run as administrator”, or run PoE2 Oracle as administrator \
+                 too."
+            )
+            .to_owned(),
             Problem::ComboTaken(combo) => tr!(
                 "The game doesn't copy the item: another program takes {combo} — most often a \
                  graphics card overlay, a screen recorder or Discord. Free the shortcut in that \
@@ -374,8 +448,19 @@ struct PanelDrag {
 struct SiteCatalog {
     stats: IndexedCatalog,
     currencies: Vec<StaticCurrency>,
+    /// Each of `currencies`' place by its trade id -- the first, as a search through them finds:
+    /// the panel looks icons and names up by id for each row it draws, and it draws a frame for
+    /// each step of its transitions.
+    currency_at: HashMap<String, usize>,
     item_types: Vec<ItemTypeEntry>,
     leagues: Vec<League>,
+}
+
+impl SiteCatalog {
+    /// The exchange item with the trade id `id`.
+    fn currency(&self, id: &str) -> Option<&StaticCurrency> {
+        self.currency_at.get(id).map(|&at| &self.currencies[at])
+    }
 }
 
 /// An item's two ways to scope its filtered search -- by its category and by its base type --
@@ -472,7 +557,7 @@ pub struct PriceCheckApp {
     international: SiteCatalog,
     russian: SiteCatalog,
     /// One per `Endpoint`, indexed by it.
-    limiters: [RateLimiter; 2],
+    limiters: [RateLimiter; 3],
     advanced_mod_desc_key: VIRTUAL_KEY,
 
     pub bootstrap: BootstrapState,
@@ -542,6 +627,9 @@ pub struct PriceCheckApp {
     /// The listing whose whisper was just copied -- the search generation that listed it and its
     /// row -- which the row says for a few seconds.
     copied_whisper: Option<(u64, usize)>,
+    /// The trade site's actions pressed on the listings shown now (`press_listing_action`): each
+    /// row's index and how far its press has come. Emptied by every search.
+    listing_actions: Vec<(usize, ActionState)>,
     /// Bumped by every search: only the newest one may write `search` -- a slower, older search
     /// (an earlier item, or filters since edited) must not overwrite what the panel now shows.
     search_generation: u64,
@@ -555,8 +643,9 @@ pub struct PriceCheckApp {
     /// The league's exchange market -- GGG's prices of exchange items and poe2scout's of the rest,
     /// and the rates listing prices are normalized with -- and when it was loaded
     /// (reloaded after `MARKET_MAX_AGE`). A private league's is its reference league's
-    /// (`market_league`).
-    market: Option<(Market, Instant)>,
+    /// (`market_league`). Shared: each search that uses it takes a handle, not a copy of its
+    /// thousands of entries.
+    market: Option<(Arc<Market>, Instant)>,
     /// The league's poe2scout prices of uniques, which the exchange doesn't trade, and when they
     /// were loaded (reloaded after `MARKET_MAX_AGE`, like the market); a private league's, its
     /// reference league's.
@@ -610,6 +699,7 @@ impl PriceCheckApp {
             one_fewer_next: false,
             item_text: None,
             copied_whisper: None,
+            listing_actions: Vec::new(),
             search_generation: 0,
             search_cache: Vec::new(),
             site: TradeSite::International,
@@ -661,6 +751,11 @@ impl PriceCheckApp {
     /// The open settings window, if any.
     pub fn settings_window(&self) -> Option<AnyWindowHandle> {
         self.settings_window
+    }
+
+    /// The combinations this app holds as global hotkeys now (`sync_hotkey_registration`).
+    pub fn held_hotkeys(&self) -> &[Hotkey] {
+        &self.registered
     }
 
     /// Records the settings window opening (`Some`) or closing (`None`). The hotkey follows at
@@ -1723,28 +1818,136 @@ impl PriceCheckApp {
         self.copied_whisper == Some((self.search_generation, row))
     }
 
+    /// How far the press of `row`'s action has come, among the listings shown now; `None` if it
+    /// wasn't pressed.
+    pub fn listing_action_state(&self, row: usize) -> Option<&ActionState> {
+        self.listing_actions
+            .iter()
+            .find(|(pressed, _)| *pressed == row)
+            .map(|(_, state)| state)
+    }
+
+    fn set_listing_action_state(&mut self, row: usize, state: ActionState) {
+        match self
+            .listing_actions
+            .iter_mut()
+            .find(|(pressed, _)| *pressed == row)
+        {
+            Some((_, old)) => *old = state,
+            None => self.listing_actions.push((row, state)),
+        }
+    }
+
+    /// Presses the trade site's own button on `row` of the listings shown now (`ListingRow::action`)
+    /// for the signed-in player: "Travel to Hideout", which has the site take the character to the
+    /// seller's hideout, or "Direct Whisper", which has it send the seller the whisper. One request
+    /// per press, never repeated by itself; after a travel "in demand" the next press goes anyway,
+    /// as the site's own "Teleport anyway?" does. A missing session, a lapsed token or the whisper
+    /// family's rate limit stop a press before anything is sent. A refused session has the account
+    /// page asked again (`session::check`), which takes the buttons away if it's gone.
+    pub fn press_listing_action(&mut self, row: usize, cx: &mut Context<Self>) {
+        let SearchState::Matched { rows, .. } = &self.search else {
+            return;
+        };
+        let Some(action) = rows.get(row).and_then(|row| row.action.clone()) else {
+            return;
+        };
+        let previous = self.listing_action_state(row).cloned();
+        if previous.as_ref().is_some_and(|state| !state.pressable()) {
+            return;
+        }
+        let anyway = previous == Some(ActionState::Answered(Outcome::InDemand));
+        let stopped = if signed_out(cx) {
+            Some(ActionState::Answered(Outcome::SignedOut))
+        } else if action.lapsed() {
+            Some(ActionState::Lapsed)
+        } else {
+            self.limiters[Endpoint::Whisper as usize]
+                .required_wait()
+                .map(|wait| {
+                    let secs = wait.as_secs_f64().ceil() as u64;
+                    ActionState::Answered(Outcome::RateLimited(Some(secs)))
+                })
+        };
+        if let Some(state) = stopped {
+            log::info!("trade site {:?} not sent: {state:?}", action.kind);
+            self.set_listing_action_state(row, state);
+            cx.notify();
+            return;
+        }
+        self.set_listing_action_state(row, ActionState::Sending);
+        cx.notify();
+        let generation = self.search_generation;
+        let client = self.http_client.clone();
+        let site = self.site;
+        let mut limiter = self.limiters[Endpoint::Whisper as usize].clone();
+        cx.spawn(async move |this, cx| {
+            let answer = whisper::send(
+                &client,
+                site,
+                action.kind,
+                &action.token,
+                anyway,
+                &mut limiter,
+            )
+            .await;
+            let outcome = Outcome::of(action.kind, anyway, &answer);
+            // No token, seller or account in the log: the diagnostics report sends it along.
+            let pressed = format!(
+                "trade site {:?}{}",
+                action.kind,
+                if anyway { " (anyway)" } else { "" }
+            );
+            match &answer {
+                Ok(Answer::Done) => log::info!("{pressed}: done"),
+                Ok(Answer::NotDone(body)) => {
+                    log::warn!("{pressed}: not done -> {outcome:?}; the site said {body}")
+                }
+                Err(err) => log::warn!("{pressed} -> {outcome:?}: {err:#}"),
+            }
+            this.update(cx, |state, cx| {
+                state.learn_limits(Endpoint::Whisper, &limiter);
+                if outcome == Outcome::SignedOut {
+                    crate::session::check(cx);
+                }
+                if state.search_generation == generation {
+                    state.set_listing_action_state(row, ActionState::Answered(outcome));
+                    cx.notify();
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// Merges a request's limiter copy back: concurrent requests each work on their own copy, and
+    /// the last to finish must not erase a restriction another one just learned. A refusal holds
+    /// every endpoint, not only the refused one: the trade API restricts the whole IP then
+    /// (`RateLimiter::refused_until`), and a request sent anyway only earns another refusal.
+    fn learn_limits(&mut self, endpoint: Endpoint, limiter: &RateLimiter) {
+        self.limiters[endpoint as usize].merge(limiter);
+        if let Some(until) = limiter.refused_until() {
+            for other in &mut self.limiters {
+                other.hold_until(until);
+            }
+        }
+    }
+
     /// Icon URL of a currency (or any exchange-tradable static item) by its trade id, from the
     /// displayed item's site catalog.
     pub fn currency_icon(&self, id: &str) -> Option<&str> {
-        self.catalog(self.site)
-            .currencies
-            .iter()
-            .find(|currency| currency.id == id)?
-            .icon_url
-            .as_deref()
+        self.catalog(self.site).currency(id)?.icon_url.as_deref()
     }
 
     /// The league's exchange market, once loaded.
     pub fn market(&self) -> Option<&Market> {
-        self.market.as_ref().map(|(market, _)| market)
+        self.market.as_ref().map(|(market, _)| market.as_ref())
     }
 
     /// A currency's (or other exchange item's) name on the displayed item's site, by trade id.
     pub fn currency_name(&self, id: &str) -> Option<&str> {
         self.catalog(self.site)
-            .currencies
-            .iter()
-            .find(|currency| currency.id == id)
+            .currency(id)
             .map(|currency| currency.display_name.as_str())
     }
 }
@@ -1790,9 +1993,14 @@ async fn load_site_catalog(
     )
     .await
     .with_context(|| format!("loading {site_name} league list"))?;
+    let mut currency_at = HashMap::with_capacity(currencies.len());
+    for (at, currency) in currencies.iter().enumerate() {
+        currency_at.entry(currency.id.clone()).or_insert(at);
+    }
     Ok(SiteCatalog {
         stats: IndexedCatalog::new(stats),
         currencies,
+        currency_at,
         item_types,
         leagues,
     })
@@ -1813,19 +2021,21 @@ async fn bootstrap_catalogs(client: &Arc<dyn HttpClient>) -> Result<(SiteCatalog
 }
 
 /// The league's exchange market, asked for again once `MARKET_MAX_AGE` old (`fetch_market` keeps
-/// GGG's hours and poe2scout's copy, so a reload downloads at most GGG's newest hour).
+/// GGG's hours and poe2scout's copy, so a reload downloads at most GGG's newest hour). The reload
+/// runs on the background executor: an hour of the exchange's record is up to 2.7 MB of JSON to
+/// parse and write to disk, and the UI thread draws the panel meanwhile.
 async fn current_market(
     view: &Entity<PriceCheckApp>,
     cx: &mut AsyncApp,
     client: &Arc<dyn HttpClient>,
     league: &str,
-) -> Result<Market> {
+) -> Result<Arc<Market>> {
     let (cached, market_league) = view.read_with(cx, |state, _| {
         let cached = state
             .market
             .as_ref()
             .filter(|(_, loaded_at)| loaded_at.elapsed() < MARKET_MAX_AGE)
-            .map(|(market, _)| market.clone());
+            .map(|(market, _)| Arc::clone(market));
         let market_league =
             league_chip::market_league(league, &state.leagues, state.league_lookup.leagues())
                 .to_owned();
@@ -1834,13 +2044,19 @@ async fn current_market(
     if let Some(market) = cached {
         return Ok(market);
     }
-    let market = trade_client::cx::fetch_market(client, &market_league, &paths::cache_dir())
+    let client = Arc::clone(client);
+    let market = cx
+        .background_executor()
+        .spawn(async move {
+            trade_client::cx::fetch_market(&client, &market_league, &paths::cache_dir()).await
+        })
         .await
         .context("loading the exchange market")?;
+    let market = Arc::new(market);
     // A market that arrives after the player switched leagues is not this league's.
     view.update(cx, |state, cx| {
         if state.league == league {
-            state.market = Some((market.clone(), Instant::now()));
+            state.market = Some((Arc::clone(&market), Instant::now()));
             cx.notify();
         }
     });
@@ -1848,7 +2064,7 @@ async fn current_market(
 }
 
 /// The league's poe2scout prices of uniques, reloaded once `MARKET_MAX_AGE` old (`fetch_prices`
-/// keeps its own half-hour disk cache).
+/// keeps its own half-hour disk cache) -- on the background executor, like the market.
 async fn current_scout(
     view: &Entity<PriceCheckApp>,
     cx: &mut AsyncApp,
@@ -1868,7 +2084,12 @@ async fn current_scout(
     if fresh {
         return Ok(());
     }
-    let prices = trade_client::scout::fetch_prices(client, &market_league, &paths::cache_dir())
+    let client = Arc::clone(client);
+    let prices = cx
+        .background_executor()
+        .spawn(async move {
+            trade_client::scout::fetch_prices(&client, &market_league, &paths::cache_dir()).await
+        })
         .await
         .context("loading poe2scout's prices")?;
     // Prices that arrive after the player switched leagues are not this league's.
@@ -2003,9 +2224,13 @@ pub fn register_hotkeys(cx: &mut App, view: Entity<PriceCheckApp>) -> Result<()>
             };
             view.update(cx, |state, _| state.hotkey_busy = true);
             match pressed {
-                Pressed::PriceCheck => run_price_check(&view, cx).await,
+                Pressed::PriceCheck => {
+                    // Timed from here to its panel settling (`check_clock`).
+                    check_clock::begin();
+                    run_price_check(&view, cx).await;
+                }
                 Pressed::QuickAction(action) => {
-                    run_quick_action(action, cx).await;
+                    run_quick_action(&view, action, cx).await;
                     // Presses that queued up meanwhile are dropped, as EE2's `restoreShortly`
                     // drops an action while the last one's clipboard is still out: a mashed key
                     // must not flood the chat -- the game disconnects for too many actions.
@@ -2059,10 +2284,13 @@ enum Pressed {
 
 /// Types a quick action into the game (`game_chat`): its text through the clipboard, which gets
 /// the player's own content back right after.
-async fn run_quick_action(action: QuickAction, cx: &mut AsyncApp) {
+async fn run_quick_action(view: &Entity<PriceCheckApp>, action: QuickAction, cx: &mut AsyncApp) {
     // The hotkey is held only while the game is in front, but a press can race the player's
     // switch to another program, and must not type there.
     if game_window::foreground() != Foreground::Game {
+        return;
+    }
+    if keys_blocked(view, cx) {
         return;
     }
     let Some(hotkey) = action.hotkey else {
@@ -2080,6 +2308,28 @@ async fn run_quick_action(action: QuickAction, cx: &mut AsyncApp) {
     }
     log::info!("{hotkey}: quick action ({:?})", action.kind);
     game_chat::type_action(&action, &held, cx).await;
+}
+
+/// Whether Windows keeps this app's keys from the game -- it runs as administrator and this app
+/// doesn't (`platform::elevation`) -- and if so, the panel says why: a copy combo or a quick
+/// action's keys would vanish without a trace, the press doing nothing at all.
+fn keys_blocked(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) -> bool {
+    if !elevation::game_keys_blocked() {
+        return false;
+    }
+    log::warn!(
+        "the game runs as administrator and this app doesn't: its keys can't reach the game"
+    );
+    view.update(cx, |state, cx| {
+        state.show_panel(game_window::panel_at_cursor(
+            state.settings.ui_scale,
+            &state.settings.panel_positions,
+        ));
+        state.league_menu = false;
+        state.show_problem(Problem::GameElevated);
+        cx.notify();
+    });
+    true
 }
 
 /// `Ctrl+E, F5` -- for the log and the diagnostics report.
@@ -2127,6 +2377,10 @@ async fn run_price_check(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
         });
         return;
     };
+    // A game run as administrator takes no keys from this app: no copy combo would reach it.
+    if keys_blocked(view, cx) {
+        return;
+    }
 
     // Where the check happened, recorded before anything is synthesized -- EE2 reads the cursor
     // (`screen.getCursorScreenPoint()`) ahead of `pressKeysToCopyItemText` for the same reason.
@@ -2171,6 +2425,8 @@ async fn run_price_check(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
         return;
     };
 
+    let parse_start = check_clock::now_thread();
+    check_clock::with(|check| check.copied(parse_start));
     let (has_item, diagnosis) = view.update(cx, |state, cx| {
         state.show_panel(placement);
         state.league_menu = false;
@@ -2261,6 +2517,7 @@ async fn run_price_check(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
         cx.notify();
         (has_item, diagnosis)
     });
+    check_clock::with(|check| check.parsed(parse_start, check_clock::now_thread()));
 
     // With `KEEP_ITEM_TEXTS_ENV` set every checked text is kept, not only the troubled ones.
     let diagnosis =
@@ -2462,6 +2719,7 @@ pub async fn run_search(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
         );
         state.search = SearchState::Searching;
         state.search_generation += 1;
+        state.listing_actions.clear();
         cx.notify();
         Some((
             state.http_client.clone(),
@@ -2479,6 +2737,8 @@ pub async fn run_search(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
     else {
         return;
     };
+    // The check isn't over till the outcome is in (`check_clock`).
+    check_clock::with(|check| check.searching());
     let target = SearchTarget {
         client: &client,
         site,
@@ -2559,6 +2819,7 @@ pub async fn run_search(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
         }
         cx.notify();
     });
+    check_clock::with(|check| check.results(check_clock::now_thread()));
     // The rows' exchange-rate equivalents and the title bar's rate: a market that has aged is
     // asked for again once the listings show, which don't wait on it -- they fill in when it
     // arrives, and go without it when it doesn't.
@@ -2660,6 +2921,7 @@ async fn execute_route(
             // broader ones (`choose_profile`, `search_one_fewer`) rather than spending the trade
             // site's limit on them unasked.
             let mut limiter = limiter_for_request(view, cx, generation, Endpoint::Search).await?;
+            let asked = Instant::now();
             let result = trade_client::search_with_filters(
                 client,
                 site,
@@ -2670,6 +2932,7 @@ async fn execute_route(
                 &mut limiter,
             )
             .await;
+            check_clock::with(|check| check.searched(asked.elapsed()));
             store_limiter(view, cx, Endpoint::Search, limiter);
             let mut results = fetch_listings(view, cx, target, result?).await?;
             if let StatMatch::AtLeast(least) = scope.stat_match {
@@ -2690,6 +2953,7 @@ async fn exact_listings(
     exact_type: &str,
 ) -> Result<RouteOutcome> {
     let mut limiter = limiter_for_request(view, cx, target.generation, Endpoint::Search).await?;
+    let asked = Instant::now();
     let result = trade_client::search_exact(
         target.client,
         target.site,
@@ -2699,6 +2963,7 @@ async fn exact_listings(
         &mut limiter,
     )
     .await;
+    check_clock::with(|check| check.searched(asked.elapsed()));
     store_limiter(view, cx, Endpoint::Search, limiter);
     Ok(RouteOutcome::Listings(
         fetch_listings(view, cx, target, result?).await?,
@@ -2738,12 +3003,16 @@ async fn fetch_listings(
 ) -> Result<SearchResults> {
     let trade_url = trade_site_url(target.site, target.league, &outcome.query_id);
     let mut groups = Vec::new();
+    // When the first fetch went out: the listings' tokens are timed from it (`ListingRow::new`).
+    let mut fetched = None;
     for ids in outcome
         .listing_ids
         .chunks(FETCH_PAGE_SIZE)
         .take(FETCH_PAGES)
     {
         let mut limiter = limiter_for_request(view, cx, target.generation, Endpoint::Fetch).await?;
+        fetched.get_or_insert_with(Instant::now);
+        let asked = Instant::now();
         let result = trade_client::fetch(
             target.client,
             target.site,
@@ -2752,6 +3021,7 @@ async fn fetch_listings(
             &mut limiter,
         )
         .await;
+        check_clock::with(|check| check.fetched(asked.elapsed()));
         store_limiter(view, cx, Endpoint::Fetch, limiter);
         // Unpriced listings are dropped before grouping, so they can't decide which rows count
         // as a seller's "last two".
@@ -2760,8 +3030,12 @@ async fn fetch_listings(
             result?.into_iter().filter(|item| item.price.is_some()),
         );
     }
+    let fetched = fetched.unwrap_or_else(Instant::now);
     Ok(SearchResults {
-        rows: groups.into_iter().map(ListingRow::from).collect(),
+        rows: groups
+            .into_iter()
+            .map(|group| ListingRow::new(group, fetched))
+            .collect(),
         total: outcome.total,
         trade_url,
         relaxed: None,
@@ -2774,6 +3048,9 @@ async fn fetch_listings(
 enum Endpoint {
     Search,
     Fetch,
+    /// The trade site's own buttons on a listing (`trade_client::whisper`), under a rate-limit
+    /// policy of their own.
+    Whisper,
 }
 
 /// A request refused locally: the trade API's restriction outlasts `MAX_RATE_LIMIT_WAIT`.
@@ -2834,24 +3111,14 @@ fn show_search_state(
     });
 }
 
-/// Merges a request's limiter copy back: concurrent searches each work on their own copy, and
-/// the last to finish must not erase a restriction another one just learned. A refusal holds
-/// every endpoint, not only the refused one: the trade API restricts the whole IP then
-/// (`RateLimiter::refused_until`), and a request sent anyway only earns another refusal.
+/// Merges a request's limiter copy back (`PriceCheckApp::learn_limits`).
 fn store_limiter(
     view: &Entity<PriceCheckApp>,
     cx: &mut AsyncApp,
     endpoint: Endpoint,
     limiter: RateLimiter,
 ) {
-    view.update(cx, |state, _cx| {
-        state.limiters[endpoint as usize].merge(&limiter);
-        if let Some(until) = limiter.refused_until() {
-            for other in &mut state.limiters {
-                other.hold_until(until);
-            }
-        }
-    });
+    view.update(cx, |state, _cx| state.learn_limits(endpoint, &limiter));
 }
 
 /// A rejected item text's problem in the interface language.

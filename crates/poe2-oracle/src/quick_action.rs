@@ -4,8 +4,9 @@
 //! language's text arrives whatever the keyboard layout. And what it never types -- the chat
 //! commands that destroy something or change it for good ([`denied_command`]), which the settings
 //! window never saves either ([`kept_actions`]) -- and how often: once per press of its key
-//! ([`KEY_PRESSES`]). Plain data, built and tested on every target;
-//! `platform::synth_input::press_keys` plays the keys on Windows.
+//! ([`KEY_PRESSES`]). Also which combinations the actions press ([`combos`]): another program
+//! holding one as a global hotkey gets its presses, the actions' too. Plain data, built and tested
+//! on every target; `platform::synth_input::press_keys` plays the keys on Windows.
 
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -35,6 +36,31 @@ pub enum Key {
     CtrlV,
     Home,
     Delete,
+}
+
+impl Key {
+    /// The keys pressed with Ctrl held: combinations, which another program can hold as a global
+    /// hotkey (`platform::synth_input::taken_combos`) -- unlike Enter, Home and Delete, which no
+    /// program holds without breaking typing everywhere.
+    pub const COMBOS: [Key; 4] = [Key::CtrlEnter, Key::CtrlA, Key::CtrlF, Key::CtrlV];
+
+    /// Whether it's pressed with Ctrl held: one of [`Key::COMBOS`].
+    pub fn with_ctrl(self) -> bool {
+        Key::COMBOS.contains(&self)
+    }
+
+    /// The keystroke as the player reads it: `Ctrl+F`.
+    pub fn label(self) -> &'static str {
+        match self {
+            Key::Enter => "Enter",
+            Key::CtrlEnter => "Ctrl+Enter",
+            Key::CtrlA => "Ctrl+A",
+            Key::CtrlF => "Ctrl+F",
+            Key::CtrlV => "Ctrl+V",
+            Key::Home => "Home",
+            Key::Delete => "Delete",
+        }
+    }
 }
 
 /// A quick action's input: `clipboard`, if any, goes on the clipboard, then `keys` are pressed
@@ -92,6 +118,20 @@ fn pasted(text: &str, before: Vec<Key>, after: Vec<Key>) -> Typing {
         clipboard: Some(text.to_owned()),
         keys,
     }
+}
+
+/// The combinations `actions` press ([`Key::COMBOS`]), each once, in the order they first come:
+/// the stash search's Ctrl+F, the paste's Ctrl+V and the like.
+pub fn combos<'a>(actions: impl IntoIterator<Item = &'a QuickAction>) -> Vec<Key> {
+    let mut combos = Vec::new();
+    for action in actions {
+        for key in typing(action).keys {
+            if key.with_ctrl() && !combos.contains(&key) {
+                combos.push(key);
+            }
+        }
+    }
+    combos
 }
 
 /// A chat command no quick action sends: it destroys something or changes it for good, and a
@@ -348,6 +388,27 @@ mod tests {
                 vec![CtrlF, CtrlV, Enter]
             )
         );
+    }
+
+    #[test]
+    fn the_combinations_asked_about_are_the_ctrl_keys_the_actions_press_once_each() {
+        let action = |kind, text: &str| QuickAction {
+            kind,
+            text: text.to_owned(),
+            hotkey: None,
+        };
+        let hideout = action(QuickActionKind::ChatCommand, "/hideout");
+        let search = action(QuickActionKind::StashSearch, "\"rare\"");
+        let greeting = action(QuickActionKind::ChatCommand, "всем привет");
+        let invite = action(QuickActionKind::ChatCommand, "/invite @last");
+        // A command behind its channel sign only pastes: Enter, never probed, stays out.
+        assert_eq!(combos([&hideout]), vec![CtrlV]);
+        // Home and Delete stay out too; each combination comes once, where it first does.
+        assert_eq!(
+            combos([&search, &greeting, &invite, &hideout]),
+            vec![CtrlF, CtrlV, CtrlA, CtrlEnter]
+        );
+        assert_eq!(combos([]), Vec::<Key>::new());
     }
 
     #[test]

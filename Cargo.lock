@@ -6934,6 +6934,7 @@ name = "trade-client"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64",
  "futures",
  "http_client",
  "log",

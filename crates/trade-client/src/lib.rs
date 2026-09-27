@@ -11,7 +11,9 @@
 //! (`/api/trade2/data/{stats,items,static}`), `cache` gives that slow-changing data a disk
 //! cache, and `rate_limit` tracks the real rate-limit response headers so a caller that owns an
 //! executor can hold off until the trade API will take its next request -- this crate itself
-//! never sleeps. `account` asks whether the session the caller's client sends is signed in.
+//! never sleeps. `account` asks whether the session the caller's client sends is signed in, and
+//! `whisper` presses the trade site's own buttons on a listing -- travel to the seller's hideout,
+//! a whisper to the seller -- for that session.
 //!
 //! Every trade API response, `catalog`'s included, goes through `checked_body`: a refusal (a `429`
 //! while rate-limited, a rejected query, a Cloudflare error page) reaches the caller as a
@@ -26,6 +28,7 @@ pub mod private_leagues;
 pub mod rate_limit;
 pub mod rates;
 pub mod scout;
+pub mod whisper;
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -144,24 +147,30 @@ fn api_error(status: u16, headers: &HeaderMap, body: &str) -> TradeApiError {
             retry_after_secs,
         };
     }
-    let body = body.trim();
-    let message = if body.is_empty() {
+    let message = if body.trim().is_empty() {
         StatusCode::from_u16(status)
             .ok()
             .and_then(|status| status.canonical_reason())
             .unwrap_or("no response body")
             .to_owned()
     } else {
-        match body.char_indices().nth(MAX_RAW_MESSAGE_CHARS) {
-            Some((cut, _)) => format!("{}…", &body[..cut]),
-            None => body.to_owned(),
-        }
+        capped(body)
     };
     TradeApiError {
         status,
         code: None,
         message,
         retry_after_secs,
+    }
+}
+
+/// `body` trimmed and cut at [`MAX_RAW_MESSAGE_CHARS`] characters, an ellipsis marking the cut:
+/// an answer's raw text as a message or a log line may carry it.
+pub(crate) fn capped(body: &str) -> String {
+    let body = body.trim();
+    match body.char_indices().nth(MAX_RAW_MESSAGE_CHARS) {
+        Some((cut, _)) => format!("{}…", &body[..cut]),
+        None => body.to_owned(),
     }
 }
 
@@ -1215,6 +1224,8 @@ struct FetchListing {
     fee: Option<serde::de::IgnoredAny>,
     in_demand: Option<bool>,
     whisper: Option<String>,
+    whisper_token: Option<String>,
+    hideout_token: Option<String>,
 }
 #[derive(Deserialize)]
 struct FetchPrice {
@@ -1804,6 +1815,14 @@ pub struct FetchedItem {
     /// exalted в лиге Standard (секция "~b/o 1 exalted"; позиция: 22 столбец, 21 ряд)` for a
     /// `ru_RU` seller). `None` for an instant-buyout listing, which needs no whisper.
     pub whisper: Option<String>,
+    /// `listing.whisper_token`: what the trade site's "Direct Whisper" sends the seller this
+    /// listing's whisper with ([`whisper::send`]). Only a fetch made with a signed-in session
+    /// carries it.
+    pub whisper_token: Option<String>,
+    /// `listing.hideout_token`: an instant-buyout listing's, what the trade site's "Travel to
+    /// Hideout" takes the player to the seller's hideout with ([`whisper::send`]). Only a fetch
+    /// made with a signed-in session carries it.
+    pub hideout_token: Option<String>,
 }
 
 /// `GET /api/trade2/fetch/{ids}?query={query_id}` for up to 10 listing ids at a time (the trade
@@ -1860,6 +1879,14 @@ fn parse_fetch_response(body: &str) -> Result<Vec<FetchedItem>> {
             in_demand: entry.listing.in_demand.unwrap_or(false),
             gone: entry.gone.unwrap_or(false),
             whisper: entry.listing.whisper.filter(|whisper| !whisper.is_empty()),
+            whisper_token: entry
+                .listing
+                .whisper_token
+                .filter(|token| !token.is_empty()),
+            hideout_token: entry
+                .listing
+                .hideout_token
+                .filter(|token| !token.is_empty()),
         })
         .collect())
 }
@@ -2383,6 +2410,8 @@ mod fetch_tests {
             in_demand: false,
             gone: false,
             whisper: None,
+            whisper_token: None,
+            hideout_token: None,
         }
     }
 

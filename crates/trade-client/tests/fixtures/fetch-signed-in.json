@@ -1,0 +1,314 @@
+{
+  "result": [
+    {
+      "id": "c464fd33fecd27346204f018468ae30b11e2aabe5f4c29dcc3405cb207129c24",
+      "listing": {
+        "method": "psapi",
+        "indexed": "2026-09-27T06:12:41Z",
+        "stash": {
+          "name": "11",
+          "x": 2,
+          "y": 8
+        },
+        "price": {
+          "type": "~b/o",
+          "amount": 15,
+          "currency": "exalted"
+        },
+        "fee": 80861,
+        "account": {
+          "name": "merchant#7494",
+          "online": null
+        },
+        "hideout_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJqdGkiOiI3MGE3YjI2OTg2NGU0NDEwZjBmYmIwNzk5Y2ZmMzdmYiIsImlzcyI6IlhiN0tvM1ZmTSIsImF1ZCI6Ijk2YThlODIzLTU3ZGYtNGJjMS04Y2MxLWUzYTkxZmI3MDgyOSIsInRvayI6ImhpZGVvdXQiLCJzdWIiOiJjNDY0ZmQzM2ZlY2QyNzM0NjIwNGYwMTg0NjhhZTMwYjExZTJhYWJlNWY0YzI5ZGNjMzQwNWNiMjA3MTI5YzI0IiwiZGF0IjoiZjQ0YmJiYTA4OTZkYTA2MjJjZmVjNTlhZTk3Y2Q2ZTAiLCJpYXQiOjE3OTA0OTEyMDAsImV4cCI6MTc5MDQ5MTUwMH0.W0oFsIHiEUGlEBRTMX3KrczoTwlPK2ptDoQrwyJQU0Q"
+      },
+      "item": {
+        "realm": "poe2",
+        "verified": true,
+        "w": 2,
+        "h": 3,
+        "icon": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvQXJtb3Vycy9Cb2R5QXJtb3Vycy9CYXNldHlwZXMvQm9keURleDAzIiwidyI6MiwiaCI6Mywic2NhbGUiOjEsInJlYWxtIjoicG9lMiJ9XQ/cc5ba22973/BodyDex03.png",
+        "league": "Forbidden Rites",
+        "id": "c464fd33fecd27346204f018468ae30b11e2aabe5f4c29dcc3405cb207129c24",
+        "name": "Viper Skin",
+        "typeLine": "Swiftstalker Coat",
+        "baseType": "Swiftstalker Coat",
+        "rarity": "Rare",
+        "ilvl": 80,
+        "identified": true,
+        "note": "~b/o 15 exalted",
+        "properties": [
+          {
+            "name": "Body Armour",
+            "values": [],
+            "displayMode": 0,
+            "type": 109
+          },
+          {
+            "name": "[Evasion|Evasion Rating]",
+            "values": [
+              [
+                "637",
+                1
+              ]
+            ],
+            "displayMode": 0,
+            "type": 17
+          }
+        ],
+        "requirements": [
+          {
+            "name": "Level",
+            "values": [
+              [
+                "65",
+                0
+              ]
+            ],
+            "displayMode": 0,
+            "type": 62
+          }
+        ],
+        "explicitMods": [
+          "+42 to [Dexterity|Dexterity]"
+        ],
+        "frameType": 2
+      }
+    },
+    {
+      "id": "c911eaffb3cb4f5abf016d38fbf750cde47d6771f7b1206ec49bc9067d9dd421",
+      "listing": {
+        "method": "psapi",
+        "indexed": "2026-09-27T05:58:03Z",
+        "stash": {
+          "name": "~price 20 exalted",
+          "x": 3,
+          "y": 3
+        },
+        "price": {
+          "type": "~price",
+          "amount": 20,
+          "currency": "exalted"
+        },
+        "account": {
+          "name": "nivon#0926",
+          "online": {
+            "league": "Forbidden Rites"
+          },
+          "lastCharacterName": "Nivon",
+          "language": "en_US"
+        },
+        "whisper": "@Nivon Hi, I would like to buy your Storm Hide Swiftstalker Coat listed for 20 exalted in Forbidden Rites (stash tab \"~price 20 exalted\"; position: left 4, top 4)",
+        "whisper_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJqdGkiOiJlZTZiNmY5N2U0NGNiNzA1ZjE4Zjc2M2YwODA5MWI3ZCIsImlzcyI6IlhiN0tvM1ZmTSIsImF1ZCI6Ijk2YThlODIzLTU3ZGYtNGJjMS04Y2MxLWUzYTkxZmI3MDgyOSIsInRvayI6IndoaXNwZXIiLCJzdWIiOiJjOTExZWFmZmIzY2I0ZjVhYmYwMTZkMzhmYmY3NTBjZGU0N2Q2NzcxZjdiMTIwNmVjNDliYzkwNjdkOWRkNDIxIiwiZGF0IjoiODE4N2M1NTcyNGZiMWNiMWM4YjdmN2JjNWUzOTgyYmMiLCJpYXQiOjE3OTA0OTEyMDAsImV4cCI6MTc5MDQ5MTUwMH0.6Zho3BoKjWpUpq_w--14KmchbIG6I7MPgUF0-0s1B-M"
+      },
+      "item": {
+        "realm": "poe2",
+        "verified": true,
+        "w": 2,
+        "h": 3,
+        "icon": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvQXJtb3Vycy9Cb2R5QXJtb3Vycy9CYXNldHlwZXMvQm9keURleDAzIiwidyI6MiwiaCI6Mywic2NhbGUiOjEsInJlYWxtIjoicG9lMiJ9XQ/cc5ba22973/BodyDex03.png",
+        "league": "Forbidden Rites",
+        "id": "c911eaffb3cb4f5abf016d38fbf750cde47d6771f7b1206ec49bc9067d9dd421",
+        "name": "Storm Hide",
+        "typeLine": "Swiftstalker Coat",
+        "baseType": "Swiftstalker Coat",
+        "rarity": "Rare",
+        "ilvl": 80,
+        "identified": true,
+        "properties": [
+          {
+            "name": "Body Armour",
+            "values": [],
+            "displayMode": 0,
+            "type": 109
+          },
+          {
+            "name": "[Evasion|Evasion Rating]",
+            "values": [
+              [
+                "637",
+                1
+              ]
+            ],
+            "displayMode": 0,
+            "type": 17
+          }
+        ],
+        "requirements": [
+          {
+            "name": "Level",
+            "values": [
+              [
+                "65",
+                0
+              ]
+            ],
+            "displayMode": 0,
+            "type": 62
+          }
+        ],
+        "explicitMods": [
+          "+42 to [Dexterity|Dexterity]"
+        ],
+        "frameType": 2
+      }
+    },
+    {
+      "id": "026f1bbc8e26026941e24ae3089397862262cf399e690447090dfcc6a1bb237b",
+      "listing": {
+        "method": "psapi",
+        "indexed": "2026-09-26T21:30:00Z",
+        "stash": {
+          "name": "sale",
+          "x": 0,
+          "y": 5
+        },
+        "price": {
+          "type": "~price",
+          "amount": 1,
+          "currency": "divine"
+        },
+        "account": {
+          "name": "dumper#1111",
+          "online": {
+            "league": "Forbidden Rites",
+            "status": "afk"
+          },
+          "lastCharacterName": "Dumper",
+          "language": "en_US"
+        },
+        "whisper": "@Dumper Hi, I would like to buy your Grim Shell Swiftstalker Coat listed for 1 divine in Forbidden Rites (stash tab \"~price 1 divine\"; position: left 1, top 6)",
+        "whisper_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJqdGkiOiI2N2ZjNzAzYjgwNzc2MGIzOThmNDYzZWFiNjk3MzlhMSIsImlzcyI6IlhiN0tvM1ZmTSIsImF1ZCI6Ijk2YThlODIzLTU3ZGYtNGJjMS04Y2MxLWUzYTkxZmI3MDgyOSIsInRvayI6IndoaXNwZXIiLCJzdWIiOiIwMjZmMWJiYzhlMjYwMjY5NDFlMjRhZTMwODkzOTc4NjIyNjJjZjM5OWU2OTA0NDcwOTBkZmNjNmExYmIyMzdiIiwiZGF0IjoiOTU3ZTA3ZGM2ODI4Mzc5NTdkYTg4YjNmOGZhMzQyYmEiLCJpYXQiOjE3OTA0OTEyMDAsImV4cCI6MTc5MDQ5MTUwMH0.h2qqR1eg0Nzx39IkdQ5wb2M8KirzyQCFqpjLESmyweQ"
+      },
+      "item": {
+        "realm": "poe2",
+        "verified": true,
+        "w": 2,
+        "h": 3,
+        "icon": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvQXJtb3Vycy9Cb2R5QXJtb3Vycy9CYXNldHlwZXMvQm9keURleDAzIiwidyI6MiwiaCI6Mywic2NhbGUiOjEsInJlYWxtIjoicG9lMiJ9XQ/cc5ba22973/BodyDex03.png",
+        "league": "Forbidden Rites",
+        "id": "026f1bbc8e26026941e24ae3089397862262cf399e690447090dfcc6a1bb237b",
+        "name": "Grim Shell",
+        "typeLine": "Swiftstalker Coat",
+        "baseType": "Swiftstalker Coat",
+        "rarity": "Rare",
+        "ilvl": 80,
+        "identified": true,
+        "note": "~price 1 divine",
+        "properties": [
+          {
+            "name": "Body Armour",
+            "values": [],
+            "displayMode": 0,
+            "type": 109
+          },
+          {
+            "name": "[Evasion|Evasion Rating]",
+            "values": [
+              [
+                "637",
+                1
+              ]
+            ],
+            "displayMode": 0,
+            "type": 17
+          }
+        ],
+        "requirements": [
+          {
+            "name": "Level",
+            "values": [
+              [
+                "65",
+                0
+              ]
+            ],
+            "displayMode": 0,
+            "type": 62
+          }
+        ],
+        "explicitMods": [
+          "+42 to [Dexterity|Dexterity]"
+        ],
+        "frameType": 2
+      }
+    },
+    {
+      "id": "0e04c72e04f18d898d1b6053386e6500b3f64c5cbf402cf529ef552efbfa318d",
+      "listing": {
+        "method": "psapi",
+        "indexed": "2026-09-20T10:00:00Z",
+        "stash": {
+          "name": "sale",
+          "x": 6,
+          "y": 0
+        },
+        "price": {
+          "type": "~price",
+          "amount": 2,
+          "currency": "divine"
+        },
+        "account": {
+          "name": "away#3333",
+          "online": null,
+          "lastCharacterName": "Away",
+          "language": "en_US"
+        },
+        "whisper": "@Away Hi, I would like to buy your Gloom Wrap Swiftstalker Coat listed for 2 divine in Forbidden Rites (stash tab \"~price 2 divine\"; position: left 7, top 1)",
+        "whisper_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJqdGkiOiJkMjAyM2NkMmY5ZjU1ZWU1ZTgwMmVhZjJiZTIzZjFjOSIsImlzcyI6IlhiN0tvM1ZmTSIsImF1ZCI6Ijk2YThlODIzLTU3ZGYtNGJjMS04Y2MxLWUzYTkxZmI3MDgyOSIsInRvayI6IndoaXNwZXIiLCJzdWIiOiIwZTA0YzcyZTA0ZjE4ZDg5OGQxYjYwNTMzODZlNjUwMGIzZjY0YzVjYmY0MDJjZjUyOWVmNTUyZWZiZmEzMThkIiwiZGF0IjoiZmI3MDAxNDJmMDVkMzFkMjhlMTYwZDY3NTRlOWQxYjIiLCJpYXQiOjE3OTA0OTEyMDAsImV4cCI6MTc5MDQ5MTUwMH0.Co7VOg97YjuBmc3CLIfGdylLam5E1HBIRN3f_WsKZAs"
+      },
+      "item": {
+        "realm": "poe2",
+        "verified": true,
+        "w": 2,
+        "h": 3,
+        "icon": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvQXJtb3Vycy9Cb2R5QXJtb3Vycy9CYXNldHlwZXMvQm9keURleDAzIiwidyI6MiwiaCI6Mywic2NhbGUiOjEsInJlYWxtIjoicG9lMiJ9XQ/cc5ba22973/BodyDex03.png",
+        "league": "Forbidden Rites",
+        "id": "0e04c72e04f18d898d1b6053386e6500b3f64c5cbf402cf529ef552efbfa318d",
+        "name": "Gloom Wrap",
+        "typeLine": "Swiftstalker Coat",
+        "baseType": "Swiftstalker Coat",
+        "rarity": "Rare",
+        "ilvl": 80,
+        "identified": true,
+        "note": "~price 2 divine",
+        "properties": [
+          {
+            "name": "Body Armour",
+            "values": [],
+            "displayMode": 0,
+            "type": 109
+          },
+          {
+            "name": "[Evasion|Evasion Rating]",
+            "values": [
+              [
+                "637",
+                1
+              ]
+            ],
+            "displayMode": 0,
+            "type": 17
+          }
+        ],
+        "requirements": [
+          {
+            "name": "Level",
+            "values": [
+              [
+                "65",
+                0
+              ]
+            ],
+            "displayMode": 0,
+            "type": 62
+          }
+        ],
+        "explicitMods": [
+          "+42 to [Dexterity|Dexterity]"
+        ],
+        "frameType": 2
+      }
+    }
+  ]
+}

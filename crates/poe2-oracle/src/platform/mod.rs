@@ -5,10 +5,13 @@
 // `windows` crate against a non-Windows host. `game_config` is plain file parsing, and
 // `lip_schedule` and `paint_gate` the lip watcher's timing and the paint gates' bookkeeping --
 // with the vsync thread's sleeps -- without a Windows call, so they build -- and their tests
-// run -- everywhere; so does `d3d_threading`'s choice of the Direct3D devices that go without the
-// graphics driver's threads, whose hook is Windows-only inside it.
+// run -- everywhere; so do `d3d_threading`'s choice of the Direct3D devices that go without the
+// graphics driver's threads, whose hook is Windows-only inside it, and `elevation`'s rule of
+// whose keys reach a game run as administrator, whose token reading is too.
 #[cfg(target_os = "windows")]
 pub mod autostart;
+#[cfg(target_os = "windows")]
+pub mod check_clock;
 #[cfg(target_os = "windows")]
 pub mod client_log;
 #[cfg(target_os = "windows")]
@@ -16,11 +19,14 @@ pub mod clipboard_poll;
 #[cfg(target_os = "windows")]
 pub mod credentials;
 pub mod d3d_threading;
+pub mod elevation;
 #[cfg(target_os = "windows")]
 pub mod esc_hook;
 pub mod game_config;
 #[cfg(target_os = "windows")]
 pub mod game_window;
+#[cfg(target_os = "windows")]
+pub mod gpu_memory;
 #[cfg(target_os = "windows")]
 pub mod instance;
 pub mod lip_schedule;

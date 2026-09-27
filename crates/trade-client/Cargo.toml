@@ -27,3 +27,6 @@ log = "0.4"
 # `SearchFilter` -- the shape `search_with_filters` (step 7) builds a stat-filtered trade search
 # request body from.
 stat-filters = { path = "../stat-filters" }
+# A listing action's token is a JSON Web Token whose claims (base64url JSON) say how long the site
+# takes it (`whisper::token_lifetime`).
+base64 = "0.22"

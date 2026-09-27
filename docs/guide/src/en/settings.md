@@ -27,8 +27,8 @@ While the settings window is open, the price panel is hidden and the price-check
 that you can record a new one.
 
 A gold-framed box at the top of **General** shows warnings marked **⚠** about your setup, such as
-exclusive Fullscreen or the copy shortcut held by another program. See
-[Troubleshooting](troubleshooting.md).
+the game running as administrator, exclusive Fullscreen or the copy shortcut held by another
+program. See [Troubleshooting](troubleshooting.md).
 
 This page names the settings as the English interface shows them; the
 [interface language](#interface-language) switches them to Russian.
@@ -168,7 +168,9 @@ Group **Search**.
 
 Section **Quick actions**, group **Actions**: hotkeys that type chat commands or stash searches into
 the game. Each action has its kind (**Chat** or **Stash**), its text, its key and a **×**; **+ Add
-action** is below them. See [Quick actions](quick-actions.md).
+action** is below them. If another program holds a combination the actions press, such as
+<kbd>Ctrl</kbd>+<kbd>F</kbd>, a gold-framed box at the top of the section says so. See
+[Quick actions](quick-actions.md).
 
 ## XP overlay
 
@@ -184,8 +186,9 @@ Section **XP overlay**, group **XP line**. See [XP overlay](xp-overlay.md) for w
 ## Account
 
 Section **Account**: group **pathofexile.com**, and **Private leagues** while you are signed in.
-Signing in to pathofexile.com is needed to search private leagues and for the **sum** rows among the
-[filters](price-check.md#filters).
+Signing in to pathofexile.com is needed to search private leagues, for the **sum** rows among the
+[filters](price-check.md#filters) and for the trade site's buttons on listings, **To hideout** and
+**Whisper** (see [The trade site's buttons](price-check.md#the-trade-sites-buttons)).
 
 - **pathofexile.com.** The row tells what is known about your sign-in: "Sign in through the window
   that opened" while the sign-in window is open, "Not signed in", "Checking the sign-in…", "Signed

@@ -259,6 +259,7 @@ pub async fn poll_item_clipboard(cx: &mut AsyncApp, send_copy: impl FnOnce()) ->
     // The count as this check left the clipboard. 0: the count can't be read here (no clipboard
     // access for this window station), and the clipboard is read at every look instead.
     let mut seen = unsafe { GetClipboardSequenceNumber() };
+    let sending = Instant::now();
     send_copy();
     let sent = Instant::now();
 
@@ -268,11 +269,18 @@ pub async fn poll_item_clipboard(cx: &mut AsyncApp, send_copy: impl FnOnce()) ->
         if count == 0 || count != seen {
             let current = read_clipboard(cx);
             if let Some(text) = current.as_ref().and_then(item_text) {
-                log::info!(
-                    "item text from the game in {} ms",
-                    sent.elapsed().as_millis()
-                );
+                let answered = sent.elapsed();
+                let restoring = Instant::now();
                 saved.restore(cx);
+                // The two ends of the copy that are the app's own: sending the combo (its key
+                // releases' gap included) and giving the player's clipboard back.
+                log::info!(
+                    "item text from the game in {} ms (combo sent in {:.1} ms, clipboard given \
+                     back in {:.1} ms)",
+                    answered.as_millis(),
+                    (sent - sending).as_secs_f64() * 1000.,
+                    restoring.elapsed().as_secs_f64() * 1000.
+                );
                 return Some(text.to_owned());
             }
             // Something else, readable: the next change is the one to read.

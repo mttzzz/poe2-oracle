@@ -5,6 +5,7 @@
   "Tell the developer what's wrong with this item; its text is attached": "Сообщить разработчику, что не так с этим предметом; текст предмета приложится",
   "Report a problem": "Сообщить о проблеме",
 
+  "The game runs as administrator, and Windows doesn't let PoE2 Oracle press keys in it: items aren't copied and quick actions aren't typed. Start the game normally, without “Run as administrator”, or run PoE2 Oracle as administrator too.": "Игра запущена от имени администратора, и Windows не даёт PoE2 Oracle нажимать в ней клавиши: предметы не копируются, быстрые действия не печатаются. Запускайте игру обычно, без «Запуск от имени администратора», или запускайте от имени администратора и PoE2 Oracle.",
   "The game doesn't copy the item: another program takes {combo} — most often a graphics card overlay, a screen recorder or Discord. Free the shortcut in that program's settings.": "Игра не копирует предмет: сочетание {combo} перехватывает другая программа — чаще всего оверлей видеокарты, запись экрана или Discord. Освободите его в настройках той программы.",
   "The item's text was saved to {path}": "Текст предмета сохранён: {path}",
   "Couldn't read the item": "Не удалось разобрать предмет",
@@ -198,5 +199,23 @@
   "The trade site finds this search too complex: uncheck some rows and search again. Signed in, the site allows more.": "Сайт торговли счёл запрос слишком сложным: снимите часть отметок и повторите поиск. Вошедшим в аккаунт сайт разрешает больше.",
   "Search without sums": "Искать без сумм",
   "Check the item again without the “sum” rows: their mods are searched one by one. One search on the trade site.": "Проверить предмет заново без строк «сумма»: их моды ищутся по отдельности. Один поиск на сайте торговли.",
-  "Opens the pathofexile.com sign-in page. The sums work once you're in.": "Откроет страницу входа pathofexile.com. После входа суммы заработают."
+  "Opens the pathofexile.com sign-in page. The sums work once you're in.": "Откроет страницу входа pathofexile.com. После входа суммы заработают.",
+
+  "To hideout": "В убежище",
+  "Travel to Hideout, as on the trade site: the site takes your character in the game to the seller's hideout to buy the item.": "Перейти в убежище, как на сайте торговли: сайт перенесёт вашего персонажа в игре в убежище продавца за этим предметом.",
+  "Whisper": "Написать",
+  "Direct Whisper, as on the trade site: the site sends the seller this listing's whisper from your character in the game.": "Личное сообщение, как на сайте торговли: сайт отправит продавцу сообщение об этом лоте от вашего персонажа в игре.",
+  "Anyway": "Всё равно",
+  "The trade site says the item is already in demand. Press to travel to the seller's hideout anyway.": "Сайт торговли пишет, что предмет уже востребован. Нажмите, чтобы всё равно перейти в убежище продавца.",
+  "✓ Teleporting to the seller's hideout": "✓ Телепортация в убежище продавца",
+  "✓ Whisper sent": "✓ Сообщение отправлено",
+  "In demand": "Уже востребован",
+  "✗ The listing is gone — search again": "✗ Лота уже нет — повторите поиск",
+  "✗ The seller is gone — search again": "✗ Продавца уже нет — повторите поиск",
+  "The trade site said: {message}": "Ответ сайта торговли: {message}",
+  "✗ Sign in again: settings, “Account”": "✗ Войдите снова: настройки, «Аккаунт»",
+  "Request limit — {when}": "Лимит запросов — {when}",
+  "✗ No answer from the site": "✗ Сайт не ответил",
+  "✗ Expired — search again": "✗ Устарело — повторите поиск",
+  "The trade site takes a listing's buttons for a few minutes after the search. Search again for fresh ones.": "Кнопки лота сайт торговли принимает несколько минут после поиска. Повторите поиск, чтобы получить свежие."
 }

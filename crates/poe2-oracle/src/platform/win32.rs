@@ -66,7 +66,7 @@ use windows::core::{BOOL, s, w};
 
 use super::game_window::{client_rect_on_screen, dpi_to_scale};
 use super::paint_gate::{self, GateEvent, PaintGate, Wants};
-use super::{paint_census, vsync_park};
+use super::{check_clock, paint_census, vsync_park};
 use crate::overlay_layout::PhysicalRect;
 
 /// The windows whose procedure [`overlay_proc`] wraps, by the window's handle value: GPUI's own
@@ -126,6 +126,12 @@ impl Win32Overlay {
             other => bail!("Win32Overlay requires a Win32 window handle, got {other:?}"),
         };
         Ok(Self { hwnd })
+    }
+
+    /// Has a price check under way time this window's frames and resizes (`check_clock`): the
+    /// price panel's.
+    pub fn time_for_checks(&self) {
+        check_clock::watch_panel(self.hwnd);
     }
 
     /// Toggles mouse-transparency via `WS_EX_LAYERED | WS_EX_TRANSPARENT` on `GWL_EXSTYLE`.
@@ -728,7 +734,13 @@ unsafe extern "system" fn overlay_proc(
     }
     // SAFETY: the value `GWLP_WNDPROC` held before the swap, a window procedure of this window.
     let gpui_proc: WNDPROC = unsafe { std::mem::transmute::<isize, WNDPROC>(gpui_proc) };
-    let answer = unsafe { CallWindowProcW(gpui_proc, hwnd, message, wparam, lparam) };
+    // SAFETY: this message, for the window procedure it was meant for.
+    let answer_gpui = || unsafe { CallWindowProcW(gpui_proc, hwnd, message, wparam, lparam) };
+    // A price check under way times the panel's frames and resizes (`check_clock`).
+    let answer = match check_clock::timed(hwnd, message) {
+        Some(timed) => check_clock::answer_panel(timed, answer_gpui),
+        None => answer_gpui(),
+    };
     match message {
         WM_GETMINMAXINFO => {
             if let Some(size) = min_size {

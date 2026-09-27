@@ -24,13 +24,34 @@ Go through these in order.
    <kbd>Ctrl</kbd>+<kbd>E</kbd>, PoE2 Oracle cannot take it. Pick another hotkey in the
    [settings](settings.md#hotkey).
 5. **Does the game run as administrator?** Windows does not let a program without administrator
-   rights send keys to one that runs as administrator, and PoE2 Oracle cannot detect this. Start
-   the game normally, without "Run as administrator", or run PoE2 Oracle as administrator too.
+   rights press keys in one that runs as administrator, and a game that Steam starts runs as
+   administrator when Steam does. PoE2 Oracle notices: the hotkey then opens the panel with "The
+   game runs as administrator, and Windows doesn't let PoE2 Oracle press keys in it…", and the
+   settings window warns about it at the top. Start the game normally, without "Run as
+   administrator", or run PoE2 Oracle as administrator too.
 6. **Is the game in exclusive Fullscreen?** Then the check may run, but Windows shows nothing over
    the game. Set the game's display mode to Windowed Fullscreen. The settings window warns about
    this: "The game runs in “Fullscreen” mode: the panel can't show over it. …".
 
 With no item under the cursor, pressing the hotkey does nothing at all; that is expected.
+
+## A quick action does nothing
+
+1. **Is the game the window in front, with the settings window closed?** Quick action keys work
+   only then: they type into the game, and while the settings window is open, hotkeys are off.
+2. **For a stash search: is the stash or a vendor's window open?** The action presses
+   <kbd>Ctrl</kbd>+<kbd>F</kbd> to get into that window's search box.
+3. **Does the game run as administrator?** Then the key opens the panel with "The game runs as
+   administrator…"; see [The hotkey does nothing](#the-hotkey-does-nothing).
+4. **Does another program hold a combination the action presses?** A stash search presses
+   <kbd>Ctrl</kbd>+<kbd>F</kbd>, every action pastes its text with <kbd>Ctrl</kbd>+<kbd>V</kbd>, a
+   chat message that starts without a channel sign or `/` first selects the chat box with
+   <kbd>Ctrl</kbd>+<kbd>A</kbd>, and `@last` presses <kbd>Ctrl</kbd>+<kbd>Enter</kbd>. A program
+   that holds one of these as its own hotkey gets that press. When you open the settings' section
+   **Quick actions**, it checks and warns at the top, for example "Ctrl+F, which quick actions
+   press in the game, is taken by another program…". Change or switch off that shortcut in the
+   other program's settings; some trade overlays take <kbd>Ctrl</kbd>+<kbd>F</kbd> for their own
+   price check.
 
 ## The panel opens but shows no prices
 
@@ -149,13 +170,17 @@ item names, modifiers and the trade site's texts keep their own language.
 
 **Does it need my account, password or session cookie?**
 No. Without a sign-in, PoE2 Oracle prices items like a visitor who is not signed in. Signing in is
-optional: it opens private leagues and the "sum" rows. You sign in on pathofexile.com's own page in
-a window of the app; PoE2 Oracle doesn't read or keep your password, only the site's session, in
-Windows Credential Manager. See [Account](settings.md#account) and [Privacy](privacy.md).
+optional: it opens private leagues, the "sum" rows and the trade site's buttons on listings. You
+sign in on pathofexile.com's own page in a window of the app; PoE2 Oracle doesn't read or keep your
+password, only the site's session, in Windows Credential Manager. See [Account](settings.md#account)
+and [Privacy](privacy.md).
 
 **Does it play for me?**
 No. Each hotkey press does one thing: it copies one item, sends one chat message or pastes one
-search. Whispers to sellers are only copied; you send them yourself.
+search. A click on a listing only copies its whisper; you send it yourself. The trade site's
+buttons on a listing, **Whisper** and **To hideout**, ask the site for one thing per press: to
+send that whisper, or to take your character to the seller's hideout. The app presses nothing in
+the game for them.
 
 **PoE2 Oracle closed unexpectedly. What now?**
 Start it again. If an error closed it, the next start within a week opens the report window by

@@ -30,9 +30,10 @@
 //! without a graphics card -- is left as asked: there the flag moves the rasterising itself onto
 //! the calling thread (Firefox leaves WARP out too).
 //!
-//! [`THREADING_ENV`]`=1` in the app's environment leaves the driver its threads, the import
-//! untouched: the other side of a comparison. `install` runs before GPUI starts, which makes its
-//! device while the application is built (`platform.rs`' `WindowsPlatform::new`).
+//! [`THREADING_ENV`]`=1` in the app's environment leaves the driver its threads: the other side
+//! of a comparison. Either way the hook hands GPUI's device to `gpu_memory`, which flushes and
+//! trims it once a window let go of its memory. `install` runs before GPUI starts, which makes
+//! its device while the application is built (`platform.rs`' `WindowsPlatform::new`).
 
 use std::ffi::OsStr;
 
@@ -80,6 +81,7 @@ mod hook {
     };
     use windows::Win32::Graphics::Direct3D11::{
         D3D11_CREATE_DEVICE_FLAG, D3D11_CREATE_DEVICE_PREVENT_INTERNAL_THREADING_OPTIMIZATIONS,
+        ID3D11Device,
     };
     use windows::Win32::Graphics::Dxgi::IDXGIAdapter;
     use windows::core::{HRESULT, Interface};
@@ -88,7 +90,7 @@ mod hook {
         DRIVER_HARDWARE, DRIVER_UNKNOWN, PREVENT_THREADING, THREADING_ENV, first_try,
         leaves_threads,
     };
-    use crate::platform::redraw_filter;
+    use crate::platform::{gpu_memory, redraw_filter};
 
     // The values `first_try` knows them by, which build everywhere.
     const _: () = assert!(
@@ -116,12 +118,12 @@ mod hook {
     /// Whether a device was made without the driver's threads yet: the first one is logged.
     static ANNOUNCED: AtomicBool = AtomicBool::new(false);
 
+    /// Whether the driver keeps its threads: [`THREADING_ENV`]`=1` in the app's environment.
+    static LEAVE_THREADS: LazyLock<bool> =
+        LazyLock::new(|| leaves_threads(std::env::var_os(THREADING_ENV).as_deref()));
+
     /// Whether the hook is in: tried once, on the first call of [`install`].
     static INSTALLED: LazyLock<bool> = LazyLock::new(|| {
-        if leaves_threads(std::env::var_os(THREADING_ENV).as_deref()) {
-            log::info!("d3d threading: {THREADING_ENV}=1, the graphics driver keeps its threads");
-            return false;
-        }
         let hook: CreateDeviceFn = create_device;
         match redraw_filter::point_import(
             "d3d11.dll",
@@ -129,6 +131,13 @@ mod hook {
             hook as usize,
             &ORIGINAL,
         ) {
+            Ok(slots) if *LEAVE_THREADS => {
+                log::info!(
+                    "d3d threading: {THREADING_ENV}=1, the graphics driver keeps its threads \
+                     ({slots} D3D11CreateDevice import(s) hooked for GPUI's device alone)"
+                );
+                true
+            }
             Ok(slots) => {
                 log::info!(
                     "d3d threading: {slots} D3D11CreateDevice import(s) hooked: devices on a \
@@ -143,14 +152,16 @@ mod hook {
         }
     });
 
-    /// Makes Direct3D devices on a graphics card without the driver's threads from now on;
-    /// whether it does. Call before GPUI starts (see the module's doc).
+    /// Makes Direct3D devices on a graphics card without the driver's threads from now on --
+    /// unless [`THREADING_ENV`]`=1` -- and keeps GPUI's device for `gpu_memory`; whether the hook
+    /// is in. Call before GPUI starts (see the module's doc).
     pub fn install() -> bool {
         *INSTALLED
     }
 
     /// Stands in for `D3D11CreateDevice` in this executable: a device on a graphics card is made
-    /// without the driver's threads, or as asked if the driver won't; any other as asked.
+    /// without the driver's threads, or as asked if the driver won't; any other as asked. GPUI's
+    /// goes to `gpu_memory` once made.
     unsafe extern "system" fn create_device(
         adapter: *mut c_void,
         driver: D3D_DRIVER_TYPE,
@@ -183,24 +194,42 @@ mod hook {
                 context,
             )
         };
-        let Some(without_threads) = first_try(flags.0, driver.0, vendor(adapter)) else {
-            return make(flags.0);
+        let without_threads = if *LEAVE_THREADS {
+            None
+        } else {
+            first_try(flags.0, driver.0, vendor(adapter))
         };
-        let made = make(without_threads);
-        if made.is_ok() {
-            if ANNOUNCED.swap(true, Ordering::Relaxed) {
-                log::debug!("d3d threading: a device made without the graphics driver's threads");
-            } else {
-                log::info!("d3d threading: a device made without the graphics driver's threads");
+        let made = match without_threads.map(make) {
+            None => make(flags.0),
+            Some(made) if made.is_ok() => {
+                if ANNOUNCED.swap(true, Ordering::Relaxed) {
+                    log::debug!(
+                        "d3d threading: a device made without the graphics driver's threads"
+                    );
+                } else {
+                    log::info!(
+                        "d3d threading: a device made without the graphics driver's threads"
+                    );
+                }
+                made
             }
-            return made;
+            Some(made) => {
+                log::warn!(
+                    "d3d threading: the graphics driver made no device without its threads \
+                     ({made}: {}); made as asked",
+                    made.message().trim_end()
+                );
+                make(flags.0)
+            }
+        };
+        if made.is_ok() && !device.is_null() {
+            // SAFETY: the caller asked for the device (`device` isn't null) and `D3D11CreateDevice`
+            // made it: `*device` holds it, a reference the caller owns.
+            if let Some(made_device) = unsafe { ID3D11Device::from_raw_borrowed(&*device) } {
+                gpu_memory::note_device(made_device);
+            }
         }
-        log::warn!(
-            "d3d threading: the graphics driver made no device without its threads ({made}: {}); \
-             made as asked",
-            made.message().trim_end()
-        );
-        make(flags.0)
+        made
     }
 
     /// The PCI vendor of `adapter`, an `IDXGIAdapter` or null: `None` if null, or if its

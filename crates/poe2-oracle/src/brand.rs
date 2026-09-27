@@ -2,6 +2,16 @@
 //! icon (embedded by `build.rs`) and the installer icon use `assets/icon/poe2-oracle.ico`; all of
 //! them come from `packaging/icon/generate_icon.py` -- regenerate them, never edit by hand.
 
+/// The User-Agent every request of the app carries: to the trade site and pathofexile.com,
+/// poe2scout, the game's picture and exchange server, and oracle.pushka.biz. It names the app and
+/// its version, and where to learn about it, as GGG asks of tools that call its sites -- not a
+/// browser's, which the app isn't. The same for every player: it says nothing about the player.
+pub const USER_AGENT: &str = concat!(
+    "PoE2-Oracle/",
+    env!("CARGO_PKG_VERSION"),
+    " (+https://oracle.pushka.biz)"
+);
+
 /// Edge of [`TRAY_ICON_RGBA`] in pixels: the notification area's 16-logical-pixel icon at the
 /// owner's 200% display scale, so it is shown 1:1 there; Windows rescales it at other scales.
 pub const TRAY_ICON_SIZE: u32 = 32;

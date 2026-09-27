@@ -13,13 +13,15 @@ use gpui::{
 use poe2_domain::ParsedItem;
 use stat_filters::SearchProfile;
 use trade_client::rates::PriceUnit;
+use trade_client::whisper::{Action, Outcome};
 use trade_client::{AccountStatus, ListedItem, ListedMod, ListingStatus, PriceCurrency};
 
 use crate::i18n;
 use crate::league_chip;
 use crate::listing_match::{self, Asked, WantedStat};
-use crate::price_check::{ListingRow, PriceCheckApp, SearchFailure, SearchState};
+use crate::price_check::{ActionState, ListingRow, PriceCheckApp, SearchFailure, SearchState};
 use crate::relative_time;
+use crate::session::SessionStatus;
 use crate::tour::Stop;
 use crate::tr;
 use crate::ui::fonts;
@@ -27,11 +29,12 @@ use crate::ui::hint as hints;
 use crate::ui::item_card::{CardPrice, ItemCard, ModMark, render_item_card};
 use crate::ui::style::{
     ButtonKind, CONTROL_RADIUS, alpha, button, ease_hover, glow, inner_glow, link, menu_row, plate,
-    select,
+    select, small_button,
 };
 use crate::ui::theme::{
-    BORDER_GOLD, BORDER_ROW, GOLD, GOLD_LIGHT, PRICE_RISE, STATUS_AFK, STATUS_OFFLINE,
-    STATUS_ONLINE, TEXT, TEXT_DIM, TEXT_MUTED, TEXT_WARNING, TIER_TOP, blend, rems_from_px,
+    BORDER_GOLD, BORDER_ROW, GOLD, GOLD_LIGHT, MARK_WARNING, PRICE_RISE, STATUS_AFK,
+    STATUS_OFFLINE, STATUS_ONLINE, TEXT, TEXT_DIM, TEXT_MUTED, TEXT_WARNING, TIER_TOP, blend,
+    rems_from_px,
 };
 use crate::ui::tour;
 
@@ -671,9 +674,12 @@ pub(super) fn render_link(label: impl Into<SharedString>, url: String) -> impl I
 /// EE2's results table, plus the seller column (the player can turn it off; the space then stays
 /// empty so the dates keep their place) and currency icons PoE Overlay II shows; a row lights up
 /// under the pointer. A seller who sells in person gets a ✉: clicking the row copies the whisper
-/// for the game's chat. Hovering a row shows the listed item as the game's tooltip draws it
-/// (`ListingTooltip`); after a relaxed search (`relaxed`: at least `.0` of the `.1` stat rows)
-/// each row says how many it has.
+/// for the game's chat. For a signed-in player a row whose fetch carried the trade site's token
+/// ends its seller cell with the site's own button -- travel to the seller's hideout, a whisper
+/// to the seller -- and once pressed says how far the press came (`listing_action_note`).
+/// Hovering a row shows the listed item as the game's tooltip draws it (`ListingTooltip`); after
+/// a relaxed search (`relaxed`: at least `.0` of the `.1` stat rows) each row says how many it
+/// has.
 fn render_results_table(
     state: &PriceCheckApp,
     rows: &[ListingRow],
@@ -690,6 +696,11 @@ fn render_results_table(
     // them: the rows' counts only add up to the banner's when every searched row is a mod's.
     let count_matches = relaxed.is_some_and(|(_, of)| of as usize == wanted.len());
     let last = rows.len().saturating_sub(1);
+    // The trade site's buttons are the signed-in player's: the tokens are the account's, and the
+    // site acts through its session.
+    let signed_in = cx
+        .try_global::<SessionStatus>()
+        .is_some_and(SessionStatus::signed_in);
     div()
         .flex()
         .flex_col()
@@ -707,24 +718,47 @@ fn render_results_table(
         )
         .children(rows.iter().enumerate().map(|(index, row)| {
             let listed = relative_time::listed_ago(&row.indexed, now_unix).unwrap_or_default();
-            // For a few seconds after a click the seller's cell says the whisper is on the
-            // clipboard, over the listed-time column too: the note doesn't fit the seller's alone.
-            let copied = state.whisper_copied(index);
-            let seller: SharedString = if copied {
-                tr!("✓ copied — paste it into the chat").into()
+            let action = row.action.as_ref().filter(|_| signed_in);
+            let pressed = action.and_then(|_| state.listing_action_state(index));
+            // A note in the seller's cell, over the listed-time column too, as neither fits the
+            // seller's alone: for a few seconds after a click that the whisper is on the
+            // clipboard, and after a press of the row's button how far it came.
+            let note = if state.whisper_copied(index) {
+                Some(RowNote {
+                    text: tr!("✓ copied — paste it into the chat").into(),
+                    color: PRICE_RISE,
+                    hint: None,
+                })
             } else {
-                match (&row.whisper, show_seller) {
-                    (Some(_), true) => format!("✉ {}", row.account_name).into(),
-                    (Some(_), false) => "✉".into(),
-                    (None, true) => row.account_name.clone().into(),
-                    (None, false) => SharedString::default(),
-                }
+                action
+                    .zip(pressed)
+                    .map(|(action, pressed)| listing_action_note(action.kind, pressed))
             };
+            let button = action
+                .filter(|_| pressed.is_none_or(ActionState::pressable))
+                .map(|action| {
+                    let anyway = pressed == Some(&ActionState::Answered(Outcome::InDemand));
+                    listing_action_button(index, action.kind, anyway, cx)
+                });
+            let noted = note.is_some();
+            let (seller, seller_color, seller_hint): (SharedString, u32, Option<SharedString>) =
+                match note {
+                    Some(note) => (note.text, note.color, note.hint),
+                    None => {
+                        let seller = match (&row.whisper, show_seller) {
+                            (Some(_), true) => format!("✉ {}", row.account_name).into(),
+                            (Some(_), false) => "✉".into(),
+                            (None, true) => row.account_name.clone().into(),
+                            (None, false) => SharedString::default(),
+                        };
+                        (seller, TEXT_DIM, None)
+                    }
+                };
             let tooltip = listing_tooltip(state, row, wanted.clone());
             let matched = count_matches
                 .then(|| listing_match::matched_count(&row.item.mods, &wanted))
                 .flatten()
-                .filter(|_| !copied);
+                .filter(|_| !noted);
             let element = table_row()
                 .id(("listing", index))
                 .h(rems_from_px(30.))
@@ -754,18 +788,29 @@ fn render_results_table(
                 .child(
                     seller_cell()
                         .flex()
+                        .items_center()
                         .gap(rems_from_px(6.))
                         .text_size(rems_from_px(12.))
-                        .text_color(rgb(if copied { PRICE_RISE } else { TEXT_DIM }))
-                        .child(div().min_w_0().truncate().child(seller))
+                        .text_color(rgb(seller_color))
+                        .child(
+                            div()
+                                .id(("listing-note", index))
+                                .min_w_0()
+                                .truncate()
+                                .when_some(seller_hint, |this, hint| {
+                                    this.tooltip(hints::hint(hint))
+                                })
+                                .child(seller),
+                        )
                         .children(matched.map(|(has, of)| {
                             div()
                                 .flex_none()
                                 .text_color(rgb(if has == of { PRICE_RISE } else { TEXT_MUTED }))
                                 .child(format!("{has}/{of}"))
-                        })),
+                        }))
+                        .children(button),
                 )
-                .when(!copied, |this| {
+                .when(!noted, |this| {
                     this.child(
                         listed_cell()
                             .flex()
@@ -783,6 +828,121 @@ fn render_results_table(
                     .shadow(inner_glow(GOLD, hover))
             })
         }))
+}
+
+/// What a row says in place of its seller and listed time while it has news, in its colour, with
+/// more to it on hover where there is more.
+struct RowNote {
+    text: SharedString,
+    color: u32,
+    hint: Option<SharedString>,
+}
+
+/// How far the press of a row's trade-site button came (`PriceCheckApp::press_listing_action`):
+/// sent, what the site did -- the game's own words for a travel -- or why not, and what to do
+/// about it. The site's own words, when it gave any, on hover.
+fn listing_action_note(kind: Action, pressed: &ActionState) -> RowNote {
+    let (text, color, hint): (SharedString, u32, Option<SharedString>) = match pressed {
+        ActionState::Sending => (tr!("Sending…").into(), TEXT_DIM, None),
+        ActionState::Lapsed => (
+            tr!("✗ Expired — search again").into(),
+            TEXT_WARNING,
+            Some(
+                tr!(
+                    "The trade site takes a listing's buttons for a few minutes after the search. \
+                     Search again for fresh ones."
+                )
+                .into(),
+            ),
+        ),
+        ActionState::Answered(outcome) => match outcome {
+            Outcome::Done => {
+                let done = match kind {
+                    Action::Travel => tr!("✓ Teleporting to the seller's hideout"),
+                    Action::Whisper => tr!("✓ Whisper sent"),
+                };
+                (done.into(), PRICE_RISE, None)
+            }
+            Outcome::InDemand => (tr!("In demand").into(), MARK_WARNING, None),
+            Outcome::Gone(said) => {
+                let gone = match kind {
+                    Action::Travel => tr!("✗ The listing is gone — search again"),
+                    Action::Whisper => tr!("✗ The seller is gone — search again"),
+                };
+                let said = said
+                    .as_ref()
+                    .map(|said| tr!("The trade site said: {message}", message = said).into());
+                (gone.into(), TEXT_WARNING, said)
+            }
+            Outcome::SignedOut => (
+                tr!("✗ Sign in again: settings, “Account”").into(),
+                TEXT_WARNING,
+                None,
+            ),
+            Outcome::RateLimited(secs) => {
+                let when = match secs {
+                    Some(secs) => tr!("in {wait}", wait = i18n::duration_secs(*secs)),
+                    None => tr!("a little later").to_owned(),
+                };
+                (
+                    tr!("Request limit — {when}", when = when).into(),
+                    TEXT_DIM,
+                    None,
+                )
+            }
+            Outcome::NoAnswer => (tr!("✗ No answer from the site").into(), TEXT_WARNING, None),
+        },
+    };
+    RowNote { text, color, hint }
+}
+
+/// A row's trade-site button -- «В убежище» on an instant buyout, «Написать» for a seller in
+/// person, «Всё равно» once the site said the item is in demand -- saying on hover what the site
+/// will do. Its press is its own: a whisper row's click beneath it copies the whisper.
+fn listing_action_button(
+    index: usize,
+    kind: Action,
+    anyway: bool,
+    cx: &Context<PriceCheckApp>,
+) -> impl IntoElement {
+    let (label, hint) = match (kind, anyway) {
+        (_, true) => (
+            tr!("Anyway"),
+            tr!(
+                "The trade site says the item is already in demand. Press to travel to the \
+                 seller's hideout anyway."
+            ),
+        ),
+        (Action::Travel, false) => (
+            tr!("To hideout"),
+            tr!(
+                "Travel to Hideout, as on the trade site: the site takes your character in the \
+                 game to the seller's hideout to buy the item."
+            ),
+        ),
+        (Action::Whisper, false) => (
+            tr!("Whisper"),
+            tr!(
+                "Direct Whisper, as on the trade site: the site sends the seller this listing's \
+                 whisper from your character in the game."
+            ),
+        ),
+    };
+    div()
+        .id(("listing-action", index))
+        .flex_none()
+        .tooltip(hints::hint(hint))
+        .child(small_button(
+            "button",
+            label,
+            ButtonKind::Secondary,
+            fonts::interface_font(),
+            cx.listener(move |view, _event: &MouseDownEvent, _window, cx| {
+                // The button's press only: a whisper row's own click copies the whisper.
+                cx.stop_propagation();
+                view.press_listing_action(index, cx);
+            }),
+        ))
 }
 
 /// «от 200» (`at least 200`), «до 5», `200–250`: the bounds a roll fell short of.

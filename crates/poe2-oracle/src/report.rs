@@ -163,9 +163,6 @@ pub fn app_context(
 /// report on before it answers.
 const SEND_TIMEOUT: Duration = Duration::from_secs(180);
 
-/// Tells the service which app and version sends.
-const USER_AGENT: &str = concat!("PoE2-Oracle/", env!("CARGO_PKG_VERSION"));
-
 /// The most of the service's answer read: `{"id": …}`, or its refusal's reason.
 const MAX_ANSWER_BYTES: u64 = 64 * 1024;
 
@@ -211,7 +208,7 @@ impl Failure {
 /// also runs from a request's start until its answer begins, and a report's upload and the
 /// service's passing it on can take longer than that.
 pub async fn send(body: Vec<u8>) -> Result<u64, Failure> {
-    let client = match ReqwestClient::proxy_and_user_agent(None, USER_AGENT) {
+    let client = match ReqwestClient::proxy_and_user_agent(None, crate::brand::USER_AGENT) {
         Ok(client) => client,
         Err(err) => {
             log::warn!("building the client reports go through failed: {err:#}");
