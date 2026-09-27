@@ -16,6 +16,14 @@ jobs:
         with:
           persist-credentials: false
 
+      # The hosted runner leaves about 14 GB free, less than the workspace's two debug builds (native
+      # and windows-gnu, GPUI included) take: the linker died of it with a bus error on 2026-09-27.
+      # SDKs no step here uses go first -- .NET, Android, Haskell, CodeQL, some 30 GB.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
+
       # The project's own lane runner image (lanes/runner.Dockerfile): rust:1-bookworm plus the
       # mingw-w64 cross toolchain for x86_64-pc-windows-gnu (the app's only target) and the
       # rustfmt/clippy components. Built fresh here rather than pulled from a registry -- only CI
@@ -53,6 +61,11 @@ jobs:
       # and release-sign included -- goes through the native clippy and test passes. oracle-web is
       # the Linux server behind oracle.pushka.biz (the root Dockerfile, deploy.yml), so the
       # windows-gnu build leaves it out.
+      #
+      # No incremental state and no debug info (CARGO_INCREMENTAL, CARGO_PROFILE_DEV_DEBUG): CI builds
+      # each crate once and throws the result away, and without them the debug builds take a
+      # fraction of the disk and link faster. A failing test still names its file and line: panic
+      # locations don't come from debug info.
       - name: cargo fmt / clippy / test / build (windows-gnu)
         run: |
           docker run --rm \
@@ -60,6 +73,8 @@ jobs:
             -v "$PWD":/workspace -w /workspace \
             -e CARGO_HOME=/workspace/.ci-cargo-home \
             -e HOME=/workspace/.ci-cargo-home \
+            -e CARGO_INCREMENTAL=0 \
+            -e CARGO_PROFILE_DEV_DEBUG=0 \
             poe2-oracle-runner \
             bash -c '
               set -euo pipefail
