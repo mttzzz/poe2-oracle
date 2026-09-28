@@ -69,6 +69,15 @@ your password.
 The app runs in the background: you find it by its icon next to the clock. To uninstall it, open
 Windows Settings → Apps → Installed apps → PoE2 Oracle → Uninstall.
 
+**Official downloads.** PoE2 Oracle is only published at
+https://github.com/mttzzz/poe2-oracle/releases, https://oracle.pushka.biz/ and, once merged, WinGet
+(`winget install mttzzz.PoE2Oracle`). Copies elsewhere aren't mine.
+
+## How it's made
+
+English isn't my first language, so I write and code with AI help (Claude). I design it, test every
+release in my own play, and fix what you report.
+
 ## Privacy
 
 No telemetry and no account of its own: the app talks only to the Path of Exile trade site, GGG's
