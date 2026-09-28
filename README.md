@@ -62,6 +62,7 @@ your password.
    **More info**, then **Run anyway**. The
    [install guide](https://oracle.pushka.biz/guide/en/install.html#download) shows how to check
    that you have the published file.
+   How releases are built and approved: [Code signing policy](https://oracle.pushka.biz/code-signing.html).
 3. Keep **Run PoE2 Oracle** ticked on the installer's last page. A short tour then shows the
    basics: in the game, point at an item and press `Ctrl+E`.
 
