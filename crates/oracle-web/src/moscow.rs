@@ -59,6 +59,13 @@ impl fmt::Display for Day {
     }
 }
 
+/// As it displays: `YYYY-MM-DD`.
+impl serde::Serialize for Day {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
 /// `hour`:00 in Moscow next after `unix`.
 pub fn next_hour_of_day(unix: i64, hour: i64) -> i64 {
     let today = Day::of(unix).start() + hour * 3600;
@@ -75,6 +82,18 @@ pub fn stamp(unix: i64) -> String {
     format!(
         "{}-{:02}{:02}{:02}",
         Day::of(unix),
+        secs / 3600,
+        secs / 60 % 60,
+        secs % 60
+    )
+}
+
+/// `unix` in UTC as RFC 3339 writes it: `YYYY-MM-DDTHH:MM:SSZ`.
+pub fn rfc3339(unix: i64) -> String {
+    let secs = unix.rem_euclid(DAY_SECS);
+    let (year, month, day) = civil_from_days(unix.div_euclid(DAY_SECS));
+    format!(
+        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}Z",
         secs / 3600,
         secs / 60 % 60,
         secs % 60

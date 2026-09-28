@@ -58,6 +58,8 @@ use tower_http::trace::TraceLayer;
 use tracing::{Span, info, info_span, warn};
 
 pub use events::PER_CLIENT as STREAMS_PER_CLIENT;
+pub use stats::Readout;
+pub use store::Store;
 
 /// How the service runs. [`Config::from_env`] reads it from the environment; tests fill it in
 /// directly, pointing the API addresses at stand-ins. No `Debug`: it holds the tokens.
@@ -477,6 +479,12 @@ async fn shutdown_signal() {
         }
         _ = tokio::signal::ctrl_c() => info!("interrupted"),
     }
+}
+
+/// Every counter of today in Moscow and of the `days - 1` days before it, from `store`: what
+/// `oracle-web stats` prints. `None` when Redis fails.
+pub async fn read_stats(store: &Store, days: u32) -> Option<Readout> {
+    stats::read_out(store, days, moscow::now()).await
 }
 
 #[cfg(test)]

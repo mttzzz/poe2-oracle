@@ -3,16 +3,20 @@
 //! The counters are `oracle:stat:<name>:<YYYY-MM-DD>`, kept for 120 days after their day, and hold
 //! numbers only: no address, no version, nothing about who. At 09:00 in Moscow the digest posts
 //! the day before to the owner's Telegram, each number beside the same weekday a week earlier.
+//! `oracle-web stats` prints every counter of the last days as JSON ([`read_out`]).
 
 use std::fmt::Write as _;
 use std::sync::Arc;
 use std::time::Duration;
 
 use oracle_protocol::ReportKind;
+use serde::ser::SerializeMap as _;
+use serde::{Serialize, Serializer};
 use tracing::{error, info, warn};
 
 use crate::App;
 use crate::moscow::{self, DAY_SECS, Day};
+use crate::store::Store;
 
 /// How long a day's counters are kept after it.
 const KEEP_DAYS: i64 = 120;
@@ -146,6 +150,60 @@ pub fn count(app: &Arc<App>, stat: Stat) {
 fn counter(stat: Stat, now: i64) -> (String, i64) {
     let day = Day::of(now);
     (stat.key(day), day.end() + KEEP_DAYS * DAY_SECS)
+}
+
+/// Every counter's count on each of the last days, as `oracle-web stats` prints it. As JSON:
+/// `{"generated_at":"2026-09-28T09:10:00Z","days":[{"day":"2026-09-28","counts":{…}},…]}`, the
+/// days today first, each count under its counter's name.
+#[derive(Serialize)]
+pub struct Readout {
+    /// When the counters were read, in UTC.
+    generated_at: String,
+    /// Today in Moscow first, then each day before it.
+    days: Vec<DayCounts>,
+}
+
+/// One day of a [`Readout`].
+#[derive(Serialize)]
+struct DayCounts {
+    day: Day,
+    counts: Counts,
+}
+
+/// A day's count of each of [`ALL`] in turn, written as an object keyed by their names, in that
+/// order.
+struct Counts([u64; ALL.len()]);
+
+impl Serialize for Counts {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut counts = serializer.serialize_map(Some(ALL.len()))?;
+        for (stat, count) in ALL.iter().zip(&self.0) {
+            counts.serialize_entry(stat.name(), count)?;
+        }
+        counts.end()
+    }
+}
+
+/// Every counter of [`ALL`] on the Moscow day of `now` and on the `days - 1` days before it, read
+/// in one call; `None` when Redis fails.
+pub async fn read_out(store: &Store, days: u32, now: i64) -> Option<Readout> {
+    let today = Day::of(now);
+    let keys: Vec<String> = (0..i64::from(days))
+        .flat_map(|back| ALL.iter().map(move |stat| stat.key(today.minus(back))))
+        .collect();
+    let values = store.values(&keys, now).await?;
+    let (per_day, _) = values.as_chunks::<{ ALL.len() }>();
+    Some(Readout {
+        generated_at: moscow::rfc3339(now),
+        days: per_day
+            .iter()
+            .zip(0..)
+            .map(|(counts, back)| DayCounts {
+                day: today.minus(back),
+                counts: Counts(*counts),
+            })
+            .collect(),
+    })
 }
 
 /// Posts each morning's digest, forever.
@@ -293,7 +351,6 @@ const MONTHS: [&str; 12] = [
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::store::Store;
 
     /// 2026-09-26 00:00 in Moscow, a Saturday.
     const SATURDAY: i64 = 1_790_370_000;
@@ -376,5 +433,47 @@ mod tests {
             Some(vec![2])
         );
         assert_eq!(store.values(&keys[1..], expires_at).await, Some(vec![0]));
+    }
+
+    #[tokio::test]
+    async fn the_readout_holds_each_moscow_day_today_first() {
+        let store = Store::memory();
+        // Two installers late on Friday and one at midnight, then a visit from Reddit on Saturday
+        // morning, in Moscow.
+        for (stat, now) in [
+            (Stat::Download, SATURDAY - 3600),
+            (Stat::Download, SATURDAY - 1),
+            (Stat::Download, SATURDAY),
+            (Stat::Visit(Source::Reddit), SATURDAY + 9 * 3600),
+        ] {
+            let (key, expires_at) = counter(stat, now);
+            store.increment(&key, expires_at, now).await;
+        }
+        // 11:05 on Saturday in Moscow.
+        let readout = read_out(&store, 3, SATURDAY + 11 * 3600 + 5 * 60).await;
+        let readout = serde_json::to_value(readout.unwrap()).unwrap();
+        assert_eq!(readout["generated_at"], "2026-09-26T08:05:00Z");
+        let days: Vec<(&str, u64, u64, u64)> = readout["days"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|day| {
+                let count = |name: &str| day["counts"][name].as_u64().unwrap();
+                (
+                    day["day"].as_str().unwrap(),
+                    count("download"),
+                    count("visit_reddit"),
+                    count("report_crash"),
+                )
+            })
+            .collect();
+        assert_eq!(
+            days,
+            [
+                ("2026-09-26", 1, 1, 0),
+                ("2026-09-25", 2, 0, 0),
+                ("2026-09-24", 0, 0, 0),
+            ]
+        );
     }
 }

@@ -369,6 +369,18 @@ tag, or none, counts nothing, and the digest names only the tags with a visit on
 counts a Russian reader's visit itself and sends them on to `/ru/` without the query, so the
 visit counts once.
 
+`oracle-web stats [--days N]` prints the counters instead of serving: every counter of today in
+Moscow and of the N - 1 days before it (N from 1 to 120, the days the counters are kept; 60 unless
+given), as one JSON object on stdout, today first:
+`{"generated_at":"2026-09-28T09:10:00Z","days":[{"day":"2026-09-28","counts":{"download":3,…}},…]}`,
+each count under its name in `Stat` (`crates/oracle-web/src/stats.rs`), 0 when nothing was counted.
+It reads `REDIS_URL` and no other variable, and logs to stderr. A bad argument or no `REDIS_URL`
+exits with 2, a Redis that doesn't answer with 1. Production's counters:
+
+```sh
+kubectl --context do-fra1-main -n default exec deploy/oracle-pushka-biz -- /app/oracle-web stats --days 60
+```
+
 To run the service without sending anything, leave `GITHUB_TOKEN` and `TELEGRAM_TOKEN` unset: every
 report is still checked, rate-limited and counted, then written to the log instead of sent, and
 answered with id 0. Build the guide's two books with `docs/guide/build.sh` and mdBook, the version
