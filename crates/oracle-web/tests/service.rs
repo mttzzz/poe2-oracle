@@ -1458,11 +1458,12 @@ async fn the_ways_in_lead_to_the_readers_language() {
     let service = start(false, false, true).await;
     let russian = ("accept-language", "ru-RU,ru;q=0.9,en;q=0.8");
 
-    // A Russian browser goes on to the Russian landing page, with its query.
-    for (path, target) in [("/", "/ru/"), ("/?from=app", "/ru/?from=app")] {
+    // A Russian browser goes on to the Russian landing page, without the query: a tagged link's
+    // visit is counted on the way, and the page mustn't count it again.
+    for path in ["/", "/?from=reddit"] {
         let moved = service.get(path, &[russian]).await;
         assert_eq!(moved.status(), StatusCode::FOUND, "{path}");
-        assert_eq!(moved.headers()[header::LOCATION], target, "{path}");
+        assert_eq!(moved.headers()[header::LOCATION], "/ru/", "{path}");
         assert!(follows_the_language(&moved), "{path}");
     }
     let moved = service

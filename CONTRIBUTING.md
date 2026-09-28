@@ -321,9 +321,9 @@ and passes each one on to the maintainer, as an issue in the private reports rep
 pack, with their files, from this repository's releases (`GITHUB_REPO`: `/api/v1/releases/latest`,
 `/api/v1/data/latest`, `/download/<tag>/<file>`, `/download/latest`); tells the running apps about
 both over an event stream (`/api/v1/events`); and posts a daily digest of downloads, stream
-connections, update checks and reports. What the app and the service share is in
-`crates/oracle-protocol`: the service's address, the report, release and event types, and the
-report limits (`Report::check`, which both sides run).
+connections, update checks, reports and site visits from tagged links. What the app and the
+service share is in `crates/oracle-protocol`: the service's address, the report, release and event
+types, and the report limits (`Report::check`, which both sides run).
 
 The service lists the repository's releases when it starts and every two minutes after, sending
 GitHub the last list's ETag, so an unchanged list costs no rate limit. Of the published releases
@@ -362,6 +362,12 @@ It takes its settings from the environment, all optional:
 | `RUST_LOG` | `info` | The log filter; the log goes to stdout |
 
 The digest goes out at 09:00 Moscow time: the day before, against the same weekday a week earlier.
+Site visits count only through the links the maintainer publishes, tagged with where they're
+published: `?from=` with a tag of `Source` in `crates/oracle-web/src/stats.rs` (`reddit`, `forum`,
+`discord`, `youtube`, `steam`, `wiki`, `lists`, `creators`, `article`). A page loaded with another
+tag, or none, counts nothing, and the digest names only the tags with a visit on either day. `/`
+counts a Russian reader's visit itself and sends them on to `/ru/` without the query, so the
+visit counts once.
 
 To run the service without sending anything, leave `GITHUB_TOKEN` and `TELEGRAM_TOKEN` unset: every
 report is still checked, rate-limited and counted, then written to the log instead of sent, and

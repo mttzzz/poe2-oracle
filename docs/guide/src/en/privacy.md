@@ -62,8 +62,8 @@ the connection closes. The service's logs note each report's kind, whether it ca
 the site, the app's version, its issue number and the size of its diagnostics report, never its
 text or the contact. It also counts, per day, the installers downloaded, the update
 connections opened, the update checks it answered, the game data packs and other update files
-downloaded, and the reports of each kind: numbers only, with no address, id or version, kept for
-120 days.
+downloaded, the reports of each kind, and the site visits that came through a link tagged
+`?from=`, for each tag: numbers only, with no address, id or version, kept for 120 days.
 
 ## Signing in to pathofexile.com
 

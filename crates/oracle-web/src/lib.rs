@@ -15,8 +15,9 @@
 //!   ([`releases`]);
 //! - it keeps the running apps connected to an event stream that tells them the latest versions
 //!   as soon as it lists them, so a new release reaches them within minutes ([`events`]);
-//! - it counts downloads, stream connections, update checks and reports per Moscow day, and every
-//!   morning posts the day before to the owner's Telegram ([`stats`]).
+//! - it counts downloads, stream connections, update checks, reports and the site's visits from
+//!   tagged links per Moscow day, and every morning posts the day before to the owner's Telegram
+//!   ([`stats`]).
 //!
 //! Everything is configured from the environment ([`Config::from_env`]). Without a GitHub or a
 //! Telegram token the service runs dry on that side: it logs what it would have sent and sends

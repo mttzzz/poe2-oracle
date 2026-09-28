@@ -18,6 +18,11 @@
 //! browsers fill from the system's languages), else English. A path that names its language is
 //! served as it is, whatever the reader's: that is how a link, or the switch itself, reaches the
 //! other language.
+//!
+//! A page loaded from a link tagged with where it was published, `?from=reddit` (the tag of a
+//! [`Source`]), counts one visit for it; any other tag counts nothing. The page counts it where
+//! it's served, the redirects on the way keeping the query, but for `/`'s on to `/ru/`: that one
+//! counts the visit itself and leaves the query behind, so the Russian page doesn't count it again.
 
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
@@ -30,6 +35,7 @@ use percent_encoding::percent_decode_str;
 use tower_http::services::ServeFile;
 
 use crate::App;
+use crate::stats::{self, Source, Stat};
 
 /// Pages must show an edit at once: browsers ask again every time (a 304 when nothing changed).
 const PAGE_CACHE: &str = "no-cache";
@@ -154,7 +160,7 @@ pub async fn serve(State(app): State<Arc<App>>, request: Request) -> Response {
     let home = path == "/" && matches!(*request.method(), Method::GET | Method::HEAD);
     let guide = matches!(path, "/guide" | "/guide/" | "/guide/index.html");
     if !home && !guide {
-        return answer(&app.site, request).await;
+        return answer(&app, request).await;
     }
     let language = preferred(request.headers());
     let location = if guide {
@@ -164,8 +170,14 @@ pub async fn serve(State(app): State<Arc<App>>, request: Request) -> Response {
     };
     // A 302, not a 301: the way leads elsewhere for another reader, or after the next pick.
     let mut response = match location {
-        Some(location) => redirect(StatusCode::FOUND, location, request.uri().query()),
-        None => answer(&app.site, request).await,
+        // The book counts a tagged visit: the query goes along.
+        Some(location) if guide => redirect(StatusCode::FOUND, location, request.uri().query()),
+        // The visit counts here, and the Russian page gets no query to count it again by.
+        Some(location) => {
+            visit(&app, &request);
+            redirect(StatusCode::FOUND, location, None)
+        }
+        None => answer(&app, request).await,
     };
     let headers = response.headers_mut();
     headers.insert(header::VARY, HeaderValue::from_static(LANGUAGE_VARY));
@@ -174,28 +186,54 @@ pub async fn serve(State(app): State<Arc<App>>, request: Request) -> Response {
 }
 
 /// `request` answered from the directories: the file its path names, the redirect of a directory
-/// named without its slash, or a 404.
-async fn answer(site: &Site, request: Request) -> Response {
+/// named without its slash, or a 404. A page it serves counts a tagged visit.
+async fn answer(app: &Arc<App>, request: Request) -> Response {
     let uri = request.uri().clone();
-    let (root, rest) = site.mount(uri.path());
+    let (root, rest) = app.site.mount(uri.path());
     match resolve(root, rest).await {
-        Target::File(file) => send(file, request).await,
+        Target::File(file) => {
+            if is_page(&file) {
+                visit(app, &request);
+            }
+            send(file, request).await
+        }
         Target::Directory => redirect(
             StatusCode::MOVED_PERMANENTLY,
             format!("{}/", uri.path()),
             uri.query(),
         ),
-        Target::Missing => not_found(site, uri.path(), request.method()).await,
+        Target::Missing => not_found(&app.site, uri.path(), request.method()).await,
     }
 }
 
-/// A redirect to `location`, with the request's query kept.
+/// A redirect to `location`, with the request's `query` when it's kept.
 fn redirect(status: StatusCode, mut location: String, query: Option<&str>) -> Response {
     if let Some(query) = query {
         location.push('?');
         location.push_str(query);
     }
     (status, [(header::LOCATION, location)]).into_response()
+}
+
+/// Counts a visit when `request` loads a page from a tagged link: a GET whose query has a `from`
+/// naming a [`Source`]. A HEAD doesn't count: browsers load pages with a GET, and a HEAD only
+/// checks the link.
+fn visit(app: &Arc<App>, request: &Request) {
+    if request.method() == Method::GET
+        && let Some(source) = request.uri().query().and_then(tagged)
+    {
+        stats::count(app, Stat::Visit(source));
+    }
+}
+
+/// The source a query's `from` tag names: of its parameters, the first `from` whose value is a
+/// [`Source`]'s tag.
+fn tagged(query: &str) -> Option<Source> {
+    query
+        .split('&')
+        .filter_map(|parameter| parameter.split_once('='))
+        .filter(|(name, _)| *name == "from")
+        .find_map(|(_, value)| Source::named(value))
 }
 
 /// The language a request's reader prefers: the one they last picked on a language switch, else
@@ -280,11 +318,15 @@ fn name_value(pair: &[u8]) -> Option<(&[u8], &[u8])> {
     Some((pair[..equals].trim_ascii(), pair[equals + 1..].trim_ascii()))
 }
 
+/// Whether `file` is a page, which a reader loads, rather than a file a page uses: HTML.
+fn is_page(file: &Path) -> bool {
+    file.extension()
+        .is_some_and(|extension| extension == "html")
+}
+
 /// `file` as `ServeFile` sends it, with the site's caching and text charset.
 async fn send(file: PathBuf, request: Request) -> Response {
-    let page = file
-        .extension()
-        .is_some_and(|extension| extension == "html");
+    let page = is_page(&file);
     let mut response = match ServeFile::new(file).try_call(request).await {
         Ok(response) => response.map(Body::new),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -388,7 +430,10 @@ pub async fn weaken_encoded_etag(mut response: Response) -> Response {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
+    use crate::{Config, moscow};
 
     #[tokio::test]
     async fn paths_resolve_as_on_github_pages() {
@@ -545,6 +590,115 @@ mod tests {
                 Language::En,
                 "{asked}"
             );
+        }
+    }
+
+    /// The tags the published links carry.
+    const TAGS: [&str; 9] = [
+        "reddit", "forum", "discord", "youtube", "steam", "wiki", "lists", "creators", "article",
+    ];
+
+    /// The service over throwaway directories: both landing pages, a stylesheet and the guide's
+    /// two books.
+    fn serving_pages() -> (Arc<App>, [tempfile::TempDir; 3]) {
+        let dirs = [(); 3].map(|()| tempfile::tempdir().unwrap());
+        for (dir, file) in [
+            (0, "index.html"),
+            (0, "ru/index.html"),
+            (0, "ui/base.css"),
+            (1, "en/index.html"),
+            (1, "ru/index.html"),
+        ] {
+            let path = dirs[dir].path().join(file);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, file).unwrap();
+        }
+        let app = App::new(Config {
+            site_dir: dirs[0].path().to_owned(),
+            guide_dir: dirs[1].path().to_owned(),
+            images_dir: dirs[2].path().to_owned(),
+            ..Config::default()
+        })
+        .unwrap();
+        (app, dirs)
+    }
+
+    /// `path` loaded the way a browser sending `headers` loads it: its redirects followed to the
+    /// page.
+    async fn load(app: &Arc<App>, path: &str, headers: &[(&str, &str)]) -> Response {
+        let mut path = path.to_owned();
+        for _ in 0..3 {
+            let mut request = Request::get(path.as_str());
+            for (name, value) in headers {
+                request = request.header(*name, *value);
+            }
+            let response = serve(State(app.clone()), request.body(Body::empty()).unwrap()).await;
+            let Some(location) = response.headers().get(header::LOCATION) else {
+                return response;
+            };
+            path = location.to_str().unwrap().to_owned();
+        }
+        panic!("still redirected at {path}");
+    }
+
+    /// The visits the links tagged `tag` brought today, as the morning digest counts them.
+    async fn visits(app: &App, tag: &str) -> u64 {
+        let now = moscow::now();
+        let key = format!("oracle:stat:visit_{tag}:{}", moscow::Day::of(now));
+        app.store.values(&[key], now).await.unwrap()[0]
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn each_published_tag_counts_one_visit_however_its_link_leads_to_the_page() {
+        let (app, _dirs) = serving_pages();
+        let russian = ("accept-language", "ru-RU,ru;q=0.9,en;q=0.8");
+        for (path, headers) in [
+            // `/` sends a Russian reader on to `/ru/`, and keeps an English one.
+            ("/?from=reddit", &[russian][..]),
+            ("/?utm_source=feed&from=forum", &[][..]),
+            // A directory named without its slash, and the guide's way in to a book.
+            ("/ru?from=discord", &[][..]),
+            ("/guide/?from=youtube", &[russian][..]),
+            // A page's own address.
+            ("/ru/?from=steam", &[][..]),
+            ("/guide/en/?from=wiki", &[][..]),
+            ("/index.html?from=lists", &[russian][..]),
+            // Of several, the first `from` that names a source.
+            ("/?from=evil&from=creators", &[][..]),
+            ("/?from=article&from=reddit", &[][..]),
+        ] {
+            let page = load(&app, path, headers).await;
+            assert_eq!(page.status(), StatusCode::OK, "{path}");
+        }
+        // The counts are made in the background: in once the runtime has nothing else to do.
+        tokio::time::sleep(Duration::from_millis(1)).await;
+        for tag in TAGS {
+            assert_eq!(visits(&app, tag).await, 1, "{tag}");
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn an_unknown_tag_or_a_request_that_loads_no_page_counts_nothing() {
+        let (app, _dirs) = serving_pages();
+        for (method, path) in [
+            (Method::GET, "/?from=evil"),
+            (Method::GET, "/?source=reddit"),
+            (Method::GET, "/?xfrom=reddit&q=from=reddit"),
+            // A file a page uses, a missing page, and a check of the link.
+            (Method::GET, "/ui/base.css?from=reddit"),
+            (Method::GET, "/missing.html?from=reddit"),
+            (Method::HEAD, "/?from=reddit"),
+        ] {
+            let request = Request::builder()
+                .method(method)
+                .uri(path)
+                .body(Body::empty())
+                .unwrap();
+            serve(State(app.clone()), request).await;
+        }
+        tokio::time::sleep(Duration::from_millis(1)).await;
+        for tag in TAGS.into_iter().chain(["evil"]) {
+            assert_eq!(visits(&app, tag).await, 0, "{tag}");
         }
     }
 }

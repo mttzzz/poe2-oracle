@@ -38,10 +38,34 @@ pub enum Stat {
     /// updater fetches.
     UpdateDownload,
     Report(ReportKind),
+    /// A page of the site loaded from a link tagged with where it was published.
+    Visit(Source),
+}
+
+/// Where a link to the site was published. The owner's links carry its tag, `?from=reddit`, which
+/// is its counter's name after `visit_`. A tag that isn't one of these counts nothing, so a
+/// stranger can't make up counters.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Source {
+    Reddit,
+    /// The pathofexile.com forum.
+    Forum,
+    Discord,
+    YouTube,
+    /// Steam's community hub.
+    Steam,
+    /// poe2wiki.
+    Wiki,
+    /// Lists of tools: exile.party, awesome-poe-2, awesome-gpui.
+    Lists,
+    /// Messages to video creators.
+    Creators,
+    /// The developer article, and where it's shared: This Week in Rust, Zed's discussions.
+    Article,
 }
 
 /// Every counter, in the order the digest reads them.
-const ALL: [Stat; 9] = [
+const ALL: [Stat; 18] = [
     Stat::Download,
     Stat::EventStream,
     Stat::UpdateCheck,
@@ -51,6 +75,15 @@ const ALL: [Stat; 9] = [
     Stat::Report(ReportKind::Idea),
     Stat::Report(ReportKind::Item),
     Stat::Report(ReportKind::Crash),
+    Stat::Visit(Source::Reddit),
+    Stat::Visit(Source::Forum),
+    Stat::Visit(Source::Discord),
+    Stat::Visit(Source::YouTube),
+    Stat::Visit(Source::Steam),
+    Stat::Visit(Source::Wiki),
+    Stat::Visit(Source::Lists),
+    Stat::Visit(Source::Creators),
+    Stat::Visit(Source::Article),
 ];
 
 impl Stat {
@@ -65,11 +98,37 @@ impl Stat {
             Stat::Report(ReportKind::Idea) => "report_idea",
             Stat::Report(ReportKind::Item) => "report_item",
             Stat::Report(ReportKind::Crash) => "report_crash",
+            Stat::Visit(Source::Reddit) => "visit_reddit",
+            Stat::Visit(Source::Forum) => "visit_forum",
+            Stat::Visit(Source::Discord) => "visit_discord",
+            Stat::Visit(Source::YouTube) => "visit_youtube",
+            Stat::Visit(Source::Steam) => "visit_steam",
+            Stat::Visit(Source::Wiki) => "visit_wiki",
+            Stat::Visit(Source::Lists) => "visit_lists",
+            Stat::Visit(Source::Creators) => "visit_creators",
+            Stat::Visit(Source::Article) => "visit_article",
         }
     }
 
     fn key(self, day: Day) -> String {
         format!("oracle:stat:{}:{day}", self.name())
+    }
+}
+
+impl Source {
+    /// The source a link's tag names, as the link carries it: one of those [`ALL`] counts, else
+    /// `None`.
+    pub fn named(tag: &str) -> Option<Source> {
+        ALL.iter().find_map(|stat| match *stat {
+            Stat::Visit(source) if source.tag() == tag => Some(source),
+            _ => None,
+        })
+    }
+
+    /// Its tag: its counter's name after `visit_`.
+    fn tag(self) -> &'static str {
+        let name = Stat::Visit(self).name();
+        name.strip_prefix("visit_").unwrap_or(name)
     }
 }
 
@@ -162,19 +221,46 @@ fn digest(day: Day, values: &[u64]) -> String {
         let (now, before) = count(stat);
         let _ = writeln!(text, "{label}: <b>{now}</b> ({before})");
     }
-    let reports: Vec<(u64, u64)> = (lines.len()..ALL.len()).map(count).collect();
+    let kinds = ["🐞 ошибки", "💡 идеи", "💎 предметы", "💥 вылеты"];
+    let reports: Vec<(u64, u64)> = (lines.len()..lines.len() + kinds.len())
+        .map(count)
+        .collect();
     let (total, total_before) = reports
         .iter()
         .fold((0, 0), |(now, before), (day, week_ago)| {
             (now + day, before + week_ago)
         });
     let _ = writeln!(text, "Сообщения: <b>{total}</b> ({total_before})");
-    let kinds: Vec<String> = ["🐞 ошибки", "💡 идеи", "💎 предметы", "💥 вылеты"]
+    let kinds: Vec<String> = kinds
         .iter()
         .zip(&reports)
         .map(|(kind, (now, before))| format!("{kind} {now} ({before})"))
         .collect();
     text.push_str(&kinds.join(", "));
+    // Only the tags with a visit on either day: the others, on links not published yet or not
+    // followed any more, would only be zeros.
+    let visits: Vec<(&str, (u64, u64))> = ALL
+        .iter()
+        .enumerate()
+        .filter_map(|(stat, counted)| match counted {
+            Stat::Visit(source) => Some((source.tag(), count(stat))),
+            _ => None,
+        })
+        .filter(|(_, (now, before))| *now > 0 || *before > 0)
+        .collect();
+    if !visits.is_empty() {
+        let total: u64 = visits.iter().map(|(_, (now, _))| now).sum();
+        let total_before: u64 = visits.iter().map(|(_, (_, before))| before).sum();
+        let _ = write!(
+            text,
+            "\nПереходы на сайт по меткам: <b>{total}</b> ({total_before})\n"
+        );
+        let tags: Vec<String> = visits
+            .iter()
+            .map(|(tag, (now, before))| format!("{tag} {now} ({before})"))
+            .collect();
+        text.push_str(&tags.join(", "));
+    }
     text
 }
 
@@ -215,9 +301,11 @@ mod tests {
     #[test]
     fn the_digest_reads_a_day_against_a_week_before() {
         let friday = Day::of(SATURDAY).minus(1);
-        let values = [
+        // No visit through a tagged link on either day: the digest says nothing of them.
+        let mut values = [0; 2 * ALL.len()];
+        values[..18].copy_from_slice(&[
             12, 8, 410, 380, 7, 290, 25, 0, 30, 22, 3, 1, 1, 1, 1, 0, 0, 0,
-        ];
+        ]);
         assert_eq!(
             digest(friday, &values),
             "📊 <b>PoE2 Oracle за пятницу, 25 сентября</b>\n\
@@ -230,6 +318,33 @@ mod tests {
              Скачивания SHA256SUMS и подписей: <b>30</b> (22)\n\
              Сообщения: <b>5</b> (2)\n\
              🐞 ошибки 3 (1), 💡 идеи 1 (1), 💎 предметы 1 (0), 💥 вылеты 0 (0)"
+        );
+    }
+
+    #[test]
+    fn the_digest_names_the_tags_that_brought_a_visit_on_either_day() {
+        let friday = Day::of(SATURDAY).minus(1);
+        let mut values = [0; 2 * ALL.len()];
+        for (source, now, before) in [
+            (Source::Reddit, 14, 0),
+            (Source::Discord, 3, 1),
+            (Source::YouTube, 0, 2),
+        ] {
+            let stat = ALL
+                .iter()
+                .position(|stat| matches!(stat, Stat::Visit(visit) if *visit == source))
+                .unwrap();
+            values[2 * stat] = now;
+            values[2 * stat + 1] = before;
+        }
+        let text = digest(friday, &values);
+        assert!(
+            text.ends_with(
+                "💥 вылеты 0 (0)\n\
+                 Переходы на сайт по меткам: <b>17</b> (3)\n\
+                 reddit 14 (0), discord 3 (1), youtube 0 (2)"
+            ),
+            "{text}"
         );
     }
 
