@@ -139,6 +139,32 @@ Things that save time:
   `http://` address also needs `--features oracle-protocol/dev-endpoints`.
   `packaging/build-release.ps1` refuses both, so a release always talks to oracle.pushka.biz.
 
+### Debugging the XP overlay
+
+The log says at `info` what the XP overlay makes of the bar's big moves: a large change it holds
+(`xp: bar 0.5163 -> 0.9863 in one step: held till it lasts 20 s`), then whether it lasted
+(`... lasted 20 s: taken as a gain`) or went back (`... -> back after 6 s: a misread, ignored`).
+For the whole story, quit the running copy and start the app with two more variables in its
+environment:
+
+```powershell
+$env:RUST_LOG = "warn,poe2_oracle=info,poe2_oracle::xp_tracker=debug"
+$env:POE2_ORACLE_XP_DEBUG = "1"
+& "$env:LOCALAPPDATA\Programs\PoE2 Oracle\poe2-oracle.exe"
+```
+
+- `RUST_LOG` adds, at `debug`: a line for each reading of the bar that changes the value or a
+  decision (the value, the best reading, what it credited, the change held); a line for each gain
+  counted; a line when the pointer comes onto the bar, whose readings are set aside while it's there
+  and for a second after; and every 30 s of play a summary: the rate, the weighted gain and play
+  time behind it, the play counted, the time since the last gain, whether the player is playing,
+  the level and the map run. Left off, none of it costs anything.
+- `POE2_ORACLE_XP_DEBUG=1` saves the bar's pixels behind each change the tracker starts holding, as a
+  PNG in `%LOCALAPPDATA%\poe2-oracle\data\xp-debug`, named by the time in UTC (as in the log) and
+  the values: `2026-09-28T15-16-51.672Z_0.5163_to_0.9863_read_0.9863.png` is from, to, and what
+  those very pixels read as. The picture is the capture `read_fill` reads, 1536×10 at 4K: the fill
+  band and the tick stems under it. The folder keeps the newest 30, and the log names each one.
+
 ## Checks (what CI runs)
 
 CI (`.github/workflows/ci.yml`) runs on Linux, in the container built from

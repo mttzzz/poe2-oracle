@@ -35,9 +35,10 @@
 //! seconds then, the tracker carrying its reading over the samples between, and at the next
 //! sample after a look that saw it change or couldn't read it (`XpTracker::unattended_look_due`).
 //! A minimised game is read nothing off, and a bar or a rail another window covers isn't copied
-//! at all (`xp_bar::shows_the_game`). The price-check panel hides only a plate it covers, and the
-//! setting both ([`XpOverlay::set_cover`]). Their size is the game's, not the app's interface
-//! scale: at any game height a plate is its rail's width, and its words the HUD's.
+//! at all (`xp_bar::shows_the_game`), nor the bar with the pointer on it (`xp_bar::bar_hovered`).
+//! The price-check panel hides only a plate it covers, and the setting both
+//! ([`XpOverlay::set_cover`]). Their size is the game's, not the app's interface scale: at any
+//! game height a plate is its rail's width, and its words the HUD's.
 //!
 //! An update's restart doesn't start the plates over: the app's old copy leaves its tracker
 //! ([`carry_over`]), and the new one carries on with it, the log's lines since taken up.
@@ -664,7 +665,15 @@ async fn sample_forever(view: WeakEntity<XpOverlay>, cx: &mut AsyncApp) {
                 // No game, or a minimised one.
                 None => BarLook::Unreadable,
             };
-            view.tracker.on_sample(look, at);
+            // A change the tracker starts holding: while debugging, the pixels it was read from
+            // go to a file, off this thread.
+            if let Some(suspect) = view.tracker.on_sample(look, at)
+                && let Some(rows) = xp_bar::last_rows()
+            {
+                cx.background_executor()
+                    .spawn(async move { xp_bar::snapshot(&rows, suspect) })
+                    .detach();
+            }
             let status = view.tracker.status();
             // A moved or rescaled game moves the plates and resizes their words.
             let place = |sample: &Option<BarSample>| {

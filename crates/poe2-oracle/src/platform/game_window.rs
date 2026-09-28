@@ -39,7 +39,7 @@ static FOREGROUND_WATCHERS: Mutex<Vec<async_channel::Sender<Foreground>>> = Mute
 static FOREGROUND_HOOKED: Mutex<bool> = Mutex::new(false);
 
 /// Physical cursor position, or `None` if the call fails (secure desktop, e.g. UAC prompt).
-fn cursor_pos() -> Option<(i32, i32)> {
+pub(crate) fn cursor_pos() -> Option<(i32, i32)> {
     let mut point = POINT::default();
     unsafe { GetCursorPos(&mut point) }.ok()?;
     Some((point.x, point.y))

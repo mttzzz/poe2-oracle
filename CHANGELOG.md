@@ -7,6 +7,27 @@ All notable changes to PoE2 Oracle are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-09-28
+
+### Added
+
+- **XP overlay diagnostics.** With `RUST_LOG=warn,poe2_oracle=info,poe2_oracle::xp_tracker=debug`
+  the log shows every reading of the XP bar that changes something, every gain counted and, every
+  30 s of play, what the rate stands on. With `POE2_ORACLE_XP_DEBUG=1` the bar's pixels behind each
+  large jump are saved as PNG in `%LOCALAPPDATA%\poe2-oracle\data\xp-debug`, the newest 30 kept.
+  See CONTRIBUTING.
+
+### Fixed
+
+- **Pointing at the game's XP bar no longer inflates the rate.** With the pointer resting on the bar
+  for its tooltip, the bar read nearly full for as long as the pointer stayed, and the overlay
+  counted that as experience: a player at level 93 saw +250-350%/h for half an hour. The overlay now
+  leaves the bar unread while the pointer is on it, and for a second after.
+- **Any other misread of the bar no longer counts as experience.** A jump of more than 5% of a
+  level, or any drop, counts once the bar has shown it for 20 seconds; if the bar goes back before
+  that, it was a misread and changes nothing. A level-up the game's log reports still counts at
+  once.
+
 ## [0.1.0] - 2026-09-27
 
 The first public release, on https://oracle.pushka.biz/. The installer isn't digitally signed yet,

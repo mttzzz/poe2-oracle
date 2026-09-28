@@ -7,14 +7,14 @@
 //! 2026-09-24 on the test machine's 4K game) -- far too slow to look many times a second. Here the
 //! desktop comes through DXGI desktop duplication instead: Windows hands over each frame it
 //! composes as a texture, the lips' few rows are copied out of it on the GPU, and only those rows
-//! are read back -- the bar's too, every `lip_schedule::BAR_EVERY`, so that the sampler needs no
-//! blit at all while this watches. The watching runs on a thread of its own while the game is in
-//! front and not minimised, and a moment after (`platform::lip_schedule`, which paces the looks
-//! too). The thread learns of the foreground from Windows' reports, handed on by the overlay
-//! ([`LipWatch::foreground`]), and asks nothing while it doesn't watch: it sleeps till told
-//! otherwise. Once it stops, the duplication and its Direct3D device are let go -- their video
-//! memory with them -- and [`LipReport::Idle`] leaves the plates and the bar to the sampler's
-//! slower look.
+//! are read back -- the bar's too, every `lip_schedule::BAR_EVERY` unless the pointer is on it
+//! (`xp_bar::bar_hovered`), so that the sampler needs no blit at all while this watches. The
+//! watching runs on a thread of its own while the game is in front and not minimised, and a
+//! moment after (`platform::lip_schedule`, which paces the looks too). The thread learns of the
+//! foreground from Windows' reports, handed on by the overlay ([`LipWatch::foreground`]), and asks
+//! nothing while it doesn't watch: it sleeps till told otherwise. Once it stops, the duplication
+//! and its Direct3D device are let go -- their video memory with them -- and
+//! [`LipReport::Idle`] leaves the plates and the bar to the sampler's slower look.
 //!
 //! Each report wakes the UI thread, so a report goes only when a rail is seen or missed where it
 //! wasn't, at once ([`LipReport::Seen`]); the bar's reading, which changes as experience comes in,
@@ -94,7 +94,7 @@ use windows::core::{Interface, PCWSTR, w};
 use crate::overlay_layout::{PhysicalRect, hud_rails, rail_lip, rail_seen};
 use crate::platform::game_window::{self, Foreground};
 use crate::platform::lip_schedule::{self, WhenToWatch};
-use crate::platform::xp_bar::{RailsSeen, shows_the_game};
+use crate::platform::xp_bar::{RailsSeen, bar_hovered, keep_rows, shows_the_game};
 use crate::xp_tracker::{XpBarGeometry, read_fill};
 
 /// How many looks' copies may wait for the GPU at once: a look that finds as many waiting is let
@@ -618,11 +618,14 @@ impl Duplication {
             }
         };
         // The bar counts only where the game itself shows it: a window over it -- the price
-        // panel spans its middle -- would read as a wrong fill (see `xp_bar::shows_the_game`).
+        // panel spans its middle -- would read as a wrong fill (see `xp_bar::shows_the_game`);
+        // and not with the pointer on it, nor just off it (`xp_bar::bar_hovered`), which every
+        // copy asks, so that its leaving is known to within a look.
+        let hovered = bar.is_some_and(|geometry| bar_hovered(geometry, now));
         let bar = bar
             .filter(|_| lip_schedule::bar_due(self.bar_read, now))
             .map(|geometry| {
-                game.is_some_and(|game| shows_the_game(game, geometry.capture))
+                (!hovered && game.is_some_and(|game| shows_the_game(game, geometry.capture)))
                     .then(|| geometry.clone())
             });
         if bar.is_some() {
@@ -772,7 +775,9 @@ fn read_look(rows: &mut Vec<u8>, mapped: &D3D11_MAPPED_SUBRESOURCE, copied: &Cop
                     capture.height as usize,
                 );
             }
-            read_fill(geometry, rows)
+            let fill = read_fill(geometry, rows);
+            keep_rows(geometry, rows, fill);
+            fill
         })
     });
     Look {

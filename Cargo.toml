@@ -19,7 +19,7 @@ members = [
 [workspace.package]
 # The app's version (the exe's VERSIONINFO, the installer name, the update check's baseline);
 # release tags are `v` + this.
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 publish = false
 # Every crate inherits these (`license.workspace = true` and so on). LICENSE-MIT and LICENSE-APACHE

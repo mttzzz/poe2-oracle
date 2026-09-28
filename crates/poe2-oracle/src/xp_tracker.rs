@@ -6,8 +6,9 @@
 //! feeds it -- `platform::xp_bar` captures the bar's pixels, `platform::client_log` tails the game
 //! log -- and `ui::xp_overlay` only renders [`XpStatus`]:
 //!
-//! - [`XpBarGeometry`] and [`read_fill`]: where PoE2 draws its experience bar and how the bar's
-//!   pixels read as the fraction of the level already earned.
+//! - [`XpBarGeometry`] and [`read_fill`]: where PoE2 draws its experience bar, how the bar's
+//!   pixels read as the fraction of the level already earned, and where the pointer makes the
+//!   bar read wrong ([`XpBarGeometry::hovered`]).
 //! - [`parse_log_line`]: the `Client.txt` lines that say the character levelled up, entered an
 //!   area instance or an ascendancy trial, or logged out.
 //! - [`XpTracker`]: the rate (levels per hour of play, over a window the settings pick), the time
@@ -63,6 +64,12 @@ const STEM_BAND: (f64, f64) = (13.0, 9.0);
 /// The smallest game height read at all: at 720 rows the fill band is already a single row and a
 /// tick stem a single column; any smaller and the bar can't be told apart from other pixels.
 const MIN_HEIGHT: i32 = 720;
+/// How far past the capture, above it and beyond its ends, the pointer still counts as on the
+/// bar ([`XpBarGeometry::hovered`]); below it, the game's bottom edge. The capture is only the
+/// fill band and the tick stems: the bar's frame, whatever of it the game's tooltip answers to
+/// (not measured), reaches a few pixels further. At 4K the pointer counts as on the bar across
+/// the bottom 51 rows of the world, which play seldom points at.
+const HOVER_MARGIN: f64 = 32.0;
 
 // Pixel tests, all with wide margins on the measured bar: every stem is at most 0.45 of its
 // surroundings' brightness; filled columns have (R-B)/R of 0.31-0.34 with R >= 138, empty ones
@@ -88,6 +95,8 @@ pub struct XpBarGeometry {
     /// Capture-local rows.
     fill_rows: Range<usize>,
     stem_rows: Range<usize>,
+    /// Where the pointer counts as on the bar ([`Self::hovered`]), physical pixels.
+    hover: PhysicalRect,
 }
 
 impl XpBarGeometry {
@@ -116,6 +125,13 @@ impl XpBarGeometry {
             return None;
         }
         let local = |rows: Range<i32>| (rows.start - top) as usize..(rows.end - top) as usize;
+        let margin = (HOVER_MARGIN * scale).round() as i32;
+        let hover = PhysicalRect {
+            x: capture.x - margin,
+            y: capture.y - margin,
+            width: capture.width + 2 * margin,
+            height: client.y + client.height - (capture.y - margin),
+        };
         Some(Self {
             capture,
             scale,
@@ -124,7 +140,18 @@ impl XpBarGeometry {
             ticks: std::array::from_fn(|i| centre + (i as f64 - 9.0) * TICK_SPACING * scale - left),
             fill_rows: local(fill),
             stem_rows: local(stems),
+            hover,
         })
+    }
+
+    /// Whether the pointer at `(x, y)`, physical pixels like the capture, is on the bar. There the
+    /// game shows the bar's tooltip, and the bar reads wrong: live on 2026-09-28, with the pointer
+    /// resting on it for the tooltip, 94.75 % for 40 s where it showed 59.33 % -- nearly full,
+    /// but not end to end, so nothing [`read_fill`] can tell from a bar.
+    pub fn hovered(&self, (x, y): (i32, i32)) -> bool {
+        let hover = self.hover;
+        (hover.x..hover.x + hover.width).contains(&x)
+            && (hover.y..hover.y + hover.height).contains(&y)
     }
 }
 
@@ -455,10 +482,23 @@ const DROP_THRESHOLD: f64 = 0.004;
 /// A drop by more than half a level can only be a level-up: the death penalty costs a fraction
 /// of that (10 % of a level in PoE2 -- not verified live).
 const WRAP_DROP: f64 = 0.5;
-/// A single step up this big (5 % of a level between two readings, a fraction of a second apart)
-/// is worth a log line: real play earns that only from a big kill, and a misread bar that comes
-/// back looks the same.
+/// A single step up this big -- 5 % of a level between two readings, two seconds apart -- real
+/// play earns only from a big kill, or at the campaign's first levels; and a misread bar looks
+/// the same. So it counts only once it lasts, like any drop ([`is_large`]).
 const BIG_GAIN: f64 = 0.05;
+/// How long a large change of the bar ([`is_large`]) waits, the bar reading near where it went,
+/// before it counts. Something over the bar can pass the median filter: live, a misread of
+/// 98.63 % for 6 s in a map (2026-09-28, three readings), and a full bar for 5-20 s at a time in
+/// the hideout (2026-09-24; [`read_fill`] now refuses a full bar) -- so 20 s, the longest seen.
+/// The pointer resting on the bar for its tooltip reads wrong for as long as it rests there, 40 s
+/// and more: the looks set those readings aside (`platform::xp_bar::bar_hovered`). A death's
+/// drop is first read once the death screen, which hides the bar, is gone, and waits the same:
+/// a loss gains nothing to wait for, and what's earned back meanwhile counts once it's taken.
+/// The wait only delays a credit: the play meanwhile counts toward the rate, at no gain, and a
+/// big gain then lands whole.
+const CONFIRM_AFTER: Duration = Duration::from_secs(20);
+/// Play counted between two of the tracker's debug summaries ([`XpTracker::summarize`]).
+const SUMMARY_EVERY: Duration = Duration::from_secs(30);
 /// How far apart a logged level-up and the bar's wrap may be and still be the same level-up.
 const LEVEL_UP_MATCH: Duration = Duration::from_secs(30);
 /// How often the bar is looked at while the game is out of the front, where no experience comes
@@ -478,6 +518,14 @@ pub enum BarLook {
     /// It wasn't looked at, the game being out of the front ([`XpTracker::unattended_look_due`]):
     /// it's taken to read as it did at the last look.
     Skipped,
+}
+
+/// A reading the tracker starts holding a large change for ([`XpTracker::on_sample`]): where the
+/// bar was, and where it went. Worth a look at the pixels it came from.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Suspect {
+    pub from: f64,
+    pub to: f64,
 }
 
 /// What the overlay shows.
@@ -568,12 +616,59 @@ impl Default for HalfLife {
     }
 }
 
+/// Whether the bar going from `from` to `to` is a large change, which counts only once it lasts
+/// ([`CONFIRM_AFTER`]): up by more than `BIG_GAIN`, or down by more than `DROP_THRESHOLD`.
+fn is_large(from: f64, to: f64) -> bool {
+    to - from > BIG_GAIN || from - to > DROP_THRESHOLD
+}
+
+/// A large change of the bar ([`is_large`]), held until it's seen to last.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Pending {
+    /// The best reading before it: where the bar goes back to if it was a misread.
+    from: f64,
+    /// Where it went.
+    to: f64,
+    /// The best reading near `to` since, which the play meanwhile has raised: all of it counts
+    /// once the change does.
+    top: f64,
+    /// When the bar first read `to`.
+    since: Duration,
+}
+
+/// What a change of the bar from its best reading is taken as ([`XpTracker::gain_to`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Taken {
+    /// The bar wrapped: the rest of the old level and the new level's start are gained.
+    LevelUp,
+    Gain,
+    /// A fall by more than reading noise: lost, and the best reading follows it down.
+    Loss,
+    /// A fall by reading noise, or none.
+    Noise,
+}
+
+impl Taken {
+    fn words(self) -> &'static str {
+        match self {
+            Taken::LevelUp => "a level-up",
+            Taken::Gain => "a gain",
+            Taken::Loss => "a loss",
+            Taken::Noise => "noise",
+        }
+    }
+}
+
 /// Turns timestamped bar readings and log events into an [`XpStatus`].
 ///
 /// Gains are measured against the best reading since the last rebase, so reading jitter below it
 /// never counts twice, and every reading first goes through a median of the last three, so one
-/// misread sample never moves anything. A drop is either a level-up (the bar wraps: the rest of
-/// the old level plus the new level's start count as gained) or a death (the penalty is lost, not
+/// misread sample never moves anything. A large change -- more than `BIG_GAIN` up, more than
+/// `DROP_THRESHOLD` down -- counts only once the bar has read near where it went for
+/// `CONFIRM_AFTER`: something over the bar for a few seconds reads like one, then goes. A drop is
+/// either a level-up (the bar wraps: the rest of the old level plus the new level's start count
+/// as gained; one a logged level-up explains counts at once) or a death (the penalty is lost, not
 /// negative progress: the baseline moves down and re-earning it counts). The rate is play-time
 /// based: time only counts between readable samples, outside towns and hideouts (when the log
 /// says so), and until `IDLE_AFTER` without a gain; it carries over level-ups, deaths and breaks,
@@ -641,6 +736,13 @@ pub struct XpTracker {
     /// The scene went `(unknown)` and hasn't been named since: a logout, if an area line comes
     /// next ([`LogEvent::SceneLost`]).
     scene_lost: bool,
+    /// A large change of the bar waiting to be seen to last. Not in what 0.1.0 carried over,
+    /// which held none.
+    #[serde(default)]
+    pending: Option<Pending>,
+    /// The play counted by when the next debug summary is due ([`Self::summarize`]).
+    #[serde(skip)]
+    summary_due: Duration,
 }
 
 impl XpTracker {
@@ -724,6 +826,12 @@ impl XpTracker {
                     self.expire_level_up_balance(at);
                     self.level_up_balance += 1;
                     self.balance_at = at;
+                    // A change the bar is held at is no misread: the level-up's wrap, or the play
+                    // that led up to it.
+                    if let Some(pending) = self.pending.take() {
+                        let gain = self.settle(pending, at, "met a logged level-up after");
+                        self.credit(gain, Duration::ZERO, at);
+                    }
                 }
             }
             LogEvent::AreaEntered { area, seed } => {
@@ -787,17 +895,18 @@ impl XpTracker {
     }
 
     /// One sample's look at the bar ([`BarLook`]). `at` is monotonic time since any fixed origin.
-    pub fn on_sample(&mut self, look: BarLook, at: Duration) {
+    /// Returns the change a reading starts holding: suspect, till it lasts.
+    pub fn on_sample(&mut self, look: BarLook, at: Duration) -> Option<Suspect> {
         self.advance(at);
         let reading = match look {
             BarLook::Read(reading) => reading,
             BarLook::Unreadable => {
                 self.last_look = Some((at, false));
-                return;
+                return None;
             }
             BarLook::Skipped => {
                 self.carry_reading(at);
-                return;
+                return None;
             }
         };
         self.last_look = Some((at, true));
@@ -807,6 +916,13 @@ impl XpTracker {
         {
             self.recent = [None; 2];
             self.last = None;
+            if let Some(pending) = self.pending.take() {
+                log::info!(
+                    "xp: bar {:.4} -> {:.4} lost from sight before it lasted: ignored",
+                    pending.from,
+                    pending.to
+                );
+            }
         }
         self.last_readable_at = Some(at);
 
@@ -815,22 +931,33 @@ impl XpTracker {
             _ => None,
         };
         self.recent = [self.recent[1], Some(reading)];
-        let Some(value) = median else {
-            return;
-        };
-        let Some((last_at, _)) = self.last else {
+        let value = median?;
+        let Some((last_at, previous)) = self.last else {
             self.best = value;
             self.last = Some((at, value));
-            return;
+            return None;
         };
         self.expire_level_up_balance(at);
-        let gain = self.gain_to(value, at);
-        if gain > 0.0 {
-            self.active_at = Some(at);
+        let held = self.pending;
+        let gain = self.take(value, at);
+        if log::log_enabled!(log::Level::Debug)
+            && (value != previous || gain > 0.0 || held != self.pending)
+        {
+            log::debug!(
+                "xp: read {value:.4} at {:.1} s: best {:.4}, +{gain:.4}, holding {:?}",
+                at.as_secs_f64(),
+                self.best,
+                self.pending
+            );
         }
-        self.count(at.saturating_sub(last_at), gain);
-        self.maps.credit(gain);
+        self.credit(gain, at.saturating_sub(last_at), at);
         self.last = Some((at, value));
+        self.pending
+            .filter(|pending| pending.since == at)
+            .map(|pending| Suspect {
+                from: pending.from,
+                to: pending.to,
+            })
     }
 
     /// A sample that didn't look at the bar: as a look reading what the last one did would have
@@ -840,6 +967,7 @@ impl XpTracker {
         if let (Some((_, true)), Some((last_at, value))) = (self.last_look, self.last) {
             self.count(at.saturating_sub(last_at), 0.0);
             self.last = Some((at, value));
+            self.summarize();
         }
     }
 
@@ -857,33 +985,129 @@ impl XpTracker {
         }
     }
 
-    /// Levels earned between the best reading so far and `value`, which becomes the new best --
-    /// also after a loss, so re-earned experience counts again.
-    fn gain_to(&mut self, value: f64, at: Duration) -> f64 {
-        let drop = self.best - value;
-        let gain = if drop > WRAP_DROP || (self.level_up_balance > 0 && drop > DROP_THRESHOLD) {
-            log::info!(
-                "xp: bar {:.4} -> {value:.4}, taken as a level-up (balance {})",
-                self.best,
-                self.level_up_balance
-            );
-            self.level_up_balance -= 1;
-            self.balance_at = at;
-            1.0 - self.best + value
-        } else if drop < 0.0 {
-            if -drop > BIG_GAIN {
-                log::info!("xp: bar {:.4} -> {value:.4} in one step", self.best);
+    /// Levels earned as the bar reads `value` at `at`. An ordinary step counts at once
+    /// ([`Self::gain_to`]), and so does a drop a logged level-up explains; any other large change
+    /// is held ([`Pending`]) -- taken once the bar has read near where it went for
+    /// `CONFIRM_AFTER`, ignored as a misread if it goes back first, held anew wherever else it
+    /// goes. Samples that can't read the bar neither take nor drop it.
+    fn take(&mut self, value: f64, at: Duration) -> f64 {
+        if self.level_up_balance > 0 && self.best - value > DROP_THRESHOLD {
+            // From the best reading before whatever is held: the rest of the level and the new
+            // one's start count once, however the bar got there.
+            if let Some(pending) = self.pending.take() {
+                log::debug!("xp: {pending:?} dropped for the level-up");
             }
-            -drop
-        } else if drop > DROP_THRESHOLD {
-            log::info!("xp: bar {:.4} -> {value:.4}, taken as a loss", self.best);
-            0.0
-        } else {
-            // Jitter below the best reading.
+            let (best, balance) = (self.best, self.level_up_balance);
+            let (gain, _) = self.gain_to(value, at);
+            log::info!("xp: bar {best:.4} -> {value:.4}, taken as a level-up (balance {balance})");
+            return gain;
+        }
+        let Some(mut pending) = self.pending else {
+            if !is_large(self.best, value) {
+                return self.gain_to(value, at).0;
+            }
+            log::info!(
+                "xp: bar {:.4} -> {value:.4} in one step: held till it lasts {} s",
+                self.best,
+                CONFIRM_AFTER.as_secs()
+            );
+            self.pending = Some(Pending {
+                from: self.best,
+                to: value,
+                top: value,
+                since: at,
+            });
             return 0.0;
         };
+        let held = at.saturating_sub(pending.since);
+        // Back where it came from -- give or take reading noise below, an ordinary step above --
+        // or near where it went, moving on as play does.
+        if !is_large(pending.from, value) {
+            log::info!(
+                "xp: bar {:.4} -> {:.4} -> back after {:.0} s: a misread, ignored",
+                pending.from,
+                pending.to,
+                held.as_secs_f64()
+            );
+            self.pending = None;
+            return self.gain_to(value, at).0;
+        }
+        if is_large(pending.top, value) {
+            log::debug!(
+                "xp: bar {:.4} -> {:.4} -> {value:.4}: held anew",
+                pending.from,
+                pending.to
+            );
+            self.pending = Some(Pending {
+                to: value,
+                top: value,
+                since: at,
+                ..pending
+            });
+            return 0.0;
+        }
+        pending.top = pending.top.max(value);
+        if held < CONFIRM_AFTER {
+            self.pending = Some(pending);
+            return 0.0;
+        }
+        self.pending = None;
+        self.settle(pending, at, "lasted")
+    }
+
+    /// Takes `pending`'s change as it stands -- a level-up, a gain or a loss from the best reading
+    /// before it ([`Self::gain_to`]) -- and the play since as gained. `why` says what settled it,
+    /// before how long it was held.
+    fn settle(&mut self, pending: Pending, at: Duration, why: &str) -> f64 {
+        self.best = pending.from;
+        let (change, taken) = self.gain_to(pending.to, at);
+        log::info!(
+            "xp: bar {:.4} -> {:.4} {why} {:.0} s: taken as {}",
+            pending.from,
+            pending.to,
+            at.saturating_sub(pending.since).as_secs_f64(),
+            taken.words()
+        );
+        change + self.gain_to(pending.top, at).0
+    }
+
+    /// Levels earned between the best reading so far and `value`, and what that is taken as.
+    /// `value` becomes the new best -- also after a loss, so re-earned experience counts again --
+    /// unless it's reading noise below it.
+    fn gain_to(&mut self, value: f64, at: Duration) -> (f64, Taken) {
+        let drop = self.best - value;
+        let taken = if drop > WRAP_DROP || (self.level_up_balance > 0 && drop > DROP_THRESHOLD) {
+            self.level_up_balance -= 1;
+            self.balance_at = at;
+            (1.0 - self.best + value, Taken::LevelUp)
+        } else if drop < 0.0 {
+            (-drop, Taken::Gain)
+        } else if drop > DROP_THRESHOLD {
+            (0.0, Taken::Loss)
+        } else {
+            // Jitter below the best reading.
+            return (0.0, Taken::Noise);
+        };
         self.best = value;
-        gain
+        taken
+    }
+
+    /// Counts `elapsed` as play with `gain` earned in it, toward the rate ([`Self::count`]) and
+    /// the map run.
+    fn credit(&mut self, gain: f64, elapsed: Duration, at: Duration) {
+        if gain > 0.0 {
+            self.active_at = Some(at);
+        }
+        self.maps.credit(gain);
+        self.count(elapsed, gain);
+        if gain > 0.0 {
+            log::debug!(
+                "xp: +{gain:.4} of a level counted: {:.4} over {:.0} s weighted",
+                self.weighted_gain,
+                self.weighted_secs
+            );
+        }
+        self.summarize();
     }
 
     /// Credits `elapsed` as play -- unless in town, across a gap nothing was gained over, or past
@@ -912,6 +1136,30 @@ impl XpTracker {
         let decay = (-secs / self.half_life.0).exp2();
         self.weighted_gain = self.weighted_gain * decay + gain;
         self.weighted_secs = self.weighted_secs * decay + secs;
+    }
+
+    /// At debug level, once `SUMMARY_EVERY` more play has been counted: what the rate stands on.
+    fn summarize(&mut self) {
+        if self.counted < self.summary_due || !log::log_enabled!(log::Level::Debug) {
+            return;
+        }
+        self.summary_due = self.counted + SUMMARY_EVERY;
+        let status = self.status();
+        let rate = status.rate_per_hour.map_or_else(
+            || "no rate yet".to_owned(),
+            |rate| format!("{:.2} %/h", rate * 100.0),
+        );
+        log::debug!(
+            "xp: {rate} from {:.4} of a level over {:.0} s weighted; {} s counted, {} s since a \
+             gain; {:?}, level {:?}, map {:?}",
+            self.weighted_gain,
+            self.weighted_secs,
+            self.counted.as_secs(),
+            self.since_gain.as_secs(),
+            status.activity,
+            status.level,
+            status.map
+        );
     }
 
     pub fn status(&self) -> XpStatus {
@@ -1413,6 +1661,41 @@ mod tests {
         );
     }
 
+    #[test]
+    fn the_pointer_is_on_the_bar_over_its_frame_down_to_the_games_edge() {
+        // At 4K the capture spans x 1152..2688 and y 2141..2151: 32 px past its ends and above
+        // it count, down to the game's last row.
+        let full = XpBarGeometry::for_client(GAME_4K).unwrap();
+        for (pointer, on) in [
+            ((1920, 2145), true),
+            ((1120, 2109), true),
+            ((2719, 2159), true),
+            ((1920, 2108), false),
+            ((1119, 2145), false),
+            ((2720, 2145), false),
+            ((1920, 2160), false),
+        ] {
+            assert_eq!(full.hovered(pointer), on, "{pointer:?}");
+        }
+        // A 1920x1080 window at (100, 50): half the margin, where the window is.
+        let window = XpBarGeometry::for_client(PhysicalRect {
+            x: 100,
+            y: 50,
+            width: 1920,
+            height: 1080,
+        })
+        .unwrap();
+        for (pointer, on) in [
+            ((660, 1104), true),
+            ((1459, 1129), true),
+            ((659, 1110), false),
+            ((1000, 1103), false),
+            ((1000, 1130), false),
+        ] {
+            assert_eq!(window.hovered(pointer), on, "{pointer:?}");
+        }
+    }
+
     /// Live instances from the test machine's log: a map and the Abyss depths opened in it
     /// (2026-09-22), and a Trial of Chaos (2026-09-18).
     const EPITAPH: u64 = 2_266_921_739;
@@ -1856,6 +2139,175 @@ mod tests {
         assert_eq!(status.fraction, Some(0.5));
         assert_eq!(status.rate_per_hour, Some(0.0));
         assert_eq!(status.time_to_level(), None);
+    }
+
+    /// The owner's level-93 character mapping, 2026-09-28 15:16:51: something over the bar read
+    /// as 98.63 % where it showed 51.63 %, for about 6 s, then 51.63 % again. However often the
+    /// lip watcher looks -- every 50 ms while the mouse moves, every 2 s while it keeps still --
+    /// the tracker takes one reading a sample, every 2 s: the watcher's latest. So 6 s are three
+    /// readings, or four as the samples fall, and the median filter passes all but the first.
+    /// Taken at its word, the bar gained 0.47 of a level and lost nothing on the way back: the
+    /// rate read 280 %/h. A misread down was a loss, then a gain of the whole way back up; one
+    /// that wanders, both.
+    #[test]
+    fn a_bar_misread_for_seconds_is_neither_gained_nor_lost() {
+        let rate = 0.12 / 3600.0;
+        let misreads: [(f64, &[f64]); 5] = [
+            (0.5163, &[0.9863; 3]),
+            (0.5163, &[0.9863; 4]),
+            (0.52, &[0.30; 3]),
+            (0.52, &[0.30; 4]),
+            (0.52, &[0.9863, 0.9863, 0.9863, 0.75, 0.75, 0.75]),
+        ];
+        let mut wrong = Vec::new();
+        for (from, misread) in misreads {
+            let mut tracker = XpTracker::new();
+            enter(&mut tracker, "MapEpitaph", EPITAPH, 0.0);
+            let fill = move |t: f64| Some(as_read(from + rate * t, t));
+            let start = play(&mut tracker, 0.0, 600, fill);
+            let t = play(&mut tracker, start, misread.len(), |t| {
+                Some(misread[((t - start) / 2.0).round() as usize])
+            });
+            let end = play(&mut tracker, t, 30, fill);
+            let status = tracker.status();
+            let (now, gained) = (status.rate_per_hour.unwrap(), status.map.unwrap().gained);
+            if (now - 0.12).abs() > 0.006 || (gained - rate * end).abs() > 0.003 {
+                wrong.push(format!("{misread:?}: {now:.4}/h, {gained:.4} gained"));
+            }
+        }
+        assert!(wrong.is_empty(), "{wrong:#?}");
+    }
+
+    #[test]
+    fn a_big_gain_counts_once_it_has_held() {
+        // A big kill worth 8 % of a level: more than any step of steady play, as much as a
+        // misread. Held until it lasts, then counted in full, with the play since.
+        let rate = 0.12 / 3600.0;
+        let mut tracker = XpTracker::new();
+        enter(&mut tracker, "MapEpitaph", EPITAPH, 0.0);
+        let kill = play(&mut tracker, 0.0, 300, |t| {
+            Some(as_read(0.30 + rate * t, t))
+        });
+        let gained = |tracker: &XpTracker| tracker.status().map.unwrap().gained;
+        let before = gained(&tracker);
+        let after = move |t: f64| Some(as_read(0.38 + rate * t, t));
+        let t = play(&mut tracker, kill, 5, after);
+        assert!(gained(&tracker) - before < 0.01, "counted by {t} s");
+        let t = play(&mut tracker, t, 10, after);
+        let counted = gained(&tracker) - before;
+        assert!(
+            (counted - (0.08 + rate * (t - kill))).abs() < 0.002,
+            "{counted} by {t} s"
+        );
+    }
+
+    #[test]
+    fn a_death_is_taken_once_it_has_held_and_what_is_earned_back_counts() {
+        // The penalty takes a tenth of the level, first read once the player leaves the death
+        // screen, and stays. Held like any large change, it costs the run nothing it had; what's
+        // earned back while it's held counts once it's taken.
+        let rate = 0.30 / 3600.0;
+        let mut tracker = XpTracker::new();
+        enter(&mut tracker, "MapEpitaph", EPITAPH, 0.0);
+        let t = play(&mut tracker, 0.0, 300, |t| {
+            Some(as_read(0.50 + rate * t, t))
+        });
+        let gained = |tracker: &XpTracker| tracker.status().map.unwrap().gained;
+        let before = gained(&tracker);
+        let back = play(&mut tracker, t, 15, |_| None);
+        let penalised = move |t: f64| Some(as_read(0.40 + rate * t, t));
+        let t = play(&mut tracker, back, 5, penalised);
+        assert_eq!(
+            gained(&tracker),
+            before,
+            "nothing gained or lost while it's held"
+        );
+        let end = play(&mut tracker, t, 150, penalised);
+        let earned_back = gained(&tracker) - before;
+        assert!(
+            (earned_back - rate * (end - back)).abs() < 0.002,
+            "{earned_back}"
+        );
+        assert_near(tracker.status().rate_per_hour, 0.30, 0.05);
+    }
+
+    #[test]
+    fn a_level_up_logged_after_the_bar_wrapped_is_still_the_level_up() {
+        // As across the loading screen above -- the bar wraps from 0.55 to 0.30, not far enough
+        // to be a level-up by itself -- but the log's line comes 4 s after the wrap is read. The
+        // drop is held, and the line takes it as the level-up it was, at once.
+        let rate = |logged: Option<f64>| {
+            let mut tracker = XpTracker::new();
+            let t = play(&mut tracker, 0.0, 120, |t| {
+                Some(as_read(0.30 + 0.25 * t / 240.0, t))
+            });
+            let mut t = play(&mut tracker, t, 10, |_| None);
+            for _ in 0..5 {
+                if logged == Some(t) {
+                    tracker.on_log_event(
+                        LogEvent::LevelUp {
+                            character: "hero".to_owned(),
+                            level: 3,
+                        },
+                        Duration::from_secs_f64(t),
+                    );
+                }
+                tracker.on_sample(BarLook::Read(as_read(0.30, t)), Duration::from_secs_f64(t));
+                t += 2.0;
+            }
+            tracker.status().rate_per_hour.unwrap()
+        };
+        let (on_time, late, never) = (rate(Some(260.0)), rate(Some(266.0)), rate(None));
+        assert!(
+            (late - on_time).abs() < 0.01 * on_time,
+            "{late} vs {on_time}"
+        );
+        assert!(late > 3.0 * never, "{late} vs {never}");
+    }
+
+    #[test]
+    fn forty_seconds_on_the_bars_tooltip_count_nothing() {
+        // The owner's hideout, 2026-09-28 15:35:29: the pointer rested on the bar for its tooltip,
+        // and the bar read 94.75 % for 40 s where it showed 59.33 % -- longer than a change is
+        // held for. The looks set the bar's readings aside while the pointer is on it
+        // (`platform::xp_bar::bar_hovered`): 40 s of readings the tracker can't use.
+        let mut tracker = XpTracker::new();
+        enter(&mut tracker, "MapEpitaph", EPITAPH, 0.0);
+        let (t, parked) = map_for_ten_minutes(&mut tracker, 0.0, 0.5933);
+        enter(&mut tracker, "HideoutCanal", 1, t);
+        let t = play(&mut tracker, t, 30, |t| Some(as_read(parked, t)));
+        let before = tracker.status();
+        let t = play(&mut tracker, t, 20, |_| None);
+        play(&mut tracker, t, 30, |t| Some(as_read(parked, t)));
+        let after = tracker.status();
+        assert_eq!(after.rate_per_hour, before.rate_per_hour);
+        assert_eq!(after.map.unwrap().gained, before.map.unwrap().gained);
+    }
+
+    #[test]
+    fn a_held_change_is_suspect_where_it_starts_and_where_it_moves() {
+        // What the overlay saves the bar's pixels for while debugging: one snapshot a change the
+        // tracker holds, not one a sample it holds it.
+        let mut tracker = XpTracker::new();
+        let mut t = play(&mut tracker, 0.0, 10, |_| Some(0.5163));
+        let mut suspects = Vec::new();
+        for fill in [0.9863; 6].into_iter().chain([0.75; 4]) {
+            suspects.extend(tracker.on_sample(BarLook::Read(fill), Duration::from_secs_f64(t)));
+            t += 2.0;
+        }
+        assert_eq!(
+            suspects,
+            [
+                Suspect {
+                    from: 0.5163,
+                    to: 0.9863
+                },
+                Suspect {
+                    from: 0.5163,
+                    to: 0.75
+                },
+            ]
+        );
     }
 
     /// Half an hour at 10 % of a level per hour, then five minutes at 30 %; returns the rate
@@ -2425,6 +2877,49 @@ mod tests {
         // A tracker never told anything has nothing to carry on with.
         let untold = XpTracker::new().carry().unwrap();
         assert!(XpTracker::carried(&untold, at(130)).is_none());
+    }
+
+    #[test]
+    fn a_tracker_carried_over_from_0_1_0_is_taken_up() {
+        // What 0.1.0 left ten minutes into a map at 12 % of a level per hour: nothing held, which
+        // it didn't keep.
+        let json = br#"{
+            "recent": [0.22062663185378592, 0.22062663185378592],
+            "last_readable_at": {"secs": 598, "nanos": 0},
+            "last": [{"secs": 598, "nanos": 0}, 0.22062663185378592],
+            "best": 0.22062663185378592,
+            "character": null,
+            "level": null,
+            "clock": {"secs": 598, "nanos": 0},
+            "town_since": null,
+            "active_at": {"secs": 598, "nanos": 0},
+            "since_gain": {"secs": 0, "nanos": 0},
+            "level_up_balance": 0,
+            "balance_at": {"secs": 0, "nanos": 0},
+            "weighted_gain": 0.014737816354234125,
+            "weighted_secs": 430.29480442125646,
+            "counted": {"secs": 594, "nanos": 0},
+            "maps": {
+                "current": {
+                    "seed": 2266921739,
+                    "side_areas": [],
+                    "time": {"secs": 598, "nanos": 0},
+                    "gained": 0.02023498694516973
+                },
+                "whereabouts": "InRun",
+                "here": ["MapEpitaph", 2266921739],
+                "left_at": null,
+                "finished": 0,
+                "finished_time": {"secs": 0, "nanos": 0}
+            },
+            "scene_lost": false
+        }"#;
+        let mut carried = XpTracker::carried(json, Duration::from_secs(620)).expect("taken up");
+        assert_eq!(carried.pending, None);
+        play(&mut carried, 620.0, 10, |t| {
+            Some(as_read(0.2 + 0.12 / 3600.0 * t, t))
+        });
+        assert_near(carried.status().rate_per_hour, 0.12, 0.05);
     }
 
     #[test]

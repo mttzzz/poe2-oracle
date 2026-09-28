@@ -77,9 +77,10 @@ parking_lot = "0.12"
 # through http_client.
 futures = "0.3"
 # The windows' ornaments -- frame corners, diamonds, fading rules -- are rasterised pixel by pixel
-# (src/ui/ornament.rs) into the image buffer GPUI's `RenderImage` takes. Already in the tree
-# through GPUI; none of its codecs.
-image = { version = "0.25", default-features = false }
+# (src/ui/ornament.rs) into the image buffer GPUI's `RenderImage` takes; and the XP bar's pixels
+# behind a suspect reading are saved as PNG while debugging (src/platform/xp_bar.rs). Already in
+# the tree through GPUI, its PNG codec too; none of the others.
+image = { version = "0.25", default-features = false, features = ["png"] }
 # The report window's text box (src/text_area.rs) moves and deletes by grapheme and by word, as
 # Unicode segments them. Already in the tree through GPUI.
 unicode-segmentation = "1"
@@ -191,5 +192,5 @@ dev-endpoints = ["oracle-protocol/dev-endpoints"]
 embed-resource = "3.0"
 
 [dev-dependencies]
-# examples/plate_art.rs writes the site's plate pictures as PNG; the app itself encodes none.
+# examples/plate_art.rs writes the site's plate pictures as PNG.
 image = { version = "0.25", default-features = false, features = ["png"] }

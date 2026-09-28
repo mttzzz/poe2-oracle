@@ -1,7 +1,8 @@
 //! Where the app keeps its files, all in `directories`' per-user folders for "poe2-oracle": the
 //! settings in the roaming config folder (`%APPDATA%\poe2-oracle\config`), the log, the kept item
 //! texts, the last crash, the last update's marker and the XP overlay's tracker it carried over,
-//! the sign-in window's browser profile and the installed game data pack in the local data folder
+//! the XP overlay's debug snapshots, the sign-in window's browser profile and the installed game
+//! data pack in the local data folder
 //! (`%LOCALAPPDATA%\poe2-oracle\data`), and whatever can be fetched again -- trade catalogs,
 //! exchange and poe2scout prices, downloaded updates -- in the local cache folder
 //! (`%LOCALAPPDATA%\poe2-oracle\cache`). Without a home folder (never on a real Windows profile)
@@ -42,6 +43,12 @@ pub fn update_marker_file() -> PathBuf {
 /// with it (`ui::xp_overlay::carry_over`).
 pub fn xp_carry_file() -> PathBuf {
     data_dir().join("xp-carry.json")
+}
+
+/// The XP bar's pixels behind readings the XP tracker found suspect, while
+/// `POE2_ORACLE_XP_DEBUG=1` (`platform::xp_bar::snapshot`).
+pub fn xp_debug_dir() -> PathBuf {
+    data_dir().join("xp-debug")
 }
 
 /// Item texts the parser rejected or couldn't fully read (and every checked text while
