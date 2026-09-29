@@ -72,12 +72,32 @@ const MIN_HEIGHT: i32 = 720;
 const HOVER_MARGIN: f64 = 32.0;
 
 // Pixel tests, all with wide margins on the measured bar: every stem is at most 0.45 of its
-// surroundings' brightness; filled columns have (R-B)/R of 0.31-0.34 with R >= 138, empty ones
-// -0.03-0.02 with R of 46-62.
+// surroundings' brightness. The fill band is read for its levels of brightness. On the three live
+// captures (2026-09-22 and 2026-09-29, one with a warm light on the empty track) the fill is 3.0-
+// 3.3 times as bright as the empty track, its columns 0.7-1.05 of the fill's mean and the track's
+// 0.9-1.2 of the track's; no two parts of a track alone are more than 1.09 apart; the empty
+// track is 1.0-1.5 times as bright as the frame under it; and (R-B)/R is 0.31-0.34 for the fill
+// and -0.03-0.21 for the track, which a light warms. So the fill is told from the track by how
+// much brighter it is than the rest of the track, not by its colour or a fixed level: a dimmer UI
+// brightness setting scales all of it alike, and a light on the track lifts only the track.
 const MIN_TICKS_SEEN: usize = 17;
 const STEM_MAX_RATIO: f64 = 0.7;
 const STEM_MIN_DEPTH: f64 = 6.0;
-const MAX_UNKNOWN_SHARE: f64 = 0.1;
+/// The fill is at least this many times as bright as the empty track it fills the start of.
+const FILL_OVER_TRACK: f64 = 2.0;
+/// Two parts of the track less than this many times as bright as each other are one level:
+/// reading noise, a gradient of light. Between this and `FILL_OVER_TRACK` a brighter start of the
+/// track is neither fill nor track: a light on the track the fill can't be told from, or
+/// something translucent over part of the bar.
+const ONE_LEVEL: f64 = 1.4;
+/// A track with no fill is at most this many times as bright as the frame under it. The one place
+/// the frame decides anything: with no fill there is none of its glow on the frame.
+const EMPTY_CONTRAST: f64 = 1.7;
+/// The fill's blue is at least this share below its red. That keeps a bright grey or blue thing
+/// from passing as fill; it can't tell the fill from the track, which light warms just as much
+/// (0.19 in the lit capture, against the fill's 0.31-0.34).
+const FILL_WARMTH: f64 = 0.15;
+/// The share of the track's columns that may be odd ones out of a reading.
 const MAX_ERROR_SHARE: f64 = 0.03;
 
 /// Where the experience bar is in a game window of a given size.
@@ -164,9 +184,14 @@ fn rows_between(from: f64, to: f64) -> Range<i32> {
 
 /// The fraction of the level the bar shows, from the pixels of `geometry.capture` -- 32-bit BGRA
 /// rows, top to bottom, as a `BI_RGB` DIB section holds them. `None` unless the bar is
-/// unmistakably what's on screen: nearly all tick stems in place, nearly every column of the fill
-/// track either the fill's warm colour or the empty track's grey, and the filled columns a
-/// prefix. A panel, tooltip or loading screen over the bar fails those checks.
+/// unmistakably what's on screen: nearly all tick stems in place, and the fill track showing what
+/// a bar does -- a fill, a warm start of the track at least twice as bright as the rest, each part
+/// even; or no fill, a track dark against the frame under it. A panel, tooltip or loading screen
+/// over the bar fails those checks; so does a light on the track that brings it near the fill's
+/// brightness, or something translucent over part of the bar: the bar reads `None`, and never
+/// fuller than it is. The fill is told from the track by how much brighter it is than the rest of
+/// the track, not by its colour or a fixed level, so a light that tints the empty track and a
+/// dimmer UI brightness setting change nothing.
 pub fn read_fill(geometry: &XpBarGeometry, bgra: &[u8]) -> Option<f64> {
     let width = usize::try_from(geometry.capture.width).ok()?;
     let height = usize::try_from(geometry.capture.height).ok()?;
@@ -187,58 +212,69 @@ pub fn read_fill(geometry: &XpBarGeometry, bgra: &[u8]) -> Option<f64> {
         return None;
     }
 
-    // Every track column clear of the ticks, left to right: `true` if filled.
-    let mut columns = Vec::with_capacity(width);
-    let mut unknown = 0usize;
-    for (column, colour) in band_average(bgra, width, &geometry.fill_rows)
+    // The track: every column clear of the ticks, left to right, with the fill band's colour.
+    let track: Vec<(usize, [f64; 3])> = band_average(bgra, width, &geometry.fill_rows)
         .into_iter()
         .enumerate()
-    {
-        let centre = column as f64 + 0.5;
-        if centre < geometry.fill_start
-            || centre >= geometry.fill_end
-            || geometry
-                .ticks
+        .filter(|&(column, _)| {
+            let centre = column as f64 + 0.5;
+            centre >= geometry.fill_start
+                && centre < geometry.fill_end
+                && geometry
+                    .ticks
+                    .iter()
+                    .all(|tick| (centre - tick).abs() >= TICK_HALF_WIDTH * scale)
+        })
+        .collect();
+    if track.len() < 2 {
+        return None;
+    }
+    let lumas: Vec<f64> = track.iter().map(|&(_, colour)| luma(colour)).collect();
+    let strays = MAX_ERROR_SHARE * track.len() as f64;
+    // Whether `columns`, on the whole, are the fill's warm cream/orange.
+    let warm = |columns: &[(usize, [f64; 3])]| {
+        let red: f64 = columns.iter().map(|&(_, [r, ..])| r).sum();
+        let blue: f64 = columns.iter().map(|&(_, [.., b])| b).sum();
+        red - blue >= FILL_WARMTH * red
+    };
+    let boundary = match levels(&lumas, strays) {
+        Levels::Unclear => return None,
+        // No fill: an empty bar, if its track is dark against the frame under it and not the
+        // fill's cream. A track bright end to end is a bar at 100 %, which never shows in play,
+        // the level wrapping first. Something over the bar reads that way -- live on 2026-09-24,
+        // twice for 5-20 s in the hideout -- and taken at its word it gains the rest of the
+        // level, then loses it again.
+        Levels::One => {
+            let bright = track
                 .iter()
-                .any(|tick| (centre - tick).abs() < TICK_HALF_WIDTH * scale)
-        {
-            continue;
+                .zip(&lumas)
+                .filter(|&(&(column, _), &brightness)| brightness > EMPTY_CONTRAST * stems[column])
+                .count();
+            if bright as f64 > strays || warm(&track) {
+                return None;
+            }
+            geometry.fill_start
         }
-        match classify(colour) {
-            Some(filled) => columns.push((column, filled)),
-            None => unknown += 1,
+        // A fill, if each part is one level -- nothing in between over part of the bar -- every
+        // column is on its part's side of the middle, and the fill is warm.
+        Levels::Two(split) => {
+            let (fill, rest) = lumas.split_at(split.at);
+            let one_level = |part: &[f64]| matches!(levels(part, strays), Levels::One);
+            let middle = (split.bright * split.dark).sqrt();
+            // Columns of `part` on the wrong side of the middle: dimmer than it in the fill,
+            // as bright as it in the rest.
+            let strayed =
+                |part: &[f64], fill: bool| part.iter().filter(|&&l| (l >= middle) != fill).count();
+            if !one_level(fill)
+                || !one_level(rest)
+                || (strayed(fill, true) + strayed(rest, false)) as f64 > strays
+                || !warm(&track[..split.at])
+            {
+                return None;
+            }
+            // Between the last filled and the first empty column -- mid-gap when a tick hides it.
+            (track[split.at - 1].0 + 1 + track[split.at].0) as f64 / 2.0
         }
-    }
-    if columns.is_empty() || unknown as f64 > MAX_UNKNOWN_SHARE * (columns.len() + unknown) as f64 {
-        return None;
-    }
-
-    // The fill is a prefix of the track: take the split the fewest columns contradict.
-    let filled_total = columns.iter().filter(|(_, filled)| *filled).count();
-    let (mut split, mut errors) = (0, filled_total);
-    let (mut empty_before, mut filled_before) = (0, 0);
-    for (index, &(_, filled)) in columns.iter().enumerate() {
-        if filled {
-            filled_before += 1;
-        } else {
-            empty_before += 1;
-        }
-        let contradicted = empty_before + filled_total - filled_before;
-        if contradicted < errors {
-            (split, errors) = (index + 1, contradicted);
-        }
-    }
-    if errors as f64 > MAX_ERROR_SHARE * columns.len() as f64 {
-        return None;
-    }
-    let boundary = match split {
-        0 => geometry.fill_start,
-        // A bar filled end to end never shows in play: at 100 % the level wraps. Something over
-        // the bar reads that way -- live on 2026-09-24, twice for 5-20 s in the hideout -- and
-        // taken at its word it gains the rest of the level, then loses it again.
-        n if n == columns.len() => return None,
-        // Between the last filled and the first empty column -- mid-gap when a tick hides it.
-        n => (columns[n - 1].0 + 1 + columns[n].0) as f64 / 2.0,
     };
     Some(
         ((boundary - geometry.fill_start) / (geometry.fill_end - geometry.fill_start))
@@ -267,16 +303,63 @@ fn luma([r, g, b]: [f64; 3]) -> f64 {
     0.299 * r + 0.587 * g + 0.114 * b
 }
 
-/// `Some(true)` for the fill's warm cream/orange, `Some(false)` for the empty track's neutral
-/// grey, `None` for anything else (whatever covers the bar). Relative to the red channel, so a
-/// dimmer UI brightness setting still reads.
-fn classify([r, _, b]: [f64; 3]) -> Option<bool> {
-    if r >= 60.0 && r - b >= 0.15 * r {
-        Some(true)
-    } else if (20.0..=110.0).contains(&r) && (r - b).abs() <= 0.08 * r + 4.0 {
-        Some(false)
-    } else {
-        None
+/// A run of brightnesses split into a brighter prefix and a darker rest: where, and the mean of
+/// each part.
+#[derive(Debug, Clone, Copy)]
+struct Split {
+    at: usize,
+    bright: f64,
+    dark: f64,
+}
+
+impl Split {
+    /// How many times as bright the prefix is as the rest.
+    fn ratio(self) -> f64 {
+        self.bright / self.dark.max(f64::EPSILON)
+    }
+}
+
+/// The split of `lumas` that fits best: the one leaving the least squared error around each
+/// part's mean. `None` for fewer than two. Whether it's a step in brightness is for [`levels`].
+fn best_split(lumas: &[f64]) -> Option<Split> {
+    let total: f64 = lumas.iter().sum();
+    let last = lumas.len().checked_sub(1)?;
+    let (mut sum, mut best) = (0.0, None::<(f64, usize, f64)>);
+    for (index, &luma) in lumas[..last].iter().enumerate() {
+        sum += luma;
+        let (before, after) = ((index + 1) as f64, (lumas.len() - index - 1) as f64);
+        let score = sum * sum / before + (total - sum) * (total - sum) / after;
+        if best.is_none_or(|(top, ..)| score > top) {
+            best = Some((score, index + 1, sum));
+        }
+    }
+    let (_, at, sum) = best?;
+    Some(Split {
+        at,
+        bright: sum / at as f64,
+        dark: (total - sum) / (lumas.len() - at) as f64,
+    })
+}
+
+/// How many levels of brightness a run of columns shows.
+#[derive(Debug)]
+enum Levels {
+    /// One: no step in it, or no step that more than a few odd columns make.
+    One,
+    /// Two: a brighter prefix at least `FILL_OVER_TRACK` times as bright as the rest.
+    Two(Split),
+    /// A step too small for two levels and too big for one.
+    Unclear,
+}
+
+/// The levels `lumas` show, where up to `strays` columns may be odd ones out: a brighter prefix
+/// that short is no level unless it's clearly brighter, an edge column, say.
+fn levels(lumas: &[f64], strays: f64) -> Levels {
+    match best_split(lumas) {
+        None => Levels::One,
+        Some(split) if split.ratio() >= FILL_OVER_TRACK => Levels::Two(split),
+        Some(split) if split.ratio() < ONE_LEVEL || split.at as f64 <= strays => Levels::One,
+        Some(_) => Levels::Unclear,
     }
 }
 
@@ -479,9 +562,21 @@ const MIN_RATE_TIME: Duration = Duration::from_secs(2 * 60);
 /// A reading this far below the best since the last rebase is a real loss (the death penalty),
 /// not reading noise: ~6 px of the 4K bar.
 const DROP_THRESHOLD: f64 = 0.004;
-/// A drop by more than half a level can only be a level-up: the death penalty costs a fraction
-/// of that (10 % of a level in PoE2 -- not verified live).
-const WRAP_DROP: f64 = 0.5;
+/// A level-up the game's log didn't name shows on the bar as a wrap, from the top of one level to
+/// the bottom of the next: from over `1 - WRAP_EDGE` to under `WRAP_EDGE`. It gains the rest of
+/// the old level and the new one's start, so a landing far up the bar would be a gain no step of
+/// play earns: 0.9396 -> 0.3355 was a misread bar coming back, live on 2026-09-29, and counted
+/// +0.3959 of a level. (A level-up the log names takes any drop, and a campaign boss worth half a
+/// level is the log's to name.)
+const WRAP_EDGE: f64 = 0.25;
+/// The most of a level a death can cost: the penalty is a tenth of one in PoE2 (not verified
+/// live), and a quarter is beyond it. A drop of more that isn't a wrap either was read wrong: it
+/// gains nothing, and takes back the gain it goes back on ([`Jump`]).
+const DEATH_MAX: f64 = 0.25;
+/// How long after a large gain was taken the bar going back to where it began still shows the gain
+/// was a misread ([`Jump`]): the longest misread seen lasted 44 s (2026-09-29), and five minutes
+/// leaves room without reaching far into play.
+const MISREAD_MEMORY: Duration = Duration::from_secs(5 * 60);
 /// A single step up this big -- 5 % of a level between two readings, two seconds apart -- real
 /// play earns only from a big kill, or at the campaign's first levels; and a misread bar looks
 /// the same. So it counts only once it lasts, like any drop ([`is_large`]).
@@ -637,6 +732,25 @@ struct Pending {
     since: Duration,
 }
 
+/// A large gain taken once it had held ([`XpTracker::settle`]), and what has been credited since:
+/// a misread that outlasts the wait ([`CONFIRM_AFTER`]) counts, and is taken back when the bar
+/// goes back to where it came from ([`XpTracker::takes_back`]). Live on 2026-09-29 a warm light on
+/// the empty track read the bar 33.55 % as 93.80 % for 44 s, +0.6041 of a level counted. Forgotten
+/// after [`MISREAD_MEMORY`], and at a level-up, which starts the bar over.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Jump {
+    /// The best reading before it.
+    from: f64,
+    /// When it was taken.
+    at: Duration,
+    /// What the map run has been credited since, the gain itself included.
+    gained: f64,
+    /// What the rate still weighs of that: it decays with the rest of the weighted gain
+    /// ([`XpTracker::count`]).
+    weighed: f64,
+}
+
 /// What a change of the bar from its best reading is taken as ([`XpTracker::gain_to`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Taken {
@@ -667,12 +781,14 @@ impl Taken {
 /// misread sample never moves anything. A large change -- more than `BIG_GAIN` up, more than
 /// `DROP_THRESHOLD` down -- counts only once the bar has read near where it went for
 /// `CONFIRM_AFTER`: something over the bar for a few seconds reads like one, then goes. A drop is
-/// either a level-up (the bar wraps: the rest of the old level plus the new level's start count
-/// as gained; one a logged level-up explains counts at once) or a death (the penalty is lost, not
-/// negative progress: the baseline moves down and re-earning it counts). The rate is play-time
-/// based: time only counts between readable samples, outside towns and hideouts (when the log
-/// says so), and until `IDLE_AFTER` without a gain; it carries over level-ups, deaths and breaks,
-/// and weighs recent play most ([`Self::set_rate_window`]).
+/// either a level-up (the bar wraps, from near full to near empty: the rest of the old level plus
+/// the new level's start count as gained; one a logged level-up explains counts at once) or a
+/// death (the penalty is lost, not negative progress: the baseline moves down and re-earning it
+/// counts); any other is no level-up and gains nothing. One bigger than a death costs, back to
+/// where a large gain began, shows that gain was a misread that outlasted the wait, and takes it
+/// back (`Jump`). The rate is play-time based: time only counts between readable samples, outside
+/// towns and hideouts (when the log says so), and until `IDLE_AFTER` without a gain; it carries
+/// over level-ups, deaths and breaks, and weighs recent play most ([`Self::set_rate_window`]).
 ///
 /// The player is paused ([`Activity`]) in towns and hideouts, since entering the first of them,
 /// and once `IDLE_AFTER` has passed without a gain or a change of area, since the last one. That
@@ -740,6 +856,10 @@ pub struct XpTracker {
     /// which held none.
     #[serde(default)]
     pending: Option<Pending>,
+    /// The last large gain taken once it had held, and what has been credited since, in case the
+    /// bar goes back to where it began. Not in what 0.1.2 carried over, which kept none.
+    #[serde(default)]
+    jump: Option<Jump>,
     /// The play counted by when the next debug summary is due ([`Self::summarize`]).
     #[serde(skip)]
     summary_due: Duration,
@@ -916,6 +1036,7 @@ impl XpTracker {
         {
             self.recent = [None; 2];
             self.last = None;
+            self.jump = None;
             if let Some(pending) = self.pending.take() {
                 log::info!(
                     "xp: bar {:.4} -> {:.4} lost from sight before it lasted: ignored",
@@ -1057,9 +1178,17 @@ impl XpTracker {
 
     /// Takes `pending`'s change as it stands -- a level-up, a gain or a loss from the best reading
     /// before it ([`Self::gain_to`]) -- and the play since as gained. `why` says what settled it,
-    /// before how long it was held.
+    /// before how long it was held. A drop that goes back to where the last large gain began takes
+    /// that gain back, and is taken from the reading before it ([`Self::takes_back`]); a large gain
+    /// is kept, in case the bar goes back ([`Jump`]).
     fn settle(&mut self, pending: Pending, at: Duration, why: &str) -> f64 {
-        self.best = pending.from;
+        self.best = match self.jump.filter(|jump| self.takes_back(jump, &pending)) {
+            Some(jump) => {
+                self.take_back(jump);
+                jump.from
+            }
+            None => pending.from,
+        };
         let (change, taken) = self.gain_to(pending.to, at);
         log::info!(
             "xp: bar {:.4} -> {:.4} {why} {:.0} s: taken as {}",
@@ -1068,17 +1197,54 @@ impl XpTracker {
             at.saturating_sub(pending.since).as_secs_f64(),
             taken.words()
         );
+        if taken == Taken::Gain && change > BIG_GAIN {
+            self.jump = Some(Jump {
+                from: pending.from,
+                at,
+                gained: 0.0,
+                weighed: 0.0,
+            });
+        }
         change + self.gain_to(pending.top, at).0
     }
 
-    /// Levels earned between the best reading so far and `value`, and what that is taken as.
-    /// `value` becomes the new best -- also after a loss, so re-earned experience counts again --
-    /// unless it's reading noise below it.
+    /// Whether `fall`, a drop of the bar that has held, is the bar going back to where `jump`
+    /// began, which shows the gain was a misread. No logged level-up explains it; it's more than a
+    /// death costs ([`DEATH_MAX`]); and it lands as near where the gain began as play meanwhile
+    /// could have brought the bar ([`BIG_GAIN`], what a step earns). Also from a bar near empty,
+    /// where the same drop from near full is shaped like a wrap.
+    fn takes_back(&self, jump: &Jump, fall: &Pending) -> bool {
+        self.level_up_balance <= 0
+            && fall.from - fall.to > DEATH_MAX
+            && (fall.to - jump.from).abs() <= BIG_GAIN
+    }
+
+    /// Takes back what `jump` and the credits since gave the rate and the map run: the bar they
+    /// were counted on was read wrong.
+    fn take_back(&mut self, jump: Jump) {
+        log::info!(
+            "xp: the bar is back where {:.4} began: the +{:.4} counted since was a misread, \
+             taken back",
+            jump.from,
+            jump.gained
+        );
+        self.weighted_gain = (self.weighted_gain - jump.weighed).max(0.0);
+        self.maps.credit(-jump.gained);
+        self.jump = None;
+    }
+
+    /// Levels earned between the best reading so far and `value`, and what that is taken as. A
+    /// drop is a level-up if the log named one or the bar wrapped, from near full to near empty
+    /// ([`WRAP_EDGE`]); any other is a loss. `value` becomes the new best -- also after a loss, so
+    /// re-earned experience counts again -- unless it's reading noise below it.
     fn gain_to(&mut self, value: f64, at: Duration) -> (f64, Taken) {
         let drop = self.best - value;
-        let taken = if drop > WRAP_DROP || (self.level_up_balance > 0 && drop > DROP_THRESHOLD) {
+        let wrapped = self.best > 1.0 - WRAP_EDGE && value < WRAP_EDGE;
+        let taken = if drop > DROP_THRESHOLD && (wrapped || self.level_up_balance > 0) {
             self.level_up_balance -= 1;
             self.balance_at = at;
+            // The bar starts over: where it was before a gain isn't a place on it any more.
+            self.jump = None;
             (1.0 - self.best + value, Taken::LevelUp)
         } else if drop < 0.0 {
             (-drop, Taken::Gain)
@@ -1092,13 +1258,19 @@ impl XpTracker {
         taken
     }
 
-    /// Counts `elapsed` as play with `gain` earned in it, toward the rate ([`Self::count`]) and
-    /// the map run.
+    /// Counts `elapsed` as play with `gain` earned in it, toward the rate ([`Self::count`]), the
+    /// map run and the large gain kept in case it was a misread ([`Jump`]).
     fn credit(&mut self, gain: f64, elapsed: Duration, at: Duration) {
         if gain > 0.0 {
             self.active_at = Some(at);
         }
         self.maps.credit(gain);
+        // What's credited within `MISREAD_MEMORY` of a large gain goes with it.
+        self.jump
+            .take_if(|jump| at.saturating_sub(jump.at) > MISREAD_MEMORY);
+        if let Some(jump) = self.jump.as_mut() {
+            jump.gained += gain;
+        }
         self.count(elapsed, gain);
         if gain > 0.0 {
             log::debug!(
@@ -1136,6 +1308,9 @@ impl XpTracker {
         let decay = (-secs / self.half_life.0).exp2();
         self.weighted_gain = self.weighted_gain * decay + gain;
         self.weighted_secs = self.weighted_secs * decay + secs;
+        if let Some(jump) = self.jump.as_mut() {
+            jump.weighed = jump.weighed * decay + gain;
+        }
     }
 
     /// At debug level, once `SUMMARY_EVERY` more play has been counted: what the rate stands on.
@@ -1379,12 +1554,13 @@ impl MapRuns {
         self.left_at = Some(at);
     }
 
-    /// Adds `gain` (levels) to the run if it was earned there.
+    /// Adds `gain` (levels) to the run if it was earned there; a negative `gain` takes back what
+    /// was added, and no more.
     fn credit(&mut self, gain: f64) {
         if self.whereabouts != Whereabouts::Elsewhere
             && let Some(run) = self.current.as_mut()
         {
-            run.gained += gain;
+            run.gained = (run.gained + gain).max(0.0);
         }
     }
 
@@ -1617,6 +1793,149 @@ mod tests {
             "../tests/fixtures/xp_bar_4k_price_panel.rgb"
         ));
         assert_eq!(read_fill(&geometry, &bgra), None);
+    }
+
+    /// The owner's level-93 bar on 2026-09-29, its fill ending at 33.55 % of the track: with
+    /// nothing on it, and with a warm light on the empty part, which made it read 93.80 % for 44 s.
+    /// Both as the overlay saved them while debugging (`POE2_ORACLE_XP_DEBUG=1`).
+    const BAR_34PCT: &[u8] = include_bytes!("../tests/fixtures/xp_bar_4k_34pct.png");
+    const BAR_34PCT_LIT: &[u8] = include_bytes!("../tests/fixtures/xp_bar_4k_34pct_lit_track.png");
+
+    /// A capture of `GAME_4K`'s bar saved as a PNG of its rows.
+    fn png_bgra(png: &[u8]) -> Vec<u8> {
+        let rgb = image::load_from_memory_with_format(png, image::ImageFormat::Png)
+            .unwrap()
+            .to_rgb8();
+        assert_eq!(rgb.dimensions(), (1536, 10));
+        rgb.pixels()
+            .flat_map(|&image::Rgb([r, g, b])| [b, g, r, 255])
+            .collect()
+    }
+
+    /// `bgra` at `factor` of its brightness: the same bar at another UI brightness setting.
+    fn dimmed(bgra: &[u8], factor: f64) -> Vec<u8> {
+        bgra.iter()
+            .enumerate()
+            .map(|(at, &byte)| {
+                if at % 4 == 3 {
+                    byte
+                } else {
+                    (f64::from(byte) * factor).round() as u8
+                }
+            })
+            .collect()
+    }
+
+    /// `bgra` with the fill band brightened by `factor` over the capture's `columns`: light on
+    /// the track and not on the frame under it.
+    fn lit_track(
+        geometry: &XpBarGeometry,
+        bgra: &[u8],
+        columns: Range<usize>,
+        factor: f64,
+    ) -> Vec<u8> {
+        let width = geometry.capture.width as usize;
+        let mut lit = bgra.to_vec();
+        for row in geometry.fill_rows.clone() {
+            for column in columns.clone() {
+                let at = (row * width + column) * 4;
+                for byte in &mut lit[at..at + 3] {
+                    *byte = (f64::from(*byte) * factor).round().min(255.0) as u8;
+                }
+            }
+        }
+        lit
+    }
+
+    #[test]
+    fn a_warm_light_on_the_empty_track_does_not_read_as_fill() {
+        // The light took the empty track to (R-B)/R of 0.19 at R of 60-65, where the fill's test
+        // was 0.15 at 60. The fill is still three times as bright as the track, tinted or not.
+        let geometry = XpBarGeometry::for_client(GAME_4K).unwrap();
+        for (name, png) in [("plain", BAR_34PCT), ("lit", BAR_34PCT_LIT)] {
+            let read = read_fill(&geometry, &png_bgra(png));
+            assert!(
+                read.is_some_and(|fill| (fill - 0.3355).abs() < 0.001),
+                "{name}: {read:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_light_on_the_empty_track_reads_as_the_bar_shows_or_not_at_all() {
+        // The lit capture with the light on the empty part turned up, from one like the light
+        // that misread the bar to one no scene gives; over all of it (from capture column 516) and
+        // over a stretch of it, like something translucent over part of the bar. While the fill is
+        // clearly the brighter it reads as it is; once the track nears its brightness, or has a
+        // level between the two, the bar is unreadable. It never reads fuller than it shows.
+        let geometry = XpBarGeometry::for_client(GAME_4K).unwrap();
+        let width = geometry.capture.width as usize;
+        let lit = png_bgra(BAR_34PCT_LIT);
+        for columns in [516..width, 700..1000] {
+            for factor in [1.0, 1.2, 1.4, 1.6, 1.8, 2.0, 3.0] {
+                let read = read_fill(
+                    &geometry,
+                    &lit_track(&geometry, &lit, columns.clone(), factor),
+                );
+                assert!(
+                    read.is_none_or(|fill| (fill - 0.3355).abs() < 0.001),
+                    "{columns:?} x{factor}: {read:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_dimmed_interface_reads_as_the_bright_one() {
+        // A dimmer UI brightness setting scales the fill, the track and the frame alike.
+        let geometry = XpBarGeometry::for_client(GAME_4K).unwrap();
+        let plain = fixture_bgra(include_bytes!("../tests/fixtures/xp_bar_4k_65pct.rgb"));
+        let bars = [
+            (plain, 0.6475),
+            (png_bgra(BAR_34PCT), 0.3355),
+            (png_bgra(BAR_34PCT_LIT), 0.3355),
+        ];
+        for (bgra, expected) in &bars {
+            for factor in [1.0, 0.5, 0.3] {
+                let read = read_fill(&geometry, &dimmed(bgra, factor));
+                assert!(
+                    read.is_some_and(|fill| (fill - expected).abs() < 0.001),
+                    "{expected} at x{factor}: {read:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_bar_reads_from_empty_to_nearly_full() {
+        // The live 65 % capture repainted with its fill ending elsewhere, the tick stems under it
+        // as they were: the start of a level, where the fill is a sliver or nothing, and the end.
+        let geometry = XpBarGeometry::for_client(GAME_4K).unwrap();
+        let width = geometry.capture.width as usize;
+        let bar = fixture_bgra(include_bytes!("../tests/fixtures/xp_bar_4k_65pct.rgb"));
+        // Row by row the fill's colours up to capture column `end`, the empty track's after it:
+        // capture columns 348 and 1100 are well inside each.
+        let repaint = |end: usize| {
+            let mut painted = bar.clone();
+            for row in geometry.fill_rows.clone() {
+                for column in 0..width {
+                    let source = (row * width + if column < end { 348 } else { 1100 }) * 4;
+                    let colour: [u8; 4] = bar[source..source + 4].try_into().unwrap();
+                    let at = (row * width + column) * 4;
+                    painted[at..at + 4].copy_from_slice(&colour);
+                }
+            }
+            painted
+        };
+        for fraction in [0.0, 0.006, 0.02, 0.5, 0.98] {
+            let end = 2 + (fraction * 1532.0_f64).round() as usize;
+            let read = read_fill(&geometry, &repaint(end));
+            assert!(
+                read.is_some_and(|fill| (fill - fraction).abs() < 0.004),
+                "{fraction}: {read:?}"
+            );
+        }
+        assert_eq!(read_fill(&geometry, &repaint(width)), None, "full");
     }
 
     #[test]
@@ -2176,6 +2495,107 @@ mod tests {
             }
         }
         assert!(wrong.is_empty(), "{wrong:#?}");
+    }
+
+    /// The owner's level-93 character mapping on 2026-09-29 (his log: `level None`, no level-up
+    /// logged). A warm light on the empty part of the bar made it read 93.80 % for 44 s where it
+    /// showed 33.55 %: past the wait, so a gain, +0.6041; and the bar going back to what it
+    /// showed, 0.9396 -> 0.3355, was taken for a level-up, +0.3959. A whole level in a minute:
+    /// +186 %/h for what is about 40 %/h. The drop is no wrap and no death's loss, and it goes back
+    /// to where the gain began, so the gain was a misread. Also from a bar at 2 %, where the same
+    /// drop, from near full to near empty, is shaped like a wrap.
+    #[test]
+    fn a_misread_that_outlasted_the_wait_is_taken_back_when_the_bar_returns() {
+        let rate = 0.40 / 3600.0;
+        let mut wrong = Vec::new();
+        for from in [0.3355, 0.02] {
+            let fill = move |t: f64| Some(as_read(from + rate * t, t));
+            let mut tracker = XpTracker::new();
+            enter(&mut tracker, "MapEpitaph", EPITAPH, 0.0);
+            let start = play(&mut tracker, 0.0, 300, fill);
+            // As the log shows: 44 s at 93.80 %, 24 s more at 93.96 %, then the bar as it is.
+            let t = play(&mut tracker, start, 22, |_| Some(0.9380));
+            let t = play(&mut tracker, t, 12, |_| Some(0.9396));
+            let end = play(&mut tracker, t, 25, fill);
+            // The same minutes with no misread: what the overlay should read.
+            let mut clean = XpTracker::new();
+            enter(&mut clean, "MapEpitaph", EPITAPH, 0.0);
+            play(&mut clean, 0.0, (end / 2.0) as usize, fill);
+            let (status, clean) = (tracker.status(), clean.status());
+            let (gained, clean_gained) = (status.map.unwrap().gained, clean.map.unwrap().gained);
+            let (now, clean_now) = (status.rate_per_hour.unwrap(), clean.rate_per_hour.unwrap());
+            if (gained - clean_gained).abs() > 0.003 || (now - clean_now).abs() > 0.05 * clean_now {
+                wrong.push(format!(
+                    "from {from}: {now:.4}/h and {gained:.4} gained, not {clean_now:.4}/h and {clean_gained:.4}"
+                ));
+            }
+        }
+        assert!(wrong.is_empty(), "{wrong:#?}");
+    }
+
+    #[test]
+    fn a_drop_that_is_no_wrap_is_no_level_up() {
+        // The app starts while the bar is misread (93.96 %), so there is no earlier reading to
+        // take a gain back to. The bar then showing what it does, 33.55 %, is a drop of 0.60 that
+        // was taken for a level-up, +0.3959. It is no wrap, from near full to near empty, and no
+        // death's loss: nothing is gained.
+        let mut tracker = XpTracker::new();
+        enter(&mut tracker, "MapEpitaph", EPITAPH, 0.0);
+        let t = play(&mut tracker, 0.0, 150, |_| Some(0.9396));
+        play(&mut tracker, t, 25, |_| Some(0.3355));
+        let status = tracker.status();
+        assert_eq!(status.fraction, Some(0.3355));
+        assert_eq!(status.rate_per_hour, Some(0.0));
+        assert_eq!(status.map.unwrap().gained, 0.0);
+    }
+
+    #[test]
+    fn a_wrap_from_near_full_to_near_empty_is_a_level_up_logged_or_not() {
+        // A kill worth 2 % of a level, at the top of one: 0.99 -> 0.01, the game's log naming the
+        // level-up as the bar wraps, or not at all.
+        for logged in [false, true] {
+            let mut tracker = XpTracker::new();
+            enter(&mut tracker, "MapEpitaph", EPITAPH, 0.0);
+            let t = play(&mut tracker, 0.0, 150, |_| Some(0.99));
+            if logged {
+                tracker.on_log_event(
+                    LogEvent::LevelUp {
+                        character: "hero".to_owned(),
+                        level: 94,
+                    },
+                    Duration::from_secs_f64(t),
+                );
+            }
+            play(&mut tracker, t, 25, |_| Some(0.01));
+            let status = tracker.status();
+            assert_eq!(status.fraction, Some(0.01), "logged: {logged}");
+            assert_near(status.map.map(|map| map.gained), 0.02, 0.01);
+        }
+    }
+
+    #[test]
+    fn a_death_after_a_big_kill_takes_nothing_back() {
+        // A kill worth 8 % of a level counts once it has held. The death that follows costs a
+        // tenth of a level and lands the bar within a step of where the kill began: it is a
+        // death's drop, not the kill's undoing, and what the kill gave stays.
+        let rate = 0.12 / 3600.0;
+        let mut tracker = XpTracker::new();
+        enter(&mut tracker, "MapEpitaph", EPITAPH, 0.0);
+        let kill = play(&mut tracker, 0.0, 300, |t| {
+            Some(as_read(0.30 + rate * t, t))
+        });
+        let t = play(&mut tracker, kill, 30, |t| {
+            Some(as_read(0.38 + rate * t, t))
+        });
+        let gained = |tracker: &XpTracker| tracker.status().map.unwrap().gained;
+        let counted = gained(&tracker);
+        assert!(counted > 0.09, "the kill counts: {counted}");
+        play(&mut tracker, t, 40, |t| Some(as_read(0.28 + rate * t, t)));
+        assert!(
+            gained(&tracker) >= counted,
+            "{} of {counted}",
+            gained(&tracker)
+        );
     }
 
     #[test]

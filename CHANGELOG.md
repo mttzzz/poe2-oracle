@@ -7,6 +7,20 @@ All notable changes to PoE2 Oracle are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] - 2026-09-29
+
+### Fixed
+
+- **A light on the empty part of the XP bar no longer counts as experience.** A warm light in the
+  scene could make the overlay read the empty part of the game's XP bar as filled: a bar at 34%
+  read as 94% for about a minute, the overlay counted the difference as experience, and when the
+  bar went back it counted that as a level-up too, so a player at level 93 saw +186%/h where the
+  real rate was about +40%/h. The overlay now tells the filled part from the empty part by how
+  much brighter it is, so light on the bar, or a dimmer interface, changes nothing, and a bar it
+  can't read for certain stays unread. A drop of the bar counts as a level-up only when it goes
+  from nearly full to nearly empty or the game's log reports one, and a jump that was a misread,
+  because the bar goes back to where it started, is taken back.
+
 ## [0.1.2] - 2026-09-29
 
 ### Fixed
