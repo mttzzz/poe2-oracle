@@ -99,13 +99,13 @@ fn is_session_host(uri: &Uri) -> bool {
         })
 }
 
-/// The app's HTTP client: the one it builds, plus the session's cookie on every request to a
-/// trade site host (`is_session_host`) while the player is signed in. Everything else passes
-/// through untouched. The app's own requests carry no other cookie, so the header is set, not
-/// merged.
+/// The app's HTTP client: its own (`http_clients::Clients::app`), plus the session's cookie on
+/// every request to a trade site host (`is_session_host`) while the player is signed in.
+/// Everything else passes through untouched. The app's own requests carry no other cookie, so the
+/// header is set, not merged.
 ///
-/// Every answer's body is read inside reqwest's tokio runtime ([`InRuntime`]): the client the app
-/// builds has a read timeout, and reqwest starts its timer on a body's first read -- a tokio timer,
+/// Every answer's body is read inside reqwest's tokio runtime ([`InRuntime`]): the app's own client
+/// has a read timeout, and reqwest starts its timer on a body's first read -- a tokio timer,
 /// which panics when started outside a tokio runtime. GPUI's executors, where the app reads
 /// bodies, aren't tokio's.
 pub struct SessionHttpClient {

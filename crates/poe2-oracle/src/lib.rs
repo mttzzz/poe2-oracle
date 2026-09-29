@@ -5,6 +5,7 @@ pub mod brand;
 pub mod check_profile;
 pub mod craft_link;
 pub mod data_pack;
+pub mod http_clients;
 pub mod i18n;
 pub mod item_refs;
 pub mod launch;

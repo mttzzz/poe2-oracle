@@ -30,7 +30,6 @@ use gpui::{
 };
 use gpui_platform::application;
 use http_client::HttpClient;
-use reqwest_client::ReqwestClient;
 use tray_icon::menu::{Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem};
 use tray_icon::{Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 use windows::Win32::Foundation::HWND;
@@ -42,6 +41,7 @@ use windows::Win32::UI::WindowsAndMessaging::KillTimer;
 use crate::brand;
 use crate::check_profile::Spent;
 use crate::diagnostics;
+use crate::http_clients::Clients;
 use crate::i18n::{self, Lang};
 use crate::launch::{Knock, Launch};
 use crate::logging;
@@ -72,9 +72,11 @@ use crate::updates;
 /// A server that goes quiet this long -- before its answer or in the middle of it -- fails the
 /// request, and the caller's own retry or error takes over (the catalog load retries), instead of
 /// "Loading…" for the rest of the run. Each part of the answer that arrives starts it anew, so a
-/// long download that keeps coming -- an update's installer, an hour of the exchange's record
-/// (2.7 MB) -- isn't cut short. Until the answer begins, though, it runs from the request's start,
-/// an upload included: reports go through a client of their own (`report::send`).
+/// long download that keeps coming -- an hour of the exchange's record (2.7 MB) -- isn't cut short.
+/// Until the answer begins, though, it runs from the request's start, an upload included: reports
+/// go through a client of their own (`report::send`). So does the updater (`Clients::updater`):
+/// something on the way -- an antivirus checking the installer, say -- can hold a download back
+/// longer than this before its first byte.
 const READ_TIMEOUT: Duration = Duration::from_secs(30);
 /// How long the price panel's paints all go through once it changed, was shown or the player
 /// touched it -- then one a safety net till the next (`PANEL_SAFETY_NET`,
@@ -964,29 +966,17 @@ pub fn run() {
     // The player's pathofexile.com session, from the Credential Manager: the HTTP client adds it
     // to the trade sites' requests, and to theirs only (`session`).
     let trade_session = session::load();
-    // Built by reqwest_client's only constructor that takes a read timeout, which also verifies
-    // certificates through Windows (rustls-platform-verifier, as Zed does) and offers no ALPN, so
-    // it speaks HTTP/1.1. The trade sites, poe2scout, GGG's CDN and GitHub all answer it (checked
-    // 2026-09-23). Its answers are read only through `SessionHttpClient`, which reads them the way
-    // the read timeout needs.
-    let inner_client: Arc<dyn HttpClient> = Arc::new(
-        ReqwestClient::proxy_user_agent_and_read_timeout(
-            None,
-            crate::brand::USER_AGENT,
-            Some(READ_TIMEOUT),
-        )
-        .expect("failed to build HTTP client"),
-    );
+    let clients = Clients::new(READ_TIMEOUT).expect("failed to build HTTP client");
     application()
         .with_http_client(Arc::new(SessionHttpClient::new(
-            inner_client.clone(),
+            clients.app.clone(),
             trade_session.clone(),
         )))
         .run(move |cx: &mut App| {
             if let Err(err) = fonts::register(cx) {
                 log::warn!("nameplate fonts unavailable: {err:#}");
             }
-            session::init(trade_session, inner_client, cx);
+            session::init(trade_session, clients.app, cx);
             let http_client: Arc<dyn HttpClient> = cx.http_client();
             let settings = settings::load();
             crate::i18n::apply(settings.interface_language);
@@ -1037,7 +1027,7 @@ pub fn run() {
             }
             // What the last update left to say, and the updater itself: it connects a few
             // seconds on, while the player allows it.
-            updates::init(&inner, cx);
+            updates::init(&inner, clients.updater, cx);
 
             cx.open_window(build_window_options(), |window, cx| {
                 window.set_window_title("PoE2 Oracle — Price Check");

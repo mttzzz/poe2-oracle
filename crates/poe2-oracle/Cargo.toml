@@ -194,3 +194,6 @@ embed-resource = "3.0"
 [dev-dependencies]
 # examples/plate_art.rs writes the site's plate pictures as PNG.
 image = { version = "0.25", default-features = false, features = ["png"] }
+# The updater's download is tested through the real HTTP clients (src/http_clients.rs), from a
+# release signed with a key of the tests' own: auto-update's `test-support` has both.
+auto-update = { path = "../auto-update", features = ["test-support"] }

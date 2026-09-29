@@ -37,6 +37,11 @@ futures-timer = "3"
 fastrand = "2"
 log = "0.4"
 
+[features]
+# The app's own tests only (crates/poe2-oracle's dev-dependency): `test_support`, a release signed
+# with a key of the tests' own and the download that trusts it. Nothing the app ships turns it on.
+test-support = []
+
 [dev-dependencies]
 parking_lot = "0.12"
 tempfile = "3"

@@ -7,6 +7,17 @@ All notable changes to PoE2 Oracle are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2026-09-29
+
+### Fixed
+
+- **Automatic updates no longer fail when the installer is slow to start arriving.** When the
+  installer's first bytes took more than 30 seconds to come, while an antivirus checked it, say, or
+  on a slow line, the app gave up on the download and tried again later, with the same result every
+  time. A slow start no longer cuts the download short. Versions 0.1.0 and 0.1.1 still give up after
+  30 seconds: if yours keeps saying "Couldn't update to version 0.1.2" in its settings, download
+  this version from https://oracle.pushka.biz/ and install it by hand, once.
+
 ## [0.1.1] - 2026-09-28
 
 ### Added

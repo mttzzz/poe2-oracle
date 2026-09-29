@@ -32,7 +32,6 @@ use gpui::{
 };
 use http_client::HttpClient;
 use oracle_protocol::{DataVersion, EVENTS_PATH, Versions};
-use reqwest_client::ReqwestClient;
 
 use crate::data_pack;
 use crate::login::Login;
@@ -132,8 +131,9 @@ struct Following {
 
 struct Updater {
     app: WeakEntity<PriceCheckApp>,
-    /// The app's HTTP client, for the release answers and the downloads: its read timeout cuts a
-    /// stalled one short.
+    /// What the updater asks the service through -- the event stream, the release answers and the
+    /// downloads: a client without the app's read timeout (`http_clients::Clients::updater`), so
+    /// that a download held back before its first byte isn't cut short.
     client: Arc<dyn HttpClient>,
     running: Version,
     /// The setting, as last seen.
@@ -162,9 +162,10 @@ struct Updater {
     _subscriptions: Vec<Subscription>,
 }
 
-/// Starts the updater: the plate an update left for this start, then -- [`START_DELAY`] on, once
-/// the catalogs are in -- the connection, while the setting allows it. Call once, at launch.
-pub fn init(app: &Entity<PriceCheckApp>, cx: &mut App) {
+/// Starts the updater, which asks the service through `client` (`http_clients::Clients::updater`):
+/// the plate an update left for this start, then -- [`START_DELAY`] on, once the catalogs are in --
+/// the connection, while the setting allows it. Call once, at launch.
+pub fn init(app: &Entity<PriceCheckApp>, client: Arc<dyn HttpClient>, cx: &mut App) {
     let running = Version::parse(env!("CARGO_PKG_VERSION")).expect("the crate version is semver");
     let mut left_alone = Vec::new();
     let mut failure = None;
@@ -196,7 +197,6 @@ pub fn init(app: &Entity<PriceCheckApp>, cx: &mut App) {
             Outcome::Passed => {}
         }
     }
-    let client = cx.http_client();
     let updater = cx.new(|cx| {
         let mut updater = Updater::new(app, client, running, cx);
         updater.left_alone = left_alone;
@@ -303,21 +303,13 @@ impl Updater {
     }
 
     fn connect(&mut self, cx: &mut Context<Self>) {
-        // No read timeout: the stream is quiet between the service's pings, and the follower
-        // itself drops one that has heard nothing for too long.
-        let client: Arc<dyn HttpClient> =
-            match ReqwestClient::proxy_and_user_agent(None, crate::brand::USER_AGENT) {
-                Ok(client) => Arc::new(client),
-                Err(err) => {
-                    log::warn!("building the client the updates come through failed: {err:#}");
-                    return;
-                }
-            };
         let (links_to, links) = async_channel::unbounded();
         let (wake, woken) = async_channel::bounded(1);
-        let stream = cx
-            .background_executor()
-            .spawn(events::follow_events(client, links_to, woken));
+        let stream = cx.background_executor().spawn(events::follow_events(
+            self.client.clone(),
+            links_to,
+            woken,
+        ));
         let listener = cx.spawn(async move |this, cx| {
             while let Ok(link) = links.recv().await {
                 if this

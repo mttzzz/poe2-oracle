@@ -18,6 +18,13 @@
 //! fetches its zip, verified the same way against its own release's signed `SHA256SUMS`.
 //! Unpacking it, and checking that this app can use it, is the app's part.
 //!
+//! Every step goes through the HTTP client the app hands it, and each request carries its own
+//! time limit: [`METADATA_TIMEOUT`] for a release answer, `SHA256SUMS` and its signature,
+//! [`DOWNLOAD_TIMEOUT`] for an installer or a pack. The client must not time reads out on top of
+//! them, as the event stream's must not ([`events::follow_events`]): something on the way -- an
+//! antivirus checking the installer, say -- can hold a download back before its first byte for
+//! longer than a read timeout would wait.
+//!
 //! There is no separate swap-on-quit helper exe: the NSIS installer (`packaging/installer.nsi`)
 //! has to close a running copy anyway for manual installs, so updates go through exactly that
 //! path, and there is no second binary that would itself need updating.
@@ -40,6 +47,8 @@
 //! ```
 
 pub mod events;
+#[cfg(feature = "test-support")]
+pub mod test_support;
 
 use std::fs::{self, File};
 use std::io::Write as _;
