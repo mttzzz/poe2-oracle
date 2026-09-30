@@ -7,6 +7,31 @@ All notable changes to PoE2 Oracle are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] - 2026-09-30
+
+### Changed
+
+- **Starts, new installations and updates are counted, in numbers only.** While **Update
+  automatically** is on, the app's first connection to oracle.pushka.biz after each start adds a few
+  flags to its request: that it is a start, that it is this installation's first, the version it ran
+  last time if that was another one, and the interface language. The service turns them into
+  anonymous counts; no address or id is kept. For this the app keeps two small markers in
+  `%LOCALAPPDATA%\poe2-oracle\data`: `last-run-version` and, in a developer's test build, an empty
+  `dev`. With **Update automatically** off nothing is sent. The installer's privacy page and the
+  guide's privacy chapter say what is counted.
+
+### Fixed
+
+- **The XP plate names the next level again after the app restarts or you log in, instead of "next
+  level in".** After a restart or a login the plate usually didn't know your level, which the
+  game's log gives only at a level-up, and said "next level in 2h 50m" until your next level-up,
+  which at level 94 takes days. Now, the first time it starts after this update, the app takes the
+  level from the game's log, reading back through it for each character's latest level-up; from
+  then on it takes it from where the bar stands: it compares the bar with where the bar of each of
+  your characters stood last time, and if exactly one matches, that is you. The level and bar
+  position of your last 20 characters are kept on your computer. If the app can't tell which of
+  them you are playing, the plate still says "next level in" until your next level-up.
+
 ## [0.1.3] - 2026-09-29
 
 ### Fixed

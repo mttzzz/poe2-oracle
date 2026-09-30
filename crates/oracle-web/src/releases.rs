@@ -17,7 +17,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::body::{Body, Bytes};
-use axum::extract::{Path, State};
+use axum::extract::{Path, RawQuery, Request, State};
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use oracle_protocol::{
@@ -32,9 +32,12 @@ use tokio::sync::{OnceCell, watch};
 use tracing::{info, warn};
 
 use crate::App;
+use crate::agent::AppAgent;
+use crate::distinct::Who;
 use crate::github::{GhAsset, GhRelease, GitHub, Listed, Page, RELEASES_PER_PAGE};
-use crate::stats::{self, Stat};
+use crate::stats::{self, Source, Stat};
 use crate::upstream::describe;
+use crate::usage;
 
 /// How often the releases are listed, unless the configuration says otherwise
 /// ([`crate::Config::list_releases_every`]: `LIST_RELEASES_EVERY`, or a test's own).
@@ -77,6 +80,9 @@ pub struct Listing {
     app: Option<Latest>,
     data: Option<Latest>,
     versions: Versions,
+    /// The plain versions of the newest published app releases, [`KNOWN_VERSIONS`] at most, newest
+    /// first: the only ones a counter is named for.
+    known_versions: Vec<String>,
 }
 
 /// A release the service offers.
@@ -145,11 +151,34 @@ fn pick<'a>(releases: impl IntoIterator<Item = &'a GhRelease>) -> Picked<'a> {
     picked
 }
 
+/// How many of the newest app releases a counter is named for. Older ones, and anything that
+/// isn't a release, count as `other`.
+const KNOWN_VERSIONS: usize = 16;
+
+/// The plain versions (`0.1.3`, no pre-release or build part) of the published app releases among
+/// `releases`, newest by semver precedence first, at most [`KNOWN_VERSIONS`].
+fn known_versions(releases: &[&GhRelease]) -> Vec<String> {
+    let mut versions: Vec<Version> = releases
+        .iter()
+        .filter(|release| !release.draft && !release.prerelease)
+        .filter_map(|release| Version::parse(release.tag_name.strip_prefix('v')?).ok())
+        .filter(|version| version.pre.is_empty() && version.build.is_empty())
+        .collect();
+    versions.sort_by(|a, b| b.cmp_precedence(a));
+    versions.dedup();
+    versions
+        .iter()
+        .take(KNOWN_VERSIONS)
+        .map(Version::to_string)
+        .collect()
+}
+
 impl Listing {
     /// The latest releases among `releases`, listed newest first, as the service at `public_url`
     /// offers them.
     fn new<'a>(releases: impl IntoIterator<Item = &'a GhRelease>, public_url: &str) -> Listing {
-        let picked = pick(releases);
+        let releases: Vec<&GhRelease> = releases.into_iter().collect();
+        let picked = pick(releases.iter().copied());
         let app = picked.app.map(|(release, _)| {
             let version = release.tag_name.strip_prefix('v').unwrap_or_default();
             (
@@ -168,6 +197,7 @@ impl Listing {
                 app: app.as_ref().map(|(version, _)| (*version).to_owned()),
                 data: data.as_ref().map(|(version, _)| *version),
             },
+            known_versions: known_versions(&releases),
             app: app.map(|(_, latest)| latest),
             data: data.map(|(_, latest)| latest),
         }
@@ -248,13 +278,22 @@ impl Releases {
         }
     }
 
+    /// The versions counters are named for ([`KNOWN_VERSIONS`] of the newest published releases,
+    /// newest first). Waits for the first listing; none when there is none.
+    pub async fn known_versions(&self) -> Vec<String> {
+        self.listing()
+            .await
+            .map(|listing| listing.known_versions.clone())
+            .unwrap_or_default()
+    }
+
     /// The latest versions, and each change of them.
     pub fn versions(&self) -> watch::Receiver<Option<Versions>> {
         self.versions.subscribe()
     }
 
     /// Takes a listing of `releases`, newest first: their latest are offered from now on.
-    fn listed<'a>(&self, releases: impl IntoIterator<Item = &'a GhRelease>) {
+    pub(crate) fn listed<'a>(&self, releases: impl IntoIterator<Item = &'a GhRelease>) {
         let listing = Listing::new(releases, &self.public_url);
         let mut offered: Vec<u64> = listing
             .releases()
@@ -432,23 +471,31 @@ fn names(if_none_match: &HeaderValue, etag: &HeaderValue) -> bool {
 
 /// `GET /api/v1/releases/latest`: the app's latest release, `304` when the updater already has
 /// this answer.
-pub async fn latest(State(app): State<Arc<App>>, headers: HeaderMap) -> Response {
-    stats::count(&app, Stat::UpdateCheck);
+pub async fn latest(State(app): State<Arc<App>>, request: Request) -> Response {
+    checked(&app, &request);
     let listing = app.releases.listing().await;
     offer(
         listing.as_deref().and_then(|listing| listing.app.as_ref()),
-        &headers,
+        request.headers(),
     )
 }
 
 /// `GET /api/v1/data/latest`: the latest data pack's release, answered the same way.
-pub async fn latest_data(State(app): State<Arc<App>>, headers: HeaderMap) -> Response {
-    stats::count(&app, Stat::UpdateCheck);
+pub async fn latest_data(State(app): State<Arc<App>>, request: Request) -> Response {
+    checked(&app, &request);
     let listing = app.releases.listing().await;
     offer(
         listing.as_deref().and_then(|listing| listing.data.as_ref()),
-        &headers,
+        request.headers(),
     )
+}
+
+/// An update check: counted as one, and as an active install when the app made it.
+fn checked(app: &Arc<App>, request: &Request) {
+    stats::count(app, Stat::UpdateCheck);
+    if let Some(agent) = AppAgent::of(request.headers()) {
+        usage::app_active(app, Who::of(request), agent);
+    }
 }
 
 /// The updater's answer offering `latest`, `304` when `headers` name its ETag.
@@ -474,8 +521,10 @@ fn offer(latest: Option<&Latest>, headers: &HeaderMap) -> Response {
     response
 }
 
-/// `GET /download/latest`: the site's download button, sent on to the current installer.
-pub async fn latest_installer(State(app): State<Arc<App>>) -> Response {
+/// `GET /download/latest`: the site's download button, sent on to the current installer. The
+/// landing tag the site's script adds to the link (`?from=reddit`, one of a [`Source`]'s) goes on
+/// to the file, which counts the download by it; any other tag is dropped here.
+pub async fn latest_installer(State(app): State<Arc<App>>, RawQuery(query): RawQuery) -> Response {
     let listing = app.releases.listing().await;
     let Some(latest) = listing.as_deref().and_then(|listing| listing.app.as_ref()) else {
         return no_release();
@@ -483,13 +532,15 @@ pub async fn latest_installer(State(app): State<Arc<App>>) -> Response {
     if latest.asset(&latest.payload).is_none() {
         return (StatusCode::NOT_FOUND, "the latest release has no installer").into_response();
     }
+    let mut location = download_path(&latest.tag, &latest.payload);
+    if let Some(source) = query.as_deref().and_then(Source::in_query) {
+        location.push_str("?from=");
+        location.push_str(source.tag());
+    }
     (
         StatusCode::FOUND,
         [
-            (
-                header::LOCATION,
-                download_path(&latest.tag, &latest.payload),
-            ),
+            (header::LOCATION, location),
             (header::CACHE_CONTROL, "no-cache".to_owned()),
         ],
     )
@@ -502,6 +553,8 @@ pub async fn asset(
     State(app): State<Arc<App>>,
     Path((tag, name)): Path<(String, String)>,
     method: Method,
+    sent: HeaderMap,
+    RawQuery(query): RawQuery,
 ) -> Response {
     let Some(listing) = app.releases.listing().await else {
         return no_release();
@@ -535,14 +588,17 @@ pub async fn asset(
             Err(problem) => return unreachable_file(&name, &problem),
         },
     };
-    stats::count(
-        &app,
-        if name == release.payload {
-            payload
-        } else {
-            Stat::UpdateDownload
-        },
-    );
+    let counted = if name == release.payload {
+        payload
+    } else {
+        Stat::UpdateDownload
+    };
+    stats::count(&app, counted);
+    // The installer, told apart by who took it: the updater, or a person's browser.
+    if counted == Stat::Download {
+        let version = tag.strip_prefix('v').unwrap_or(&tag);
+        usage::installer_downloaded(&app, &sent, version, query.as_deref());
+    }
     (headers, body).into_response()
 }
 
@@ -576,6 +632,19 @@ fn unreachable_file(name: &str, problem: &str) -> Response {
 
 fn no_release() -> Response {
     (StatusCode::SERVICE_UNAVAILABLE, "no release to offer").into_response()
+}
+
+/// Published releases tagged `tags`, with no files: what the tests of other modules list.
+#[cfg(test)]
+pub(crate) fn published(tags: &[&str]) -> Vec<GhRelease> {
+    tags.iter()
+        .map(|tag| GhRelease {
+            tag_name: (*tag).to_owned(),
+            draft: false,
+            prerelease: false,
+            assets: Vec::new(),
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -842,5 +911,180 @@ mod tests {
         let fresh = releases.kept(&replaced.assets[1]).unwrap();
         assert!(fresh.get().is_none(), "the first file's bytes are let go");
         assert!(releases.kept(&app.assets[1]).is_none());
+    }
+
+    /// An app release with its installer (`installer_id`) and its `SHA256SUMS` (the next id).
+    fn app_release(version: &str, installer_id: u64, installer: &[u8]) -> GhRelease {
+        release(
+            &format!("v{version}"),
+            vec![
+                asset(
+                    installer_id,
+                    &installer_asset(version),
+                    installer.len() as u64,
+                    "uploaded",
+                ),
+                asset(
+                    installer_id + 1,
+                    "SHA256SUMS",
+                    installer.len() as u64,
+                    "uploaded",
+                ),
+            ],
+        )
+    }
+
+    #[test]
+    fn counters_are_named_for_the_newest_sixteen_published_releases_only() {
+        let mut releases: Vec<GhRelease> = (0..20)
+            .map(|patch| release(&format!("v0.1.{patch}"), Vec::new()))
+            .collect();
+        // Only a published, plain release counts: not a draft, a prerelease, a pre-release or
+        // build part, a data pack, or a tag of neither kind.
+        releases.push(GhRelease {
+            draft: true,
+            ..release("v0.9.0", Vec::new())
+        });
+        releases.push(GhRelease {
+            prerelease: true,
+            ..release("v0.9.1", Vec::new())
+        });
+        releases.extend(
+            [
+                "v0.9.2-rc.1",
+                "v0.9.3+build.5",
+                "data-2026092601",
+                "nightly",
+                "0.9.4",
+                "v1",
+            ]
+            .map(|tag| release(tag, Vec::new())),
+        );
+        let releases: Vec<&GhRelease> = releases.iter().collect();
+        // Sixteen, the newest first by number, not by text: 0.1.19 down to 0.1.4.
+        let expected: Vec<String> = (4..20).rev().map(|patch| format!("0.1.{patch}")).collect();
+        assert_eq!(known_versions(&releases), expected);
+        assert_eq!(known_versions(&[]), Vec::<String>::new());
+    }
+
+    /// A GitHub that hands any file out as `bytes`.
+    async fn github_serving(bytes: &'static [u8]) -> String {
+        let router = axum::Router::new().fallback(move || async move { bytes });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        format!("http://{address}")
+    }
+
+    /// `name` of release 0.1.3 downloaded as a client with `agent` asks, from `query`.
+    async fn download(app: &Arc<App>, name: &str, agent: &str, query: Option<&str>) -> Response {
+        let mut sent = HeaderMap::new();
+        sent.insert(header::USER_AGENT, agent.parse().unwrap());
+        let file = Path(("v0.1.3".to_owned(), name.to_owned()));
+        super::asset(
+            State(app.clone()),
+            file,
+            Method::GET,
+            sent,
+            RawQuery(query.map(str::to_owned)),
+        )
+        .await
+    }
+
+    /// Today's counts, once the background tasks that made them are in.
+    async fn counted_today(app: &App) -> crate::stats::Snapshot {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        let now = crate::moscow::now();
+        crate::stats::snapshots(&app.store, &[crate::moscow::Day::of(now)], now)
+            .await
+            .unwrap()
+            .remove(0)
+    }
+
+    #[tokio::test]
+    async fn an_installer_download_counts_by_who_took_it_and_by_the_tag_it_came_with() {
+        let installer: &'static [u8] = b"MZ the installer";
+        let app = App::new(crate::Config {
+            github_api: github_serving(installer).await,
+            github_token: Some("token".to_owned()),
+            ..crate::Config::default()
+        })
+        .unwrap();
+        app.releases.listed([
+            &app_release("0.1.3", 1, installer),
+            &app_release("0.1.2", 3, installer),
+        ]);
+        let name = installer_asset("0.1.3");
+        for (agent, query) in [
+            // The site's button, with the landing tag its script adds, and without.
+            ("Mozilla/5.0 Firefox/130.0", Some("from=reddit")),
+            ("Mozilla/5.0 Firefox/130.0", None),
+            // A script, with a tag nobody published.
+            ("curl/8.5.0", Some("from=evil")),
+            // The updater of 0.1.2, taking the release after it; a tag means nothing to it.
+            ("PoE2-Oracle/0.1.2", None),
+            ("PoE2-Oracle/0.1.2", Some("from=reddit")),
+        ] {
+            let file = download(&app, &name, agent, query).await;
+            assert_eq!(file.status(), StatusCode::OK, "{agent} {query:?}");
+        }
+        // The updater's other file is no installer; and a HEAD, which only checks the link, is
+        // no download.
+        let sums = download(&app, "SHA256SUMS", "PoE2-Oracle/0.1.2", None).await;
+        assert_eq!(sums.status(), StatusCode::OK);
+        let mut sent = HeaderMap::new();
+        sent.insert(header::USER_AGENT, "Mozilla/5.0".parse().unwrap());
+        let file = Path(("v0.1.3".to_owned(), name.clone()));
+        let head = super::asset(State(app.clone()), file, Method::HEAD, sent, RawQuery(None));
+        assert_eq!(head.await.status(), StatusCode::OK);
+
+        let today = counted_today(&app).await;
+        // The old counter reads all the installers, as it always did.
+        assert_eq!(today.get("download"), 5);
+        assert_eq!(today.get("download_site"), 3);
+        assert_eq!(today.get("download_site_from_reddit"), 1);
+        assert_eq!(today.sum("download_site_from_"), 1);
+        assert_eq!(today.get("download_update"), 2);
+        assert_eq!(today.get("download_update_v_0.1.3"), 2);
+        assert_eq!(today.get("update_download"), 1);
+    }
+
+    #[tokio::test]
+    async fn an_update_check_counts_the_app_as_active_and_a_browser_as_nothing() {
+        let app = App::new(crate::Config::default()).unwrap();
+        app.releases.listed(&published(&["v0.1.3"]));
+        // The app asks for the release and for the data pack; another app asks; a browser asks.
+        for (path, client, agent) in [
+            (
+                "/api/v1/releases/latest",
+                "203.0.113.1",
+                "PoE2-Oracle/0.1.3",
+            ),
+            ("/api/v1/data/latest", "203.0.113.1", "PoE2-Oracle/0.1.3"),
+            (
+                "/api/v1/releases/latest",
+                "203.0.113.2",
+                "PoE2-Oracle/0.1.3",
+            ),
+            ("/api/v1/releases/latest", "203.0.113.3", "Mozilla/5.0"),
+        ] {
+            let request = Request::builder()
+                .uri(path)
+                .header("x-forwarded-for", client)
+                .header("user-agent", agent)
+                .body(Body::empty())
+                .unwrap();
+            if path.contains("data") {
+                latest_data(State(app.clone()), request).await;
+            } else {
+                latest(State(app.clone()), request).await;
+            }
+        }
+        let today = counted_today(&app).await;
+        assert_eq!(today.get("update_check"), 4);
+        assert_eq!(today.get("uniq_app_day"), 2);
+        assert_eq!(today.get("uniq_app_day_v_0.1.3"), 2);
+        // Asking is not connecting.
+        assert_eq!(today.get("app_conn"), 0);
     }
 }

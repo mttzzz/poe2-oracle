@@ -9,7 +9,10 @@ app's own site, while **Update automatically** is on in the settings (section **
 - **Staying connected.** About 10 seconds after it starts, once the trade site's catalogs are in,
   the app connects to oracle.pushka.biz and stays connected. The service tells it the latest app
   version and the latest game data version as soon as it connects, and again when one of them
-  changes: within about two minutes of a new release.
+  changes: within about two minutes of a new release. The first connection after each start also
+  tells the service, in a few flags, that the app started, whether it is a first start, which
+  version ran before and the interface language; the service only counts them (see
+  [What the service counts](privacy.md#what-the-service-counts)).
 - **A new version** is downloaded at once: first the release's `SHA256SUMS` file, whose Ed25519
   signature PoE2 Oracle checks with the key built into the app, then the installer, whose SHA-256
   checksum must match `SHA256SUMS`. The signing key stays where releases are built, so neither

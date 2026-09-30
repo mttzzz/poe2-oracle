@@ -1,8 +1,9 @@
 //! Where the app keeps its files, all in `directories`' per-user folders for "poe2-oracle": the
 //! settings in the roaming config folder (`%APPDATA%\poe2-oracle\config`), the log, the kept item
-//! texts, the last crash, the last update's marker and the XP overlay's tracker it carried over,
-//! the XP overlay's debug snapshots, the sign-in window's browser profile and the installed game
-//! data pack in the local data folder
+//! texts, the last crash, the last update's marker, the XP overlay's tracker it carried over and
+//! its level book, the XP overlay's debug snapshots, the sign-in window's browser profile, the
+//! installed game data pack and the start markers the service's count reads
+//! (`auto_update::start`) in the local data folder
 //! (`%LOCALAPPDATA%\poe2-oracle\data`), and whatever can be fetched again -- trade catalogs,
 //! exchange and poe2scout prices, downloaded updates -- in the local cache folder
 //! (`%LOCALAPPDATA%\poe2-oracle\cache`). Without a home folder (never on a real Windows profile)
@@ -45,6 +46,13 @@ pub fn xp_carry_file() -> PathBuf {
     data_dir().join("xp-carry.json")
 }
 
+/// The XP overlay's level book: each character it has seen play, with its level and where its bar
+/// stood, for a start or a login to tell which character it is looking at
+/// (`xp_tracker::LevelBook`).
+pub fn xp_levels_file() -> PathBuf {
+    data_dir().join("xp-levels.json")
+}
+
 /// The XP bar's pixels behind readings the XP tracker found suspect, while
 /// `POE2_ORACLE_XP_DEBUG=1` (`platform::xp_bar::snapshot`).
 pub fn xp_debug_dir() -> PathBuf {
@@ -78,7 +86,10 @@ pub fn data_pack_dir() -> PathBuf {
     data_dir().join("game-data")
 }
 
-fn data_dir() -> PathBuf {
+/// The local data folder, `%LOCALAPPDATA%\poe2-oracle\data`: what the app keeps between runs and
+/// can't fetch again. The start markers (`last-run-version` and `dev`, `auto_update::start`) lie
+/// directly in it, beside the last update's.
+pub fn data_dir() -> PathBuf {
     DIRS.as_ref()
         .map_or_else(temp_fallback, |dirs| dirs.data_local_dir().to_path_buf())
 }

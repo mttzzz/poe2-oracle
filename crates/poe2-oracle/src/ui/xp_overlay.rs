@@ -43,6 +43,14 @@
 //! An update's restart doesn't start the plates over: the app's old copy leaves its tracker
 //! ([`carry_over`]), and the new one carries on with it, the log's lines since taken up.
 //!
+//! Nor does a restart of the app, or a login, forget which character is playing, which the game's
+//! log names only at a level-up: the level book (`xp_tracker::LevelBook`, `paths::xp_levels_file`)
+//! keeps each recent character's level and where its bar stood, so the first reading of the bar
+//! says who it is and the level plate names the next level again. It is read when the overlay
+//! opens, and filled from far back in the game's log when it is empty
+//! (`ClientLog::latest_levels`); the sampler writes it at each level-up and once a minute at
+//! most while the bar moves, and it is written once more when the app quits.
+//!
 //! Each plate is its own window that lets clicks through to the game -- the plates stand over the
 //! game's world. The gear is a window of its own at the level plate's right end, the one place
 //! that takes a click, and never the keyboard. The plates are drawn pixel by pixel in the HUD's
@@ -95,8 +103,8 @@ use crate::ui::theme::{
     BASE_REM_SIZE, HUD_DIVIDER, HUD_GOLD, HUD_LABEL, HUD_TEXT, blend, rems_from_px,
 };
 use crate::xp_tracker::{
-    Activity, BarLook, MapStatus, RunState, Word, Wording, XpStatus, XpTracker, level_parts,
-    log_time, map_words, parse_log_line, parse_timed_log_line,
+    Activity, BarLook, LevelBook, MapStatus, RunState, Word, Wording, XpStatus, XpTracker,
+    level_parts, log_time, map_words, parse_log_line, parse_timed_log_line,
 };
 
 const SAMPLE_INTERVAL: Duration = Duration::from_secs(2);
@@ -423,9 +431,19 @@ pub fn open(
     };
     let window = cx.open_window(window_options(), |window, cx| {
         window.set_window_title("PoE2 Oracle — XP");
-        cx.new(|_| {
+        cx.new(|cx| {
             let mut tracker = XpTracker::new();
             tracker.set_rate_window(options.rate_window_minutes);
+            tracker.set_book(load_levels());
+            // The book is written once a minute at the most while the bar moves: the app's end
+            // writes what came after.
+            cx.on_app_quit(|overlay: &mut XpOverlay, _| {
+                if let Some(book) = overlay.tracker.book_to_save(None) {
+                    write_levels(&book);
+                }
+                std::future::ready(())
+            })
+            .detach();
             XpOverlay {
                 tracker,
                 status: XpStatus::default(),
@@ -593,6 +611,20 @@ fn take_carried() -> Option<Vec<u8>> {
     json
 }
 
+/// The level book the last run left ([`LevelBook::load`]): empty when there is none.
+fn load_levels() -> LevelBook {
+    LevelBook::load(&paths::xp_levels_file())
+}
+
+/// Writes the level book ([`LevelBook::save`]). A failure is for the log, not the player: the
+/// game's log fills the book again.
+fn write_levels(book: &LevelBook) {
+    let path = paths::xp_levels_file();
+    if let Err(err) = book.save(&path) {
+        log::warn!("writing {} failed: {err}", path.display());
+    }
+}
+
 /// Feeds the tracker until the window closes.
 async fn sample_forever(view: WeakEntity<XpOverlay>, cx: &mut AsyncApp) {
     let mut log: Option<ClientLog> = None;
@@ -601,23 +633,44 @@ async fn sample_forever(view: WeakEntity<XpOverlay>, cx: &mut AsyncApp) {
         // While the lip watcher watches, its looks read the bar and the rails: no blit here.
         // Otherwise the rails' lips every time, and the bar while the game is in front -- out of
         // it, only when the tracker's reading is due a look (`XpTracker::unattended_look_due`).
-        let Ok((read_pixels, unattended)) = view.read_with(cx, |view, _| {
-            let unattended = view.tracker.unattended_look_due(uptime());
-            (view.lips.is_none(), unattended)
+        // The level book comes with it: when the tracker has it due to be written, and whether it
+        // has nothing yet, for the game's log to fill.
+        let Ok((read_pixels, unattended, book, seeding)) = view.update(cx, |view, _| {
+            let now = uptime();
+            (
+                view.lips.is_none(),
+                view.tracker.unattended_look_due(now),
+                view.tracker.book_to_save(Some(now)),
+                view.tracker.book_is_empty(),
+            )
         }) else {
             return;
         };
-        let (history, carried, events, sample, still_open) = cx
+        let (history, carried, seeds, events, sample, still_open) = cx
             .background_executor()
             .spawn(async move {
                 let mut log = log;
                 let mut history = Vec::new();
                 let mut carried = None;
+                let mut seeds = Vec::new();
+                if let Some(book) = book {
+                    write_levels(&book);
+                }
                 // Retried every sample until the game runs: the log is found through its process.
                 if log.is_none()
                     && let Some((opened, replayed)) =
                         ClientLog::open(client_log::HISTORY_BYTES, parse_timed_log_line)
                 {
+                    // An empty level book is filled from far back in the log, which the tail read
+                    // above doesn't reach: a level at 94 takes days.
+                    if seeding {
+                        match opened.latest_levels() {
+                            Ok(latest) => seeds = latest,
+                            Err(err) => {
+                                log::warn!("reading the game log's level-ups failed: {err}")
+                            }
+                        }
+                    }
                     log = Some(opened);
                     history = replayed;
                     // What an update's restart left, carried on with instead of the tail alone.
@@ -628,7 +681,7 @@ async fn sample_forever(view: WeakEntity<XpOverlay>, cx: &mut AsyncApp) {
                     .map(|log| log.poll(parse_log_line))
                     .unwrap_or_default();
                 let sample = xp_bar::sample(read_pixels, |in_front| in_front || unattended);
-                (history, carried, events, sample, log)
+                (history, carried, seeds, events, sample, log)
             })
             .await;
         log = still_open;
@@ -640,10 +693,13 @@ async fn sample_forever(view: WeakEntity<XpOverlay>, cx: &mut AsyncApp) {
             let history = history
                 .into_iter()
                 .map(|(tick, event)| (log_time(tick, at), event));
+            // Before the tail is replayed, so that the levels it names refine these.
+            view.tracker.seed_book(seeds);
             match carried.and_then(|json| XpTracker::carried(&json, at)) {
                 Some(mut tracker) => {
                     log::info!("xp: carrying on with the tracker from before the restart");
                     tracker.set_rate_window(view.options.rate_window_minutes);
+                    tracker.take_book_from(&mut view.tracker);
                     tracker.catch_up(history, at);
                     view.tracker = tracker;
                 }

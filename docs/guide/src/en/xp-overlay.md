@@ -29,7 +29,7 @@ map 4:07 +1.2% · avg 6:30
 |---|---|
 | `64.8%` | How much of the current level is done. Shown with **Level percentage**, off by default, and always in a pause. |
 | `+12.4%/h` | Experience per hour (`h`) of play, in percent of the current level. |
-| `level 75 in 2h 50m` | Playing time to level 75 at this rate: 2 hours 50 minutes. `next level in` when your level is not known yet; `—` when there is no estimate. |
+| `level 75 in 2h 50m` | Playing time to level 75 at this rate: 2 hours 50 minutes. `next level in` while the app can't tell which of your characters you are playing, and so your level (see [How it works](#how-it-works)); `—` when there is no estimate. |
 | `map 4:07 +1.2%` | Time in the current map and the experience it gave. Shown with **Map timer**, on by default. Dimmed once you leave the map; five minutes later it reads `last map`. |
 | `avg 6:30` | Average time of the maps finished this session. |
 
@@ -59,10 +59,20 @@ rate: it is back as it was when you play again.
   selection. While the game is behind another window, where no experience comes in, it looks at the
   bar only every ten seconds, and two seconds after a look that finds it changed or can't read it.
   Started in the middle of a session, it reads back through the log with the time of each line:
-  your character's level, the map you are in or left, with its time so far, and how long you have
-  been in town or the hideout. Only a map already under way when the log's last stretch it reads
-  begins is left out, since its start isn't there. After a restart for an update it doesn't start
-  over: the rate, the time to the next level and the map timer go on as they were.
+  your character's level (if it levelled up in that stretch), the map you are in or left, with its
+  time so far, and how long you have been in town or the hideout. Only a map already under way when
+  the log's last stretch it reads begins is left out, since its start isn't there. After a restart
+  for an update it doesn't start over: the rate, the time to the next level and the map timer go on
+  as they were.
+- The level comes from a level-up line in the game's log and, until the log names it, from where
+  the bar stands. PoE2 Oracle keeps on your computer the level of your last 20 characters and where
+  each one's bar stood when you last played it (see
+  [Privacy](privacy.md#what-it-keeps-on-your-computer)); the first time, it reads the levels back
+  from the end of the log. After a restart or a login it compares the first bar reading it accepts
+  with those positions: if exactly one character's bar stood within 0.3% of it, that is you, and
+  the plate gives the level again instead of `next level in`. The first time, before any position
+  is known, it takes your most recent character; if you play another, your next level-up corrects
+  that. If none fits, or more than one, the plate says `next level in` until your next level-up.
 - The rate weighs recent play more. With **Rate smoothing** at 10 minutes, the default, play from
   10 minutes ago counts half as much as play now. Choose 5 minutes to see a change of farming
   sooner, or 20 or 30 for a steadier number.
@@ -72,7 +82,8 @@ rate: it is back as it was when you play again.
   same map through its portal, even once it reads `last map`. A map counts as finished when you
   enter a different map, whether or not you completed it. Returning to character selection starts
   everything over, since you may come back as another character: the rate (`measuring rate…`
-  again), the level (`next level in` until your next level-up) and the map statistics.
+  again), the level (found again from where the bar stands, as after a restart) and the map
+  statistics.
 - Ascendancy trials (the Trial of the Sekhemas and the Trial of Chaos) are never part of a map, but
   count as play for the rate.
 - If something covers the bar for more than a few seconds (a loading screen, the passive tree, the

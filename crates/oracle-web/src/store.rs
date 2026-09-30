@@ -4,7 +4,7 @@
 //! goes on as if the counter weren't there. A lost count or a skipped limit is better than players'
 //! reports bouncing off a Redis hiccup.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::time::Duration;
 
 use parking_lot::Mutex;
@@ -41,7 +41,8 @@ return answer
 ";
 
 pub enum Store {
-    Memory(Mutex<Memory>),
+    /// Boxed: the memory's tables would make every `Store` as large as they are.
+    Memory(Box<Mutex<Memory>>),
     Redis(ConnectionManager),
 }
 
@@ -54,9 +55,36 @@ pub struct Counter {
     pub expires_at: i64,
 }
 
+/// One thing to count: what it adds, under which key, and when the key expires (Unix seconds).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Write {
+    pub key: String,
+    pub what: What,
+    pub expires_at: i64,
+    /// For a counter named from what requests bring: where the day's counter names are listed, so
+    /// that a readout, which knows only Redis, finds the counter.
+    pub named: Option<Named>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum What {
+    /// One more: `INCR`.
+    Count,
+    /// One more visitor, this hash of one, `PFADD`: a distinct count is a HyperLogLog sketch, a
+    /// table that holds no element and yields only how many different ones went in.
+    Element([u8; 32]),
+}
+
+/// A counter's name in the day's list of names ([`Write::named`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Named {
+    pub index: String,
+    pub name: String,
+}
+
 impl Store {
     pub fn memory() -> Store {
-        Store::Memory(Mutex::default())
+        Store::Memory(Box::default())
     }
 
     /// Redis at `url`, connected on first use and reconnected after a failure.
@@ -74,14 +102,43 @@ impl Store {
 
     /// Adds one to `key`, which expires at `expires_at`.
     pub async fn increment(&self, key: &str, expires_at: i64, now: i64) {
+        let write = Write {
+            key: key.to_owned(),
+            what: What::Count,
+            expires_at,
+            named: None,
+        };
+        self.record(&[write], now).await;
+    }
+
+    /// Makes each of `writes`, for Redis in one step: a call that fails loses all of them, and the
+    /// request that counted goes on.
+    pub async fn record(&self, writes: &[Write], now: i64) {
         match self {
-            Store::Memory(memory) => memory.lock().increment(key, expires_at, now),
+            Store::Memory(memory) => memory.lock().record(writes, now),
             Store::Redis(redis) => {
                 let mut pipe = redis::pipe();
-                pipe.cmd("INCR").arg(key).ignore();
-                pipe.cmd("EXPIREAT").arg(key).arg(expires_at).ignore();
+                for write in writes {
+                    match &write.what {
+                        What::Count => pipe.cmd("INCR").arg(&write.key).ignore(),
+                        What::Element(element) => {
+                            pipe.cmd("PFADD").arg(&write.key).arg(&element[..]).ignore()
+                        }
+                    };
+                    pipe.cmd("EXPIREAT")
+                        .arg(&write.key)
+                        .arg(write.expires_at)
+                        .ignore();
+                    if let Some(named) = &write.named {
+                        pipe.cmd("SADD").arg(&named.index).arg(&named.name).ignore();
+                        pipe.cmd("EXPIREAT")
+                            .arg(&named.index)
+                            .arg(write.expires_at)
+                            .ignore();
+                    }
+                }
                 if let Err(error) = within(pipe.query_async::<()>(&mut redis.clone())).await {
-                    warn!(%error, key, "Redis: a count is lost");
+                    warn!(%error, writes = writes.len(), "Redis: counts are lost");
                 }
             }
         }
@@ -101,6 +158,101 @@ impl Store {
                     Ok(values) => Some(values.into_iter().map(Option::unwrap_or_default).collect()),
                     Err(error) => {
                         warn!(%error, "Redis: counts unavailable");
+                        None
+                    }
+                }
+            }
+        }
+    }
+
+    /// How many different elements each of `keys` holds, 0 for a key nothing was added to; `None`
+    /// when Redis fails.
+    pub async fn distinct_values(&self, keys: &[String], now: i64) -> Option<Vec<u64>> {
+        match self {
+            Store::Memory(memory) => {
+                let memory = memory.lock();
+                Some(keys.iter().map(|key| memory.distinct(key, now)).collect())
+            }
+            Store::Redis(_) if keys.is_empty() => Some(Vec::new()),
+            Store::Redis(redis) => {
+                let mut pipe = redis::pipe();
+                for key in keys {
+                    pipe.cmd("PFCOUNT").arg(key);
+                }
+                match within(pipe.query_async::<Vec<u64>>(&mut redis.clone())).await {
+                    Ok(values) => Some(values),
+                    Err(error) => {
+                        warn!(%error, "Redis: distinct counts unavailable");
+                        None
+                    }
+                }
+            }
+        }
+    }
+
+    /// The counter names each of the day lists `indexes` holds ([`Write::named`]), sorted; `None`
+    /// when Redis fails.
+    pub async fn names(&self, indexes: &[String], now: i64) -> Option<Vec<Vec<String>>> {
+        match self {
+            Store::Memory(memory) => {
+                let memory = memory.lock();
+                Some(
+                    indexes
+                        .iter()
+                        .map(|index| memory.names(index, now))
+                        .collect(),
+                )
+            }
+            Store::Redis(_) if indexes.is_empty() => Some(Vec::new()),
+            Store::Redis(redis) => {
+                let mut pipe = redis::pipe();
+                for index in indexes {
+                    pipe.cmd("SMEMBERS").arg(index);
+                }
+                match within(pipe.query_async::<Vec<Vec<String>>>(&mut redis.clone())).await {
+                    Ok(mut names) => {
+                        names.iter_mut().for_each(|names| names.sort_unstable());
+                        Some(names)
+                    }
+                    Err(error) => {
+                        warn!(%error, "Redis: counter names unavailable");
+                        None
+                    }
+                }
+            }
+        }
+    }
+
+    /// The salt kept under `key`: the one already there, else `fresh`, which is kept until
+    /// `expires_at`, so that every replica takes the same one. `None` when Redis fails.
+    pub async fn salt(
+        &self,
+        key: &str,
+        fresh: [u8; 32],
+        expires_at: i64,
+        now: i64,
+    ) -> Option<[u8; 32]> {
+        match self {
+            Store::Memory(memory) => Some(memory.lock().salt(key, fresh, expires_at, now)),
+            Store::Redis(redis) => {
+                let mut pipe = redis::pipe();
+                pipe.cmd("SET")
+                    .arg(key)
+                    .arg(&fresh[..])
+                    .arg("NX")
+                    .arg("EX")
+                    .arg((expires_at - now).max(1))
+                    .ignore()
+                    .cmd("GET")
+                    .arg(key);
+                match within(pipe.query_async::<Vec<Option<Vec<u8>>>>(&mut redis.clone())).await {
+                    Ok(kept) => kept
+                        .into_iter()
+                        .next()
+                        .flatten()
+                        .and_then(|kept| <[u8; 32]>::try_from(kept).ok()),
+                    Err(error) => {
+                        warn!(%error, key, "Redis: no salt for the distinct counts");
                         None
                     }
                 }
@@ -214,6 +366,12 @@ async fn within<T>(call: impl Future<Output = redis::RedisResult<T>>) -> Result<
 pub struct Memory {
     /// Each counter's count and when it expires (Unix seconds).
     counters: HashMap<String, (u64, i64)>,
+    /// Each distinct counter's elements, exactly: without Redis there is no sketch to keep small.
+    sets: HashMap<String, (HashSet<[u8; 32]>, i64)>,
+    /// Each day's list of counter names.
+    names: HashMap<String, (BTreeSet<String>, i64)>,
+    /// The salts of the periods now running.
+    salts: HashMap<String, ([u8; 32], i64)>,
     /// When expired counters are next swept out.
     next_sweep: i64,
 }
@@ -227,10 +385,11 @@ impl Memory {
     }
 
     fn increment(&mut self, key: &str, expires_at: i64, now: i64) {
-        if now >= self.next_sweep {
-            self.counters.retain(|_, (_, expires_at)| *expires_at > now);
-            self.next_sweep = now + 60;
-        }
+        self.sweep(now);
+        self.bump(key, expires_at, now);
+    }
+
+    fn bump(&mut self, key: &str, expires_at: i64, now: i64) {
         let counter = self
             .counters
             .entry(key.to_owned())
@@ -239,6 +398,73 @@ impl Memory {
             counter.0 = 0;
         }
         *counter = (counter.0 + 1, expires_at);
+    }
+
+    /// Drops what has expired, at most once a minute.
+    fn sweep(&mut self, now: i64) {
+        if now >= self.next_sweep {
+            self.counters.retain(|_, (_, expires_at)| *expires_at > now);
+            self.sets.retain(|_, (_, expires_at)| *expires_at > now);
+            self.names.retain(|_, (_, expires_at)| *expires_at > now);
+            self.salts.retain(|_, (_, expires_at)| *expires_at > now);
+            self.next_sweep = now + 60;
+        }
+    }
+
+    fn record(&mut self, writes: &[Write], now: i64) {
+        self.sweep(now);
+        for write in writes {
+            match &write.what {
+                What::Count => self.bump(&write.key, write.expires_at, now),
+                What::Element(element) => {
+                    let set = self
+                        .sets
+                        .entry(write.key.clone())
+                        .or_insert_with(|| (HashSet::new(), write.expires_at));
+                    if set.1 <= now {
+                        set.0.clear();
+                    }
+                    set.0.insert(*element);
+                    set.1 = write.expires_at;
+                }
+            }
+            if let Some(named) = &write.named {
+                let names = self
+                    .names
+                    .entry(named.index.clone())
+                    .or_insert_with(|| (BTreeSet::new(), write.expires_at));
+                if names.1 <= now {
+                    names.0.clear();
+                }
+                names.0.insert(named.name.clone());
+                names.1 = write.expires_at;
+            }
+        }
+    }
+
+    fn distinct(&self, key: &str, now: i64) -> u64 {
+        match self.sets.get(key) {
+            Some((set, expires_at)) if *expires_at > now => set.len() as u64,
+            _ => 0,
+        }
+    }
+
+    fn names(&self, index: &str, now: i64) -> Vec<String> {
+        match self.names.get(index) {
+            Some((names, expires_at)) if *expires_at > now => names.iter().cloned().collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    fn salt(&mut self, key: &str, fresh: [u8; 32], expires_at: i64, now: i64) -> [u8; 32] {
+        self.sweep(now);
+        match self.salts.get(key) {
+            Some((salt, expires_at)) if *expires_at > now => *salt,
+            _ => {
+                self.salts.insert(key.to_owned(), (fresh, expires_at));
+                fresh
+            }
+        }
     }
 }
 

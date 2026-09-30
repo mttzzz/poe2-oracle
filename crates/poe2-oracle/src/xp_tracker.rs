@@ -2,9 +2,10 @@
 //! until the next level, how long the current map has taken, and whether the player is playing
 //! at all.
 //!
-//! Pure and not Windows-gated, so the native test pass covers all of it. The Windows side only
-//! feeds it -- `platform::xp_bar` captures the bar's pixels, `platform::client_log` tails the game
-//! log -- and `ui::xp_overlay` only renders [`XpStatus`]:
+//! Pure and not Windows-gated, so the native test pass covers all of it -- the level book's file
+//! and the read back through the game's log too, which take nothing of Windows. The Windows side
+//! only feeds it -- `platform::xp_bar` captures the bar's pixels, `platform::client_log` tails the
+//! game log -- and `ui::xp_overlay` only renders [`XpStatus`]:
 //!
 //! - [`XpBarGeometry`] and [`read_fill`]: where PoE2 draws its experience bar, how the bar's
 //!   pixels read as the fraction of the level already earned, and where the pointer makes the
@@ -17,6 +18,10 @@
 //!   before it. With the game out of the front it asks for fewer looks at the bar
 //!   ([`XpTracker::unattended_look_due`]) and carries its reading over the samples between
 //!   ([`BarLook::Skipped`]).
+//! - [`LevelBook`] and [`latest_levels`]: which character is playing and at what level, which the
+//!   log names only when the character levels up -- a day apart at level 94: the levels of the last
+//!   20 characters and where their bars stood, kept between runs, and the read back through the
+//!   game's log that fills the book the first time.
 //! - [`Word`] and [`percent_words`], [`rate_words`], [`level_parts`], [`map_words`]: what the
 //!   overlay's plates say, word by word, in the interface language (`crate::i18n`), in full or in
 //!   the shorter [`Wording`] a rail too narrow for the full one gets.
@@ -24,8 +29,11 @@
 //!   an update's restart, so the plates carry on where they were instead of starting over.
 
 use std::borrow::Cow;
+use std::fs;
+use std::io::{self, Read, Seek, SeekFrom};
 use std::ops::{Range, RangeInclusive};
-use std::time::Duration;
+use std::path::Path;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
@@ -535,6 +543,262 @@ fn is_map(area: &str) -> bool {
     area.starts_with("Map")
 }
 
+// --- Which character it is ----------------------------------------------------------------
+
+/// How many characters the level book keeps: the most recent ones.
+const BOOK_SIZE: usize = 20;
+/// How far the bar's first reading may lie from where a character's bar was last seen and still
+/// be that character's: 0.3 % of a level, 4-5 pixels of the 4K bar.
+const SAME_BAR: f64 = 0.003;
+/// How often the level book is written while the bar moves: it moves at every two-second sample
+/// of play.
+const BOOK_EVERY: Duration = Duration::from_secs(60);
+/// How much of the game's log [`latest_levels`] takes at a time.
+const LEVELS_CHUNK: usize = 1 << 20;
+
+/// The characters the tracker has known, the most recent first, and what it last learnt of each.
+/// The game's log names a character's level only when it levels up -- a day apart at level 94 --
+/// so a login or an app start wouldn't know it until then. The book, kept between runs
+/// ([`Self::load`], [`Self::save`]), lets the first reading of the bar say which character is
+/// playing ([`XpTracker::set_book`]).
+///
+/// An entry holds the name, the level, where the character's bar was last read while the tracker
+/// knew who was playing -- none for a level only the log has named -- and, in seconds since 1970,
+/// when the entry last changed.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct LevelBook {
+    characters: Vec<BookEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+struct BookEntry {
+    name: String,
+    level: u32,
+    #[serde(default)]
+    fraction: Option<f64>,
+    #[serde(default)]
+    at: u64,
+}
+
+/// Who the bar's first reading says is playing ([`LevelBook::identify`]).
+enum Guess<'a> {
+    /// The only character last seen where the bar is.
+    Matched(&'a BookEntry),
+    /// No character has a position on the bar yet -- the book holds the game log's levels alone,
+    /// on the first run: the most recent one, the likeliest.
+    Latest(&'a BookEntry),
+    /// This many characters were last seen where the bar is.
+    Several(usize),
+    /// None was.
+    Nobody,
+}
+
+/// The tracker's level book, and what of it is still to be written
+/// ([`XpTracker::book_to_save`]).
+#[derive(Debug, Default)]
+struct BookState {
+    book: LevelBook,
+    /// Whether the book has changed since it was last taken to be written.
+    unsaved: bool,
+    /// When it was, on the tracker's clock: `None` before the first time, and after a level-up or
+    /// a seeding, which are written at once.
+    taken_at: Option<Duration>,
+}
+
+impl LevelBook {
+    pub fn is_empty(&self) -> bool {
+        self.characters.is_empty()
+    }
+
+    /// The book in `path`; an empty one when there is none or it can't be read -- damaged, or
+    /// another version's. The game's log fills an empty book ([`latest_levels`]).
+    pub fn load(path: &Path) -> LevelBook {
+        let json = match fs::read(path) {
+            Ok(json) => json,
+            Err(err) if err.kind() == io::ErrorKind::NotFound => return LevelBook::default(),
+            Err(err) => {
+                log::warn!("xp: reading {} failed: {err}", path.display());
+                return LevelBook::default();
+            }
+        };
+        serde_json::from_slice(&json).unwrap_or_else(|err| {
+            log::info!("xp: {} isn't a level book: {err}", path.display());
+            LevelBook::default()
+        })
+    }
+
+    /// Writes the book for [`Self::load`] to find: to a temporary name first, then over the old
+    /// file, so a start reads a whole book or the one before, never half of one.
+    pub fn save(&self, path: &Path) -> io::Result<()> {
+        if let Some(dir) = path.parent() {
+            fs::create_dir_all(dir)?;
+        }
+        let temporary = path.with_extension("json.tmp");
+        fs::write(&temporary, serde_json::to_vec_pretty(self)?)?;
+        fs::rename(&temporary, path)
+    }
+
+    /// Puts `name`, at `level`, first in the book, with `reading` as where its bar stands if
+    /// there is one; the bar of the level before is no position on this one, so a new level drops
+    /// it. The oldest characters past [`BOOK_SIZE`] go. Whether anything changed: what the book
+    /// held already is no news, and `at` is the time of the last news.
+    fn note(&mut self, name: &str, level: u32, reading: Option<f64>, at: u64) -> bool {
+        let index = self.characters.iter().position(|known| known.name == name);
+        let mut entry = match index {
+            Some(index) => self.characters.remove(index),
+            None => BookEntry {
+                name: name.to_owned(),
+                level,
+                fraction: None,
+                at,
+            },
+        };
+        let before = (entry.level, entry.fraction);
+        if entry.level != level {
+            entry.level = level;
+            entry.fraction = None;
+        }
+        if reading.is_some() {
+            entry.fraction = reading;
+        }
+        let changed = index != Some(0) || before != (entry.level, entry.fraction);
+        if changed {
+            entry.at = at;
+        }
+        self.characters.insert(0, entry);
+        self.characters.truncate(BOOK_SIZE);
+        changed
+    }
+
+    /// Fills the book with the levels the game's log last named ([`latest_levels`]), newest
+    /// first, none of them with a position on the bar yet.
+    fn seed(&mut self, latest: Vec<(String, u32)>, at: u64) {
+        self.characters = latest
+            .into_iter()
+            .take(BOOK_SIZE)
+            .map(|(name, level)| BookEntry {
+                name,
+                level,
+                fraction: None,
+                at,
+            })
+            .collect();
+    }
+
+    /// Which character is playing, when the bar's first reading is `fraction`: the one last seen
+    /// within [`SAME_BAR`] of it, if it is the only one; and, if no character has a position yet,
+    /// the most recent.
+    fn identify(&self, fraction: f64) -> Guess<'_> {
+        let mut near = self.characters.iter().filter(|known| {
+            known
+                .fraction
+                .is_some_and(|seen| (seen - fraction).abs() <= SAME_BAR)
+        });
+        match (near.next(), near.next()) {
+            (Some(only), None) => Guess::Matched(only),
+            (Some(_), Some(_)) => Guess::Several(2 + near.count()),
+            (None, _) => match self.characters.first() {
+                Some(latest) if self.characters.iter().all(|known| known.fraction.is_none()) => {
+                    Guess::Latest(latest)
+                }
+                _ => Guess::Nobody,
+            },
+        }
+    }
+}
+
+/// Seconds since 1970 by the computer's clock: the level book's `at`.
+fn wall_now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs())
+}
+
+/// The level each character last reached, newest first, from the last `limit` bytes of the game's
+/// log in `log`: the latest level-up line of each, in either client language
+/// ([`parse_log_line`]). Read backwards from the end, a megabyte at a time, so a level-up far
+/// back costs one pass and only a chunk is held. The first start reads up to 64 MB with it
+/// (`platform::client_log::LEVELS_BYTES`): at level 94 a level-up is days apart.
+pub fn latest_levels(log: &mut (impl Read + Seek), limit: u64) -> io::Result<Vec<(String, u32)>> {
+    latest_levels_in(log, limit, LEVELS_CHUNK)
+}
+
+fn latest_levels_in(
+    log: &mut (impl Read + Seek),
+    limit: u64,
+    chunk: usize,
+) -> io::Result<Vec<(String, u32)>> {
+    let mut latest: Vec<(String, u32)> = Vec::new();
+    lines_back(log, limit, chunk, |line| {
+        let Ok(line) = std::str::from_utf8(line) else {
+            return;
+        };
+        if let Some(LogEvent::LevelUp { character, level }) =
+            parse_log_line(line.trim_end_matches('\r'))
+            && !latest.iter().any(|(name, _)| *name == character)
+        {
+            latest.push((character, level));
+        }
+    })?;
+    Ok(latest)
+}
+
+/// Calls `each` with the lines of the last `limit` bytes of `log`, newest first, reading `chunk`
+/// bytes at a time. A line counts once its end is seen -- the game may be writing the last one --
+/// and its start: the line the limit cuts through is left out. Lines end at `\n`; `each` gets
+/// them as bytes, with any `\r` still on.
+fn lines_back(
+    log: &mut (impl Read + Seek),
+    limit: u64,
+    chunk: usize,
+    mut each: impl FnMut(&[u8]),
+) -> io::Result<()> {
+    let end = log.seek(SeekFrom::End(0))?;
+    if end == 0 {
+        return Ok(());
+    }
+    let floor = end.saturating_sub(limit);
+    let chunk = chunk.max(1) as u64;
+    let mut last = [0u8];
+    log.seek(SeekFrom::Start(end - 1))?;
+    log.read_exact(&mut last)?;
+    // Whether the end of the text read so far ends a line: the log's own doesn't, while the game
+    // is in the middle of one.
+    let mut ended = last[0] == b'\n';
+    // The start of a line, read, whose beginning lies further back.
+    let mut carry: Vec<u8> = Vec::new();
+    let mut bytes: Vec<u8> = Vec::new();
+    let mut at = end;
+    while at > floor {
+        let start = at.saturating_sub(chunk).max(floor);
+        bytes.resize((at - start) as usize, 0);
+        log.seek(SeekFrom::Start(start))?;
+        log.read_exact(&mut bytes)?;
+        bytes.append(&mut carry);
+        at = start;
+        let Some(newline) = bytes.iter().position(|&byte| byte == b'\n') else {
+            // No line begins in this text: all of it is the start of one.
+            std::mem::swap(&mut carry, &mut bytes);
+            continue;
+        };
+        // The lines after the first newline are whole at their start; the last of them is whole
+        // at its end only if the text so far ends one.
+        let mut lines = bytes[newline + 1..].rsplit(|&byte| byte == b'\n');
+        if !ended {
+            lines.next();
+        }
+        lines.filter(|line| !line.is_empty()).for_each(&mut each);
+        ended = true;
+        carry.extend_from_slice(&bytes[..newline]);
+    }
+    // Where the log begins, so does its first line; where the limit cut in, the line it cut isn't
+    // one.
+    if floor == 0 && ended && !carry.is_empty() {
+        each(&carry);
+    }
+    Ok(())
+}
+
 // --- Rate and time to level ---------------------------------------------------------------------
 
 /// Readable samples this close together count as continuous play; the sampler runs every 2 s.
@@ -631,7 +895,8 @@ pub struct XpStatus {
     /// Levels earned per hour of play (0.124 = 12.4 % of a level per hour). A pause doesn't
     /// change it: it stays the rate of the play before.
     pub rate_per_hour: Option<f64>,
-    /// The character's current level, once the log has named it since the last login.
+    /// The character's current level, once the log names it since the last login, or the level
+    /// book does at the first reading of the bar ([`LevelBook`]).
     pub level: Option<u32>,
     /// Whether the player is playing, or since when they haven't been.
     pub activity: Activity,
@@ -807,6 +1072,12 @@ impl Taken {
 /// one. The log says so in two lines: the scene goes `(unknown)`, and an area line follows -- the
 /// login's -- before the scene is named again; a scene named first was only a moment's blank.
 ///
+/// The character and its level come from the log's level-ups, which are a level apart, so after a
+/// login or an app start the level book stands in: the first reading of the bar that the median
+/// filter passes is looked up in it, and the character whose bar was last seen there is taken to
+/// be the one playing ([`LevelBook`], [`Self::set_book`]). A level-up in the log wins over that
+/// guess, whatever name it carries.
+///
 /// An update's restart carries the tracker over as JSON, into the app's next version
 /// ([`Self::carry`]): a field whose meaning changes takes a new name, so that version starts
 /// afresh rather than misread this one's.
@@ -827,6 +1098,14 @@ pub struct XpTracker {
     best: f64,
     character: Option<String>,
     level: Option<u32>,
+    /// Whether `character` and `level` are the level book's guess and not the log's: a level-up
+    /// in the log replaces them, whoever it names ([`Self::note_level`]).
+    #[serde(default)]
+    booked: bool,
+    /// Whether the level book has been asked which character this is since the login or the
+    /// start. Once: by the next reading the bar has moved on from where it was last seen.
+    #[serde(default)]
+    asked_book: bool,
     /// The latest time the tracker was told, by any call.
     clock: Option<Duration>,
     /// When the character went into the town or hideout it is in -- or into the first of the
@@ -863,6 +1142,10 @@ pub struct XpTracker {
     /// The play counted by when the next debug summary is due ([`Self::summarize`]).
     #[serde(skip)]
     summary_due: Duration,
+    /// The level book, and what of it is still to be written. Not carried across an update's
+    /// restart: the new copy takes it from the one it replaces ([`Self::take_book_from`]).
+    #[serde(skip)]
+    book: BookState,
 }
 
 impl XpTracker {
@@ -877,11 +1160,67 @@ impl XpTracker {
         self.half_life = HalfLife::minutes(minutes);
     }
 
+    /// Gives the tracker the level book a start has read back ([`LevelBook::load`]).
+    pub fn set_book(&mut self, book: LevelBook) {
+        self.book = BookState {
+            book,
+            ..BookState::default()
+        };
+    }
+
+    /// Takes the level book of `previous`, the tracker this one carries on from
+    /// ([`Self::carried`]): the carry holds none.
+    pub fn take_book_from(&mut self, previous: &mut XpTracker) {
+        self.book = std::mem::take(&mut previous.book);
+    }
+
+    /// Whether the level book holds nothing: the first run, or a lost file. The game's log has
+    /// the levels then ([`latest_levels`], [`Self::seed_book`]).
+    pub fn book_is_empty(&self) -> bool {
+        self.book.book.is_empty()
+    }
+
+    /// Fills an empty level book with `latest`, the levels the game's log last named, newest
+    /// first ([`latest_levels`]). No character has a position on the bar then, so the first
+    /// reading takes the most recent for the one playing. A book that holds anything is left as
+    /// it is.
+    pub fn seed_book(&mut self, latest: Vec<(String, u32)>) {
+        if latest.is_empty() || !self.book.book.is_empty() {
+            return;
+        }
+        log::info!(
+            "xp: level book seeded with {} characters from the game log",
+            latest.len().min(BOOK_SIZE)
+        );
+        self.book.book.seed(latest, wall_now());
+        self.book.unsaved = true;
+        self.book.taken_at = None;
+    }
+
+    /// The level book, when it's to be written ([`LevelBook::save`]): once it has changed and a
+    /// minute has passed since it was last taken -- at once for the first time, and after a
+    /// level-up or a seeding. With no `at` -- the app is quitting -- as soon as it has changed at
+    /// all. What this returns counts as written.
+    pub fn book_to_save(&mut self, at: Option<Duration>) -> Option<LevelBook> {
+        let state = &mut self.book;
+        let due = match (at, state.taken_at) {
+            (Some(at), Some(taken)) => at.saturating_sub(taken) >= BOOK_EVERY,
+            _ => true,
+        };
+        if !state.unsaved || !due {
+            return None;
+        }
+        state.unsaved = false;
+        state.taken_at = at;
+        Some(state.book.clone())
+    }
+
     /// Applies what the log said before the tracker started (the tail of `Client.txt`, read at
     /// `at`), each event at the time its line was written, on the tracker's clock
     /// ([`log_time`]): the current area -- a town or hideout the character is in counts from when
     /// it was entered -- and, if the character levelled up since the last login, its name and
-    /// level. Unlike [`Self::on_log_event`], old level-ups don't make the tracker expect a wrap,
+    /// level; without one, the first reading of the bar asks the level book. Unlike
+    /// [`Self::on_log_event`], old level-ups don't make the tracker expect a wrap,
     /// and the idle allowance starts at `at`. Map runs are timed from when they were entered, but
     /// for the first map the tail shows before any login: it may have started before the tail
     /// begins, so it's neither shown nor averaged, even after a trip to the hideout and back.
@@ -910,6 +1249,8 @@ impl XpTracker {
                     if std::mem::take(&mut self.scene_lost) {
                         self.character = None;
                         self.level = None;
+                        self.booked = false;
+                        self.asked_book = false;
                         self.town_since = None;
                         self.maps = MapRuns::default();
                         covered = true;
@@ -936,6 +1277,8 @@ impl XpTracker {
         if self.scene_lost && matches!(event, LogEvent::AreaEntered { .. }) {
             *self = Self {
                 half_life: self.half_life,
+                // What was learnt of the characters isn't the login's to forget.
+                book: std::mem::take(&mut self.book),
                 ..Self::default()
             };
         }
@@ -993,19 +1336,86 @@ impl XpTracker {
         self.maps.enter(area, seed, town, timed, at);
     }
 
-    /// Records a level-up of `character`, unless another character already levelled since the
-    /// login (a party member's level-up shows up in the log too). Returns whether it was ours.
+    /// Records a level-up of `character`, unless the log has already named another character
+    /// since the login (a party member's level-up shows up in the log too) -- a character the
+    /// level book only guessed gives way to any. Returns whether it was ours.
     fn note_level(&mut self, character: String, level: u32) -> bool {
-        if self
-            .character
-            .as_ref()
-            .is_some_and(|ours| *ours != character)
+        if !self.booked
+            && self
+                .character
+                .as_ref()
+                .is_some_and(|ours| *ours != character)
         {
             return false;
         }
+        // News for the level book, written without waiting out the minute.
+        if self.book.book.note(&character, level, None, wall_now()) {
+            self.book.unsaved = true;
+            self.book.taken_at = None;
+        }
+        self.booked = false;
         self.character = Some(character);
         self.level = Some(level);
         true
+    }
+
+    /// The first reading of the bar since the login or the start, `value`, asks the level book
+    /// which character this is -- while the level is unknown, and once ([`LevelBook::identify`]).
+    fn ask_book(&mut self, value: f64) {
+        if self.level.is_some() || self.asked_book || self.book.book.is_empty() {
+            return;
+        }
+        self.asked_book = true;
+        let (name, level) = match self.book.book.identify(value) {
+            Guess::Matched(entry) => {
+                log::info!(
+                    "xp: level book: the bar at {value:.4} is where one character left it, \
+                     level {}",
+                    entry.level
+                );
+                (entry.name.clone(), entry.level)
+            }
+            Guess::Latest(entry) => {
+                log::info!(
+                    "xp: level book: no character has a bar reading yet, the most recent one, \
+                     level {}, is taken",
+                    entry.level
+                );
+                (entry.name.clone(), entry.level)
+            }
+            Guess::Several(count) => {
+                log::info!(
+                    "xp: level book: the bar at {value:.4} is where {count} characters left it: \
+                     level unknown"
+                );
+                return;
+            }
+            Guess::Nobody => {
+                log::info!(
+                    "xp: level book: the bar at {value:.4} is where no character left it: \
+                     level unknown"
+                );
+                return;
+            }
+        };
+        self.character = Some(name);
+        self.level = Some(level);
+        self.booked = true;
+    }
+
+    /// Puts the reading of the bar in the level book, under the character the tracker knows --
+    /// but not while a large change of it is held as a possible misread, nor between a level-up
+    /// and the bar's wrap, when the level and the bar are of different levels.
+    fn note_bar(&mut self, value: f64) {
+        if self.pending.is_some() || self.level_up_balance != 0 {
+            return;
+        }
+        let (Some(name), Some(level)) = (&self.character, self.level) else {
+            return;
+        };
+        if self.book.book.note(name, level, Some(value), wall_now()) {
+            self.book.unsaved = true;
+        }
     }
 
     fn expire_level_up_balance(&mut self, at: Duration) {
@@ -1053,9 +1463,11 @@ impl XpTracker {
         };
         self.recent = [self.recent[1], Some(reading)];
         let value = median?;
+        self.ask_book(value);
         let Some((last_at, previous)) = self.last else {
             self.best = value;
             self.last = Some((at, value));
+            self.note_bar(value);
             return None;
         };
         self.expire_level_up_balance(at);
@@ -1073,6 +1485,7 @@ impl XpTracker {
         }
         self.credit(gain, at.saturating_sub(last_at), at);
         self.last = Some((at, value));
+        self.note_bar(value);
         self.pending
             .filter(|pending| pending.since == at)
             .map(|pending| Suspect {
@@ -1625,7 +2038,7 @@ pub fn percent_words(fraction: f64) -> Vec<Word> {
 }
 
 /// How fast the character levels and how much play is left to the next level: `+12,4 %/ч · до
-/// 75 ур. 1 ч 32 мин` -- `до ур.` until the log names the level, `—` for the time when nothing
+/// 75 ур. 1 ч 32 мин` -- `до ур.` until the level is known, `—` for the time when nothing
 /// has been gained to go by; `+12,4 %/ч · 1 ч 32 мин` when [`Wording::Short`]. Or, the first two
 /// minutes of play, the wait for a rate.
 pub fn rate_words(status: &XpStatus, wording: Wording) -> Vec<Word> {
@@ -1736,6 +2149,10 @@ fn format_clock(elapsed: Duration) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Cursor;
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
     use super::*;
 
     const GAME_4K: PhysicalRect = PhysicalRect {
@@ -3487,5 +3904,434 @@ mod tests {
             format_clock(Duration::from_secs(3600 + 2 * 60 + 3)),
             "1:02:03"
         );
+    }
+
+    // --- Which character it is ---
+
+    /// A level book of `characters`: name, level, and where the bar was last seen -- the most
+    /// recent first.
+    fn book_of(characters: &[(&str, u32, Option<f64>)]) -> LevelBook {
+        LevelBook {
+            characters: characters
+                .iter()
+                .map(|&(name, level, fraction)| BookEntry {
+                    name: name.to_owned(),
+                    level,
+                    fraction,
+                    at: 1_790_000_000,
+                })
+                .collect(),
+        }
+    }
+
+    /// A tracker with `characters` in its level book, at its first reading of the bar: three looks
+    /// at `fraction`, the third being the first the median filter passes.
+    fn first_reading(characters: &[(&str, u32, Option<f64>)], fraction: f64) -> XpTracker {
+        let mut tracker = XpTracker::new();
+        tracker.set_book(book_of(characters));
+        play(&mut tracker, 0.0, 3, |_| Some(fraction));
+        tracker
+    }
+
+    fn level_up(character: &str, level: u32) -> LogEvent {
+        LogEvent::LevelUp {
+            character: character.to_owned(),
+            level,
+        }
+    }
+
+    /// The level, and the name, of the character the tracker takes to be playing.
+    fn playing(tracker: &XpTracker) -> (Option<u32>, Option<&str>) {
+        (tracker.status().level, tracker.character.as_deref())
+    }
+
+    /// Where `book` has the bar of the character it put first.
+    fn position_in(book: &LevelBook) -> Option<f64> {
+        book.characters.first().and_then(|entry| entry.fraction)
+    }
+
+    static TEMP_DIRS: AtomicUsize = AtomicUsize::new(0);
+
+    /// A fresh directory under the system temp dir, removed on drop: this crate has no `tempfile`
+    /// dependency, the same hand-rolled scheme as `settings`' tests.
+    struct TempDir(PathBuf);
+
+    impl TempDir {
+        fn new() -> TempDir {
+            let n = TEMP_DIRS.fetch_add(1, Ordering::Relaxed);
+            TempDir(std::env::temp_dir().join(format!(
+                "poe2-oracle-xp-levels-test-{}-{n}",
+                std::process::id()
+            )))
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn the_level_book_round_trips_through_its_file_and_a_damaged_one_reads_as_empty() {
+        let dir = TempDir::new();
+        let path = dir.0.join("data").join("xp-levels.json");
+        assert_eq!(LevelBook::load(&path), LevelBook::default(), "no file yet");
+
+        let book = book_of(&[
+            ("mttzzz_bow_five", 94, Some(0.6475)),
+            ("Ведьма_Ая", 61, None),
+            ("mttzzz_merc_next", 38, Some(0.0)),
+        ]);
+        book.save(&path).unwrap();
+        assert_eq!(LevelBook::load(&path), book);
+        assert!(
+            !path.with_extension("json.tmp").exists(),
+            "the temporary file becomes the book"
+        );
+        // Saved over the one before.
+        let newer = book_of(&[("mttzzz_bow_five", 95, None)]);
+        newer.save(&path).unwrap();
+        assert_eq!(LevelBook::load(&path), newer);
+
+        // A file cut short, empty, of another shape or not text at all is an empty book, and the
+        // next save replaces it.
+        let damaged: [&[u8]; 5] = [
+            b"{\"characters\":[{\"name\":\"a\",\"lev",
+            b"",
+            b"[]",
+            br#"{"characters": 5}"#,
+            b"\xff\xfe\x00 garbage",
+        ];
+        for bytes in damaged {
+            fs::write(&path, bytes).unwrap();
+            assert_eq!(LevelBook::load(&path), LevelBook::default(), "{bytes:?}");
+        }
+        book.save(&path).unwrap();
+        assert_eq!(LevelBook::load(&path), book);
+    }
+
+    /// A line of the game's log, written at `time` on a day of September 2026, ended the way the
+    /// log ends its lines.
+    fn log_line(time: &str, message: &str) -> String {
+        format!("2026/09/{time} 4189156 3ef23348 [INFO Client 19772] {message}\r\n")
+    }
+
+    /// A line of the log that names no level: an area, as most of its lines are.
+    const FILLER: &str = "2026/09/22 18:50:44 4347046 2caa229f [DEBUG Client 19772] Generating level 44 area \"G3_town\" with seed 1\r\n";
+
+    #[test]
+    fn the_backward_scan_finds_each_characters_latest_level_in_either_language() {
+        let mut log = String::new();
+        log += &log_line("20 10:00:00", ": alpha (Mercenary) is now level 50");
+        log += &log_line(
+            "21 11:00:00",
+            ": Бета (Легионер каменитов) достигает 61 уровня",
+        );
+        log += &FILLER.repeat(2);
+        log += &log_line("25 09:30:00", ": alpha (Mercenary) is now level 51");
+        log += &log_line(
+            "29 10:22:39",
+            ": gamma_deadeye (Deadeye) достигает 94 уровня",
+        );
+        log += &FILLER.repeat(3);
+        // A chat line can't fake a level-up, and a line the game is still writing isn't one yet.
+        log += "2026/09/29 12:00:00 5 3ef23348 [INFO Client 19772] #Trader: Fake (Mercenary) is now level 99\r\n";
+        log += "2026/09/29 12:00:05 6 3ef23348 [INFO Client 19772] : delta (Ranger) is now level 7";
+        let bytes = log.as_bytes();
+        let scan = |limit: u64, chunk: usize| {
+            latest_levels_in(&mut Cursor::new(bytes), limit, chunk).unwrap()
+        };
+
+        // Newest first, each character once, at its latest level. Every size of chunk, so that
+        // every line is cut somewhere: the Cyrillic ones mid-letter too.
+        let expected = vec![
+            ("gamma_deadeye".to_owned(), 94),
+            ("alpha".to_owned(), 51),
+            ("Бета".to_owned(), 61),
+        ];
+        for chunk in [1, 2, 3, 5, 8, 13, 21, 64, 100, 1000, LEVELS_CHUNK] {
+            assert_eq!(scan(u64::MAX, chunk), expected, "chunks of {chunk} bytes");
+        }
+
+        // The limit counts bytes from the end, and a line it cuts through isn't read.
+        let gamma = log.find("2026/09/29 10:22:39").unwrap();
+        let from_gamma = (log.len() - gamma) as u64;
+        for chunk in [1, 7, 100] {
+            assert_eq!(scan(from_gamma + 1, chunk), &expected[..1], "{chunk}");
+            assert!(scan(from_gamma - 1, chunk).is_empty(), "{chunk}");
+        }
+    }
+
+    #[test]
+    fn a_level_up_far_from_the_end_is_found_within_the_limit_only() {
+        // The owner's case: the last level-up of a level-94 character is days old -- here over two
+        // megabytes of log ago.
+        let mut log = log_line("29 10:22:39", ": mttzzz_bow_five (Deadeye) is now level 94");
+        log += &FILLER.repeat(20_000);
+        let mut log = Cursor::new(log.into_bytes());
+        // The last megabyte, which a start replays, doesn't reach it; 64 MB do.
+        assert!(latest_levels(&mut log, 1 << 20).unwrap().is_empty());
+        assert_eq!(
+            latest_levels(&mut log, 64 << 20).unwrap(),
+            [("mttzzz_bow_five".to_owned(), 94)]
+        );
+    }
+
+    #[test]
+    fn one_character_last_seen_where_the_bar_is_is_the_one_playing() {
+        let characters = [
+            ("bow", 94, Some(0.412)),
+            ("merc", 61, Some(0.75)),
+            ("fresh", 30, None),
+        ];
+        let mut tracker = XpTracker::new();
+        tracker.set_book(book_of(&characters));
+        // The median filter passes nothing before the third look.
+        play(&mut tracker, 0.0, 2, |_| Some(0.414));
+        assert_eq!(playing(&tracker), (None, None));
+        play(&mut tracker, 4.0, 1, |_| Some(0.414));
+        assert_eq!(playing(&tracker), (Some(94), Some("bow")));
+
+        // Within 0.003 of where `bow` was left counts, either side; beyond it doesn't.
+        for (fraction, level) in [(0.4149, Some(94)), (0.4091, Some(94)), (0.4152, None)] {
+            let tracker = first_reading(&characters, fraction);
+            assert_eq!(tracker.status().level, level, "{fraction}");
+        }
+    }
+
+    #[test]
+    fn two_characters_last_seen_where_the_bar_is_leave_the_level_unknown() {
+        // 0.411 and 0.4135 both lie within 0.003 of 0.4125.
+        let tracker = first_reading(
+            &[
+                ("bow", 94, Some(0.411)),
+                ("merc", 61, Some(0.4135)),
+                ("fresh", 30, None),
+            ],
+            0.4125,
+        );
+        assert_eq!(playing(&tracker), (None, None));
+    }
+
+    #[test]
+    fn no_character_last_seen_where_the_bar_is_leaves_the_level_unknown_for_good() {
+        // Nobody near 30 %; and no falling back on the most recent character once the book has
+        // any position.
+        let mut tracker = first_reading(&[("bow", 94, Some(0.412)), ("fresh", 30, None)], 0.30);
+        assert_eq!(playing(&tracker), (None, None));
+        // The book was asked once. The bar reaching where `bow` was last seen later on is not a
+        // first reading.
+        play(&mut tracker, 6.0, 6, |_| Some(0.412));
+        assert_eq!(playing(&tracker), (None, None));
+    }
+
+    #[test]
+    fn a_book_of_the_logs_levels_alone_gives_its_most_recent_character() {
+        // The first run after the update: the levels the log's backward read found, newest
+        // first, and no position on the bar for anyone yet.
+        let mut empty = XpTracker::new();
+        assert!(empty.book_is_empty());
+        play(&mut empty, 0.0, 3, |_| Some(0.2));
+        assert_eq!(playing(&empty), (None, None), "an empty book knows nobody");
+
+        let mut tracker = XpTracker::new();
+        tracker.seed_book(vec![("bow".to_owned(), 94), ("merc".to_owned(), 61)]);
+        assert!(!tracker.book_is_empty());
+        play(&mut tracker, 0.0, 3, |_| Some(0.2));
+        assert_eq!(playing(&tracker), (Some(94), Some("bow")));
+        // A book that holds something isn't seeded over.
+        tracker.seed_book(vec![("other".to_owned(), 5)]);
+        assert_eq!(tracker.book.book.characters.len(), 2);
+
+        // Once some character has a position, the most recent one is no longer the answer for a
+        // bar that is nowhere near it.
+        let tracker = first_reading(&[("bow", 94, None), ("merc", 61, Some(0.9))], 0.2);
+        assert_eq!(playing(&tracker), (None, None));
+    }
+
+    #[test]
+    fn a_level_up_in_the_log_wins_over_the_level_book() {
+        let characters = [("bow", 94, Some(0.412)), ("merc", 61, Some(0.75))];
+        let at = Duration::from_secs;
+
+        // The book takes the character for `bow`, at 94, and the log says `bow` reached 95.
+        let mut tracker = first_reading(&characters, 0.412);
+        assert_eq!(playing(&tracker), (Some(94), Some("bow")));
+        tracker.on_log_event(level_up("bow", 95), at(10));
+        assert_eq!(playing(&tracker), (Some(95), Some("bow")));
+
+        // Or it names another character: the guess was wrong, and the log's word stands.
+        let mut tracker = first_reading(&characters, 0.412);
+        tracker.on_log_event(level_up("merc", 62), at(10));
+        assert_eq!(playing(&tracker), (Some(62), Some("merc")));
+        // From then on the log has named the character, and a party member's level-up isn't
+        // ours, as before the book.
+        tracker.on_log_event(level_up("friend", 80), at(20));
+        assert_eq!(playing(&tracker), (Some(62), Some("merc")));
+    }
+
+    #[test]
+    fn logging_out_and_in_asks_the_level_book_again() {
+        let mut tracker =
+            first_reading(&[("bow", 94, Some(0.412)), ("merc", 61, Some(0.75))], 0.412);
+        assert_eq!(playing(&tracker), (Some(94), Some("bow")));
+        // `bow` earns a little, 0.412 to 0.442 in 36 s of play, which the book follows.
+        let bar = |t: f64| 0.412 + 0.03 * (t - 6.0) / 36.0;
+        let t = play(&mut tracker, 6.0, 19, |t| Some(bar(t)));
+        let bow = bar(t - 2.0);
+
+        // Out to character select and in again, as `merc` this time: unknown until the first
+        // reading.
+        tracker.on_log_event(LogEvent::SceneLost, Duration::from_secs_f64(t));
+        enter(&mut tracker, "G1_1", 7, t + 20.0);
+        assert_eq!(playing(&tracker), (None, None));
+        play(&mut tracker, t + 24.0, 3, |_| Some(0.75));
+        assert_eq!(playing(&tracker), (Some(61), Some("merc")));
+
+        // And once more as `bow`: where its bar was left, not where it began, is what matches.
+        let t = t + 30.0;
+        tracker.on_log_event(LogEvent::SceneLost, Duration::from_secs_f64(t));
+        enter(&mut tracker, "G1_1", 8, t + 20.0);
+        assert_eq!(playing(&tracker), (None, None));
+        play(&mut tracker, t + 24.0, 3, |_| Some(bow));
+        assert_eq!(playing(&tracker), (Some(94), Some("bow")));
+    }
+
+    #[test]
+    fn the_plate_names_the_level_once_the_level_book_has() {
+        let rate = 0.12 / 3600.0;
+        let seen: [(&str, u32, Option<f64>); 1] = [("bow", 94, Some(0.30))];
+        let elsewhere: [(&str, u32, Option<f64>); 1] = [("bow", 94, Some(0.62))];
+        let nobody: [(&str, u32, Option<f64>); 0] = [];
+        // 200 s of play from 30 % of a level: long enough for a rate to show.
+        let plate = |characters: &[(&str, u32, Option<f64>)], lang| {
+            let mut tracker = XpTracker::new();
+            tracker.set_book(book_of(characters));
+            play(&mut tracker, 0.0, 100, |t| {
+                Some(as_read(0.30 + rate * t, t))
+            });
+            i18n::with_lang(lang, || plates(&tracker.status(), Wording::Full))
+        };
+        // The bar is where `bow` was last seen: its next level is 95. Where nobody was seen, or
+        // with nothing in the book, the plate says what it said before the book.
+        for (characters, english, russian) in [
+            (&seen[..], " · level 95 in ", " · до 95 ур. "),
+            (&elsewhere[..], " · next level in ", " · до ур. "),
+            (&nobody[..], " · next level in ", " · до ур. "),
+        ] {
+            let words = plate(characters, i18n::Lang::English);
+            assert!(words.contains(english), "{words}");
+            let words = plate(characters, i18n::Lang::Russian);
+            assert!(words.contains(russian), "{words}");
+        }
+    }
+
+    #[test]
+    fn the_level_book_is_written_at_a_level_up_and_once_a_minute_while_the_bar_moves() {
+        let s = Duration::from_secs;
+        let bar = |t: f64| 0.30 + 0.002 * (t - 6.0);
+        let mut tracker = XpTracker::new();
+        tracker.set_book(book_of(&[("bow", 94, Some(0.30))]));
+
+        // What the book holds already is no news: the log's replay says the level it has, and
+        // the bar is where it had it.
+        tracker.restore(at_start([level_up("bow", 94)]), s(0));
+        play(&mut tracker, 2.0, 3, |_| Some(0.30));
+        assert_eq!(tracker.book_to_save(Some(s(7))), None);
+
+        // The bar moves: the first change is written at once...
+        play(&mut tracker, 8.0, 4, |t| Some(bar(t)));
+        let first = tracker.book_to_save(Some(s(15))).expect("written at once");
+        let first = position_in(&first).unwrap();
+        assert!(first > 0.30, "{first}");
+        // ... and then at most once a minute, with where the bar has got to by then.
+        let t = play(&mut tracker, 16.0, 33, |t| Some(bar(t)));
+        assert_eq!(tracker.book_to_save(Some(s(60))), None);
+        let later = tracker.book_to_save(Some(s(76))).expect("a minute on");
+        let later = position_in(&later).unwrap();
+        assert!(later > first + 0.1, "{later}");
+
+        // A level-up doesn't wait out the minute, and the old level's bar is no position on the
+        // new one.
+        tracker.on_log_event(level_up("bow", 95), Duration::from_secs_f64(t + 1.0));
+        let leveled = tracker.book_to_save(Some(s(84))).expect("written at once");
+        assert_eq!(
+            (leveled.characters[0].level, leveled.characters[0].fraction),
+            (95, None)
+        );
+        // The bar shows the old level's until it wraps: no position on the new level yet.
+        let wraps = play(&mut tracker, t + 2.0, 2, |_| Some(bar(t)));
+        assert_eq!(position_in(&tracker.book.book), None);
+        // Then it wraps to the new level: the position follows, at the minute's pace.
+        play(&mut tracker, wraps, 4, |_| Some(0.02));
+        assert_eq!(tracker.book_to_save(Some(s(90))), None);
+        // The app quitting takes what changed since, whatever the time, once.
+        let last = tracker.book_to_save(None).expect("written on quitting");
+        assert_eq!(
+            (last.characters[0].level, last.characters[0].fraction),
+            (95, Some(0.02))
+        );
+        assert_eq!(tracker.book_to_save(None), None);
+    }
+
+    #[test]
+    fn a_reading_held_as_a_possible_misread_never_reaches_the_level_book() {
+        let mut tracker = first_reading(&[("bow", 94, Some(0.30))], 0.30);
+        // The bar reads 90 % for ten seconds where it shows 30 %: held, not counted.
+        play(&mut tracker, 6.0, 5, |_| Some(0.90));
+        assert!(tracker.pending.is_some());
+        assert_eq!(position_in(&tracker.book.book), Some(0.30));
+        // It goes back: a misread, and the book never held it.
+        play(&mut tracker, 16.0, 4, |_| Some(0.30));
+        assert_eq!(tracker.pending, None);
+        assert_eq!(position_in(&tracker.book.book), Some(0.30));
+    }
+
+    #[test]
+    fn a_guess_from_the_level_book_is_still_the_logs_to_correct_after_an_update_restart() {
+        let mut old = first_reading(&[("bow", 94, Some(0.412)), ("merc", 61, Some(0.75))], 0.412);
+        let json = old.carry().unwrap();
+        let mut carried = XpTracker::carried(&json, Duration::from_secs(10)).expect("taken up");
+        // The new copy has the level the old one had, but not its book.
+        assert_eq!(playing(&carried), (Some(94), Some("bow")));
+        assert!(carried.book_is_empty());
+        carried.take_book_from(&mut old);
+        assert!(!carried.book_is_empty() && old.book_is_empty());
+        // The log names another character: the guess gives way, as it would have without the
+        // restart.
+        carried.on_log_event(level_up("merc", 62), Duration::from_secs(12));
+        assert_eq!(playing(&carried), (Some(62), Some("merc")));
+    }
+
+    #[test]
+    fn the_level_book_keeps_the_twenty_most_recent_characters() {
+        let mut book = LevelBook::default();
+        for n in 0..25 {
+            book.note(
+                &format!("char{n}"),
+                10 + n,
+                None,
+                1_790_000_000 + u64::from(n),
+            );
+        }
+        // The latest first: char24 down to char5.
+        assert_eq!(book.characters.len(), 20);
+        assert_eq!(book.characters[0].name, "char24");
+        assert_eq!(book.characters[19].name, "char5");
+        // One already in it comes to the front and drops nobody.
+        book.note("char10", 20, Some(0.5), 1_790_000_100);
+        assert_eq!(book.characters.len(), 20);
+        assert_eq!(book.characters[0].name, "char10");
+        assert_eq!(book.characters[19].name, "char5");
+
+        // The levels the log named seed a book with the 20 newest of them.
+        let mut seeded = LevelBook::default();
+        seeded.seed(
+            (0..30).map(|n| (format!("log{n}"), 50 + n)).collect(),
+            1_790_000_000,
+        );
+        assert_eq!(seeded.characters.len(), 20);
+        assert_eq!(seeded.characters[19].name, "log19");
     }
 }

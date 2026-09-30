@@ -1,5 +1,6 @@
 //! Tail-follows the game's `Client.txt`. What the lines mean is the caller's: the XP overlay reads
-//! them with `crate::xp_tracker::parse_log_line`.
+//! them with `crate::xp_tracker::parse_log_line`. The one exception is
+//! [`ClientLog::latest_levels`], which reads level-ups far back itself.
 //!
 //! The log lives in `logs\` beside the game's executable -- on the test machine
 //! `D:\SteamLibrary\steamapps\common\Path of Exile 2\logs\Client.txt`, next to
@@ -13,7 +14,7 @@
 
 use std::ffi::OsString;
 use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{self, Read, Seek, SeekFrom};
 use std::os::windows::ffi::OsStringExt;
 use std::path::PathBuf;
 
@@ -25,10 +26,16 @@ use windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
 use windows::core::PWSTR;
 
 use crate::platform::game_window;
+use crate::xp_tracker;
 
 /// How much of the log's end [`ClientLog::open`] replays for the XP tracker: ~20 hours of play at
 /// the test machine's rate, enough to reach back to the last login.
 pub const HISTORY_BYTES: u64 = 1 << 20;
+
+/// How far back [`ClientLog::latest_levels`] reads: 64 MB, of the 166 MB the test machine's log
+/// has grown to. A level at 94 takes days, and [`HISTORY_BYTES`] reaches back about 20 hours of
+/// play.
+pub const LEVELS_BYTES: u64 = 64 << 20;
 
 /// Set to a file's path to read that file instead of the running game's log: a log the lines of
 /// a test are appended to by hand (the game's own must not get fake lines other tools read).
@@ -74,6 +81,13 @@ impl ClientLog {
             },
             events,
         ))
+    }
+
+    /// The latest level each character reached, newest first, from the last [`LEVELS_BYTES`] of
+    /// the log: what a first start's level book is seeded with. It reads the file afresh, whatever
+    /// [`Self::open`] and [`Self::poll`] have consumed of it.
+    pub fn latest_levels(&self) -> io::Result<Vec<(String, u32)>> {
+        xp_tracker::latest_levels(&mut File::open(&self.path)?, LEVELS_BYTES)
     }
 
     /// What `parse` reads in the lines the game has completed since the last poll; empty when

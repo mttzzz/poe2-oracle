@@ -122,7 +122,8 @@ Things that save time:
   the troubled ones: handy for collecting parser fixtures. The folder keeps the newest 100 texts,
   so copy them out before checking more.
 - `POE2_ORACLE_CLIENT_LOG=<file>` makes the app read that file instead of the game's `Client.txt`,
-  so the XP overlay can be tested by appending lines to it.
+  so the XP overlay can be tested by appending lines to it. The level book's first-run read of the
+  game's log (see [Debugging the XP overlay](#debugging-the-xp-overlay)) reads that file too.
 - `POE2_ORACLE_PAINT_CENSUS=1` logs, every 10 seconds, how often GPUI's vsync thread waited for a
   refresh of the display or slept instead, and for how much of the time it slept; then what woke
   the UI thread, window by window: the display refreshes' asks for a paint and what the redraw
@@ -164,6 +165,33 @@ $env:POE2_ORACLE_XP_DEBUG = "1"
   the values: `2026-09-28T15-16-51.672Z_0.5163_to_0.9863_read_0.9863.png` is from, to, and what
   those very pixels read as. The picture is the capture `read_fill` reads, 1536×10 at 4K: the fill
   band and the tick stems under it. The folder keeps the newest 30, and the log names each one.
+
+**The level book.** The game's log names the level only in a level-up line: after a login the
+tracker knows no level until the next one, and the 1 MB of the log's end that the app replays at
+every start may hold none. The book, `%LOCALAPPDATA%\poe2-oracle\data\xp-levels.json`, fills the
+gap. It is keyed by character name and holds, for each of the 20 most recent characters, the
+level, where the bar stood (a fraction of the level) when it was last read with that character
+known to be playing, and when that was noted. It is written at every level-up, at most once a
+minute while the bar's reading changes, and when the app quits, so that the last position is kept.
+A missing or damaged file is an empty book; the player never sees an error.
+
+- **First run.** With an empty book the app reads `Client.txt` backwards from its end, up to 64 MB,
+  for each character's latest level-up line (English and Russian client) and seeds the book with
+  those levels, their bar positions unknown: a level at 94 takes days, more than the 1 MB tail
+  covers. `POE2_ORACLE_CLIENT_LOG` redirects this read too. To start the book over, delete
+  `xp-levels.json` with the app closed: the next start reads the log again.
+- **Identification.** After a start or a login, while the level is unknown, the first bar reading
+  the tracker accepts as real is compared with the book's positions. Exactly one character whose
+  position is within 0.003 of it (0.3% of a level) is the character: its name and level are taken.
+  Otherwise, if no character in the book has a position yet (the first run), the most recent one is
+  taken; otherwise the level stays unknown and the plate says `next level in`. A level-up line in
+  the log always wins over the book: the rule that a party member's line isn't ours applies once
+  the log has named the character, not when the book only guessed it.
+- **Log lines.** At `info`, `xp: level book: …` says, once for each start or login, how
+  identification went (matched one character; no bar reading in the book yet, the most recent one
+  taken; matches N characters, level unknown; matches no character, level unknown), and after the
+  first-run read there is `xp: level book seeded with N characters from the game log`. Neither
+  names a character.
 
 ## Checks (what CI runs)
 
@@ -346,10 +374,10 @@ and passes each one on to the maintainer, as an issue in the private reports rep
 (`GITHUB_REPORTS_REPO`) and a Telegram message; serves the latest app release and the latest data
 pack, with their files, from this repository's releases (`GITHUB_REPO`: `/api/v1/releases/latest`,
 `/api/v1/data/latest`, `/download/<tag>/<file>`, `/download/latest`); tells the running apps about
-both over an event stream (`/api/v1/events`); and posts a daily digest of downloads, stream
-connections, update checks, reports and site visits from tagged links. What the app and the
-service share is in `crates/oracle-protocol`: the service's address, the report, release and event
-types, and the report limits (`Report::check`, which both sides run).
+both over an event stream (`/api/v1/events`); counts what the apps and the site's visitors do, as
+numbers per day ([below](#what-the-service-counts)); and posts a daily digest of them. What the app
+and the service share is in `crates/oracle-protocol`: the service's address, the report, release and
+event types, and the report limits (`Report::check`, which both sides run).
 
 The service lists the repository's releases when it starts and every two minutes after, sending
 GitHub the last list's ETag, so an unchanged list costs no rate limit. Of the published releases
@@ -361,13 +389,14 @@ whenever either changes, and a `: ping` comment after 25 s of silence. One addre
 streams at once and the service 4000 in all (about 23 KiB of memory each). A stream past either
 gets no place, only the `versions` event with `retry: 60000`, and ends at once; the app then asks
 again on its backoff, which grows to 5 min. When the service shuts down, the streams end, and the
-apps reconnect.
+apps reconnect. The first connection of each run carries a query, which the service counts
+([below](#what-the-service-counts)).
 
 The site's root and `/guide/` open in the reader's language: the one in the `lang` cookie, which the
 language links on the site and in the guide set when clicked, or else the browser's
-`Accept-Language`. `/` answers in English or redirects to `/ru/`, and `/guide/` redirects to
-`/guide/en/` or `/guide/ru/`; a page's own address, such as `/ru/` or `/guide/en/install.html`,
-never redirects.
+`Accept-Language`. `/` answers in English or redirects to `/ru/`, keeping the query, so that a
+tagged link's `?from=` survives; `/guide/` redirects to `/guide/en/` or `/guide/ru/`; a page's own
+address, such as `/ru/` or `/guide/en/install.html`, never redirects.
 
 It takes its settings from the environment, all optional:
 
@@ -387,19 +416,26 @@ It takes its settings from the environment, all optional:
 | `REDIS_URL` | — | Redis for the daily counters (kept 120 days), the report rate limits and the digest lock; unset, they're kept in memory and lost on a restart |
 | `RUST_LOG` | `info` | The log filter; the log goes to stdout |
 
-The digest goes out at 09:00 Moscow time: the day before, against the same weekday a week earlier.
-Site visits count only through the links the maintainer publishes, tagged with where they're
-published: `?from=` with a tag of `Source` in `crates/oracle-web/src/stats.rs` (`reddit`, `forum`,
-`discord`, `youtube`, `steam`, `wiki`, `lists`, `creators`, `article`). A page loaded with another
-tag, or none, counts nothing, and the digest names only the tags with a visit on either day. `/`
-counts a Russian reader's visit itself and sends them on to `/ru/` without the query, so the
-visit counts once.
+The digest goes out at 09:00 Moscow time, in Russian: the day before, each number followed, in
+brackets, by the same weekday a week earlier. It leads with four numbers, active installs
+(`uniq_app_day`), new installs (`install_new`), updates applied (every `update_applied_*` together)
+and site downloads (`download_site`), and lists the rest under them. A number that wasn't measured
+on a day shows «—», not 0. What is counted is under
+[What the service counts](#what-the-service-counts).
 
 `oracle-web stats [--days N]` prints the counters instead of serving: every counter of today in
 Moscow and of the N - 1 days before it (N from 1 to 120, the days the counters are kept; 60 unless
-given), as one JSON object on stdout, today first:
-`{"generated_at":"2026-09-28T09:10:00Z","days":[{"day":"2026-09-28","counts":{"download":3,…}},…]}`,
-each count under its name in `Stat` (`crates/oracle-web/src/stats.rs`), 0 when nothing was counted.
+given), as one JSON object on stdout, today first, with the ISO weeks those days fall in, this week
+first:
+`{"generated_at":"2026-09-28T09:10:00Z","days":[{"day":"2026-09-28","counts":{"download":3,…}},…],"weeks":[{"week":"2026-W40","from":"2026-09-28","counts":{"uniq_app_week":44}},…]}`,
+each count under its name in `Stat` (`crates/oracle-web/src/stats.rs`). The fixed counters are
+always there, 0 when nothing was counted; the ones named by version (`app_conn_v_<version>`,
+`download_update_v_<version>`, `uniq_app_day_v_<version>`) and `update_applied_<from>_<to>` only on
+the days they are above 0, sorted by name. A new server prints 0 for every new fixed key on the days
+before it was deployed: that is "not measured", not a real zero, so read the service's counters
+(`page_view`, `app_conn`, `uniq_app_day`, `uniq_site_day`, `download_site`, `download_update`) as
+live from the first day one of them is above 0, and the app's (`app_start`, `app_start_dev`) from
+the first day one of those is; an older server prints none of the new keys and no `weeks`.
 It reads `REDIS_URL` and no other variable, and logs to stderr. A bad argument or no `REDIS_URL`
 exits with 2, a Redis that doesn't answer with 1. Production's counters:
 
@@ -455,6 +491,73 @@ Each guide page has the same file name in both languages, `docs/guide/src/en/<pa
 the guide's header leads to the page of the same name in the other book. The pictures stay outside
 both books, in `docs/guide/src/images/<en|ru>/`; pages show them as `../images/<lang>/<name>`, which
 the service serves from `IMAGES_DIR` under `/guide/images/`.
+
+### What the service counts
+
+Every count is a number per Moscow day, kept 120 days after it, with no address or id in it
+(`crates/oracle-web/src/stats.rs`, in Redis). The ones that come from requests work with every app
+already out, since the updater names itself in each request it makes, `User-Agent:
+PoE2-Oracle/<version>`; the starts and updates need an app release that sends the start query
+(below). What is counted is stated exactly in the guide's privacy chapter,
+[What the service counts](docs/guide/src/en/privacy.md#what-the-service-counts), and the Russian
+chapter, the installer's privacy page (`packaging/installer.nsi`) and the landing pages' privacy
+text follow it: change them in the same commit as a counter.
+
+| Counter | Counted when | Comes with |
+|---|---|---|
+| `download_site` | the installer is served to anything but the updater, whose User-Agent starts with `PoE2-Oracle/`: the site's button, a README link, curl | a deploy |
+| `download_update`, `download_update_v_<x.y.z>` | the installer is served to the updater, in total and by the release it fetches | a deploy |
+| `download_site_from_<tag>` | a `download_site` whose request carried `?from=<tag>` | a deploy |
+| `app_conn`, `app_conn_v_<version>` | an event stream opens for the app (a refused one doesn't count), in total and by the User-Agent's version; a developer's start is left out | a deploy |
+| `page_view` | an HTML page is served with GET: the landing pages, the guide, the forms; not assets, `HEAD`, 404s or the guide's `toc.html` frame | a deploy |
+| `uniq_app_day`, `uniq_app_week`, `uniq_app_day_v_<version>` | different installs active in a day, in an ISO week (Monday to Sunday) and by version: one that opened a stream, checked for updates or held a stream open over midnight (a stream still open is added again to the new day and week a random 0–5 minutes after each Moscow midnight) | a deploy |
+| `uniq_site_day`, `uniq_site_day_from_<tag>` | different visitors that loaded an HTML page in a day, and one with `?from=<tag>` | a deploy |
+| `app_start`, `app_start_lang_en`, `app_start_lang_ru`, `app_start_lang_other` | `start=1` in the start query, in total and by `lang` (the three languages sum to `app_start`); counted even when the stream is refused for capacity | an app release |
+| `install_new` | `start=1&first=1` | an app release |
+| `update_applied_<from>_<to>` | `start=1&from=<version>`: `from` lower than the User-Agent's version `<to>`, each a known release, else `other` | an app release |
+| `app_start_dev` | `start=1&dev=1`, and nothing else is counted for that request: no `app_conn`, no distinct count, no `app_start` (only the old `event_stream` still counts its stream) | an app release |
+
+`download` (the installer served to anyone, the site's button and the updater together),
+`event_stream` (streams opened: starts and reconnections alike, refused ones not counted),
+`update_check`, `data_download`, `update_download` (`SHA256SUMS` and its signature),
+`report_bug`, `report_idea`, `report_item`, `report_crash` and `visit_<tag>` are counted as before.
+
+A distinct count (`uniq_*`) is a Redis HyperLogLog sketch (`PFADD`) of the SHA-256 of a salt, the
+client's address (`limits::client_key`: the right-most `X-Forwarded-For`, an IPv6 address by its
+/64) and a User-Agent: for the app its product token `PoE2-Oracle` without the version, so that an
+update doesn't make one install two; for the site the browser's whole User-Agent. The salt is 32
+random bytes per Moscow day, and per ISO week for `uniq_app_week`, a sketch of its own, not a sum
+of days; it lives in Redis until its period ends plus 2 h and is never logged, and no hash is kept
+or logged. Names built from request data are bounded: a version counts under its own name only when
+it is one of the newest 16 published releases, else `other`; a tag only when it is one of
+`Source`'s nine (`reddit`, `forum`, `discord`, `youtube`, `steam`, `wiki`, `lists`, `creators`,
+`article`), else nothing; a language only when `en` or `ru`, else `other`.
+
+The start query is on the app's first connection of a run that opens: `start=1` and, as they apply,
+`first=1`, `from=<version>`, `lang=en` or `lang=ru`, and `dev=1`, in that order (`START_PARAM`,
+`FIRST_PARAM`, `FROM_PARAM`, `LANG_PARAM` and `DEV_PARAM` in `oracle-protocol`). A connection that
+doesn't open is retried with the same query, and the reconnections after it carry none. The service
+counts it only from the app's User-Agent and only with `start=1`. The app keeps two markers in its
+data folder, `%LOCALAPPDATA%\poe2-oracle\data`: `last-run-version`, the version of the last start
+the service was told about, written once the connection has opened (absent: `first=1`, unless the
+install predates the marker; different from the running version: `from=<its content>`), and `dev`,
+an empty file that makes the app add `dev=1`. A developer's start is counted as `app_start_dev` and
+as nothing else, so a test build stays out of the numbers: the maintainer's install script for his
+dev build, `.tmp/remote/lc/xp-install.ps1`, creates the file. With **Update automatically** off the
+app never connects, so nothing of this is counted.
+
+The maintainer tags the links he publishes with where they're published: `?from=` with a tag of
+`Source`. A page loaded with a tag counts a visit (`visit_<tag>`) and a visitor
+(`uniq_site_day_from_<tag>`); another tag, or none, counts only in `page_view` and `uniq_site_day`,
+and the digest names only the tags with a visit on either day. `/` redirects a Russian reader to
+`/ru/` with the query, and the visit counts where the page is served, so once. The download comes
+pages later than the visit, so the site's pages carry the tag along: `site/from.js`, a module on
+every page of the site, and the same block in `docs/guide/theme/guide.js` keep a `from` value
+matching `^[a-z0-9_-]{1,32}$` in the tab's `sessionStorage` (key `oracle-from`, gone with the tab,
+no cookie) and add it to every same-origin link to `/download/latest`; with storage blocked they do
+nothing. `/download/latest?from=<tag>` redirects to the file's address with `?from=<tag>` when the
+tag is one of the nine, and serving the file counts `download_site_from_<tag>` beside
+`download_site`.
 
 ### Deploying the service
 

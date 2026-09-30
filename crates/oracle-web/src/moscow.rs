@@ -16,7 +16,7 @@ pub fn now() -> i64 {
 }
 
 /// One calendar day in Moscow, as days since 1970-01-01 there.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Day(i64);
 
 impl Day {
@@ -49,6 +49,19 @@ impl Day {
     pub fn weekday(self) -> usize {
         (self.0 + 3).rem_euclid(7) as usize
     }
+
+    /// The ISO week the day is in: Monday to Sunday, numbered in the year of its Thursday.
+    pub fn week(self) -> Week {
+        let monday = Day(self.0 - self.weekday() as i64);
+        let thursday = monday.0 + 3;
+        let (year, _, _) = Day(thursday).date();
+        let number = (thursday - days_from_civil(year, 1, 1)) / 7 + 1;
+        Week {
+            year,
+            number: number as u32,
+            monday,
+        }
+    }
 }
 
 /// `YYYY-MM-DD`, as the Redis keys carry it.
@@ -63,6 +76,46 @@ impl fmt::Display for Day {
 impl serde::Serialize for Day {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.collect_str(self)
+    }
+}
+
+/// As it displays: `YYYY-Www`.
+impl serde::Serialize for Week {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+/// One ISO week in Moscow, Monday to Sunday: what the weekly counts are kept by.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Week {
+    /// The year of the week's Thursday, which the ISO calendar numbers it in.
+    year: i64,
+    number: u32,
+    monday: Day,
+}
+
+impl Week {
+    /// The week's Monday.
+    pub fn monday(self) -> Day {
+        self.monday
+    }
+
+    /// Midnight in Moscow that ends the week's Sunday, in Unix seconds.
+    pub fn end(self) -> i64 {
+        self.monday.start() + 7 * DAY_SECS
+    }
+
+    /// `weeks` weeks earlier.
+    pub fn minus(self, weeks: i64) -> Week {
+        Day(self.monday.0 - 7 * weeks).week()
+    }
+}
+
+/// `YYYY-Www`, as the Redis keys and the readout carry it: `2026-W40`.
+impl fmt::Display for Week {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:04}-W{:02}", self.year, self.number)
     }
 }
 
@@ -120,6 +173,18 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
     (year, month, day)
 }
 
+/// The day count since 1970-01-01 of a proleptic Gregorian date (Howard Hinnant's
+/// `days_from_civil`), the inverse of [`civil_from_days`].
+fn days_from_civil(year: i64, month: u32, day: u32) -> i64 {
+    let year = year - i64::from(month <= 2);
+    let era = year.div_euclid(400);
+    let year_of_era = year.rem_euclid(400);
+    let month_from_march = i64::from(if month > 2 { month - 3 } else { month + 9 });
+    let day_of_year = (153 * month_from_march + 2) / 5 + i64::from(day) - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    era * 146_097 + day_of_era - 719_468
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -175,5 +240,30 @@ mod tests {
             "2026-09-26-090507"
         );
         assert_eq!(stamp(MOSCOW_MIDNIGHT - 1), "2026-09-25-235959");
+    }
+
+    #[test]
+    fn iso_weeks_run_monday_to_sunday_and_belong_to_the_year_of_their_thursday() {
+        let week_of = |unix: i64| Day::of(unix).week();
+        // 2026-09-26 is a Saturday; its week began on Monday the 21st.
+        let saturday = week_of(MOSCOW_MIDNIGHT);
+        assert_eq!(saturday.to_string(), "2026-W39");
+        assert_eq!(saturday.monday().to_string(), "2026-09-21");
+        assert_eq!(saturday.end(), saturday.monday().start() + 7 * DAY_SECS);
+        // The Sunday after it ends the week; the next midnight is the next week's.
+        assert_eq!(week_of(saturday.end() - 1), saturday);
+        assert_eq!(week_of(saturday.end()).to_string(), "2026-W40");
+        assert_eq!(saturday.minus(1).to_string(), "2026-W38");
+        // 2026-01-01 is a Thursday: it makes 2025-12-29 to 2026-01-04 the first week of 2026.
+        let new_year = Day::of(MOSCOW_MIDNIGHT).minus(268).week();
+        assert_eq!(new_year.to_string(), "2026-W01");
+        assert_eq!(new_year.monday().to_string(), "2025-12-29");
+        // 2027-01-01 is a Friday in the last week, the 53rd, of 2026.
+        let friday = Day::of(MOSCOW_MIDNIGHT).minus(268).minus(-365).week();
+        assert_eq!(friday.to_string(), "2026-W53");
+        // 2024-12-30, a Monday, opens 2025's first week.
+        let monday = Day::of(1_735_506_000);
+        assert_eq!(monday.to_string(), "2024-12-30");
+        assert_eq!(monday.week().to_string(), "2025-W01");
     }
 }

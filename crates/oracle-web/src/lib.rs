@@ -15,9 +15,10 @@
 //!   ([`releases`]);
 //! - it keeps the running apps connected to an event stream that tells them the latest versions
 //!   as soon as it lists them, so a new release reaches them within minutes ([`events`]);
-//! - it counts downloads, stream connections, update checks, reports and the site's visits from
-//!   tagged links per Moscow day, and every morning posts the day before to the owner's Telegram
-//!   ([`stats`]).
+//! - it counts what happens per Moscow day -- downloads, stream connections, update checks, reports,
+//!   the site's pages and its visits from tagged links, and how many different installs and
+//!   visitors there were, kept as hashes under salts that expire with their day -- and every
+//!   morning posts the day before to the owner's Telegram ([`stats`], [`distinct`], [`digest`]).
 //!
 //! Everything is configured from the environment ([`Config::from_env`]). Without a GitHub or a
 //! Telegram token the service runs dry on that side: it logs what it would have sent and sends
@@ -26,6 +27,9 @@
 //! have it list the releases every few seconds (`LIST_RELEASES_EVERY`): `lanes/dev.sh` does both
 //! when the lane has test releases to offer.
 
+mod agent;
+mod digest;
+mod distinct;
 mod events;
 mod github;
 mod issue;
@@ -38,6 +42,7 @@ mod stats;
 mod store;
 mod telegram;
 mod upstream;
+mod usage;
 
 use std::error::Error;
 use std::net::SocketAddr;
@@ -247,6 +252,8 @@ struct App {
     /// Work that outlives its request: a report's files going to Telegram after the sender has
     /// its answer. Shutting down waits for it.
     background: TaskTracker,
+    /// The salts of the distinct counts, as this process has read them from the store.
+    salts: distinct::Salts,
 }
 
 impl App {
@@ -280,6 +287,7 @@ impl App {
             streams: Arc::new(events::Streams::new(config.event_streams)),
             reports_in_memory: Arc::new(Semaphore::new(REPORTS_AT_ONCE)),
             background: TaskTracker::new(),
+            salts: distinct::Salts::default(),
         }))
     }
 }
@@ -405,7 +413,7 @@ pub async fn serve(
         event_streams = app.streams.at_once(),
         "serving"
     );
-    let digest = tokio::spawn(stats::post_digests(app.clone()));
+    let digest = tokio::spawn(digest::post_digests(app.clone()));
     let listing = tokio::spawn(releases::refresh(app.clone(), list_releases_every));
     let draining = Arc::new(Notify::new());
     let stopping = {
@@ -481,8 +489,8 @@ async fn shutdown_signal() {
     }
 }
 
-/// Every counter of today in Moscow and of the `days - 1` days before it, from `store`: what
-/// `oracle-web stats` prints. `None` when Redis fails.
+/// Every counter of today in Moscow and of the `days - 1` days before it, and the weekly counts of
+/// the weeks they touch, from `store`: what `oracle-web stats` prints. `None` when Redis fails.
 pub async fn read_stats(store: &Store, days: u32) -> Option<Readout> {
     stats::read_out(store, days, moscow::now()).await
 }

@@ -46,8 +46,10 @@ level and how long the current map has run.
 - There is no main window: PoE2 Oracle runs in the background, shown by its icon by the clock, a
   button on the taskbar, or both, as picked in the [settings](settings.md#system). A click on either
   opens the settings.
-- PoE2 Oracle needs no account for price checks and sends no telemetry. Signing in to
-  pathofexile.com is optional: it opens private leagues and **sum** filter rows. See
+- PoE2 Oracle needs no account for price checks and collects nothing about you or your play; the
+  service behind updates only counts installations, starts and updates, as anonymous numbers with no
+  address or id kept (see [What the service counts](privacy.md#what-the-service-counts)). Signing in
+  to pathofexile.com is optional: it opens private leagues and **sum** filter rows. See
   [Privacy](privacy.md).
 
 ## About

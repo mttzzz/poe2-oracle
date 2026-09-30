@@ -367,6 +367,23 @@ pub const VERSIONS_EVENT: &str = "versions";
 /// How often the service sends a keep-alive comment on the event stream.
 pub const EVENTS_PING_SECS: u64 = 25;
 
+/// What the app's first connection to [`EVENTS_PATH`] in a run adds to its request, as a query, and
+/// what the service counts from it: `start=1` ([`START_PARAM`]), then, as they apply, `first=1`
+/// ([`FIRST_PARAM`]: this installation's first start), `from=<version>` ([`FROM_PARAM`]: the version
+/// its last start ran, when it differs from this one), `lang=en|ru` ([`LANG_PARAM`]: the interface
+/// language) and `dev=1` ([`DEV_PARAM`]: a build the developer made for testing, which the service
+/// counts as a developer's start and as nothing else). Only the first connection that opens carries
+/// them; the reconnections after it carry no query. Without `start=1` the others are ignored.
+pub const START_PARAM: &str = "start";
+/// See [`START_PARAM`].
+pub const FIRST_PARAM: &str = "first";
+/// See [`START_PARAM`].
+pub const FROM_PARAM: &str = "from";
+/// See [`START_PARAM`].
+pub const LANG_PARAM: &str = "lang";
+/// See [`START_PARAM`].
+pub const DEV_PARAM: &str = "dev";
+
 /// The latest published versions, as the event stream announces them.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
 pub struct Versions {

@@ -80,9 +80,12 @@ release in my own play, and fix what you report.
 
 ## Privacy
 
-No telemetry and no account of its own: the app talks only to the Path of Exile trade site, GGG's
-server of pictures and exchange data, poe2scout and oracle.pushka.biz, for updates and the reports
-you send ([details](https://oracle.pushka.biz/guide/en/privacy.html)).
+No account of its own, and nothing collected about you or your play: the app talks only to the Path
+of Exile trade site, GGG's server of pictures and exchange data, poe2scout and oracle.pushka.biz,
+for updates and the reports you send. oracle.pushka.biz counts installations, starts and updates as
+anonymous numbers and keeps no address or id
+([what goes where](https://oracle.pushka.biz/guide/en/privacy.html),
+[what it counts](https://oracle.pushka.biz/guide/en/privacy.html#what-the-service-counts)).
 
 ## Found a problem?
 

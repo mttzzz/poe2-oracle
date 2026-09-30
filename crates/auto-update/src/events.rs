@@ -3,6 +3,10 @@
 //! [`Link`]s -- above all the latest published [`Versions`], which the service sends as soon as a
 //! connection opens and again whenever one of them changes.
 //!
+//! The first connection of a run that opens also tells the service the app has started, in its
+//! query ([`Start`]). Every attempt carries it until one opens -- a start that met a refusal, or
+//! no network, is told again -- and none after that: a reconnection is no new start.
+//!
 //! A connection that fails to open, ends, or hears nothing -- not even the service's ping comment
 //! -- for three ping intervals is dropped, and the next attempt waits out a backoff: 5 s, doubling
 //! per failure up to 5 min, each wait ±20 % at random, so that a restarted service doesn't get
@@ -34,6 +38,7 @@ use http_client::{
 use oracle_protocol::{EVENTS_PATH, EVENTS_PING_SECS, VERSIONS_EVENT, Versions};
 
 use crate::USER_AGENT;
+use crate::start::Start;
 
 /// The wait after a first failure; each further one doubles it, up to [`LAST_RETRY`].
 const FIRST_RETRY: Duration = Duration::from_secs(5);
@@ -81,12 +86,17 @@ pub enum Link {
 /// `wake` ends the wait for the next attempt at once, and several make one attempt. One that
 /// comes while an attempt is still connecting is kept for the wait after it, should it fail; one
 /// that comes while connected is dropped -- the connection's watchdog tells a dead one.
+///
+/// `start` is what this run's first connection to open says of the app's start ([`Start`]): the
+/// one `Arc` goes to every follower the run makes, so that following again -- updates turned off
+/// and on -- is no second start. `None` says nothing.
 pub fn follow_events(
     client: Arc<dyn HttpClient>,
     links: Sender<Link>,
     wake: Receiver<()>,
+    start: Option<Arc<Start>>,
 ) -> impl Future<Output = ()> + Send + 'static {
-    follow(client, links, wake, RealTime, fastrand::Rng::new())
+    follow(client, links, wake, start, RealTime, fastrand::Rng::new())
 }
 
 /// Where the follower's time comes from: the real one, or a test's.
@@ -120,6 +130,7 @@ async fn follow(
     client: Arc<dyn HttpClient>,
     links: Sender<Link>,
     wake: Receiver<()>,
+    start: Option<Arc<Start>>,
     clock: impl Clock,
     rng: fastrand::Rng,
 ) {
@@ -129,7 +140,16 @@ async fn follow(
     // The last failure logged: offline, the same one repeats every few minutes.
     let mut logged = None;
     loop {
-        let Some(dropped) = listen(&*client, &url, &links, closed.as_mut(), &wake, &clock).await
+        let Some(dropped) = listen(
+            &*client,
+            &url,
+            start.as_deref(),
+            &links,
+            closed.as_mut(),
+            &wake,
+            &clock,
+        )
+        .await
         else {
             return;
         };
@@ -168,11 +188,12 @@ struct Dropped {
     problem: anyhow::Error,
 }
 
-/// Opens one connection to `url` and reads it until it ends, sending on `links` what it brings;
-/// `None` once `links` has closed.
+/// Opens one connection to `url` -- with `start`'s query, until one has opened -- and reads it
+/// until it ends, sending on `links` what it brings; `None` once `links` has closed.
 async fn listen(
     client: &dyn HttpClient,
     url: &str,
+    start: Option<&Start>,
     links: &Sender<Link>,
     mut closed: Pin<&mut impl Future<Output = ()>>,
     wake: &Receiver<()>,
@@ -186,7 +207,7 @@ async fn listen(
             problem,
         })
     };
-    let request = match events_request(url) {
+    let request = match events_request(url, start.and_then(Start::query)) {
         Ok(request) => request,
         Err(problem) => return failed(problem, None),
     };
@@ -211,6 +232,11 @@ async fn listen(
             });
         let problem = anyhow!("the service answered {content_type}, not an event stream");
         return failed(problem, None);
+    }
+    // The service has the start whatever becomes of the connection from here on: the marker says
+    // so, and no later attempt carries it.
+    if let Some(start) = start {
+        start.delivered();
     }
     if links.send(Link::Connected).await.is_err() {
         return None;
@@ -260,9 +286,14 @@ async fn listen(
     })
 }
 
-fn events_request(url: &str) -> Result<Request<AsyncBody>> {
+/// The request for the stream at `url`, with `query` -- what a start says -- when there is one.
+fn events_request(url: &str, query: Option<&str>) -> Result<Request<AsyncBody>> {
+    let request = match query {
+        Some(query) => Request::get(format!("{url}?{query}")),
+        None => Request::get(url),
+    };
     // No timeout: the stream has no end, and the watchdog tells a dead one from a quiet one.
-    Ok(Request::get(url)
+    Ok(request
         .header("User-Agent", USER_AGENT)
         .header("Accept", "text/event-stream")
         .header("Cache-Control", "no-cache")
@@ -517,7 +548,9 @@ impl EventParser {
 #[cfg(test)]
 mod tests {
     use std::cell::{Cell, RefCell};
+    use std::fs;
     use std::io;
+    use std::path::Path;
     use std::rc::Rc;
     use std::task::{Context, Waker};
 
@@ -531,6 +564,7 @@ mod tests {
     use oracle_protocol::DataVersion;
 
     use super::*;
+    use crate::Version;
 
     const MS: Duration = Duration::from_millis(1);
 
@@ -699,15 +733,20 @@ mod tests {
     }
 
     impl Follower {
-        /// Starts one: it makes its first attempt at once.
+        /// Starts one that says nothing of a start: it makes its first attempt at once.
         fn start() -> Self {
+            Self::following(None)
+        }
+
+        /// Starts one that says `start` on the first connection to open, as the app has it do.
+        fn following(start: Option<Arc<Start>>) -> Self {
             let (stand_in, attempts) = async_channel::unbounded();
             let (links_sender, links) = async_channel::unbounded();
             let (wake, woken) = async_channel::unbounded();
             let clock = TestClock::new();
             let client = Arc::new(StandIn(stand_in));
             let rng = fastrand::Rng::with_seed(7);
-            let following = follow(client, links_sender, woken, clock.clone(), rng);
+            let following = follow(client, links_sender, woken, start, clock.clone(), rng);
             let returned = Rc::new(Cell::new(false));
             let pool = LocalPool::new();
             let done = returned.clone();
@@ -1073,6 +1112,91 @@ mod tests {
         assert!(follower.returned.get());
         follower.wait(LAST_RETRY * 2);
         assert!(!follower.attempted());
+    }
+
+    /// What a new install of 0.1.3, its app speaking Russian, says of its start.
+    const START_QUERY: &str = "start=1&first=1&lang=ru";
+
+    fn new_install(dir: &Path) -> Arc<Start> {
+        Start::new(dir, &Version::new(0, 1, 3), "ru", false, None)
+    }
+
+    /// What `last-run-version` in `dir` says, if it is there.
+    fn told(dir: &Path) -> Option<String> {
+        fs::read_to_string(dir.join("last-run-version")).ok()
+    }
+
+    #[test]
+    fn the_first_connection_to_open_says_the_start_and_a_reconnection_says_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut follower = Follower::following(Some(new_install(dir.path())));
+        let attempt = follower.attempt();
+        let url = format!("{}?{START_QUERY}", oracle_protocol::url(EVENTS_PATH));
+        assert_eq!(attempt.request.uri().to_string(), url);
+        // Still connecting: the service has not been told.
+        assert_eq!(told(dir.path()), None);
+
+        // It is when the stream opens...
+        let stream = attempt.open();
+        stream.send(&versions_event(&versions("0.1.3", 1)));
+        follower.run();
+        assert_eq!(told(dir.path()).as_deref(), Some("0.1.3"));
+        follower.links();
+
+        // ...and the connection after a broken one asks for the stream, and nothing more.
+        stream.fail();
+        follower.run();
+        let retry_in = follower.retry_in();
+        follower.wait(retry_in);
+        let url = oracle_protocol::url(EVENTS_PATH);
+        assert_eq!(follower.attempt().request.uri().to_string(), url);
+    }
+
+    #[test]
+    fn a_start_that_did_not_get_through_is_said_again_until_a_connection_opens() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut follower = Follower::following(Some(new_install(dir.path())));
+        // No network, a refusal and a hotel Wi-Fi's page: none is a connection, each says it.
+        for case in 0..3 {
+            let attempt = follower.attempt();
+            assert_eq!(attempt.request.uri().query(), Some(START_QUERY), "{case}");
+            match case {
+                0 => drop(attempt),
+                1 => drop(attempt.answer(503, &[("retry-after", "10")])),
+                _ => drop(attempt.answer(200, &[("content-type", "text/html")])),
+            }
+            follower.run();
+            let retry_in = follower.retry_in();
+            assert_eq!(told(dir.path()), None, "{case}");
+            follower.wait(retry_in);
+        }
+
+        let attempt = follower.attempt();
+        assert_eq!(attempt.request.uri().query(), Some(START_QUERY));
+        let _stream = attempt.open();
+        follower.run();
+        assert_eq!(told(dir.path()).as_deref(), Some("0.1.3"));
+    }
+
+    #[test]
+    fn a_follower_made_again_says_the_start_only_if_no_connection_opened_before() {
+        let dir = tempfile::tempdir().unwrap();
+        let start = new_install(dir.path());
+        // Updates turned off before the service could be told, and on again: it is still to tell.
+        let mut follower = Follower::following(Some(start.clone()));
+        drop(follower.attempt());
+        follower.run();
+        drop(follower);
+        let mut follower = Follower::following(Some(start.clone()));
+        let attempt = follower.attempt();
+        assert_eq!(attempt.request.uri().query(), Some(START_QUERY));
+        let _stream = attempt.open();
+        follower.run();
+        drop(follower);
+
+        // Turned off and on after a connection opened: it has been told.
+        let mut follower = Follower::following(Some(start));
+        assert_eq!(follower.attempt().request.uri().query(), None);
     }
 
     // --- The parser -------------------------------------------------------------------------

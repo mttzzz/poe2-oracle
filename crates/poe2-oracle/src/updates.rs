@@ -19,6 +19,11 @@
 //! back (`platform::network`). The settings window's «Обновления» say what the updater does
 //! ([`UpdateStatus`]), and «Проверить сейчас» ([`check_now`]) cuts its wait short. Turning the
 //! setting off drops the connection and whatever was fetched.
+//!
+//! The run's first connection to open also says that the app has started, in its query
+//! (`auto_update::start`, from the markers in `paths::data_dir`): the service counts starts, new
+//! installations and updates from it -- and only while the setting is on. One [`Start`] serves
+//! every connection the run makes, so turning the setting off and on doesn't say it twice.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -27,6 +32,7 @@ use std::time::Duration;
 use anyhow::{Context as _, Result, ensure};
 use auto_update::Version;
 use auto_update::events::{self, Link};
+use auto_update::start::Start;
 use gpui::{
     App, AppContext as _, AsyncApp, Context, Entity, Global, Subscription, Task, WeakEntity,
 };
@@ -34,6 +40,8 @@ use http_client::HttpClient;
 use oracle_protocol::{DataVersion, EVENTS_PATH, Versions};
 
 use crate::data_pack;
+use crate::i18n;
+use crate::logging::PREVIOUS_LOG_FILE;
 use crate::login::Login;
 use crate::paths;
 use crate::platform::instance;
@@ -136,6 +144,9 @@ struct Updater {
     /// that a download held back before its first byte isn't cut short.
     client: Arc<dyn HttpClient>,
     running: Version,
+    /// What the run's first connection to open tells the service (`auto_update::start`): one for
+    /// the whole run, handed to every connection it makes.
+    run_start: Arc<Start>,
     /// The setting, as last seen.
     on: bool,
     /// [`START_DELAY`] is over and the catalogs are in: the connection may start.
@@ -169,8 +180,14 @@ pub fn init(app: &Entity<PriceCheckApp>, client: Arc<dyn HttpClient>, cx: &mut A
     let running = Version::parse(env!("CARGO_PKG_VERSION")).expect("the crate version is semver");
     let mut left_alone = Vec::new();
     let mut failure = None;
+    // The version an update that took came from, for the start the service is told of.
+    let mut updated_from = None;
     if let Some(marker) = Marker::take(&paths::update_marker_file()) {
-        match marker.outcome(&running, data_pack::active_version()) {
+        let outcome = marker.outcome(&running, data_pack::active_version());
+        if let (Outcome::Updated(Target::App(_)), Marker::App { from, .. }) = (&outcome, marker) {
+            updated_from = Some(from);
+        }
+        match outcome {
             Outcome::Updated(target) => {
                 log::info!("updated to {}", describe(&target));
                 let text = match &target {
@@ -197,8 +214,18 @@ pub fn init(app: &Entity<PriceCheckApp>, client: Arc<dyn HttpClient>, cx: &mut A
             Outcome::Passed => {}
         }
     }
+    // `logging::init` moved the last run's log aside as the previous one: it is there when the app
+    // has run from this folder before, whether or not it kept the start markers then.
+    let earlier_runs = paths::logs_dir().join(PREVIOUS_LOG_FILE).exists();
+    let run_start = Start::new(
+        &paths::data_dir(),
+        &running,
+        i18n::lang().code(),
+        earlier_runs,
+        updated_from.as_deref(),
+    );
     let updater = cx.new(|cx| {
-        let mut updater = Updater::new(app, client, running, cx);
+        let mut updater = Updater::new(app, client, running, run_start, cx);
         updater.left_alone = left_alone;
         updater.failure = failure;
         updater
@@ -241,6 +268,7 @@ impl Updater {
         app: &Entity<PriceCheckApp>,
         client: Arc<dyn HttpClient>,
         running: Version,
+        run_start: Arc<Start>,
         cx: &mut Context<Self>,
     ) -> Updater {
         let this = cx.weak_entity();
@@ -257,6 +285,7 @@ impl Updater {
             app: app.downgrade(),
             client,
             running,
+            run_start,
             on: app.read(cx).settings.check_updates,
             started: false,
             following: None,
@@ -309,6 +338,7 @@ impl Updater {
             self.client.clone(),
             links_to,
             woken,
+            Some(self.run_start.clone()),
         ));
         let listener = cx.spawn(async move |this, cx| {
             while let Ok(link) = links.recv().await {

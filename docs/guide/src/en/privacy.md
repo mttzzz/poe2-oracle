@@ -1,9 +1,11 @@
 # Privacy
 
-PoE2 Oracle has no account of its own and sends no telemetry or analytics. It talks only to the
-services below: for prices and pictures, for updates and, only when you send one yourself, for a
-report to the developer. Signing in to pathofexile.com is optional; signed in, the app searches the
-trade site, and presses its buttons on listings when you do, with your session (see
+PoE2 Oracle has no account of its own and no analytics of you: no id, no profile, nothing about
+your play. Its own service counts installations, in numbers only (see
+[What the service counts](#what-the-service-counts)). The app talks only to the services below: for
+prices and pictures, for updates and, only when you send one yourself, for a report to the
+developer. Signing in to pathofexile.com is optional; signed in, the app searches the trade site,
+and presses its buttons on listings when you do, with your session (see
 [Signing in to pathofexile.com](#signing-in-to-pathofexilecom)).
 
 ## What is sent where
@@ -13,7 +15,7 @@ trade site, and presses its buttons on listings when you do, with your session (
 | Path of Exile trade site: `www.pathofexile.com` and `ru.pathofexile.com` | The list of leagues and both sites' catalogs (modifiers, exchange items, item bases): at start and while running, when the saved copy is older than an hour (leagues) or six hours (catalogs). On a price check, unless the Currency Exchange prices the item: the search, then the found listings; the same search again within two minutes reuses them. An exchange item is searched only when neither GGG's record nor poe2scout prices it, or when you ask for its listings. Signed in, also the site's account page, to check the session: at start, when you sign in and when the trade site refuses a **sum** row; and, on `www.pathofexile.com`, your Private Leagues page and the page of each of your PoE 2 private leagues: once the site accepts the session (or doesn't answer its check), each time you open the settings, when you click **Refresh** in **Account**, and by themselves every hour by default (**Refresh automatically**: 15 minutes, 1 hour, 6 hours or off). Signed in, also each time you press **To hideout** or **Whisper** on a listing: one request per press. | For catalogs and pages, nothing but the request. For a check, the search itself: league, item class or base, the selected filter rows with their bounds, the sellers and price choices. For a press of **To hideout** or **Whisper**, the token the site gave with that listing, and after **In demand** that you go anyway. Items from a Russian client are searched on `ru.pathofexile.com`, from an English one on `www.pathofexile.com`. |
 | `api.poe2scout.com` | At start, when you change the league, and after a check, when the saved prices are older than 30 minutes. | The league, to get the prices of unique items, the Currency Exchange's last seven days and item pages, and the prices of exchange items not traded lately. |
 | `web.poecdn.com` (the game's server for pictures and exchange data) | When the panel shows an item picture or a currency icon. At start, when you change the league, and during checks at most every 10 minutes: each complete hour of GGG's record of the Currency Exchange's trades not downloaded yet. | Requests for those pictures, and for the hours of exchange data, which are the same for every league and player: nothing about you or your league. |
-| `oracle.pushka.biz`, PoE2 Oracle's own service | Updates, while **Update automatically** is on (the default): a connection opened about 10 seconds after start and kept open for as long as the app runs, opened again when it drops; downloads when a newer version or newer game data is out. Reports: only when you click **Send** in the [report window](report.md). | Updates: the connection's request, which carries no cookie, account or id, only the app's User-Agent with its version; over it the service sends the latest app and game data versions, and a keep-alive line every 25 seconds. When something newer is out: a request for the latest release or game data pack, then the installer or the pack, its `SHA256SUMS` and that file's signature, which the service passes on from the project's private GitHub repository. Reports: see [Reports](#reports). |
+| `oracle.pushka.biz`, PoE2 Oracle's own service | Updates, while **Update automatically** is on (the default): a connection opened about 10 seconds after start and kept open for as long as the app runs, opened again when it drops; downloads when a newer version or newer game data is out. Reports: only when you click **Send** in the [report window](report.md). The site: when you open its pages in a browser. | Updates: the connection's request, which carries no cookie, account or id, only the app's User-Agent with its version. The first connection after each start also carries a few flags in its address, which the service counts (see [What the service counts](#what-the-service-counts)): `start=1` and, as they apply, `first=1` (this installation's first start), `from=<version>` (the version that ran last time, if it was another one), `lang=en` or `lang=ru` (the interface language) and `dev=1` (a build the developer made for testing); the reconnections after it carry none. Over the connection the service sends the latest app and game data versions, and a keep-alive line every 25 seconds. When something newer is out: a request for the latest release or game data pack, then the installer or the pack, its `SHA256SUMS` and that file's signature, which the service passes on from the project's private GitHub repository. Reports: see [Reports](#reports). The site: your browser's request for a page, as for any site; the link to the installer carries `?from=<tag>` when you came by a link tagged with where it was published (see [What the service counts](#what-the-service-counts)). |
 
 Signed out, no request for prices, pictures or updates carries your account, a cookie or anything
 else that identifies you; a report carries what [Reports](#reports) lists, and only when you send
@@ -25,8 +27,10 @@ request on the internet, each service sees your IP address.
 
 While **Update automatically** is on, the connection to oracle.pushka.biz stays open, so the
 service sees your IP address, and from the User-Agent the app's version, for as long as the app
-runs. Turn it off in the settings, section **General**, group **Updates**, and PoE2 Oracle doesn't
-connect to oracle.pushka.biz at all, save for a report you send.
+runs; the first connection after each start adds the flags described in
+[What the service counts](#what-the-service-counts). Turn it off in the settings, section
+**General**, group **Updates**, and PoE2 Oracle doesn't connect to oracle.pushka.biz at all, save
+for a report you send.
 
 The links on the panel (**poe2db ↗**, **wiki ↗**, **Craft of Exile ↗**, **poe2scout ↗**,
 **…/trade ↗**) open in your browser when you click them: poe2db.tw, www.poe2wiki.net,
@@ -55,15 +59,58 @@ oracle.pushka.biz passes each report on to the developer and keeps none of it it
 
 Only the developer reads them. You need no account, on GitHub or anywhere else.
 
-Your IP address is used only for limits: how many reports come from one address, and how many
-update connections one address holds at once (8). It is not logged. A report count is forgotten
-when its time window ends, at the latest at the end of the day, Moscow time; a connection's, when
-the connection closes. The service's logs note each report's kind, whether it came from the app or
-the site, the app's version, its issue number and the size of its diagnostics report, never its
-text or the contact. It also counts, per day, the installers downloaded, the update
-connections opened, the update checks it answered, the game data packs and other update files
-downloaded, the reports of each kind, and the site visits that came through a link tagged
-`?from=`, for each tag: numbers only, with no address, id or version, kept for 120 days.
+Apart from the counts in [What the service counts](#what-the-service-counts), your IP address is
+used only for limits: how many reports come from one address, and how many update connections one
+address holds at once (8). It is not logged. A report count is forgotten when its time window ends,
+at the latest at the end of the day, Moscow time; a connection's, when the connection closes. The
+service's logs note each report's kind, whether it came from the app or the site, the app's version,
+its issue number and the size of its diagnostics report, never its text or the contact.
+
+## What the service counts
+
+oracle.pushka.biz counts, per day (Moscow time), what the app and the site's visitors do. It keeps
+numbers only, for 120 days: no address, no id, no name, and no number can be traced back to a
+person. The counts, and what they are made of:
+
+- **The app's connections and update checks**, in total and by the version in its User-Agent, only
+  while **Update automatically** is on (with it off the app doesn't connect at all). Only the
+  versions of the newest published releases, sixteen at most, get a count of their own; any other
+  text there counts as `other`.
+- **How many different installations were active** in a day and in a week (Monday to Sunday), in
+  total and by version. The service can't tell installations apart and doesn't try to; it tells
+  *connections* apart. For each one it makes a hash (SHA-256) of the connection's address and the
+  User-Agent's product name (`PoE2-Oracle`, without the version, so that an update doesn't make one
+  installation two), mixed with a random salt. The salt is made anew for each day and for each week,
+  is kept in the service's database only until that period is over (plus a couple of hours) and is
+  never written to a log. The hash goes into a HyperLogLog sketch: a table of small numbers of a
+  fixed size, which holds no hashes and no addresses and from which only the approximate number of
+  different ones can be read. Players who share an address, such as a shared line or a mobile
+  network, count as one, so the number is a floor. An installation that stays connected for days
+  counts for each day it is connected.
+- **Starts**, from the app's first connection after it starts, and never from the reconnections
+  after it: the app adds a few flags to that one request. That it is a start; that it is this
+  installation's first start; the version it ran the last time, if that was another one; and the
+  interface language, `en` or `ru`. The service turns them into counts: starts, new installations,
+  updates from one version to another (`0.1.2` → `0.1.3`, both among those releases, else `other`) and
+  starts by language. For this the app keeps small marker files in
+  `%LOCALAPPDATA%\poe2-oracle\data`: `last-run-version`, the version of its last start the service
+  was told about, and, in builds the developer makes for testing, an empty file `dev`: the service
+  counts such a start as a developer's start and as nothing else.
+- **Installer downloads**, by who fetched them: the site's button (or any link to the file) or the
+  app's updater, told apart by the User-Agent; the updater's also by the version it fetches.
+  Downloads of game data packs and of the other release files (`SHA256SUMS` and its signature), and
+  reports by kind, are counted as before.
+- **The site**: how many pages were loaded (pages only: no pictures, styles or scripts) and how many
+  different visitors loaded one in a day, made in the same way, with the browser's User-Agent. For a
+  visit that arrived by a link tagged with where it was published, `?from=` and one of a fixed list
+  of tags (`reddit`, `forum`, `discord`, `youtube`, `steam`, `wiki`, `lists`, `creators`,
+  `article`), the same two counts, and how many times the installer was downloaded after such a
+  visit. To tell that, the page's script keeps the tag in your browser tab's session storage, which
+  the browser drops when the tab closes, and adds it to the download button's link. No cookie is
+  set for this, and a tag that isn't on the list counts nothing.
+
+Your IP address is used for these counts only in the hash described above and, as before, for the
+limits on reports and connections (see [Reports](#reports)). It is not logged.
 
 ## Signing in to pathofexile.com
 
@@ -112,7 +159,9 @@ never sees your password. It takes only the session the site gives that browser,
 - **The Windows display language**, only to pick the interface language on **Auto** before the game
   has ever run.
 - **The game's log**, `Client.txt` in the game's `logs` folder: level-ups, area changes and returns
-  to character selection for the [XP overlay](xp-overlay.md). Read only.
+  to character selection for the [XP overlay](xp-overlay.md). Read only. The first time, it also
+  reads back up to 64 MB of the log's end, for each character's latest level-up, to record
+  [your characters' levels](#what-it-keeps-on-your-computer) for the overlay.
 - **The screen**, for the XP overlay: the strip of pixels where the experience bar is, and a few
   rows along the top of the flask and skill panels' rails, where the plates stand. While the game
   is in front, and for two seconds after you switch away, the rails are looked at twenty times a
@@ -121,7 +170,9 @@ never sees your password. It takes only the session the site gives that browser,
   the bar at most twice a second. For that it notes when you use the mouse or the keyboard, never
   which key or where. While the game is behind another window, the rails are looked at every two
   seconds and the bar every ten, or two seconds after a look that finds it changed or can't read
-  it; while it is minimised, not at all. Nothing of it is saved or sent.
+  it; while it is minimised, not at all. Nothing of it is sent and no pixel is saved; only where the
+  bar stood is kept, for each of your characters (see
+  [What it keeps on your computer](#what-it-keeps-on-your-computer)).
 
 ## What it types into the game
 
@@ -138,7 +189,10 @@ of a [quick action](quick-actions.md).
 | Trade site catalogs, exchange and poe2scout prices, downloaded updates | `%LOCALAPPDATA%\poe2-oracle\cache` |
 | After a crash, what PoE2 Oracle reported, until you send that report or close its window | `%LOCALAPPDATA%\poe2-oracle\data\crash\last-crash.txt` |
 | After an update, which one it was (from which version to which), until the next start has said so | `%LOCALAPPDATA%\poe2-oracle\data\last-update.json` |
+| The version of the last start the service was told about, for the next start to say whether it is a first start or an update, and from which version | `%LOCALAPPDATA%\poe2-oracle\data\last-run-version` |
+| In a build the developer makes for testing, an empty marker: the service counts such a start as a developer's and as nothing else | `%LOCALAPPDATA%\poe2-oracle\data\dev` |
 | The installed game data pack, and the last damaged one set aside | `%LOCALAPPDATA%\poe2-oracle\data\game-data` |
+| For the XP overlay: the names of your 20 most recent characters, their levels and where their experience bars stood; it never leaves your computer | `%LOCALAPPDATA%\poe2-oracle\data\xp-levels.json` |
 | Your pathofexile.com session, while you are signed in | Windows' Credential Manager: `PoE2 Oracle/pathofexile.com` |
 | The sign-in window's browser, while the window is open | `%LOCALAPPDATA%\poe2-oracle\data\login-browser` |
 | The start-with-Windows entry, when turned on | Registry: `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, value `PoE2 Oracle` |

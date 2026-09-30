@@ -1093,6 +1093,37 @@ async fn downloads_stream_the_release_files() {
 }
 
 #[tokio::test]
+async fn the_download_button_hands_its_landing_tag_on_to_the_file() {
+    let service = start(false, false, false).await;
+    let file = "/download/v0.1.0/PoE2-Oracle-Setup-0.1.0.exe";
+    for (query, location) in [
+        ("", file.to_owned()),
+        ("?from=reddit", format!("{file}?from=reddit")),
+        ("?utm=x&from=evil&from=wiki", format!("{file}?from=wiki")),
+        // A tag that is none of the published ones goes nowhere, whatever it holds.
+        ("?from=evil", file.to_owned()),
+        ("?from=reddit%0d%0aSet-Cookie:%20a=b", file.to_owned()),
+    ] {
+        let moved = service.get(&format!("/download/latest{query}"), &[]).await;
+        assert_eq!(moved.status(), StatusCode::FOUND, "{query}");
+        assert_eq!(
+            moved.headers()[header::LOCATION],
+            location.as_str(),
+            "{query}"
+        );
+    }
+    // The file is served the same with the tag on its address.
+    let tagged = service
+        .get(
+            &format!("{file}?from=reddit"),
+            &[("user-agent", "Mozilla/5.0")],
+        )
+        .await;
+    assert_eq!(tagged.status(), StatusCode::OK);
+    assert_eq!(tagged.bytes().await.unwrap(), INSTALLER);
+}
+
+#[tokio::test]
 async fn the_data_pack_is_offered_and_served_like_a_release() {
     let service = start(false, false, false).await;
     let first = service.get("/api/v1/data/latest", &[]).await;
@@ -1458,12 +1489,16 @@ async fn the_ways_in_lead_to_the_readers_language() {
     let service = start(false, false, true).await;
     let russian = ("accept-language", "ru-RU,ru;q=0.9,en;q=0.8");
 
-    // A Russian browser goes on to the Russian landing page, without the query: a tagged link's
-    // visit is counted on the way, and the page mustn't count it again.
-    for path in ["/", "/?from=reddit"] {
+    // A Russian browser goes on to the Russian landing page, with the query: the page it leads to
+    // counts a tagged link's visit, and its script reads the tag to carry it to the download link.
+    for (path, target) in [
+        ("/", "/ru/"),
+        ("/?from=reddit", "/ru/?from=reddit"),
+        ("/?utm=x&from=forum", "/ru/?utm=x&from=forum"),
+    ] {
         let moved = service.get(path, &[russian]).await;
         assert_eq!(moved.status(), StatusCode::FOUND, "{path}");
-        assert_eq!(moved.headers()[header::LOCATION], "/ru/", "{path}");
+        assert_eq!(moved.headers()[header::LOCATION], target, "{path}");
         assert!(follows_the_language(&moved), "{path}");
     }
     let moved = service

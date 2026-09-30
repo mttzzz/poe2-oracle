@@ -7,6 +7,10 @@
 //! latest published version of each once on connecting and again whenever one changes. The app
 //! takes it from there with the steps below.
 //!
+//! The first connection of a run also tells the service that the app has started, in a few flags
+//! of its query ([`start::Start`]): the service counts starts, new installations and updates from
+//! them, as numbers.
+//!
 //! A new app version takes three: [`check_for_update`] asks the service for the latest release,
 //! [`download_update`] fetches that release's installer and checks it against the release's
 //! `SHA256SUMS`, itself trusted only with the release key's signature, and [`apply_update`] starts
@@ -47,6 +51,7 @@
 //! ```
 
 pub mod events;
+pub mod start;
 #[cfg(feature = "test-support")]
 pub mod test_support;
 

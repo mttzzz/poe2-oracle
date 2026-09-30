@@ -51,6 +51,9 @@ sha2 = "0.10"
 # Site paths come percent-encoded, and download URLs are built from asset names. Already in the tree
 # through tower-http.
 percent-encoding = "2"
+# The salts of the distinct counts, and the random wait after midnight of a stream that stays open,
+# from the system's random source, as `release-sign` draws its seed. Already in the tree.
+getrandom = "0.3"
 
 [dev-dependencies]
 # The static-site tests serve throwaway directories.

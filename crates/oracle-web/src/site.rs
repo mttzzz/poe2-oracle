@@ -19,10 +19,13 @@
 //! served as it is, whatever the reader's: that is how a link, or the switch itself, reaches the
 //! other language.
 //!
-//! A page loaded from a link tagged with where it was published, `?from=reddit` (the tag of a
-//! [`Source`]), counts one visit for it; any other tag counts nothing. The page counts it where
-//! it's served, the redirects on the way keeping the query, but for `/`'s on to `/ru/`: that one
-//! counts the visit itself and leaves the query behind, so the Russian page doesn't count it again.
+//! A page loaded counts a view, and a visitor if it is a new one that day ([`crate::usage`]); one
+//! loaded from a link tagged with where it was published, `?from=reddit` (the tag of a [`Source`]),
+//! counts a visit for that tag and its visitor too, and any other tag counts nothing. Only a GET of
+//! an HTML page counts: not the files a page uses, not a missing page, not a HEAD, which only
+//! checks the link, and not the guide's `toc.html`, the frame each of its pages loads. A page counts
+//! where it's served, so the redirects on the way keep the query -- `/` to `/ru/` too -- and the
+//! page's script can carry the tag on to the download links.
 
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
@@ -35,7 +38,9 @@ use percent_encoding::percent_decode_str;
 use tower_http::services::ServeFile;
 
 use crate::App;
-use crate::stats::{self, Source, Stat};
+use crate::distinct::Who;
+use crate::stats::Source;
+use crate::usage;
 
 /// Pages must show an edit at once: browsers ask again every time (a 304 when nothing changed).
 const PAGE_CACHE: &str = "no-cache";
@@ -170,13 +175,8 @@ pub async fn serve(State(app): State<Arc<App>>, request: Request) -> Response {
     };
     // A 302, not a 301: the way leads elsewhere for another reader, or after the next pick.
     let mut response = match location {
-        // The book counts a tagged visit: the query goes along.
-        Some(location) if guide => redirect(StatusCode::FOUND, location, request.uri().query()),
-        // The visit counts here, and the Russian page gets no query to count it again by.
-        Some(location) => {
-            visit(&app, &request);
-            redirect(StatusCode::FOUND, location, None)
-        }
+        // The page it leads to counts the visit and its script reads the tag: the query goes along.
+        Some(location) => redirect(StatusCode::FOUND, location, request.uri().query()),
         None => answer(&app, request).await,
     };
     let headers = response.headers_mut();
@@ -186,14 +186,15 @@ pub async fn serve(State(app): State<Arc<App>>, request: Request) -> Response {
 }
 
 /// `request` answered from the directories: the file its path names, the redirect of a directory
-/// named without its slash, or a 404. A page it serves counts a tagged visit.
+/// named without its slash, or a 404. A page it serves counts a view and, when its link is tagged,
+/// a visit.
 async fn answer(app: &Arc<App>, request: Request) -> Response {
     let uri = request.uri().clone();
     let (root, rest) = app.site.mount(uri.path());
     match resolve(root, rest).await {
         Target::File(file) => {
             if is_page(&file) {
-                visit(app, &request);
+                page_loaded(app, &request, &file);
             }
             send(file, request).await
         }
@@ -215,25 +216,15 @@ fn redirect(status: StatusCode, mut location: String, query: Option<&str>) -> Re
     (status, [(header::LOCATION, location)]).into_response()
 }
 
-/// Counts a visit when `request` loads a page from a tagged link: a GET whose query has a `from`
-/// naming a [`Source`]. A HEAD doesn't count: browsers load pages with a GET, and a HEAD only
+/// Counts a page load: a GET of an HTML page other than the guide's `toc.html`, which each of its
+/// pages loads as a frame. A HEAD doesn't count: browsers load pages with a GET, and a HEAD only
 /// checks the link.
-fn visit(app: &Arc<App>, request: &Request) {
-    if request.method() == Method::GET
-        && let Some(source) = request.uri().query().and_then(tagged)
-    {
-        stats::count(app, Stat::Visit(source));
+fn page_loaded(app: &Arc<App>, request: &Request, file: &Path) {
+    if request.method() != Method::GET || file.file_name().is_some_and(|name| name == "toc.html") {
+        return;
     }
-}
-
-/// The source a query's `from` tag names: of its parameters, the first `from` whose value is a
-/// [`Source`]'s tag.
-fn tagged(query: &str) -> Option<Source> {
-    query
-        .split('&')
-        .filter_map(|parameter| parameter.split_once('='))
-        .filter(|(name, _)| *name == "from")
-        .find_map(|(_, value)| Source::named(value))
+    let source = request.uri().query().and_then(Source::in_query);
+    usage::page_loaded(app, Who::of(request), source);
 }
 
 /// The language a request's reader prefers: the one they last picked on a language switch, else
@@ -433,6 +424,7 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
+    use crate::stats::snapshots;
     use crate::{Config, moscow};
 
     #[tokio::test]
@@ -608,6 +600,7 @@ mod tests {
             (0, "ui/base.css"),
             (1, "en/index.html"),
             (1, "ru/index.html"),
+            (1, "en/toc.html"),
         ] {
             let path = dirs[dir].path().join(file);
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -700,5 +693,42 @@ mod tests {
         for tag in TAGS.into_iter().chain(["evil"]) {
             assert_eq!(visits(&app, tag).await, 0, "{tag}");
         }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_page_counts_a_view_and_a_visitor_but_no_file_frame_or_link_check_does() {
+        let (app, _dirs) = serving_pages();
+        // One visitor loads three pages, a book's frame and a stylesheet, and asks for a page that
+        // isn't there; another loads a page; a third only checks a link.
+        for (method, path, client) in [
+            (Method::GET, "/index.html", "203.0.113.1"),
+            (Method::GET, "/ru/", "203.0.113.1"),
+            (Method::GET, "/guide/en/", "203.0.113.1"),
+            (Method::GET, "/guide/en/toc.html", "203.0.113.1"),
+            (Method::GET, "/ui/base.css", "203.0.113.1"),
+            (Method::GET, "/missing.html", "203.0.113.1"),
+            (Method::GET, "/index.html", "203.0.113.2"),
+            (Method::HEAD, "/index.html", "203.0.113.3"),
+        ] {
+            let request = Request::builder()
+                .method(method)
+                .uri(path)
+                .header("x-forwarded-for", client)
+                .header("user-agent", "Mozilla/5.0 Firefox/130.0")
+                .body(Body::empty())
+                .unwrap();
+            serve(State(app.clone()), request).await;
+        }
+        tokio::time::sleep(Duration::from_millis(1)).await;
+        let now = moscow::now();
+        let today = snapshots(&app.store, &[moscow::Day::of(now)], now)
+            .await
+            .unwrap()
+            .remove(0);
+        assert_eq!(today.get("page_view"), 4);
+        assert_eq!(today.get("uniq_site_day"), 2);
+        // No tag, no visit.
+        assert_eq!(today.sum("visit_"), 0);
+        assert_eq!(today.sum("uniq_site_day_from_"), 0);
     }
 }

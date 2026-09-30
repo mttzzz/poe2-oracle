@@ -51,10 +51,11 @@ async fn main() -> ExitCode {
 }
 
 /// `oracle-web stats [--days N]`: every counter of today in Moscow and of the N - 1 days before
-/// it, N from 1 to [`STATS_DAYS_AT_MOST`] ([`STATS_DAYS`] unless given), read from the Redis at
-/// `REDIS_URL` and printed to stdout as one JSON object ([`oracle_web::Readout`]); the log goes
-/// to stderr. It starts no server and reads no other variable. A bad argument or no `REDIS_URL`
-/// exits with 2, a Redis that doesn't answer with 1.
+/// it, and the weekly counts of the weeks they touch, N from 1 to [`STATS_DAYS_AT_MOST`]
+/// ([`STATS_DAYS`] unless given), read from the Redis at `REDIS_URL` and printed to stdout as one
+/// JSON object ([`oracle_web::Readout`]); the log goes to stderr. It starts no server and reads no
+/// other variable. A bad argument or no `REDIS_URL` exits with 2, a Redis that doesn't answer
+/// with 1.
 async fn print_stats(mut args: impl Iterator<Item = OsString>) -> ExitCode {
     let mut days = STATS_DAYS;
     while let Some(arg) = args.next() {

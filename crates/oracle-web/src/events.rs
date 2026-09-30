@@ -20,14 +20,19 @@
 //! 6 min after the apps holding a stream. When the service stops taking connections, every stream
 //! ends at once rather than hold up the shutdown: the app reconnects, and the gateway sends it to
 //! the pod taking over.
+//!
+//! An app's stream is also what counts its install as active ([`usage`]): when it opens, whether it
+//! gets a place or not, and again after each Moscow midnight for as long as it stays open
+//! ([`Rollover`]) -- it holds one connection for days and asks nothing meanwhile. The flags of a
+//! start ([`Start`]) that an app's first connection of a run carries count once, opened or refused.
 
 use std::collections::HashMap;
 use std::convert::Infallible;
-use std::net::SocketAddr;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
-use axum::extract::{ConnectInfo, Request, State};
+use axum::extract::{Request, State};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use futures_util::stream::{self, Stream};
@@ -35,11 +40,15 @@ use oracle_protocol::{EVENTS_PING_SECS, VERSIONS_EVENT, Versions};
 use parking_lot::Mutex;
 use rustix::process::{Resource, getrlimit};
 use tokio::sync::watch;
+use tokio::time::{Instant, Sleep};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
+use crate::agent::{AppAgent, Start};
+use crate::distinct::Who;
+use crate::moscow::{self, Day};
 use crate::stats::{self, Stat};
-use crate::{App, limits};
+use crate::{App, usage};
 
 /// The most streams one client address holds at once: a computer club, an office or a dorm behind
 /// one address, or a carrier's NAT, which puts hundreds of subscribers behind one; and the streams
@@ -156,12 +165,13 @@ fn file_room() -> usize {
 /// `GET /api/v1/events`: the event stream, or while the streams are at their most, the versions
 /// alone ([`refusal`]).
 pub async fn follow(State(app): State<Arc<App>>, request: Request) -> Response {
-    let peer = request
-        .extensions()
-        .get::<ConnectInfo<SocketAddr>>()
-        .map(|ConnectInfo(address)| address.ip());
-    let client = limits::client_key(request.headers(), peer);
-    let place = match app.streams.admit(client) {
+    let who = Who::of(&request);
+    let agent = AppAgent::of(request.headers());
+    // The flags of a start, which only the app's first connection of a run carries.
+    let start = agent
+        .as_ref()
+        .and_then(|_| Start::of(request.uri().query()));
+    let place = match app.streams.admit(who.client().to_owned()) {
         Ok(place) => place,
         Err(full) => {
             match full {
@@ -173,12 +183,35 @@ pub async fn follow(State(app): State<Arc<App>>, request: Request) -> Response {
                     "event stream refused: the service holds its most"
                 ),
             }
+            if let Some(agent) = agent {
+                usage::app_stream(&app, who, agent, start, false);
+            }
             let versions = app.releases.versions().borrow().clone();
             return Sse::new(refusal(versions)).into_response();
         }
     };
     stats::count(&app, Stat::EventStream);
-    let events = events(app.releases.versions(), app.streams.stopping.clone(), place);
+    // A developer's build is counted as nothing but its start, so nothing keeps it counted.
+    let rollover = agent
+        .as_ref()
+        .filter(|_| !start.as_ref().is_some_and(|start| start.dev))
+        .map(|agent| {
+            Rollover::new(
+                app.clone(),
+                who.clone(),
+                agent.clone(),
+                Arc::new(moscow::now),
+            )
+        });
+    if let Some(agent) = agent {
+        usage::app_stream(&app, who, agent, start, true);
+    }
+    let events = events(
+        app.releases.versions(),
+        app.streams.stopping.clone(),
+        place,
+        rollover,
+    );
     Sse::new(events)
         .keep_alive(
             KeepAlive::new()
@@ -188,23 +221,92 @@ pub async fn follow(State(app): State<Arc<App>>, request: Request) -> Response {
         .into_response()
 }
 
+/// What keeps an app's stream counted on the days after the one it opened. The stream lives as long
+/// as the app runs -- days, when the app isn't restarted -- and asks nothing meanwhile, so without
+/// this an install would be missing from every day but its first. A few minutes after each Moscow
+/// midnight, the wait at random so that the streams that have been open all night don't all count
+/// at once, the stream counts its install as active in the day that has begun.
+struct Rollover {
+    app: Arc<App>,
+    who: Who,
+    agent: AppAgent,
+    /// Unix seconds, now: the clock, or a test's.
+    clock: Arc<dyn Fn() -> i64 + Send + Sync>,
+    /// The most seconds after midnight it waits.
+    spread: u64,
+    /// When it counts next.
+    wake: Pin<Box<Sleep>>,
+}
+
+/// The most seconds after a Moscow midnight an open stream waits before counting itself.
+const ROLLOVER_SPREAD: u64 = 300;
+
+impl Rollover {
+    fn new(
+        app: Arc<App>,
+        who: Who,
+        agent: AppAgent,
+        clock: Arc<dyn Fn() -> i64 + Send + Sync>,
+    ) -> Rollover {
+        let spread = getrandom::u32().map_or(0, |random| u64::from(random) % ROLLOVER_SPREAD);
+        let wake = Box::pin(tokio::time::sleep(wait_for_midnight(clock(), spread)));
+        Rollover {
+            app,
+            who,
+            agent,
+            clock,
+            spread,
+            wake,
+        }
+    }
+
+    /// The moment has come: counts the install in the day it is now, and waits for the next.
+    fn turn(&mut self) {
+        let now = (self.clock)();
+        usage::app_active_at(&self.app, self.who.clone(), self.agent.clone(), now);
+        let wait = wait_for_midnight(now, self.spread);
+        self.wake.as_mut().reset(Instant::now() + wait);
+    }
+}
+
+/// How long after `now` a stream waits to count itself in the next day: until the next Moscow
+/// midnight, and `spread` seconds more.
+fn wait_for_midnight(now: i64, spread: u64) -> Duration {
+    Duration::from_secs((Day::of(now).end() - now).max(0) as u64 + spread)
+}
+
+/// Resolves when the stream's rollover is due; never for a stream that has none.
+async fn rollover_due(rollover: &mut Option<Rollover>) {
+    match rollover {
+        Some(rollover) => rollover.wake.as_mut().await,
+        None => std::future::pending().await,
+    }
+}
+
 /// A stream's events: the versions once they're known, and again whenever they change, until
 /// `stopping`. The stream keeps `place` for as long as it lasts.
 fn events(
     mut versions: watch::Receiver<Option<Versions>>,
     stopping: CancellationToken,
     place: Place,
+    rollover: Option<Rollover>,
 ) -> impl Stream<Item = Result<Event, Infallible>> {
     // What the service knows now is news to a stream that has just begun.
     versions.mark_changed();
     stream::unfold(
-        (versions, stopping, place, true),
-        |(mut versions, stopping, place, first)| async move {
+        (versions, stopping, place, true, rollover),
+        |(mut versions, stopping, place, first, mut rollover)| async move {
             loop {
                 tokio::select! {
                     biased;
                     () = stopping.cancelled() => return None,
                     changed = versions.changed() => changed.ok()?,
+                    () = rollover_due(&mut rollover) => {
+                        if let Some(rollover) = rollover.as_mut() {
+                            rollover.turn();
+                        }
+                        continue;
+                    }
                 }
                 let Some(latest) = versions.borrow_and_update().clone() else {
                     continue;
@@ -214,7 +316,7 @@ fn events(
                     event = event.retry(RECONNECT);
                 }
                 let event = event.json_data(latest).expect("versions serialize");
-                return Some((Ok(event), (versions, stopping, place, false)));
+                return Some((Ok(event), (versions, stopping, place, false, rollover)));
             }
         },
     )
@@ -363,5 +465,192 @@ mod tests {
         .await
         .expect("answered at once");
         assert_eq!(whole(refused).await, "retry: 60000\n\n");
+    }
+
+    /// A request for the stream at `uri` from the app of `version`, behind `client`.
+    fn app_asking(client: &str, version: &str, uri: &str) -> Request {
+        let agent = format!("PoE2-Oracle/{version}");
+        Request::builder()
+            .uri(uri)
+            .header("x-forwarded-for", client)
+            .header("user-agent", agent)
+            .body(Body::empty())
+            .unwrap()
+    }
+
+    /// Today's counts, once the background tasks that made them are in.
+    async fn snapshot_of_today(app: &App) -> crate::stats::Snapshot {
+        tokio::time::sleep(Duration::from_millis(1)).await;
+        let now = moscow::now();
+        crate::stats::snapshots(&app.store, &[moscow::Day::of(now)], now)
+            .await
+            .unwrap()
+            .remove(0)
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn an_apps_first_connection_of_a_run_counts_its_start_and_a_reconnection_does_not() {
+        let app = App::new(Config::default()).unwrap();
+        app.releases
+            .listed(&crate::releases::published(&["v0.1.3", "v0.1.2"]));
+        let stream = "/api/v1/events";
+        let browser = Request::builder()
+            .uri(format!("{stream}?start=1&first=1&lang=ru"))
+            .header("x-forwarded-for", "203.0.113.5")
+            .header("user-agent", "Mozilla/5.0 Firefox/130.0")
+            .body(Body::empty())
+            .unwrap();
+        for request in [
+            // A new install, in Russian.
+            app_asking(
+                "203.0.113.1",
+                "0.1.3",
+                &format!("{stream}?start=1&first=1&lang=ru"),
+            ),
+            // An update from 0.1.2, in English; and that app's reconnection, which says nothing.
+            app_asking(
+                "203.0.113.2",
+                "0.1.3",
+                &format!("{stream}?start=1&from=0.1.2&lang=en"),
+            ),
+            app_asking("203.0.113.2", "0.1.3", stream),
+            // A developer's build, whose flags count for nothing but itself.
+            app_asking(
+                "203.0.113.3",
+                "0.1.3",
+                &format!("{stream}?start=1&first=1&dev=1&lang=ru"),
+            ),
+            // Flags without the start, and flags from a client that is not the app.
+            app_asking("203.0.113.4", "0.1.3", &format!("{stream}?first=1&lang=ru")),
+            browser,
+        ] {
+            assert_eq!(
+                follow(State(app.clone()), request).await.status(),
+                StatusCode::OK
+            );
+        }
+        let today = snapshot_of_today(&app).await;
+        assert_eq!(today.get("app_start"), 2);
+        assert_eq!(today.get("install_new"), 1);
+        assert_eq!(today.get("update_applied_0.1.2_0.1.3"), 1);
+        assert_eq!(today.sum("update_applied_"), 1);
+        assert_eq!(today.get("app_start_lang_ru"), 1);
+        assert_eq!(today.get("app_start_lang_en"), 1);
+        assert_eq!(today.get("app_start_dev"), 1);
+        // Four streams of the app opened, the developer's not among them; the browser's isn't the
+        // app's. The old counter still reads every stream, as it always did.
+        assert_eq!(today.get("app_conn"), 4);
+        assert_eq!(today.get("app_conn_v_0.1.3"), 4);
+        assert_eq!(today.get("event_stream"), 6);
+        assert_eq!(
+            today.get("uniq_app_day"),
+            3,
+            "the developer's build isn't one"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_start_refused_a_place_still_counts_and_its_stream_does_not() {
+        let app = App::new(Config {
+            event_streams: 1,
+            ..Config::default()
+        })
+        .unwrap();
+        app.releases
+            .listed(&crate::releases::published(&["v0.1.3"]));
+        let flags = "/api/v1/events?start=1&first=1&lang=ru";
+        let _held = follow(
+            State(app.clone()),
+            app_asking("203.0.113.1", "0.1.3", flags),
+        )
+        .await;
+        let refused = follow(
+            State(app.clone()),
+            app_asking("203.0.113.2", "0.1.3", flags),
+        )
+        .await;
+        assert_eq!(refused.status(), StatusCode::OK);
+        let today = snapshot_of_today(&app).await;
+        assert_eq!(today.get("app_start"), 2);
+        assert_eq!(today.get("install_new"), 2);
+        assert_eq!(today.get("app_conn"), 1, "the refused stream opened none");
+        assert_eq!(today.get("event_stream"), 1);
+        assert_eq!(
+            today.get("uniq_app_day"),
+            2,
+            "the refused install is active all the same"
+        );
+    }
+
+    #[test]
+    fn an_open_stream_waits_for_midnight_and_a_spread_after_it() {
+        // 2026-09-26 12:00 in Moscow: twelve hours to the turn of the day.
+        let noon = 1_790_413_200;
+        assert_eq!(wait_for_midnight(noon, 0), Duration::from_secs(12 * 3600));
+        assert_eq!(
+            wait_for_midnight(noon, 299),
+            Duration::from_secs(12 * 3600 + 299)
+        );
+        // A moment before midnight, and at it: the wait is to the midnight that ends the day.
+        let midnight = moscow::Day::of(noon).end();
+        assert_eq!(wait_for_midnight(midnight - 1, 5), Duration::from_secs(6));
+        assert_eq!(
+            wait_for_midnight(midnight, 5),
+            Duration::from_secs(24 * 3600 + 5)
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_stream_left_open_counts_its_install_again_on_each_new_day() {
+        use futures_util::StreamExt as _;
+
+        let app = App::new(Config::default()).unwrap();
+        // 2026-09-26 12:00 in Moscow, on a clock that goes with the paused time.
+        let noon = 1_790_413_200;
+        let opened = Instant::now();
+        let clock: Arc<dyn Fn() -> i64 + Send + Sync> =
+            Arc::new(move || noon + opened.elapsed().as_secs() as i64);
+        let who = Who::test("203.0.113.1", "PoE2-Oracle/0.1.3");
+        let agent =
+            AppAgent::of(&app_asking("203.0.113.1", "0.1.3", "/").headers().clone()).unwrap();
+        let place = app.streams.admit("203.0.113.1".to_owned()).ok().unwrap();
+        let rollover = Rollover::new(app.clone(), who, agent, clock);
+        let mut stream = Box::pin(events(
+            app.releases.versions(),
+            app.streams.stopping.clone(),
+            place,
+            Some(rollover),
+        ));
+        let _versions = stream
+            .next()
+            .await
+            .expect("the versions come first")
+            .expect("an event, not an error");
+        let holding = tokio::spawn(async move { while stream.next().await.is_some() {} });
+
+        let installs = |days_on: i64| {
+            let day = moscow::Day::of(noon).minus(-days_on);
+            let key = format!("oracle:stat:uniq_app_day:{day}");
+            let store = &app.store;
+            async move {
+                store
+                    .distinct_values(&[key], noon + days_on * 86_400)
+                    .await
+                    .unwrap()[0]
+            }
+        };
+        // Nothing counted it on the day it opened -- the app's connection counts itself, not this.
+        assert_eq!(installs(1).await, 0);
+        // Past the midnight and its spread: the stream has counted its install in the new day.
+        tokio::time::advance(Duration::from_secs(12 * 3600 + ROLLOVER_SPREAD + 1)).await;
+        tokio::time::sleep(Duration::from_millis(1)).await;
+        assert_eq!(installs(1).await, 1);
+        assert_eq!(installs(2).await, 0);
+        // And once more a day on, and it is the same install: still one.
+        tokio::time::advance(Duration::from_secs(24 * 3600)).await;
+        tokio::time::sleep(Duration::from_millis(1)).await;
+        assert_eq!(installs(2).await, 1);
+        assert_eq!(installs(1).await, 1);
+        holding.abort();
     }
 }
