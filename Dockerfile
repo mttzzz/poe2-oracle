@@ -46,6 +46,9 @@ RUN archive="mdbook-${MDBOOK_VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
  && tar -xzf "/tmp/$archive" -C /usr/local/bin \
  && rm "/tmp/$archive"
 COPY docs/guide /docs/guide
+# The "What's new" chapters include the changelogs from the repository's root: ../../../../ from
+# the books' src/en and src/ru.
+COPY CHANGELOG.md CHANGELOG.ru.md /
 RUN /docs/guide/build.sh /guide
 
 # glibc and libgcc for the binary, no shell, and a non-root user (65532). The server's TLS is rustls

@@ -477,8 +477,8 @@ kbd + kbd {
     font-size: 0.9rem;
 }
 
-/* Under a download button, what stops a download: what it costs, what it needs and, once the site
-   says (ui/download.js), the version and the installer's size. */
+/* Under a download button, what stops a download: what it costs, what it needs, the installer's
+   size (ui/bench.js) and, once the service names it (ui/download.js), the latest version. */
 .cta-note {
     max-width: 44rem;
     margin: 0.35rem auto 0;

@@ -7,6 +7,7 @@
 - [XP overlay](xp-overlay.md)
 - [Settings](settings.md)
 - [Updates and uninstall](updates.md)
+- [What's new](changelog.md)
 - [Troubleshooting and FAQ](troubleshooting.md)
 - [Reporting a problem](report.md)
 - [Privacy](privacy.md)

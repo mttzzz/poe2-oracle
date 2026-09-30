@@ -36,7 +36,8 @@ pub enum Stat {
     /// An event stream opened: the app connects when it starts, and again after losing the
     /// connection.
     EventStream,
-    /// An update check: the app's latest release or the latest data pack asked for.
+    /// An update check: the app's latest release or the latest data pack asked for by the app (its
+    /// User-Agent names it); a browser asking, as the landing pages do to name the version, is not.
     UpdateCheck,
     /// A data pack, downloaded by the updater.
     DataDownload,

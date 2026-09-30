@@ -7,6 +7,7 @@
 - [Оверлей опыта](xp-overlay.md)
 - [Настройки](settings.md)
 - [Обновления и удаление](updates.md)
+- [Что нового](changelog.md)
 - [Решение проблем и вопросы](troubleshooting.md)
 - [Сообщить о проблеме](report.md)
 - [Конфиденциальность](privacy.md)

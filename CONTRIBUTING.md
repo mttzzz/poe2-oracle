@@ -492,6 +492,14 @@ the guide's header leads to the page of the same name in the other book. The pic
 both books, in `docs/guide/src/images/<en|ru>/`; pages show them as `../images/<lang>/<name>`, which
 the service serves from `IMAGES_DIR` under `/guide/images/`.
 
+The **What's new** page (`changelog.md` in each book) is `CHANGELOG.md` or `CHANGELOG.ru.md` itself,
+included by mdBook from the line `<!-- ANCHOR: releases ... -->`, which sits right under the
+changelog's introduction, to `ANCHOR_END`, just above the list of version links: every section below
+the introduction, `Unreleased` too, shows on the site from the next deploy; the image's guide stage
+copies both changelogs next to the book for this (`Dockerfile`, `.dockerignore`). The links stay off
+the page, where they would make each version's heading a link inside mdBook's own heading anchor,
+which browsers break apart.
+
 ### What the service counts
 
 Every count is a number per Moscow day, kept 120 days after it, with no address or id in it
@@ -510,6 +518,7 @@ text follow it: change them in the same commit as a counter.
 | `download_site_from_<tag>` | a `download_site` whose request carried `?from=<tag>` | a deploy |
 | `app_conn`, `app_conn_v_<version>` | an event stream opens for the app (a refused one doesn't count), in total and by the User-Agent's version; a developer's start is left out | a deploy |
 | `page_view` | an HTML page is served with GET: the landing pages, the guide, the forms; not assets, `HEAD`, 404s or the guide's `toc.html` frame | a deploy |
+| `update_check` | the app asks for the latest release or data pack (`GET /api/v1/releases/latest`, `/api/v1/data/latest`) with its own User-Agent; a browser asking counts nothing, which is how the landing pages name the latest version under their download buttons | a deploy |
 | `uniq_app_day`, `uniq_app_week`, `uniq_app_day_v_<version>` | different installs active in a day, in an ISO week (Monday to Sunday) and by version: one that opened a stream, checked for updates or held a stream open over midnight (a stream still open is added again to the new day and week a random 0–5 minutes after each Moscow midnight) | a deploy |
 | `uniq_site_day`, `uniq_site_day_from_<tag>` | different visitors that loaded an HTML page in a day, and one with `?from=<tag>` | a deploy |
 | `app_start`, `app_start_lang_en`, `app_start_lang_ru`, `app_start_lang_other` | `start=1` in the start query, in total and by `lang` (the three languages sum to `app_start`); counted even when the stream is refused for capacity | an app release |
@@ -519,8 +528,8 @@ text follow it: change them in the same commit as a counter.
 
 `download` (the installer served to anyone, the site's button and the updater together),
 `event_stream` (streams opened: starts and reconnections alike, refused ones not counted),
-`update_check`, `data_download`, `update_download` (`SHA256SUMS` and its signature),
-`report_bug`, `report_idea`, `report_item`, `report_crash` and `visit_<tag>` are counted as before.
+`data_download`, `update_download` (`SHA256SUMS` and its signature), `report_bug`, `report_idea`,
+`report_item`, `report_crash` and `visit_<tag>` are counted as before.
 
 A distinct count (`uniq_*`) is a Redis HyperLogLog sketch (`PFADD`) of the SHA-256 of a salt, the
 client's address (`limits::client_key`: the right-most `X-Forwarded-For`, an IPv6 address by its
@@ -610,7 +619,10 @@ For the maintainer:
    together with the `Cargo.lock` the next cargo command updates: the release build runs with
    `--locked`.
 2. Date the version's heading in `CHANGELOG.md` and `CHANGELOG.ru.md`, keeping its form,
-   `## [<version>] - <date>`: `release.yml` takes the release notes from that section.
+   `## [<version>] - <date>`: `release.yml` takes the release notes from that section. Add its link
+   on top of the list at the end of each file, `[<version>]:
+   https://github.com/mttzzz/poe2-oracle/releases/tag/v<version>`, which makes the heading a link
+   on GitHub.
 3. Push a tag `v<version>`. `.github/workflows/release.yml` builds the installer on Windows with
    `packaging/build-release.ps1` (a job without secrets), signs `SHA256SUMS` on Ubuntu with
    `crates/release-sign` and the `RELEASE_SIGNING_KEY` secret, checks that signature against the

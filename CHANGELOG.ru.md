@@ -6,6 +6,7 @@
 
 Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), а версии следуют
 [семантическому версионированию](https://semver.org/lang/ru/).
+<!-- ANCHOR: releases. Страница руководства «Что нового» показывает все разделы ниже, до ANCHOR_END. -->
 
 ## [0.1.4] - 2026-09-30
 
@@ -155,4 +156,9 @@
   отправляет через интернет, и ведёт к политике конфиденциальности. При удалении настройки
   сохраняются, если не отметить «Настройки и кэш».
 
+<!-- ANCHOR_END: releases. Ссылки на версии остаются ниже, вне той страницы: заголовок-ссылку mdBook нарисовать не может. -->
+[0.1.4]: https://github.com/mttzzz/poe2-oracle/releases/tag/v0.1.4
+[0.1.3]: https://github.com/mttzzz/poe2-oracle/releases/tag/v0.1.3
+[0.1.2]: https://github.com/mttzzz/poe2-oracle/releases/tag/v0.1.2
+[0.1.1]: https://github.com/mttzzz/poe2-oracle/releases/tag/v0.1.1
 [0.1.0]: https://github.com/mttzzz/poe2-oracle/releases/tag/v0.1.0

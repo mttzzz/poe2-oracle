@@ -8,3 +8,5 @@
 !deploy/trim-workspace.sh
 !docs/guide/
 !site/
+!CHANGELOG.md
+!CHANGELOG.ru.md

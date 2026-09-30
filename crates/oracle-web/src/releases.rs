@@ -490,10 +490,11 @@ pub async fn latest_data(State(app): State<Arc<App>>, request: Request) -> Respo
     )
 }
 
-/// An update check: counted as one, and as an active install when the app made it.
+/// An update check: counted as one, and as an active install, when the app made it. Anything else
+/// that asks -- the site's own pages, which show the latest version -- counts nothing.
 fn checked(app: &Arc<App>, request: &Request) {
-    stats::count(app, Stat::UpdateCheck);
     if let Some(agent) = AppAgent::of(request.headers()) {
+        stats::count(app, Stat::UpdateCheck);
         usage::app_active(app, Who::of(request), agent);
     }
 }
@@ -1081,7 +1082,8 @@ mod tests {
             }
         }
         let today = counted_today(&app).await;
-        assert_eq!(today.get("update_check"), 4);
+        // Three from apps; the browser's (the site showing the latest version) counts nothing.
+        assert_eq!(today.get("update_check"), 3);
         assert_eq!(today.get("uniq_app_day"), 2);
         assert_eq!(today.get("uniq_app_day_v_0.1.3"), 2);
         // Asking is not connecting.

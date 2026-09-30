@@ -6,8 +6,9 @@ name: Deploy oracle.pushka.biz
 # oracle.pushka.biz took over from GitHub Pages, which can't publish a private repository.
 #
 # A push to main deploys only when it touches what the deployment is made of: the server's
-# crates, the site, the guide, the image's recipe, the chart values, the workspace manifest (its
-# edition, profiles and shared dependencies build the server too), the lockfile, this file.
+# crates, the site, the guide and the changelogs its "What's new" page includes, the image's
+# recipe, the chart values, the workspace manifest (its edition, profiles and shared dependencies
+# build the server too), the lockfile, this file.
 # workflow_dispatch redeploys by hand.
 on:
   push:
@@ -17,6 +18,8 @@ on:
       - "crates/oracle-protocol/**"
       - "site/**"
       - "docs/guide/**"
+      - "CHANGELOG.md"
+      - "CHANGELOG.ru.md"
       - "Dockerfile"
       - ".dockerignore"
       - "deploy/**"

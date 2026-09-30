@@ -7,7 +7,9 @@
 //   window    the title bar's word after the app's name ("Settings")
 //   sections  the sidebar's six section names; `section` the index of the one shown
 //   summary   the shown section's line under its title
-//   version   the sidebar's last line ("version 0.1.0")
+//   version   the sidebar's last line ("version {version}")
+//   app_version  what {version} in `version` and in a row's label becomes when the service names
+//             no release (release.js); the latest release's version when it does
 //   groups    [{ title, rows: [{ label, note?, control }] }]
 //     note    a line under the label, or several; a line is a string (dim) or
 //             { text, tone: "dim" | "text" | "warning" }
@@ -34,15 +36,26 @@ import {
     stepper,
     toggleSwitch,
 } from "./dom.js";
+import { latestVersion } from "./release.js";
 
 const APP_NAME = "PoE2 Oracle";
 
-export function render(data) {
+export async function render(data) {
+    const version = (await latestVersion) ?? data.app_version;
+    const named = (text) => text.replaceAll("{version}", version);
+    const shown = {
+        ...data,
+        version: named(data.version),
+        groups: data.groups.map((group) => ({
+            ...group,
+            rows: group.rows.map((row) => ({ ...row, label: named(row.label) })),
+        })),
+    };
     return h(
         "div",
         "oui-settings",
-        titleBar(data.window),
-        h("div", "oui-settings-body", sidebar(data), page(data)),
+        titleBar(shown.window),
+        h("div", "oui-settings-body", sidebar(shown), page(shown)),
         gameFrame(),
     );
 }

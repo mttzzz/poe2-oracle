@@ -107,7 +107,9 @@ person. The counts, and what they are made of:
   `article`), the same two counts, and how many times the installer was downloaded after such a
   visit. To tell that, the page's script keeps the tag in your browser tab's session storage, which
   the browser drops when the tab closes, and adds it to the download button's link. No cookie is
-  set for this, and a tag that isn't on the list counts nothing.
+  set for this, and a tag that isn't on the list counts nothing. The landing pages ask the service
+  for the latest version's number, which they show under their download buttons; that request
+  counts nothing.
 
 Your IP address is used for these counts only in the hash described above and, as before, for the
 limits on reports and connections (see [Reports](#reports)). It is not logged.

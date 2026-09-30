@@ -20,10 +20,12 @@
 //
 // An app measured in several states is shown in the one that needs least memory, with the most
 // beside it. The table rounds ratios to one decimal and the claims to whole times; a claim the
-// numbers don't bear out is left empty and said in the console. `window.benchReady` settles once
-// every value is filled.
+// numbers don't bear out is left empty and said in the console. PoE2 Oracle's row names its latest
+// release (release.js), and the version measured only when the service names none: the owner's
+// call, 2026-09-30. `window.benchReady` settles once every value is filled.
 
 import { h } from "./dom.js";
+import { latestVersion } from "./release.js";
 
 const lang = document.documentElement.lang === "ru" ? "ru" : "en";
 const locale = lang === "ru" ? "ru-RU" : "en-GB";
@@ -292,9 +294,14 @@ function values(apps, facts) {
 }
 
 async function draw() {
-    const answer = await fetch(new URL("data/bench.json", import.meta.url));
+    const [answer, latest] = await Promise.all([
+        fetch(new URL("data/bench.json", import.meta.url)),
+        latestVersion,
+    ]);
     if (!answer.ok) throw new Error(`bench.json: HTTP ${answer.status}`);
     const { apps, facts } = await answer.json();
+    const ours = apps.find((app) => app.id === "oracle");
+    if (ours && latest) ours.version = latest;
     const filled = values(apps, facts);
     for (const slot of document.querySelectorAll("[data-bench]")) {
         const value = filled[slot.dataset.bench];

@@ -1,8 +1,13 @@
-// The download buttons ([data-download]): what a press on one leads to, and the bar that brings a
-// button back once the hero's has scrolled away. Every word is the page's.
+// The download buttons ([data-download]): what a press on one leads to, the release under them, and
+// the bar that brings a button back once the hero's has scrolled away. Every word is the page's.
 //
 // A press downloads the installer, as the plain link does, and opens the hint for what comes next
 // ([data-after-download]) under that button's group ([data-cta]).
+//
+// [data-release] names the latest version (release.js) once the service names it, and stays hidden
+// when it doesn't.
+
+import { latestVersion } from "./release.js";
 
 const after = document.querySelector("[data-after-download]");
 const live = document.querySelector("[data-live]");
@@ -70,3 +75,11 @@ if (bar && buttons.length) {
     });
     for (const button of buttons) watch.observe(button);
 }
+
+latestVersion.then((version) => {
+    if (!version) return;
+    for (const place of document.querySelectorAll("[data-release]")) {
+        place.querySelector("[data-release-version]").textContent = version;
+        place.hidden = false;
+    }
+});
