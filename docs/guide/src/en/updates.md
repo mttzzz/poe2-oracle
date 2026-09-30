@@ -4,7 +4,8 @@
 
 PoE2 Oracle keeps itself up to date from [oracle.pushka.biz](https://oracle.pushka.biz/), the
 app's own site, while **Update automatically** is on in the settings (section **General**, group
-**Updates**; on by default). Nothing needs a click.
+**Updates**; on by default, and the installer's first page has the same box). Nothing needs a
+click.
 
 - **Staying connected.** About 10 seconds after it starts, once the trade site's catalogs are in,
   the app connects to oracle.pushka.biz and stays connected. The service tells it the latest app

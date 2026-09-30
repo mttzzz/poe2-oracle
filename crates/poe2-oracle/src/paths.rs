@@ -2,8 +2,8 @@
 //! settings in the roaming config folder (`%APPDATA%\poe2-oracle\config`), the log, the kept item
 //! texts, the last crash, the last update's marker, the XP overlay's tracker it carried over and
 //! its level book, the XP overlay's debug snapshots, the sign-in window's browser profile, the
-//! installed game data pack and the start markers the service's count reads
-//! (`auto_update::start`) in the local data folder
+//! installed game data pack, the start markers the service's count reads
+//! (`auto_update::start`) and the installer's update choice in the local data folder
 //! (`%LOCALAPPDATA%\poe2-oracle\data`), and whatever can be fetched again -- trade catalogs,
 //! exchange and poe2scout prices, downloaded updates -- in the local cache folder
 //! (`%LOCALAPPDATA%\poe2-oracle\cache`). Without a home folder (never on a real Windows profile)
@@ -86,9 +86,16 @@ pub fn data_pack_dir() -> PathBuf {
     data_dir().join("game-data")
 }
 
+/// The choice of «Обновлять автоматически» the installer's privacy page left, `on` or `off`, until
+/// the next start has applied it to the settings (`settings::apply_update_choice`). Only an
+/// interactive install writes it.
+pub fn update_choice_file() -> PathBuf {
+    data_dir().join("update-choice")
+}
+
 /// The local data folder, `%LOCALAPPDATA%\poe2-oracle\data`: what the app keeps between runs and
 /// can't fetch again. The start markers (`last-run-version` and `dev`, `auto_update::start`) lie
-/// directly in it, beside the last update's.
+/// directly in it, beside the last update's and the installer's (`update-choice`).
 pub fn data_dir() -> PathBuf {
     DIRS.as_ref()
         .map_or_else(temp_fallback, |dirs| dirs.data_local_dir().to_path_buf())

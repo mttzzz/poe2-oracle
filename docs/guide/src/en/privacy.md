@@ -29,8 +29,8 @@ While **Update automatically** is on, the connection to oracle.pushka.biz stays 
 service sees your IP address, and from the User-Agent the app's version, for as long as the app
 runs; the first connection after each start adds the flags described in
 [What the service counts](#what-the-service-counts). Turn it off in the settings, section
-**General**, group **Updates**, and PoE2 Oracle doesn't connect to oracle.pushka.biz at all, save
-for a report you send.
+**General**, group **Updates**, or untick it on the installer's first page before the first start,
+and PoE2 Oracle doesn't connect to oracle.pushka.biz at all, save for a report you send.
 
 The links on the panel (**poe2db ↗**, **wiki ↗**, **Craft of Exile ↗**, **poe2scout ↗**,
 **…/trade ↗**) open in your browser when you click them: poe2db.tw, www.poe2wiki.net,

@@ -11,6 +11,9 @@
 //! know (a newer version's, read back after a downgrade) falls back to its default alone instead
 //! of costing the whole file.
 //!
+//! The installer's privacy page can leave the player's choice of «Обновлять автоматически» for the
+//! next start (`apply_update_choice`).
+//!
 //! Plain data and file I/O, no Windows API: it builds and is tested on every target.
 
 use std::collections::BTreeMap;
@@ -93,7 +96,8 @@ pub struct Settings {
     pub private_leagues_refresh_minutes: u16,
     /// Update automatically: stay connected to the app's service and install new versions of the
     /// app and its game data as they come out (`crate::updates`). The field keeps its old name, so
-    /// a file saved before still says what the player chose.
+    /// a file saved before still says what the player chose. The installer's privacy page can set
+    /// it before the first start (`apply_update_choice`).
     pub check_updates: bool,
     /// The player's marks on waystone modifiers -- EE2's map check -- by trade stat id, the same
     /// on every client language.
@@ -614,6 +618,21 @@ pub fn save(settings: &Settings) -> Result<()> {
     save_to(&path, settings)
 }
 
+/// Applies the choice of «Обновлять автоматически» the installer's privacy page left for this
+/// start in `paths::update_choice_file`, if it left one (`packaging/installer.nsi`: an interactive
+/// install writes it, a silent one -- an update, winget -- doesn't): `on` or `off`, whitespace
+/// around it ignored. The choice becomes [`Settings::check_updates`] and is saved, and only then
+/// is the file deleted: it applies once, and what the player changes in the settings window later
+/// stands. A save that fails keeps the file for the next start, and this run uses the choice all
+/// the same. A file that says anything else is deleted with a warning and changes nothing, as no
+/// file does.
+///
+/// Call it right after [`load`], before anything reads `check_updates`: with it off the app never
+/// connects to oracle.pushka.biz (`crate::updates`).
+pub fn apply_update_choice(settings: &mut Settings) {
+    apply_update_choice_with(&paths::update_choice_file(), settings, save);
+}
+
 fn load_from(path: &Path) -> Settings {
     let parsed = match fs::read_to_string(path) {
         Ok(text) => serde_json::from_str::<Settings>(&text).map_err(anyhow::Error::from),
@@ -653,6 +672,55 @@ fn save_to(path: &Path, settings: &Settings) -> Result<()> {
     fs::rename(&temp, path).with_context(|| format!("replacing {}", path.display()))
 }
 
+/// [`apply_update_choice`] for the file at `marker`, the settings saved by `save`.
+fn apply_update_choice_with(
+    marker: &Path,
+    settings: &mut Settings,
+    save: impl FnOnce(&Settings) -> Result<()>,
+) {
+    let bytes = match fs::read(marker) {
+        Ok(bytes) => bytes,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return,
+        Err(err) => {
+            log::warn!(
+                "{} can't be read ({err}), the installer's choice waits for the next start",
+                marker.display()
+            );
+            return;
+        }
+    };
+    let on = match std::str::from_utf8(&bytes).map(str::trim) {
+        Ok("on") => true,
+        Ok("off") => false,
+        _ => {
+            let seen = String::from_utf8_lossy(&bytes[..bytes.len().min(32)]);
+            log::warn!(
+                "{} says {seen:?}, which is neither on nor off: deleting it, the settings stay",
+                marker.display()
+            );
+            delete_update_choice(marker);
+            return;
+        }
+    };
+    settings.check_updates = on;
+    log::info!(
+        "the installer's choice is applied: Update automatically {}",
+        if on { "on" } else { "off" }
+    );
+    match save(settings) {
+        Ok(()) => delete_update_choice(marker),
+        Err(err) => log::warn!(
+            "saving the installer's choice failed ({err:#}), it is applied again at the next start"
+        ),
+    }
+}
+
+fn delete_update_choice(marker: &Path) {
+    if let Err(err) = fs::remove_file(marker) {
+        log::warn!("deleting {} failed: {err}", marker.display());
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -678,6 +746,11 @@ mod tests {
         /// Nested, so saving also has to create the directories.
         fn settings_file(&self) -> PathBuf {
             self.0.join("config").join("settings.json")
+        }
+
+        /// The installer's marker (`apply_update_choice`), nested like the real one.
+        fn update_choice_file(&self) -> PathBuf {
+            self.0.join("data").join("update-choice")
         }
     }
 
@@ -1063,5 +1136,185 @@ mod tests {
             "a private league is never listed, and searched anyway"
         );
         assert_eq!(custom.resolve(&[]), Some("My League (PL12345)"));
+    }
+
+    /// `apply_update_choice` on the files of `dir`, saving where the app would.
+    fn apply_choice(dir: &TempDir, settings: &mut Settings) {
+        let path = dir.settings_file();
+        apply_update_choice_with(&dir.update_choice_file(), settings, |settings| {
+            save_to(&path, settings)
+        });
+    }
+
+    fn updates_off() -> Settings {
+        Settings {
+            check_updates: false,
+            ..Settings::default()
+        }
+    }
+
+    #[test]
+    fn the_installers_off_turns_updates_off_and_is_saved() {
+        let dir = TempDir::new();
+        write_file(&dir.update_choice_file(), "off");
+        let mut settings = load_from(&dir.settings_file());
+        assert!(
+            settings.check_updates,
+            "on unless the player says otherwise"
+        );
+
+        apply_choice(&dir, &mut settings);
+
+        assert_eq!(
+            settings,
+            updates_off(),
+            "this run uses it, and nothing else changes"
+        );
+        assert_eq!(
+            load_from(&dir.settings_file()),
+            updates_off(),
+            "the next start reads it back"
+        );
+        assert!(!dir.update_choice_file().exists(), "applied once");
+    }
+
+    #[test]
+    fn the_installers_on_turns_saved_off_updates_back_on() {
+        let dir = TempDir::new();
+        save_to(&dir.settings_file(), &updates_off()).unwrap();
+        write_file(&dir.update_choice_file(), "on");
+        let mut settings = load_from(&dir.settings_file());
+        assert!(!settings.check_updates);
+
+        apply_choice(&dir, &mut settings);
+
+        assert_eq!(settings, Settings::default());
+        assert_eq!(load_from(&dir.settings_file()), Settings::default());
+        assert!(!dir.update_choice_file().exists(), "applied once");
+    }
+
+    #[test]
+    fn a_choice_applies_once_and_the_players_later_change_stands() {
+        let dir = TempDir::new();
+        write_file(&dir.update_choice_file(), "off");
+        let mut settings = Settings::default();
+        apply_choice(&dir, &mut settings);
+        assert!(!settings.check_updates, "the installer's choice");
+
+        // The player switches updates on again in the settings window, which saves it...
+        settings.check_updates = true;
+        save_to(&dir.settings_file(), &settings).unwrap();
+
+        // ...and the next start finds nothing to undo that.
+        let mut next = load_from(&dir.settings_file());
+        apply_choice(&dir, &mut next);
+        assert!(next.check_updates);
+    }
+
+    #[test]
+    fn whitespace_around_the_installers_choice_is_ignored() {
+        for (text, on) in [("off\r\n", false), (" on\n", true), ("\toff ", false)] {
+            let dir = TempDir::new();
+            write_file(&dir.update_choice_file(), text);
+            let mut settings = Settings {
+                check_updates: !on,
+                ..Settings::default()
+            };
+            apply_choice(&dir, &mut settings);
+            assert_eq!(settings.check_updates, on, "{text:?}");
+        }
+    }
+
+    #[test]
+    fn an_unknown_installer_choice_changes_nothing_and_is_deleted() {
+        // "on" as UTF-16 with its byte order mark: not what the installer writes, but a plausible
+        // way for it to go wrong.
+        let utf16 = [0xFF, 0xFE, b'o', 0, b'n', 0];
+        let unknown: [&[u8]; 5] = [b"", b"maybe", b"on off", b"onoff", &utf16];
+        for start in [true, false] {
+            for bytes in unknown {
+                let dir = TempDir::new();
+                let marker = dir.update_choice_file();
+                fs::create_dir_all(marker.parent().unwrap()).unwrap();
+                fs::write(&marker, bytes).unwrap();
+                let mut settings = Settings {
+                    check_updates: start,
+                    ..Settings::default()
+                };
+
+                apply_choice(&dir, &mut settings);
+
+                assert_eq!(settings.check_updates, start, "{bytes:?}");
+                assert!(!marker.exists(), "{bytes:?} would only say the same again");
+                assert!(!dir.settings_file().exists(), "{bytes:?}: nothing to save");
+            }
+        }
+    }
+
+    #[test]
+    fn no_installer_choice_changes_nothing() {
+        let dir = TempDir::new();
+        let path = dir.settings_file();
+        // Not the shape a save writes, so that a save would show.
+        let saved = r#"{"check_updates": false}"#;
+        write_file(&path, saved);
+        for start in [true, false] {
+            let mut settings = Settings {
+                check_updates: start,
+                ..Settings::default()
+            };
+            apply_choice(&dir, &mut settings);
+            assert_eq!(settings.check_updates, start);
+        }
+        assert_eq!(fs::read_to_string(&path).unwrap(), saved, "not saved");
+        assert!(!dir.update_choice_file().exists());
+    }
+
+    #[test]
+    fn a_choice_that_could_not_be_saved_waits_for_the_next_start() {
+        let dir = TempDir::new();
+        write_file(&dir.update_choice_file(), "off");
+        // A file where the settings folder should be: the save can't create the folder.
+        let in_the_way = dir.0.join("config");
+        write_file(&in_the_way, "in the way");
+        let mut settings = Settings::default();
+
+        apply_choice(&dir, &mut settings);
+        assert!(
+            !settings.check_updates,
+            "this run uses the choice all the same"
+        );
+        assert_eq!(
+            fs::read_to_string(dir.update_choice_file()).unwrap(),
+            "off",
+            "and the file stays"
+        );
+
+        // The next start, with the way clear.
+        fs::remove_file(&in_the_way).unwrap();
+        let mut next = load_from(&dir.settings_file());
+        assert!(next.check_updates);
+        apply_choice(&dir, &mut next);
+        assert!(!next.check_updates);
+        assert_eq!(load_from(&dir.settings_file()), updates_off());
+        assert!(!dir.update_choice_file().exists());
+    }
+
+    /// `packaging/installer.nsi` reads the file line by line and ticks its «Update automatically»
+    /// box unless one line holds exactly this text.
+    #[test]
+    fn a_saved_off_is_spelled_the_way_the_installer_looks_for_it() {
+        let dir = TempDir::new();
+        let path = dir.settings_file();
+        let holds_off = || {
+            fs::read_to_string(&path)
+                .unwrap()
+                .lines()
+                .any(|line| line.contains(r#""check_updates": false"#))
+        };
+        save_to(&path, &Settings::default()).unwrap();
+        assert!(!holds_off());
+        save_to(&path, &updates_off()).unwrap();
+        assert!(holds_off());
     }
 }

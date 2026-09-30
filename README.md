@@ -85,7 +85,9 @@ of Exile trade site, GGG's server of pictures and exchange data, poe2scout and o
 for updates and the reports you send. oracle.pushka.biz counts installations, starts and updates as
 anonymous numbers and keeps no address or id
 ([what goes where](https://oracle.pushka.biz/guide/en/privacy.html),
-[what it counts](https://oracle.pushka.biz/guide/en/privacy.html#what-the-service-counts)).
+[what it counts](https://oracle.pushka.biz/guide/en/privacy.html#what-the-service-counts)). Untick
+**Update automatically** on the installer's first page, or switch it off later in the settings, and
+the app doesn't connect there at all, save for the reports you send.
 
 ## Found a problem?
 

@@ -113,7 +113,7 @@ Group **Updates**. See [Updates and uninstall](updates.md) for how updates work.
 - **Update automatically**, on by default: stay connected to oracle.pushka.biz, and install new
   versions and new game data within minutes of their release, the app restarting once none of its
   windows is open. Off, the app doesn't connect to oracle.pushka.biz for updates; only a report you
-  send goes there.
+  send goes there. The installer's first page has the same box, for a choice before the first start.
 - The row under it names the app's version and its game data's ("Version *X.Y.Z* · game data
   *N*") and says what the updater is doing: "Connecting to oracle.pushka.biz…", "Connected to
   oracle.pushka.biz" with "You have the latest version", "No connection to oracle.pushka.biz — will

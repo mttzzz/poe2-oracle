@@ -555,6 +555,16 @@ as nothing else, so a test build stays out of the numbers: the maintainer's inst
 dev build, `.tmp/remote/lc/xp-install.ps1`, creates the file. With **Update automatically** off the
 app never connects, so nothing of this is counted.
 
+The installer's privacy page (`packaging/installer.nsi`) has a box for **Update automatically**, the
+setting that keeps the app connected to the service. It is ticked unless the saved `settings.json`
+holds `"check_updates": false`: the installer looks for exactly that text, so the app keeps saving
+its JSON pretty-printed, one setting to a line (a test pins it). An interactive install leaves the
+box's choice in a third file of the data folder, `update-choice`, containing `on` or `off`. The app
+applies it once, at its next start right after it has loaded the settings
+(`settings::apply_update_choice`): it sets `check_updates`, saves the settings and only then deletes
+the file, so a failed save leaves it for the next start. A silent install, an update's or winget's,
+shows no page and writes no file.
+
 The maintainer tags the links he publishes with where they're published: `?from=` with a tag of
 `Source`. A page loaded with a tag counts a visit (`visit_<tag>`) and a visitor
 (`uniq_site_day_from_<tag>`); another tag, or none, counts only in `page_view` and `uniq_site_day`,

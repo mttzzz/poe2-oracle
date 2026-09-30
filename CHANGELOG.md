@@ -8,6 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- ANCHOR: releases. The guide's "What's new" page shows every section below, up to ANCHOR_END. -->
 
+## [0.1.5] - 2026-09-30
+
+### Added
+
+- **Update automatically on the installer's first page.** The page that says what PoE2 Oracle
+  sends over the internet now has the setting's box. Untick it and the app never connects to
+  oracle.pushka.biz: from its very first start it neither updates itself nor is counted. The
+  settings can switch it back at any time, and a reinstall shows the box as your settings have it.
+
 ## [0.1.4] - 2026-09-30
 
 ### Changed
@@ -150,6 +159,7 @@ so Windows may say "Windows protected your PC": click **More info**, then **Run 
   cache**.
 
 <!-- ANCHOR_END: releases. The version links stay below it, off that page: mdBook can't draw a heading that is a link. -->
+[0.1.5]: https://github.com/mttzzz/poe2-oracle/releases/tag/v0.1.5
 [0.1.4]: https://github.com/mttzzz/poe2-oracle/releases/tag/v0.1.4
 [0.1.3]: https://github.com/mttzzz/poe2-oracle/releases/tag/v0.1.3
 [0.1.2]: https://github.com/mttzzz/poe2-oracle/releases/tag/v0.1.2

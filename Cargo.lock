@@ -514,7 +514,7 @@ dependencies = [
 
 [[package]]
 name = "auto-update"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "async-channel",
@@ -3229,7 +3229,7 @@ checksum = "a6cb138bb79a146c1bd460005623e142ef0181e3d0219cb493e02f7d08a35695"
 
 [[package]]
 name = "item-parser"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "poe2-domain",
  "regex",
@@ -4502,7 +4502,7 @@ checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
 name = "oracle-data"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "flate2",
@@ -4516,7 +4516,7 @@ dependencies = [
 
 [[package]]
 name = "oracle-protocol"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "base64",
  "serde",
@@ -4525,7 +4525,7 @@ dependencies = [
 
 [[package]]
 name = "oracle-web"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "axum",
  "futures-util",
@@ -4785,14 +4785,14 @@ dependencies = [
 
 [[package]]
 name = "poe2-domain"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "poe2-oracle"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "async-channel",
@@ -5437,7 +5437,7 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "release-sign"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "base64",
@@ -6208,7 +6208,7 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 
 [[package]]
 name = "stat-filters"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "poe2-domain",
 ]
@@ -6932,7 +6932,7 @@ dependencies = [
 
 [[package]]
 name = "trade-client"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "base64",

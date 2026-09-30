@@ -978,7 +978,10 @@ pub fn run() {
             }
             session::init(trade_session, clients.app, cx);
             let http_client: Arc<dyn HttpClient> = cx.http_client();
-            let settings = settings::load();
+            let mut settings = settings::load();
+            // Before anything reads the settings, the updater included: the choice of «Обновлять
+            // автоматически» the installer's privacy page left, when it left one.
+            settings::apply_update_choice(&mut settings);
             crate::i18n::apply(settings.interface_language);
             // Until the player finishes or skips it, the tour starts with every launch -- the
             // first one's introduction, after the install's welcome (`tour_when_ready`).

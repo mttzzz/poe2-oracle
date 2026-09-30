@@ -18,7 +18,8 @@
 ; two at most.
 ;
 ; Command line:
-;   /S          silent (NSIS built-in): no UI, the autostart entry is left exactly as it was
+;   /S          silent (NSIS built-in): no UI, the autostart entry and the automatic-updates choice
+;               are left exactly as they were
 ;   /relaunch   with /S: start PoE2 Oracle once done -- the new copy, or the old one if installing
 ;               failed. crates/auto-update starts updates as `/S /relaunch`, then quits the app.
 ;   /D=<dir>    install directory (NSIS built-in, must come last)
@@ -82,6 +83,15 @@ AllowSkipFiles off
 ; directories::ProjectDirs::from("", "", "poe2-oracle"): settings under %APPDATA%\poe2-oracle,
 ; caches (prices, catalogs, downloaded updates) under %LOCALAPPDATA%\poe2-oracle.
 !define DATA_DIR "poe2-oracle"
+; The choice of Update automatically the privacy page leaves for the app's first start
+; (crates/poe2-oracle/src/paths.rs, update_choice_file): `on` or `off`, no newline. The app applies
+; it once, right after it has loaded its settings, and deletes the file. Only an interactive run
+; writes it.
+!define UPDATE_CHOICE_DIR "$LOCALAPPDATA\${DATA_DIR}\data"
+!define UPDATE_CHOICE_FILE "${UPDATE_CHOICE_DIR}\update-choice"
+; The saved settings (crates/poe2-oracle/src/paths.rs, settings_file), where the box's preset looks
+; for updates turned off.
+!define SETTINGS_FILE "$APPDATA\${DATA_DIR}\config\settings.json"
 ; The player's pathofexile.com session: a generic Windows credential under this target name
 ; (crates/poe2-oracle/src/session.rs, CREDENTIAL_TARGET). It is a key to their web account, not a
 ; setting, so every uninstall deletes it, "Settings and cache" ticked or not.
@@ -119,6 +129,9 @@ VIAddVersionKey /LANG=0 "LegalCopyright" "${COPYRIGHT}"
 !include "LogicLib.nsh"
 !include "FileFunc.nsh"
 !include "WinMessages.nsh"
+!include "StrFunc.nsh"
+; StrFunc.nsh wants each function declared once, at the top level, before any function uses it.
+${Using:StrFunc} StrStr
 
 !define MUI_ICON "${ICON}"
 !define MUI_UNICON "${ICON}"
@@ -126,8 +139,12 @@ VIAddVersionKey /LANG=0 "LegalCopyright" "${COPYRIGHT}"
 
 ; First what the app sends over the internet, with a link to the privacy policy: SignPath
 ; Foundation's terms ask software that sends data to services the user didn't name to show its
-; privacy policy while installing. A silent run (/S: the app's updates, winget) shows no page.
-Page custom PrivacyPage
+; privacy policy while installing, and to offer an installation option that turns those functions
+; off. The one such function is Update automatically (the app stays connected to oracle.pushka.biz,
+; which counts starts, installs and updates), so its box is on this page too: its choice is left
+; for the app's first start (UPDATE_CHOICE_FILE) by the install section. A silent run (/S: the
+; app's updates, winget) shows no page and leaves the choice as it was.
+Page custom PrivacyPage PrivacyPageLeave
 
 ; Leaving the folder page closes a running copy, before anything is installed: Cancel in its
 ; question keeps the player on the page instead of ending the installation.
@@ -181,12 +198,14 @@ LangString PrivacyTitle ${LANG_ENGLISH} "Privacy"
 LangString PrivacyTitle ${LANG_RUSSIAN} "Конфиденциальность"
 LangString PrivacySubtitle ${LANG_ENGLISH} "What PoE2 Oracle sends over the internet."
 LangString PrivacySubtitle ${LANG_RUSSIAN} "Что PoE2 Oracle отправляет через интернет."
-LangString PrivacyText ${LANG_ENGLISH} "PoE2 Oracle collects nothing about you or your play. It gets prices and pictures from the Path of Exile trade site, GGG's server and poe2scout, and updates from oracle.pushka.biz. That service sees your IP address and the app's version, and counts installations, starts and updates as anonymous numbers: no address or id is kept.$\r$\n$\r$\nUpdates can be turned off in the settings, section General (Update automatically); then none of this is counted. Reports reach the developer only when you send them."
-LangString PrivacyText ${LANG_RUSSIAN} "PoE2 Oracle ничего не собирает о вас и вашей игре. Цены и картинки он берёт с сайта торговли Path of Exile, сервера GGG и poe2scout, а обновления — с oracle.pushka.biz. Этот сервис видит ваш IP-адрес и версию программы и считает установки, запуски и обновления анонимными числами: ни адреса, ни идентификатора он не хранит.$\r$\n$\r$\nОбновления можно выключить в настройках, раздел «Общие» («Обновлять автоматически»); тогда ничего из этого не считается. Сообщения разработчику уходят, только когда вы их отправляете."
+LangString PrivacyText ${LANG_ENGLISH} "PoE2 Oracle collects nothing about you or your play. It gets prices and pictures from the Path of Exile trade site, GGG's server and poe2scout, and updates from oracle.pushka.biz. That service sees your IP address and the app's version, and counts installations, starts and updates as anonymous numbers: no address or id is kept.$\r$\n$\r$\nUntick Update automatically below, or turn it off later in the settings (section General): the app then stops connecting to oracle.pushka.biz for updates, and none of this is counted. Reports reach the developer only when you send them."
+LangString PrivacyText ${LANG_RUSSIAN} "PoE2 Oracle ничего не собирает о вас и вашей игре. Цены и картинки он берёт с сайта торговли Path of Exile, сервера GGG и poe2scout, а обновления — с oracle.pushka.biz. Этот сервис видит ваш IP-адрес и версию программы и считает установки, запуски и обновления анонимными числами: ни адреса, ни идентификатора он не хранит.$\r$\n$\r$\nСнимите отметку «Обновлять автоматически» ниже или выключите её позже в настройках (раздел «Общие»): тогда программа перестанет подключаться к oracle.pushka.biz за обновлениями, и ничего из этого не считается. Сообщения разработчику уходят, только когда вы их отправляете."
 LangString PrivacyLink ${LANG_ENGLISH} "Privacy policy: oracle.pushka.biz/guide/en/privacy.html"
 LangString PrivacyLink ${LANG_RUSSIAN} "Политика конфиденциальности: oracle.pushka.biz/guide/ru/privacy.html"
 LangString PrivacyUrl ${LANG_ENGLISH} "https://oracle.pushka.biz/guide/en/privacy.html"
 LangString PrivacyUrl ${LANG_RUSSIAN} "https://oracle.pushka.biz/guide/ru/privacy.html"
+LangString UpdatesOption ${LANG_ENGLISH} "Update automatically"
+LangString UpdatesOption ${LANG_RUSSIAN} "Обновлять автоматически"
 
 ; Sets _RESULT to 0 when this user runs a PoE2 Oracle process: `find` exits 0 when tasklist listed
 ; one. Every tool by full path, since a Unix `find` earlier on PATH (Git's usr\bin) would answer
@@ -283,6 +302,10 @@ LangString PrivacyUrl ${LANG_RUSSIAN} "https://oracle.pushka.biz/guide/ru/privac
 !endif
 
 Var Relaunch
+; The privacy page's Update automatically box, and its choice, "on" or "off": empty until the page
+; first shows, so it stays empty in a silent run, which shows no page.
+Var UpdatesBox
+Var UpdateChoice
 
 Function .onInit
   ${GetParameters} $R0
@@ -323,6 +346,18 @@ Section "-${PRODUCT_NAME}"
   WriteRegDWORD HKCU "${UNINSTALL_KEY}" "NoRepair" 1
   ${GetSize} "$INSTDIR" "/S=0K" $R0 $R1 $R2
   WriteRegDWORD HKCU "${UNINSTALL_KEY}" "EstimatedSize" $R0
+  ; The privacy page's choice of Update automatically, for the app's first start: written here and
+  ; not on leaving the page, so that a cancelled installation leaves nothing behind. Not in a
+  ; silent run, which shows no page and leaves the player's choice as it was.
+  ${If} $UpdateChoice != ""
+    CreateDirectory "${UPDATE_CHOICE_DIR}"
+    ClearErrors
+    FileOpen $R0 "${UPDATE_CHOICE_FILE}" w
+    ${IfNot} ${Errors}
+      FileWrite $R0 $UpdateChoice
+      FileClose $R0
+    ${EndIf}
+  ${EndIf}
 SectionEnd
 
 Function .onInstSuccess
@@ -344,6 +379,10 @@ Function .onInstFailed
   ${EndIf}
 FunctionEnd
 
+; The privacy page: what the app sends, the link to the policy, and the Update automatically box
+; below them. The box is preset when the page first shows and keeps what the player set after that
+; (Back from the folder page and forward again). The text's label is tall enough for its Russian
+; version, the longer one; the link and the box come under it.
 Function PrivacyPage
   !insertmacro MUI_HEADER_TEXT "$(PrivacyTitle)" "$(PrivacySubtitle)"
   nsDialogs::Create 1018
@@ -351,12 +390,61 @@ Function PrivacyPage
   ${If} $R0 == error
     Abort
   ${EndIf}
-  ${NSD_CreateLabel} 0u 0u 100% 80u "$(PrivacyText)"
+  ${NSD_CreateLabel} 0u 0u 100% 96u "$(PrivacyText)"
   Pop $R0
-  ${NSD_CreateLink} 0u 88u 100% 12u "$(PrivacyLink)"
+  ${NSD_CreateLink} 0u 100u 100% 12u "$(PrivacyLink)"
   Pop $R0
   ${NSD_OnClick} $R0 OpenPrivacyPolicy
+  ${NSD_CreateCheckBox} 0u 116u 100% 12u "$(UpdatesOption)"
+  Pop $UpdatesBox
+  ${If} $UpdateChoice == ""
+    Call PresetUpdateChoice
+  ${EndIf}
+  ${If} $UpdateChoice == "on"
+    ${NSD_Check} $UpdatesBox
+  ${EndIf}
   nsDialogs::Show
+FunctionEnd
+
+; Sets the choice from the saved settings, when the privacy page first shows: off exactly when a
+; line of settings.json holds `"check_updates": false` -- how the app's pretty-printed JSON spells
+; it -- and on otherwise, with no settings yet too. So a reinstall keeps what the player chose in
+; the app, and Update automatically stays on by default.
+Function PresetUpdateChoice
+  Push $R0
+  Push $R1
+  Push $R2
+  StrCpy $UpdateChoice "on"
+  ClearErrors
+  FileOpen $R0 "${SETTINGS_FILE}" r
+  ${IfNot} ${Errors}
+    ${Do}
+      ClearErrors
+      FileRead $R0 $R1
+      ${If} ${Errors}
+        ${ExitDo}
+      ${EndIf}
+      ${StrStr} $R2 $R1 '"check_updates": false'
+      ${If} $R2 != ""
+        StrCpy $UpdateChoice "off"
+        ${ExitDo}
+      ${EndIf}
+    ${Loop}
+    FileClose $R0
+  ${EndIf}
+  Pop $R2
+  Pop $R1
+  Pop $R0
+FunctionEnd
+
+; Leaving the privacy page forward: the box, as the player left it, is the choice.
+Function PrivacyPageLeave
+  ${NSD_GetState} $UpdatesBox $R0
+  ${If} $R0 == ${BST_CHECKED}
+    StrCpy $UpdateChoice "on"
+  ${Else}
+    StrCpy $UpdateChoice "off"
+  ${EndIf}
 FunctionEnd
 
 ; The privacy page's link, clicked: its handle comes on the stack.
