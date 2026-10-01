@@ -171,9 +171,15 @@ tracker knows no level until the next one, and the 1 MB of the log's end that th
 every start may hold none. The book, `%LOCALAPPDATA%\poe2-oracle\data\xp-levels.json`, fills the
 gap. It is keyed by character name and holds, for each of the 20 most recent characters, the
 level, where the bar stood (a fraction of the level) when it was last read with that character
-known to be playing, and when that was noted. It is written at every level-up, at most once a
-minute while the bar's reading changes, and when the app quits, so that the last position is kept.
-A missing or damaged file is an empty book; the player never sees an error.
+known to be playing, and when that was noted. It is written at once at a level-up; soon after a
+change of area, a logout or the first position a new level's bar has (never closer than 10 s to the
+last write); otherwise at most once a minute while the bar's reading changes; and when the app
+quits. An app ended without a word, by Windows shutting down or a crash, thus leaves the book as it
+was when the character last changed area, logged out or levelled up, a minute of play behind at
+worst. The replay of the log's tail at every start teaches the book only the last level each
+character reached in it, and only if the book doesn't have that level: noted level-up by level-up,
+the replay would pass through the lower levels and drop the entry's position at each one. A
+missing or damaged file is an empty book; the player never sees an error.
 
 - **First run.** With an empty book the app reads `Client.txt` backwards from its end, up to 64 MB,
   for each character's latest level-up line (English and Russian client) and seeds the book with

@@ -48,8 +48,10 @@
 //! keeps each recent character's level and where its bar stood, so the first reading of the bar
 //! says who it is and the level plate names the next level again. It is read when the overlay
 //! opens, and filled from far back in the game's log when it is empty
-//! (`ClientLog::latest_levels`); the sampler writes it at each level-up and once a minute at
-//! most while the bar moves, and it is written once more when the app quits.
+//! (`ClientLog::latest_levels`); the sampler writes it at each level-up, soon after a change of
+//! area, a logout or a new level's first position on the bar, and otherwise once a minute at most
+//! while the bar moves (`XpTracker::book_to_save`), so that an app ended without a word loses
+//! little; it is written once more when the app quits.
 //!
 //! Each plate is its own window that lets clicks through to the game -- the plates stand over the
 //! game's world. The gear is a window of its own at the level plate's right end, the one place
@@ -435,8 +437,8 @@ pub fn open(
             let mut tracker = XpTracker::new();
             tracker.set_rate_window(options.rate_window_minutes);
             tracker.set_book(load_levels());
-            // The book is written once a minute at the most while the bar moves: the app's end
-            // writes what came after.
+            // The sampler writes the book as the tracker has it due, not at every change: the
+            // app's end writes what came after.
             cx.on_app_quit(|overlay: &mut XpOverlay, _| {
                 if let Some(book) = overlay.tracker.book_to_save(None) {
                     write_levels(&book);

@@ -68,11 +68,15 @@ rate: it is back as it was when you play again.
   the bar stands. PoE2 Oracle keeps on your computer the level of your last 20 characters and where
   each one's bar stood when you last played it (see
   [Privacy](privacy.md#what-it-keeps-on-your-computer)); the first time, it reads the levels back
-  from the end of the log. After a restart or a login it compares the first bar reading it accepts
-  with those positions: if exactly one character's bar stood within 0.3% of it, that is you, and
-  the plate gives the level again instead of `next level in`. The first time, before any position
-  is known, it takes your most recent character; if you play another, your next level-up corrects
-  that. If none fits, or more than one, the plate says `next level in` until your next level-up.
+  from the end of the log. It writes the positions down as you play: right after a level-up, soon
+  after you change area or log out, otherwise once a minute, and when the app quits. After a
+  restart or a login it compares the first bar reading it accepts with those positions: if exactly
+  one character's bar stood within 0.3% of it, that is you, and the plate gives the level again
+  instead of `next level in`. The first time, before any position is known, it takes your most
+  recent character; if you play another, your next level-up corrects that. If none fits, or more
+  than one, the plate says `next level in` until your next level-up. So it does if the app was
+  ended without warning in the middle of a map, by a power cut or Windows shutting down: the
+  position it kept can then be up to a minute behind.
 - The rate weighs recent play more. With **Rate smoothing** at 10 minutes, the default, play from
   10 minutes ago counts half as much as play now. Choose 5 minutes to see a change of farming
   sooner, or 20 or 30 for a steadier number.

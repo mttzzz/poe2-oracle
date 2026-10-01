@@ -553,6 +553,11 @@ const SAME_BAR: f64 = 0.003;
 /// How often the level book is written while the bar moves: it moves at every two-second sample
 /// of play.
 const BOOK_EVERY: Duration = Duration::from_secs(60);
+/// How soon after the last write the book is written again for a moment worth keeping -- a change
+/// of area, a logout, the first place a new level's bar has -- instead of waiting out the minute.
+/// Such moments are far apart, but a map and the hideout can trade the character every few
+/// seconds, and the writes mustn't follow them that closely.
+const MOMENT_GAP: Duration = Duration::from_secs(10);
 /// How much of the game's log [`latest_levels`] takes at a time.
 const LEVELS_CHUNK: usize = 1 << 20;
 
@@ -603,6 +608,9 @@ struct BookState {
     /// When it was, on the tracker's clock: `None` before the first time, and after a level-up or
     /// a seeding, which are written at once.
     taken_at: Option<Duration>,
+    /// Whether a moment worth keeping has come since, with something unwritten: the book is then
+    /// written [`MOMENT_GAP`] after the last time, not a minute.
+    moment: bool,
 }
 
 impl LevelBook {
@@ -668,6 +676,31 @@ impl LevelBook {
         self.characters.insert(0, entry);
         self.characters.truncate(BOOK_SIZE);
         changed
+    }
+
+    /// Takes the level the game's log says `name` has, as read back after the fact -- the last
+    /// level the character reached in the tail a start replays ([`XpTracker::restore`]). A book
+    /// that has the character at that level knows it already, and the bar position it has seen
+    /// since: noting every level the replay passes on the way up would take that position off
+    /// the entry, so it's left as it is, in its place. Any other level is the log's word over
+    /// the book's -- a new character of an old name included -- and puts the character first,
+    /// with no position. Whether anything changed.
+    fn learn(&mut self, name: &str, level: u32, at: u64) -> bool {
+        if self
+            .characters
+            .iter()
+            .any(|known| known.name == name && known.level == level)
+        {
+            return false;
+        }
+        self.note(name, level, None, at)
+    }
+
+    /// Whether the book holds a position on the bar for `name` at `level`.
+    fn has_position(&self, name: &str, level: u32) -> bool {
+        self.characters
+            .iter()
+            .any(|known| known.name == name && known.level == level && known.fraction.is_some())
     }
 
     /// Fills the book with the levels the game's log last named ([`latest_levels`]), newest
@@ -1197,20 +1230,31 @@ impl XpTracker {
         self.book.taken_at = None;
     }
 
-    /// The level book, when it's to be written ([`LevelBook::save`]): once it has changed and a
-    /// minute has passed since it was last taken -- at once for the first time, and after a
-    /// level-up or a seeding. With no `at` -- the app is quitting -- as soon as it has changed at
-    /// all. What this returns counts as written.
+    /// The level book, when it's to be written ([`LevelBook::save`]): once it has changed, and
+    ///
+    /// - at once, for the first time and after a level-up or a seeding -- and when the app is
+    ///   quitting, which is no `at`;
+    /// - ten seconds (`MOMENT_GAP`) after the last time, if a moment worth keeping has come since:
+    ///   a change of area, a logout, the first place a new level's bar has. The app can be ended
+    ///   without a word, by Windows shutting down or a crash, and then a start finds the
+    ///   character only where the book was last written;
+    /// - a minute after the last time, otherwise.
+    ///
+    /// What this returns counts as written.
     pub fn book_to_save(&mut self, at: Option<Duration>) -> Option<LevelBook> {
         let state = &mut self.book;
         let due = match (at, state.taken_at) {
-            (Some(at), Some(taken)) => at.saturating_sub(taken) >= BOOK_EVERY,
+            (Some(at), Some(taken)) => {
+                let since = at.saturating_sub(taken);
+                since >= BOOK_EVERY || (state.moment && since >= MOMENT_GAP)
+            }
             _ => true,
         };
         if !state.unsaved || !due {
             return None;
         }
         state.unsaved = false;
+        state.moment = false;
         state.taken_at = at;
         Some(state.book.clone())
     }
@@ -1219,11 +1263,14 @@ impl XpTracker {
     /// `at`), each event at the time its line was written, on the tracker's clock
     /// ([`log_time`]): the current area -- a town or hideout the character is in counts from when
     /// it was entered -- and, if the character levelled up since the last login, its name and
-    /// level; without one, the first reading of the bar asks the level book. Unlike
-    /// [`Self::on_log_event`], old level-ups don't make the tracker expect a wrap,
-    /// and the idle allowance starts at `at`. Map runs are timed from when they were entered, but
-    /// for the first map the tail shows before any login: it may have started before the tail
-    /// begins, so it's neither shown nor averaged, even after a trip to the hideout and back.
+    /// level; without one, the first reading of the bar asks the level book. The book is taught
+    /// what the tail made of each character's level and no more (`LevelBook::learn`): the levels
+    /// passed on the way, and the one it has already, are nothing new, and would take the bar
+    /// position it keeps for the character off the entry. Unlike [`Self::on_log_event`], old
+    /// level-ups don't make the tracker expect a wrap, and the idle allowance starts at `at`. Map
+    /// runs are timed from when they were entered, but for the first map the tail shows before
+    /// any login: it may have started before the tail begins, so it's neither shown nor averaged,
+    /// even after a trip to the hideout and back.
     pub fn restore(
         &mut self,
         history: impl IntoIterator<Item = (Duration, LogEvent)>,
@@ -1234,6 +1281,9 @@ impl XpTracker {
         // earlier map was seen -- a map opened after another is a new instance.
         let mut covered = false;
         let mut cursor: Option<Duration> = None;
+        // The level the tail last gave each character the tracker took a level-up of, in the
+        // order of those last level-ups.
+        let mut reached: Vec<(String, u32)> = Vec::new();
         for (when, event) in history {
             let when = when.min(at);
             if let Some(previous) = cursor {
@@ -1242,7 +1292,10 @@ impl XpTracker {
             cursor = Some(when);
             match event {
                 LogEvent::LevelUp { character, level } => {
-                    self.note_level(character, level);
+                    if self.note_level(&character, level) {
+                        reached.retain(|(name, _)| *name != character);
+                        reached.push((character, level));
+                    }
                 }
                 LogEvent::AreaEntered { area, seed } => {
                     // The login after a logout, maybe as another character.
@@ -1269,6 +1322,14 @@ impl XpTracker {
         if let Some(previous) = cursor {
             self.maps.tick(at.saturating_sub(previous));
         }
+        // News for the level book, where the tail says more than it knows: written at once.
+        let now = wall_now();
+        for (name, level) in reached {
+            if self.book.book.learn(&name, level, now) {
+                self.book.unsaved = true;
+                self.book.taken_at = None;
+            }
+        }
     }
 
     /// A log line that just appeared; `at` is on the same clock as [`Self::on_sample`]'s.
@@ -1285,7 +1346,8 @@ impl XpTracker {
         self.advance(at);
         match event {
             LogEvent::LevelUp { character, level } => {
-                if self.note_level(character, level) {
+                if self.note_level(&character, level) {
+                    self.book_news(&character, level);
                     self.expire_level_up_balance(at);
                     self.level_up_balance += 1;
                     self.balance_at = at;
@@ -1302,12 +1364,17 @@ impl XpTracker {
                 // Changing areas is play: the idle allowance starts over.
                 self.since_gain = Duration::ZERO;
                 self.active_at = Some(at);
+                // A moment worth keeping the level book at.
+                self.keepsake();
             }
             LogEvent::TrialEntered => {
                 self.scene_lost = false;
                 self.maps.leave_for_trial(at);
             }
-            LogEvent::SceneLost => self.scene_lost = true,
+            LogEvent::SceneLost => {
+                self.scene_lost = true;
+                self.keepsake();
+            }
             LogEvent::SceneNamed => self.scene_lost = false,
         }
     }
@@ -1336,27 +1403,40 @@ impl XpTracker {
         self.maps.enter(area, seed, town, timed, at);
     }
 
-    /// Records a level-up of `character`, unless the log has already named another character
-    /// since the login (a party member's level-up shows up in the log too) -- a character the
-    /// level book only guessed gives way to any. Returns whether it was ours.
-    fn note_level(&mut self, character: String, level: u32) -> bool {
+    /// Takes a level-up of `character` as the tracker's own, unless the log has already named
+    /// another character since the login (a party member's level-up shows up in the log too) -- a
+    /// character the level book only guessed gives way to any. Returns whether it was ours. What
+    /// the level book makes of it is for the caller: a live level-up is news ([`Self::book_news`]),
+    /// a replayed one may be old ([`Self::restore`]).
+    fn note_level(&mut self, character: &str, level: u32) -> bool {
         if !self.booked
             && self
                 .character
-                .as_ref()
-                .is_some_and(|ours| *ours != character)
+                .as_deref()
+                .is_some_and(|ours| ours != character)
         {
             return false;
         }
-        // News for the level book, written without waiting out the minute.
-        if self.book.book.note(&character, level, None, wall_now()) {
+        self.booked = false;
+        self.character = Some(character.to_owned());
+        self.level = Some(level);
+        true
+    }
+
+    /// A live level-up of one of ours is news for the level book, written without waiting out the
+    /// minute.
+    fn book_news(&mut self, character: &str, level: u32) {
+        if self.book.book.note(character, level, None, wall_now()) {
             self.book.unsaved = true;
             self.book.taken_at = None;
         }
-        self.booked = false;
-        self.character = Some(character);
-        self.level = Some(level);
-        true
+    }
+
+    /// A moment worth keeping has come -- a change of area, a logout -- so whatever the level book
+    /// holds unwritten is written soon, not within the minute ([`MOMENT_GAP`]). With nothing
+    /// unwritten there is nothing to hurry, and no claim is left on the next change.
+    fn keepsake(&mut self) {
+        self.book.moment |= self.book.unsaved;
     }
 
     /// The first reading of the bar since the login or the start, `value`, asks the level book
@@ -1405,7 +1485,9 @@ impl XpTracker {
 
     /// Puts the reading of the bar in the level book, under the character the tracker knows --
     /// but not while a large change of it is held as a possible misread, nor between a level-up
-    /// and the bar's wrap, when the level and the bar are of different levels.
+    /// and the bar's wrap, when the level and the bar are of different levels. The first place a
+    /// level's bar has in the book is a moment worth keeping: it's what a login finds the
+    /// character by.
     fn note_bar(&mut self, value: f64) {
         if self.pending.is_some() || self.level_up_balance != 0 {
             return;
@@ -1413,8 +1495,10 @@ impl XpTracker {
         let (Some(name), Some(level)) = (&self.character, self.level) else {
             return;
         };
+        let placed = self.book.book.has_position(name, level);
         if self.book.book.note(name, level, Some(value), wall_now()) {
             self.book.unsaved = true;
+            self.book.moment |= !placed;
         }
     }
 
@@ -4127,6 +4211,18 @@ mod tests {
     }
 
     #[test]
+    fn a_bar_beyond_the_most_recent_characters_position_is_not_taken_for_its_progress() {
+        // `bow` was left at 41.2 % and is the most recent character. The bar reads a little
+        // further on, as it would after play the book never saw -- or as the bar of any other
+        // character would, which nothing before the log's next level-up tells apart. Guessing
+        // would show the wrong level for the other one: the plate says "next level in" instead.
+        for fraction in [0.43, 0.50, 0.40, 0.05] {
+            let tracker = first_reading(&[("bow", 94, Some(0.412)), ("fresh", 30, None)], fraction);
+            assert_eq!(playing(&tracker), (None, None), "{fraction}");
+        }
+    }
+
+    #[test]
     fn a_book_of_the_logs_levels_alone_gives_its_most_recent_character() {
         // The first run after the update: the levels the log's backward read found, newest
         // first, and no position on the bar for anyone yet.
@@ -4263,7 +4359,7 @@ mod tests {
         // The bar shows the old level's until it wraps: no position on the new level yet.
         let wraps = play(&mut tracker, t + 2.0, 2, |_| Some(bar(t)));
         assert_eq!(position_in(&tracker.book.book), None);
-        // Then it wraps to the new level: the position follows, at the minute's pace.
+        // Then it wraps to the new level: the position follows, soon but not at once.
         play(&mut tracker, wraps, 4, |_| Some(0.02));
         assert_eq!(tracker.book_to_save(Some(s(90))), None);
         // The app quitting takes what changed since, whatever the time, once.
@@ -4273,6 +4369,135 @@ mod tests {
             (95, Some(0.02))
         );
         assert_eq!(tracker.book_to_save(None), None);
+    }
+
+    /// The app's sampler as far as the level book goes, over a file, one two-second turn at a
+    /// time: what the tracker has due is written first, then the lines the game logged since and
+    /// the look at the bar reach it (`sample_forever`).
+    struct Sampler<'a> {
+        tracker: XpTracker,
+        file: &'a Path,
+        /// Everything the game has logged since the sampler started, for a later start's tail.
+        logged: Vec<LogEvent>,
+        /// The clock the next turn is at, seconds.
+        t: f64,
+    }
+
+    impl<'a> Sampler<'a> {
+        /// An app that has just started, with the book `file` holds.
+        fn start(file: &'a Path) -> Self {
+            let mut tracker = XpTracker::new();
+            tracker.set_book(LevelBook::load(file));
+            Sampler {
+                tracker,
+                file,
+                logged: Vec::new(),
+                t: 0.0,
+            }
+        }
+
+        /// One turn: the game logged `lines` and the bar reads `fill`. Whether the book was
+        /// written at the start of it.
+        fn turn(&mut self, lines: &[LogEvent], fill: f64) -> bool {
+            let at = Duration::from_secs_f64(self.t);
+            let due = self.tracker.book_to_save(Some(at));
+            if let Some(book) = &due {
+                book.save(self.file).unwrap();
+            }
+            for line in lines {
+                self.tracker.on_log_event(line.clone(), at);
+            }
+            self.logged.extend_from_slice(lines);
+            self.tracker.on_sample(BarLook::Read(fill), at);
+            self.t += 2.0;
+            due.is_some()
+        }
+
+        /// The turns until the clock reaches `until`, the bar reading what `bar` says at each.
+        /// How many of them wrote the book.
+        fn turns_until(&mut self, until: f64, bar: impl Fn(f64) -> f64) -> usize {
+            let mut written = 0;
+            while self.t < until {
+                written += usize::from(self.turn(&[], bar(self.t)));
+            }
+            written
+        }
+    }
+
+    #[test]
+    fn the_level_book_is_written_soon_after_a_first_position_an_area_change_and_a_logout() {
+        let dir = TempDir::new();
+        let file = dir.0.join("xp-levels.json");
+        book_of(&[("bow", 94, Some(0.96))]).save(&file).unwrap();
+        let on_file = || LevelBook::load(&file).characters[0].clone();
+        let mut app = Sampler::start(&file);
+
+        // The first reading is where the book has `bow`'s bar; then the bar fills.
+        app.turns_until(12.0, |t| 0.96 + 0.0025 * (t - 4.0).max(0.0));
+        assert_eq!(playing(&app.tracker), (Some(94), Some("bow")));
+        // The line names the level-up a turn before the bar wraps, so what is written at once
+        // has no position on the new level yet.
+        app.turn(&[level_up("bow", 95)], 0.99);
+        assert!(app.turn(&[], 0.01), "a level-up is written at once");
+        assert_eq!((on_file().level, on_file().fraction), (95, None));
+        // The first place the new level's bar has doesn't wait for the minute: it's written
+        // within a few turns, though not at the very next.
+        assert!(!app.turn(&[], 0.01));
+        let bar = |t: f64| 0.01 + 0.002 * (t - 16.0);
+        assert!(
+            app.turns_until(28.0, bar) >= 1,
+            "a level's first position is written soon"
+        );
+        let first = on_file().fraction.expect("a position on the new level");
+        assert!((first - 0.01).abs() < 0.03, "{first}");
+
+        // From then on the bar's movement alone waits for the minute...
+        assert_eq!(app.turns_until(40.0, bar), 0);
+        // ... but an area change is written at the next turn, with where the bar has got to.
+        app.turn(&[area("HideoutCanal", 1)], bar(40.0));
+        assert!(app.turn(&[], bar(42.0)), "an area change is written soon");
+        let at_area_change = on_file().fraction.unwrap();
+        assert!(
+            at_area_change > first + 0.02,
+            "{at_area_change} after {first}"
+        );
+        assert!(
+            (at_area_change - bar(40.0)).abs() < 0.01,
+            "{at_area_change}"
+        );
+
+        // And so is a logout: the scene goes unknown at character select, and the app may be
+        // closed along with the game right after.
+        assert_eq!(app.turns_until(56.0, bar), 0);
+        app.turn(&[LogEvent::SceneLost], bar(56.0));
+        assert!(app.turn(&[], bar(58.0)), "a logout is written soon");
+        let at_logout = on_file().fraction.unwrap();
+        assert!(at_logout > at_area_change + 0.02, "{at_logout}");
+        assert!((at_logout - bar(56.0)).abs() < 0.01, "{at_logout}");
+    }
+
+    #[test]
+    fn an_area_change_with_nothing_to_write_leaves_the_next_change_to_wait_for_its_minute() {
+        let dir = TempDir::new();
+        let file = dir.0.join("xp-levels.json");
+        book_of(&[("bow", 94, Some(0.30))]).save(&file).unwrap();
+        let mut app = Sampler::start(&file);
+        // The first reading names `bow`. The bar moves a little, which the median filter passes
+        // a turn late, and that is written at once.
+        assert_eq!(app.turns_until(6.0, |_| 0.30), 0);
+        assert!(!app.turn(&[], 0.31));
+        assert!(!app.turn(&[], 0.31));
+        assert!(app.turn(&[], 0.31), "the first change is written at once");
+        // All of it is written and the character changes area: nothing to write then, and the
+        // area change must not hurry the write of the next change.
+        assert_eq!(app.turns_until(20.0, |_| 0.31), 0);
+        app.turn(&[area("HideoutCanal", 1)], 0.31);
+        assert!(!app.turn(&[], 0.31));
+        assert_eq!(app.turns_until(30.0, |_| 0.31), 0);
+        // The bar moves on: written a minute after the last write, not before.
+        let creeping = |t: f64| 0.31 + 0.001 * (t - 30.0);
+        assert_eq!(app.turns_until(70.0, creeping), 0);
+        assert_eq!(app.turns_until(72.0, creeping), 1);
     }
 
     #[test]
@@ -4302,6 +4527,154 @@ mod tests {
         // restart.
         carried.on_log_event(level_up("merc", 62), Duration::from_secs(12));
         assert_eq!(playing(&carried), (Some(62), Some("merc")));
+    }
+
+    #[test]
+    fn the_logs_replay_at_a_start_takes_no_position_off_the_level_book() {
+        // The owner's morning, 2026-10-01. The book had `skeletal_master_one` at level 17 with
+        // its bar where he left it, and the tail the game's start replays has that evening's
+        // level-ups, 13 to 17. Replayed as news one by one, the 13 took the position off the
+        // entry -- the bar of the level before is no position on this one -- and the 17 left it
+        // with none, so the login's first reading of the bar matched nobody.
+        let held = [
+            ("skeletal_master_one", 17, Some(0.0065)),
+            ("mttzzz_bow_five", 94, Some(0.9843)),
+            ("alpha", 70, None),
+        ];
+        let mut tracker = XpTracker::new();
+        tracker.set_book(book_of(&held));
+        tracker.restore(
+            at_start(
+                (13..=17)
+                    .map(|level| level_up("skeletal_master_one", level))
+                    .chain([level_up("alpha", 70)]),
+            ),
+            Duration::ZERO,
+        );
+        // It says nothing the book didn't know: the book is as it was, in its order, and there
+        // is nothing to write.
+        assert_eq!(tracker.book.book, book_of(&held));
+        assert_eq!(tracker.book_to_save(None), None);
+        // The login: the scene goes unknown, an area line follows, and the bar reads where it
+        // was left.
+        tracker.on_log_event(LogEvent::SceneLost, Duration::from_secs(1));
+        enter(&mut tracker, "G1_town", 1, 2.0);
+        play(&mut tracker, 4.0, 3, |_| Some(0.0065));
+        assert_eq!(playing(&tracker), (Some(17), Some("skeletal_master_one")));
+
+        // What the replay does tell the book is a level it hasn't seen, or a character it
+        // doesn't have, at the last level that character reached in it: the levels passed on
+        // the way are no news. The latest comes first, and a changed level has no position. A
+        // lower level than the book's is another character of the same name: the log stands.
+        let login = |seed| [LogEvent::SceneLost, area("G1_town", seed)];
+        let tail = [level_up("beta", 16)]
+            .into_iter()
+            .chain(login(2))
+            .chain([level_up("gamma", 3), level_up("gamma", 4)])
+            .chain(login(3))
+            .chain([level_up("beta", 17)])
+            .chain(login(4))
+            .chain([level_up("delta", 4)]);
+        let mut tracker = XpTracker::new();
+        tracker.set_book(book_of(&[
+            ("beta", 15, Some(0.50)),
+            ("alpha", 70, Some(0.20)),
+            ("delta", 40, Some(0.30)),
+        ]));
+        tracker.restore(at_start(tail), Duration::ZERO);
+        let book: Vec<_> = tracker
+            .book
+            .book
+            .characters
+            .iter()
+            .map(|known| (known.name.as_str(), known.level, known.fraction))
+            .collect();
+        assert_eq!(
+            book,
+            [
+                ("delta", 4, None),
+                ("beta", 17, None),
+                ("gamma", 4, None),
+                ("alpha", 70, Some(0.20)),
+            ]
+        );
+        assert!(tracker.book_to_save(None).is_some(), "news is written");
+    }
+
+    #[test]
+    fn the_character_played_last_is_found_again_after_an_unclean_end_and_a_new_start() {
+        // The owner's evening and morning, 2026-09-30 and 10-01. `skeletal_master_one` went from
+        // level 12 to 17 with the app watching, and he stopped with the bar at 0.65 % of 17. The
+        // app was gone without a clean quit; the next morning's start read the log's tail back
+        // when the game started, and the login's first reading of the bar matched nobody: the
+        // plate said "next level in".
+        let name = "skeletal_master_one";
+        // The game's line and the bar's wrap reach the sampler in either order, or in one turn.
+        #[derive(Debug, Clone, Copy)]
+        enum Order {
+            LineFirst,
+            Together,
+            WrapFirst,
+        }
+        for order in [Order::LineFirst, Order::Together, Order::WrapFirst] {
+            let dir = TempDir::new();
+            let file = dir.0.join("data").join("xp-levels.json");
+            // What the app knew by then: the Deadeye's bar where he left it, the others' levels
+            // from the log alone.
+            book_of(&[
+                ("mttzzz_bow_five", 94, Some(0.9843)),
+                ("mttzzz_merc_next", 61, None),
+                ("Ведьма_Ая", 38, None),
+            ])
+            .save(&file)
+            .unwrap();
+
+            let mut app = Sampler::start(&file);
+            for level in 13..=17 {
+                for step in 1..50 {
+                    app.turn(&[], 0.02 * f64::from(step));
+                }
+                let wrapped = if level == 17 { 0.0065 } else { 0.01 };
+                let line = [level_up(name, level)];
+                match order {
+                    Order::LineFirst => {
+                        app.turn(&line, 0.98);
+                        app.turn(&[], wrapped);
+                    }
+                    Order::Together => {
+                        app.turn(&line, wrapped);
+                    }
+                    Order::WrapFirst => {
+                        app.turn(&[], wrapped);
+                        app.turn(&[], wrapped);
+                        app.turn(&line, wrapped);
+                    }
+                }
+            }
+            // He stands still at the start of 17 for half a minute, and the app is gone.
+            let until = app.t + 30.0;
+            app.turns_until(until, |_| 0.0065);
+            let Sampler { logged, .. } = app;
+            let on_disk = LevelBook::load(&file);
+            let left = &on_disk.characters[0];
+            assert_eq!(
+                (left.name.as_str(), left.level, left.fraction),
+                (name, 17, Some(0.0065)),
+                "what the book on disk holds, {order:?}"
+            );
+
+            // The morning: the app starts, and the game with it; the log's tail is replayed and
+            // ends where he logged out. He logs in, and the bar reads where it was left.
+            let mut morning = XpTracker::new();
+            morning.set_book(LevelBook::load(&file));
+            morning.restore(
+                at_start(logged.into_iter().chain([LogEvent::SceneLost])),
+                Duration::ZERO,
+            );
+            enter(&mut morning, "G1_town", 1, 1.0);
+            play(&mut morning, 2.0, 3, |_| Some(0.0065));
+            assert_eq!(playing(&morning), (Some(17), Some(name)), "{order:?}");
+        }
     }
 
     #[test]

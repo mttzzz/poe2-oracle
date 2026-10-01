@@ -8,6 +8,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- ANCHOR: releases. The guide's "What's new" page shows every section below, up to ANCHOR_END. -->
 
+## [Unreleased]
+
+### Fixed
+
+- **The XP plate names your level after a restart or a login for the character you were just
+  levelling, instead of "next level in".** The app finds your level by comparing the bar with where
+  each of your characters' bars stood last time. But whenever it started reading the game's log, it
+  read back the recent stretch of it and counted every level-up it found there as news, so a
+  character that had gained several levels in the last day lost the bar position kept for it, and
+  your login found nobody. Now the log changes what the app knows only where it says something
+  new. The position is also written sooner: right after each level-up, soon after you change area
+  or log out, otherwise once a minute, and when the app quits, so that an app ended without
+  warning, by Windows shutting down or a crash, loses at most the last minute of play. A position
+  that much behind no longer matches the bar, and the plate says "next level in" until your next
+  level-up.
+
 ## [0.1.5] - 2026-09-30
 
 ### Added
