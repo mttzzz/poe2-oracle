@@ -165,7 +165,7 @@ pub(crate) fn inner_glow(color: u32, amount: f32) -> Vec<BoxShadow> {
 }
 
 /// One eased 0-to-1 channel: how far an element is into its hover, or into its "on" look.
-struct Channel {
+pub(crate) struct Channel {
     on: bool,
     /// The amount when it last turned, and when: it eases from there to its new end.
     from: f32,
@@ -173,7 +173,7 @@ struct Channel {
 }
 
 impl Channel {
-    fn new(on: bool) -> Self {
+    pub(crate) fn new(on: bool) -> Self {
         Channel {
             on,
             from: end(on),
@@ -198,7 +198,7 @@ impl Channel {
     }
 
     /// Heads for `on` from wherever the channel is now; `false` when it already heads there.
-    fn turn(&mut self, on: bool) -> bool {
+    pub(crate) fn turn(&mut self, on: bool) -> bool {
         if self.on == on {
             return false;
         }
@@ -211,7 +211,7 @@ impl Channel {
 
     /// The amount to draw this frame, asking for the next one while the channel still moves --
     /// as GPUI's own animations do -- or its end at once when the system asks for reduced motion.
-    fn frame(&mut self, window: &Window, cx: &App) -> f32 {
+    pub(crate) fn frame(&mut self, window: &Window, cx: &App) -> f32 {
         let Some(turned) = self.turned else {
             return end(self.on);
         };

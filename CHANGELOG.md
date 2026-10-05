@@ -18,6 +18,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   still closes only with Esc or its ×.
 - **What's new in the settings.** A new last section of the settings, **What's new**, lists every
   version's changes, newest first, in the app's language, and marks the version you have.
+- **A scrollbar in the settings.** A section longer than the window shows a scrollbar on its right,
+  so you can see there is more below and drag it.
 
 ## [0.1.6] - 2026-10-01
 

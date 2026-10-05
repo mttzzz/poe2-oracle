@@ -1,7 +1,9 @@
 // The settings window (crates/poe2-oracle/src/ui/settings_view.rs, 1100 × 720 px) drawn from data:
 // the title bar, the sidebar with the seven sections (the current one lit) and the version under
 // them, and one section's page -- its title and summary over the ornament rule, then its groups,
-// each a heading over a card of rows: a label, the notes under it and a control on the right.
+// each a heading over a card of rows: a label, the notes under it and a control on the right. The
+// app scrolls a page longer than its window and draws a scrollbar beside it (ui/scrollbar.rs); a
+// drawing shows the page at its top, with the bar while the groups outgrow it.
 //
 // Data (data/settings.<lang>.json):
 //   window    the title bar's word after the app's name ("Settings")
@@ -99,6 +101,11 @@ function sidebar(data) {
 }
 
 function page(data) {
+    const groups = h("div", "oui-settings-page", data.groups.map(group));
+    const thumb = h("span", "oui-settings-thumb");
+    const bar = h("span", { class: "oui-settings-bar", hidden: true }, thumb);
+    groups.append(bar);
+    showOverflow(groups, bar, thumb);
     return h(
         "div",
         "oui-settings-content",
@@ -109,8 +116,23 @@ function page(data) {
             h("div", "oui-settings-summary", data.summary),
             h("div", "oui-settings-rule", ornamentRule()),
         ),
-        h("div", "oui-settings-page", data.groups.map(group)),
+        groups,
     );
+}
+
+/**
+ * Sizes the scrollbar once the page is laid out, and again as its size or the fonts change: the
+ * thumb is the share of the groups that the page shows, as in the app, and the bar is there only
+ * while they overflow it. It stays hidden for a page that fits.
+ */
+function showOverflow(groups, bar, thumb) {
+    const size = () => {
+        const overflow = groups.scrollHeight > groups.clientHeight;
+        bar.hidden = !overflow;
+        if (overflow) thumb.style.setProperty("--share", groups.clientHeight / groups.scrollHeight);
+    };
+    new ResizeObserver(size).observe(groups);
+    document.fonts.ready.then(size);
 }
 
 /** A group: its heading over a card of its rows, an inset hairline between them. */

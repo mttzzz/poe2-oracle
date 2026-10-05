@@ -5,13 +5,15 @@
 //! tooltip chips and buttons explain themselves with; `item_card` a listed item drawn as the
 //! game's own tooltip; `style` the game-styled frames, ornaments, motion and controls, and
 //! `ornament` those ornaments' exact device pixels, `part_height` how tall a part of the price
-//! panel drawn from its last frame stands; `tour` the onboarding tour's spotlight over the other
+//! panel drawn from its last frame stands; `scrollbar` a scroll area with a bar beside it, and
+//! `scrollbar_geometry` the bar's numbers; `tour` the onboarding tour's spotlight over the other
 //! windows; `welcome` the dialog over the settings window after an install; and `toast` the plate
 //! over the game after an update.
 //!
-//! Only `theme`, `ornament` and `part_height` build on every target -- the palette, the
-//! ornaments' pixels, which the native test pass checks and `examples/ornaments.rs` draws, and
-//! the parts' heights; the rest is Windows-only, like the platform layer it runs on.
+//! Only `theme`, `ornament`, `part_height` and `scrollbar_geometry` build on every target -- the
+//! palette, the ornaments' pixels, which the native test pass checks and `examples/ornaments.rs`
+//! draws, the parts' heights and the scrollbar's thumb; the rest is Windows-only, like the
+//! platform layer it runs on.
 
 #[cfg(target_os = "windows")]
 pub mod fonts;
@@ -25,6 +27,9 @@ pub mod panel;
 pub mod part_height;
 #[cfg(target_os = "windows")]
 pub mod report_view;
+#[cfg(target_os = "windows")]
+pub mod scrollbar;
+pub mod scrollbar_geometry;
 #[cfg(target_os = "windows")]
 pub mod settings_view;
 #[cfg(target_os = "windows")]

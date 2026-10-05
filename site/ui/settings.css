@@ -208,9 +208,10 @@
     height: calc(7 * var(--u));
 }
 
-/* The section's groups. The app scrolls them, stopping at the frame's keep-out; a drawing shows
-   what fits. */
+/* The section's groups. The app scrolls them, stopping at the frame's keep-out, and draws a
+   scrollbar beside them; a drawing shows the page at its top. */
 .oui-settings-page {
+    position: relative;
     display: flex;
     flex: 1;
     flex-direction: column;
@@ -219,6 +220,28 @@
     margin-bottom: calc(11 * var(--u));
     overflow: hidden;
     padding: calc(4 * var(--u)) calc(36 * var(--u)) calc(17 * var(--u));
+}
+
+/* The scrollbar (ui/scrollbar.rs): a 6 px rail with room for a grip either side of it, clear of
+   the frame's 11 px keep-out and 4 px short of the page's top and bottom. The thumb is the share
+   of the groups the page shows, at least 28 px; settings.js sizes it, and hides the bar when the
+   groups fit. A drawing leaves the thumb unlit. */
+.oui-settings-bar {
+    position: absolute;
+    top: calc(4 * var(--u));
+    right: calc(15 * var(--u));
+    bottom: calc(4 * var(--u));
+    width: calc(6 * var(--u));
+    border-radius: calc(3 * var(--u));
+    background: var(--border-card);
+}
+
+.oui-settings-thumb {
+    display: block;
+    height: calc(var(--share, 1) * 100%);
+    min-height: calc(28 * var(--u));
+    border-radius: inherit;
+    background: var(--border-gold);
 }
 
 .oui-settings-group {

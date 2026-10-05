@@ -62,6 +62,7 @@ use crate::tr;
 use crate::tr_n;
 use crate::ui::fonts::{self, NameFont};
 use crate::ui::ornament::FRAME_CLEAR;
+use crate::ui::scrollbar::scroll_area;
 use crate::ui::style::{
     ButtonKind, CARD_RADIUS, TRANSITION, alpha, appear, button, card, diamond, ease, ease_hover,
     ease_state, game_frame, heading, icon_button, keycaps, link, menu, ornament_rule, recorder,
@@ -1159,17 +1160,20 @@ impl SettingsView {
                     )
                     .child(
                         // Scrolled rows stop at the frame's keep-out, and the last one rests
-                        // 28 px above the edge.
-                        div()
-                            .id(("section-body", section.index()))
-                            .flex_1()
-                            .min_h_0()
-                            .mb(rems_from_px(FRAME_CLEAR))
-                            .overflow_y_scroll()
-                            .px(rems_from_px(CONTENT_INSET))
-                            .pt(rems_from_px(4.))
-                            .pb(rems_from_px(28. - FRAME_CLEAR))
-                            .child(body),
+                        // 28 px above the edge; the scrollbar beside them keeps out of the frame
+                        // too.
+                        scroll_area(
+                            ("section-body", section.index()),
+                            div()
+                                .px(rems_from_px(CONTENT_INSET))
+                                .pt(rems_from_px(4.))
+                                .pb(rems_from_px(28. - FRAME_CLEAR))
+                                .child(body),
+                        )
+                        .bar_inset(FRAME_CLEAR)
+                        .flex_1()
+                        .min_h_0()
+                        .mb(rems_from_px(FRAME_CLEAR)),
                     ),
             ))
     }
