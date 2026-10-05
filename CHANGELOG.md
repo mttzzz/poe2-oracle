@@ -8,6 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- ANCHOR: releases. The guide's "What's new" page shows every section below, up to ANCHOR_END. -->
 
+## [Unreleased]
+
+### Added
+
+- **A click outside closes the panel, if you want.** A new setting, **Close on a click outside** in
+  the settings' **Price check** section, lets a click anywhere in the game outside the price panel
+  close it, as Esc does; the click itself still reaches the game. It's off by default, so the panel
+  still closes only with Esc or its ×.
+
 ## [0.1.6] - 2026-10-01
 
 ### Fixed

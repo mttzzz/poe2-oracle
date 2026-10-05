@@ -155,6 +155,11 @@ never sees your password. It takes only the session the site gives that browser,
   the panel is open it takes <kbd>Esc</kbd>, which closes the panel and doesn't reach the game.
   Nothing of it is saved or sent. The rest of the time the hook is off, and the app learns only of
   its own hotkeys and, for the XP overlay, that a key was pressed (see **The screen** below).
+- **The mouse button and the pointer**, only while the price panel is open and **Close on a click
+  outside** (section **Price check** of the settings, off by default) is on. Up to a hundred times
+  a second the app asks Windows whether the main mouse button is down and, at a press, where the
+  pointer is, to close the panel when the click falls on the game outside it. It is not a hook: the
+  click is not intercepted and reaches the game as usual. Nothing of it is saved or sent.
 - **The game's settings file**, `Documents\My Games\Path of Exile 2\poe2_production_Config.ini`:
   the display mode, the client language (which the **Auto** interface language follows) and the key
   for advanced item descriptions. Read only.

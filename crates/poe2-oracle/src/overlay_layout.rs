@@ -18,8 +18,9 @@
 //! title bar forgets it.
 //!
 //! (EE2 also closes an untouched panel when the cursor drifts off the item; this app deliberately
-//! does not -- the player asked for Esc to be the only way the panel closes, see
-//! `platform::esc_hook`.)
+//! does not. By default only Esc -- `platform::esc_hook` -- and the panel's × close it, as the
+//! player asked; a player who wants the mouse to close it may turn on a click in the game outside
+//! the panel ([`clicks_away`]), which takes a press, not a drift.)
 //!
 //! Everything here is physical pixels. `scale` is the monitor's DPI scale (1.0 at 96 DPI) times
 //! the player's UI scale, so the `rem`-based width lands at the same visual size as EE2's CSS
@@ -48,6 +49,13 @@ impl PhysicalRect {
             && other.x < self.x + self.width
             && self.y < other.y + other.height
             && other.y < self.y + self.height
+    }
+
+    /// Whether the pixel at `(x, y)` is in the rect: its left and top edges are, its right and
+    /// bottom ones are not, as with Win32's `PtInRect` -- so a rect holds exactly `width` by
+    /// `height` pixels, and one with no size holds none.
+    pub fn contains(&self, (x, y): (i32, i32)) -> bool {
+        self.x <= x && x < self.x + self.width && self.y <= y && y < self.y + self.height
     }
 }
 
@@ -458,6 +466,15 @@ pub fn stuck(panel: PhysicalRect, side: PanelSide, game: PhysicalRect, reach: i3
     }
 }
 
+/// Whether a click with the pointer at `cursor` is one on the game's empty space around the
+/// panel: in the game's client area `game` but outside `panel` -- the click that closes the panel
+/// under `Settings::close_on_click_outside`. A click on the panel, its edge pixels included, is
+/// the panel's own; one outside the game, on another monitor or a window's frame, is none of the
+/// game's.
+pub fn clicks_away(cursor: (i32, i32), panel: PhysicalRect, game: PhysicalRect) -> bool {
+    game.contains(cursor) && !panel.contains(cursor)
+}
+
 /// Where the player left the panel on each side: how far from the inventory or the stash -- the
 /// gap between the panel and that side panel as a share of the game's width, more away from it,
 /// less over it -- or `None` while the panel stands against it. Kept from the side panel rather
@@ -759,6 +776,100 @@ mod tests {
         // Touching edges share no pixel.
         assert!(!panel(plate.x + plate.width).intersects(&plate));
         assert!(panel(plate.x + plate.width - 1).intersects(&plate));
+    }
+
+    /// The far edges are one past the last pixel, as in Win32's `PtInRect`: a rect's `x + width`
+    /// is the first column of whatever stands next to it.
+    #[test]
+    fn a_rect_holds_its_left_and_top_edges_and_not_its_right_and_bottom_ones() {
+        let rect = PhysicalRect {
+            x: 10,
+            y: 20,
+            width: 100,
+            height: 50,
+        };
+        assert!(rect.contains((10, 20)), "the top-left pixel");
+        assert!(rect.contains((109, 69)), "the bottom-right pixel");
+        for outside in [(110, 40), (50, 70), (110, 70), (9, 40), (50, 19)] {
+            assert!(!rect.contains(outside), "{outside:?}");
+        }
+        // A monitor left of the main one, where x runs negative.
+        let left = PhysicalRect {
+            x: -3840,
+            ..GAME_4K
+        };
+        assert!(left.contains((-3840, 0)));
+        assert!(left.contains((-1, 2159)));
+        assert!(!left.contains((0, 0)));
+        // No size, no pixel -- not even at its own corner.
+        let nothing = PhysicalRect {
+            width: 0,
+            height: 0,
+            ..rect
+        };
+        assert!(!nothing.contains((rect.x, rect.y)));
+    }
+
+    /// A click closes the panel only on the game around it: the panel's own pixels, edges
+    /// included, are the panel's, and what isn't the game -- a second monitor, a window's frame --
+    /// is not the game's to click.
+    #[test]
+    fn a_click_is_away_only_in_the_game_outside_the_panel() {
+        let panel = inventory_side();
+        let away = |cursor| clicks_away(cursor, panel, GAME_4K);
+        let (left, right, middle) = (panel.x, panel.x + panel.width, GAME_4K.height / 2);
+
+        // The game's ground left of the panel, and the inventory right of it.
+        assert!(away((left - 1, middle)), "the pixel left of the panel");
+        assert!(away((right, middle)), "the pixel right of the panel");
+        assert!(away((0, 0)) && away((3839, 2159)), "the game's corners");
+        // The panel, edge pixels and corners included.
+        for on_panel in [
+            (left, middle),
+            (right - 1, middle),
+            (left, 0),
+            (right - 1, 2159),
+        ] {
+            assert!(!away(on_panel), "{on_panel:?}");
+        }
+        // Off the game: the monitors beside it, and the rows above and below.
+        for outside in [
+            (3840, middle),
+            (-1, middle),
+            (left - 1, 2160),
+            (left - 1, -1),
+        ] {
+            assert!(!away(outside), "{outside:?}");
+        }
+
+        // A windowed game: its title bar and frame are not its client area.
+        let game = PhysicalRect {
+            x: 100,
+            y: 50,
+            width: 1600,
+            height: 900,
+        };
+        let panel = panel_rect(game, PanelSide::Inventory, 1.0);
+        assert!(
+            clicks_away((game.x, game.y), panel, game),
+            "its first pixel"
+        );
+        for frame in [
+            (game.x - 1, 500),
+            (500, game.y - 1),
+            (game.x + game.width, 500),
+        ] {
+            assert!(!clicks_away(frame, panel, game), "{frame:?}");
+        }
+
+        // On a monitor left of the main one, where x runs negative.
+        let game = PhysicalRect {
+            x: -3840,
+            ..GAME_4K
+        };
+        let panel = panel_rect(game, PanelSide::Stash, 2.0);
+        assert!(clicks_away((game.x + 10, 1000), panel, game));
+        assert!(!clicks_away((panel.x + 1, 1000), panel, game));
     }
 
     #[test]

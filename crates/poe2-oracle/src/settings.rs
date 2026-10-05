@@ -78,6 +78,9 @@ pub struct Settings {
     pub listing_status: ListingStatusChoice,
     /// The seller column of the results table.
     pub show_seller_column: bool,
+    /// A click in the game outside the price panel closes it, as Esc does; the click still reaches
+    /// the game. Off -- the default -- leaves Esc and the panel's × as the only ways to close it.
+    pub close_on_click_outside: bool,
     /// Overlay size factor, [`MIN_UI_SCALE`] to [`MAX_UI_SCALE`].
     pub ui_scale: f32,
     /// The experience-rate / level-ETA overlay.
@@ -128,6 +131,7 @@ impl Default for Settings {
             hotkey: Hotkey::default(),
             listing_status: ListingStatusChoice::default(),
             show_seller_column: true,
+            close_on_click_outside: false,
             ui_scale: 1.0,
             xp_overlay: true,
             xp_show_percent: false,
@@ -788,6 +792,7 @@ mod tests {
             },
             listing_status: ListingStatusChoice::Any,
             show_seller_column: false,
+            close_on_click_outside: true,
             ui_scale: 1.25,
             xp_overlay: false,
             xp_show_percent: true,
@@ -833,6 +838,10 @@ mod tests {
             ..Settings::default()
         };
         assert_eq!(load_from(&path), expected);
+        assert!(
+            !load_from(&path).close_on_click_outside,
+            "a file from before the setting keeps Esc and × as the only ways to close the panel"
+        );
     }
 
     #[test]

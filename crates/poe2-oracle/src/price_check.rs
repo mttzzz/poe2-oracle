@@ -62,6 +62,7 @@ use crate::roll_slider::{self, Handle, Slider};
 use crate::session::SessionStatus;
 use crate::settings::{self, Hotkey, LeagueChoice, QuickAction, Settings, WaystoneMark};
 use crate::tr;
+use crate::ui::tour;
 
 /// How long after a burst of foreground changes the hotkey re-checks where the foreground settled.
 const FOREGROUND_SETTLE: Duration = Duration::from_millis(250);
@@ -78,6 +79,11 @@ const PANEL_DRAG_POLL: Duration = Duration::from_millis(8);
 /// How near the inventory or the stash a drag brings the panel before it sticks to it, in pixels
 /// at 96 DPI (`overlay_layout::stuck`).
 const PANEL_STICK_REACH: f64 = 16.;
+
+/// How often the primary mouse button is looked at while the panel is shown with
+/// `Settings::close_on_click_outside` on (`PriceCheckApp::sync_click_away`): often enough to see
+/// even a quick click go down.
+const CLICK_AWAY_POLL: Duration = Duration::from_millis(10);
 
 /// Up to 10 listings per `fetch` request -- the trade API's own per-request limit -- and one
 /// request per search. EE2 fetches a second page (listings 10-20, `trade-api.ts`), but two
@@ -593,6 +599,9 @@ pub struct PriceCheckApp {
     panel_side: Option<PanelSide>,
     /// The drag of the panel by its title bar under way (`begin_panel_drag`).
     panel_drag: Option<PanelDrag>,
+    /// The watch for a click in the game outside the panel is running (`sync_click_away`): one at
+    /// most, which `click_away` ends once there is nothing left to watch.
+    click_away_watch: bool,
     /// Checks shown so far: each one plays the panel's appearance again (`ui::panel`).
     pub appearances: u64,
     /// The panel's parts, which GPUI draws from their last frame while nothing in them changes
@@ -692,6 +701,7 @@ impl PriceCheckApp {
             placement: None,
             panel_side: None,
             panel_drag: None,
+            click_away_watch: false,
             appearances: 0,
             panel_parts: Default::default(),
             show_hidden: false,
@@ -1784,6 +1794,87 @@ impl PriceCheckApp {
         cx.notify();
     }
 
+    /// What closes the panel from outside it, by Esc or -- with `Settings::close_on_click_outside`
+    /// on -- by a click in the game outside it (`click_away`): an open menu, the league's or the
+    /// profile's, closes first, the panel with the next press or click.
+    fn dismiss(&mut self, cx: &mut Context<Self>) {
+        if self.league_menu || self.profile_menu {
+            self.league_menu = false;
+            self.profile_menu = false;
+            cx.notify();
+        } else if self.visible {
+            self.visible = false;
+            cx.notify();
+        }
+    }
+
+    /// Starts the watch for a click in the game outside the panel, when the panel is shown with
+    /// `Settings::close_on_click_outside` on and no watch runs yet: a loop that looks at the
+    /// primary button every `CLICK_AWAY_POLL` and hands each press to `click_away`, which ends it
+    /// once the panel is hidden or the setting off. The game keeps the foreground and the mouse,
+    /// so the button is polled rather than hooked, as a drag of the panel is
+    /// (`begin_panel_drag`), and the click itself reaches the game untouched. A button already
+    /// held when the watch starts is no press: the player was holding it as the panel opened.
+    /// Called on every change of the app (`register_hotkeys`), so it only looks at flags and never
+    /// notifies.
+    pub fn sync_click_away(&mut self, cx: &mut Context<Self>) {
+        let wanted = self.visible && self.settings.close_on_click_outside;
+        if !wanted || self.click_away_watch {
+            return;
+        }
+        self.click_away_watch = true;
+        cx.spawn(async move |view, cx| {
+            let mut was_down = game_window::primary_button_down();
+            loop {
+                cx.background_executor().timer(CLICK_AWAY_POLL).await;
+                let down = game_window::primary_button_down();
+                let pressed = down && !was_down;
+                was_down = down;
+                // Where the pointer and the game stand matters only at a press.
+                let press = if pressed {
+                    game_window::cursor_pos().zip(
+                        game_window::game_window().and_then(game_window::client_rect_on_screen),
+                    )
+                } else {
+                    None
+                };
+                let watching = view
+                    .update(cx, |state, cx| state.click_away(press, cx))
+                    .unwrap_or(false);
+                if !watching {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+
+    /// One look at the mouse during the watch (`sync_click_away`): `press` is the primary button
+    /// going down since the last look, with the pointer's place and the game's client area at that
+    /// moment -- `None` for no press, or where either is unknown. A press on the game outside the
+    /// panel (`overlay_layout::clicks_away`) dismisses it; never while the tour is under way,
+    /// whose cards stand on that ground, and never without a place for the panel, since nothing
+    /// is outside what has none. `false` once there is nothing left to watch -- the panel hidden,
+    /// the setting turned off -- which ends the watch until `sync_click_away` starts it again.
+    fn click_away(
+        &mut self,
+        press: Option<((i32, i32), PhysicalRect)>,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if !(self.visible && self.settings.close_on_click_outside) {
+            self.click_away_watch = false;
+            return false;
+        }
+        if let Some((cursor, game)) = press
+            && let Some(panel) = self.placement
+            && overlay_layout::clicks_away(cursor, panel, game)
+            && !tour::under_way(cx)
+        {
+            self.dismiss(cx);
+        }
+        true
+    }
+
     fn spawn_search(&mut self, cx: &mut Context<Self>) {
         self.commit_bound_inputs();
         cx.spawn(async move |weak, cx| {
@@ -2179,9 +2270,12 @@ pub fn create_app(
 /// `application().run` pumps the platform message loop on (`global_hotkey`'s and the foreground
 /// hook's own requirement).
 ///
-/// The panel closes only on Esc (or its × button), never on mouse movement -- the player moves
-/// into it to use the filters -- and Esc is taken from the game only while the panel is open: the
-/// keyboard hook is in only then, and while a quick action's hotkey is held (`esc_hook`).
+/// By default the panel closes only on Esc (or its × button), never on mouse movement -- the
+/// player moves into it to use the filters -- and Esc is taken from the game only while the panel
+/// is open: the keyboard hook is in only then, and while a quick action's hotkey is held
+/// (`esc_hook`). A player who turns on `Settings::close_on_click_outside` also closes it with a
+/// click in the game outside it, which the mouse is polled for (`PriceCheckApp::sync_click_away`)
+/// rather than hooked: the click still reaches the game.
 ///
 /// The tasks live as long as the app, so they hold only a `WeakEntity` and tolerate the window
 /// having closed.
@@ -2261,6 +2355,11 @@ pub fn register_hotkeys(cx: &mut App, view: Entity<PriceCheckApp>) -> Result<()>
     // Esc is taken from the game exactly while the panel is shown; the hook goes in with it.
     cx.observe(&view, |view, cx| esc_hook::set_armed(view.read(cx).visible))
         .detach();
+    // With the setting on, the watch for a click outside the panel starts as the panel is shown.
+    cx.observe(&view, |view, cx| {
+        view.update(cx, |state, cx| state.sync_click_away(cx))
+    })
+    .detach();
     // Separate from the hotkey task, which stays busy through a check's clipboard poll: Esc must
     // close the panel the moment it's pressed.
     let weak = view.downgrade();
@@ -2269,18 +2368,7 @@ pub fn register_hotkeys(cx: &mut App, view: Entity<PriceCheckApp>) -> Result<()>
             let Some(view) = weak.upgrade() else {
                 return;
             };
-            // An open menu -- the league's or the profile's -- closes first, the panel with the
-            // next press.
-            view.update(cx, |state, cx| {
-                if state.league_menu || state.profile_menu {
-                    state.league_menu = false;
-                    state.profile_menu = false;
-                    cx.notify();
-                } else if state.visible {
-                    state.visible = false;
-                    cx.notify();
-                }
-            });
+            view.update(cx, |state, cx| state.dismiss(cx));
         }
     })
     .detach();
@@ -2357,8 +2445,9 @@ fn hotkey_list(hotkeys: &[Hotkey]) -> String {
 }
 
 /// The full pipeline for one hotkey trigger: synthesize the copy combo, poll the clipboard,
-/// parse, build filters, and kick off the initial search. The panel then stays open until Esc or
-/// its × button (see `register_hotkeys`).
+/// parse, build filters, and kick off the initial search. The panel then stays open until Esc,
+/// its × button or, if the player turned that on, a click in the game outside it (see
+/// `register_hotkeys`).
 async fn run_price_check(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
     // A press that raced the foreground switch -- the player just went to another program: the
     // copy combo must not land there.

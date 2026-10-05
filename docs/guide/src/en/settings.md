@@ -126,7 +126,7 @@ Group **Updates**. See [Updates and uninstall](updates.md) for how updates work.
 
 ## Price check
 
-Section **Price check**: groups **Hotkey** and **Search**.
+Section **Price check**: groups **Hotkey**, **Search** and **Panel**.
 
 ### Hotkey
 
@@ -163,6 +163,16 @@ Group **Search**.
   **Instant Buyout**, still switches it for one item. Settings saved by an older version with its
   default, buyout or in person, move to Instant Buyout once; after that, your choice stays.
 - **Seller column**, on by default: the seller's account name in the results table.
+
+### Panel
+
+Group **Panel**.
+
+- **Close on a click outside**, off by default: a click in the game outside the price panel closes
+  it, as <kbd>Esc</kbd> does; with a league or profile menu open, the click closes that first. The
+  click itself still reaches the game. A click on the panel, or outside the game's window (on
+  another monitor, say), does not close it. Off, the panel closes only with <kbd>Esc</kbd> or its
+  **×**.
 
 ## Quick actions
 

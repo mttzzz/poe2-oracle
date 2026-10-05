@@ -30,7 +30,8 @@ const LEAGUE_MENU_WIDTH: f32 = 250.;
 const DRAG_MIN_WIDTH: f32 = 24.;
 
 /// The league select, the divine rate once the market is loaded (EE2's ⇄ rate in its title bar),
-/// the settings gear, and the × that hides the panel (the other way to close it besides Esc).
+/// the settings gear, and the × that hides the panel (the other way to close it besides Esc and,
+/// if the player turned it on, a click in the game outside the panel).
 pub(super) fn render_title_bar(
     state: &PriceCheckApp,
     window: &Window,

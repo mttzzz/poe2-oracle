@@ -1,8 +1,9 @@
 //! The application itself: registers the `Ctrl+E` price-check hotkey and the Esc hook via
 //! `crate::price_check`, opens a frameless/transparent/popup overlay window, and renders
-//! `crate::price_check::PriceCheckApp` in it. The panel stays open until Esc or its × button --
-//! never closed by mouse movement, so the player can move into it and use it. `main.rs` only
-//! calls [`run`].
+//! `crate::price_check::PriceCheckApp` in it. By default the panel stays open until Esc or its ×
+//! button -- never closed by mouse movement, so the player can move into it and use it; a player
+//! who turned it on also closes it with a click in the game outside it. `main.rs` only calls
+//! [`run`].
 //!
 //! The OS-window side of EE2's behaviour lives in the small `PriceCheckRoot` wrapper below, which
 //! re-syncs the platform window every time `PriceCheckApp` notifies:

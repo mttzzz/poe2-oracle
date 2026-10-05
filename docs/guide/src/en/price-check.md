@@ -30,7 +30,9 @@ inventory or the stash, but you can drag it over them (see below).
 - With no item under the cursor, nothing happens.
 - Close the panel with <kbd>Esc</kbd> or the **×** in its top-right corner. It does not close when
   the mouse leaves the item, so you can move into it and work with it. While the panel is open,
-  <kbd>Esc</kbd> closes the panel and does not reach the game.
+  <kbd>Esc</kbd> closes the panel and does not reach the game. To close it with the mouse too, turn
+  on **Close on a click outside** in the [settings](settings.md#panel): a click in the game outside
+  the panel then closes it, and the click itself still reaches the game. It is off by default.
 - Clicks on chips, checkboxes and buttons leave the keyboard with the game. Only the min/max boxes
   take the keyboard when you click into them; when the panel closes, the game gets it back.
 - While the panel is open, the mouse over it (clicks and the wheel) works on the panel, not on the

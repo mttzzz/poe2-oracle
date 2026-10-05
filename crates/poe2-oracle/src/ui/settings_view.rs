@@ -169,7 +169,7 @@ impl Section {
     fn summary(self) -> &'static str {
         match self {
             Section::General => tr!("League, languages, scale, starting with Windows and updates"),
-            Section::PriceCheck => tr!("Hotkey, sellers and the results table"),
+            Section::PriceCheck => tr!("Hotkey, sellers, the results table and closing the panel"),
             Section::QuickActions => tr!("Keys that type chat commands and searches into the game"),
             Section::XpOverlay => tr!("Experience rate and map timer, on top of the game's panels"),
             Section::Account => {
@@ -1568,6 +1568,21 @@ impl SettingsView {
                         cx,
                     ),
                 ],
+            ))
+            .child(group(
+                face,
+                tr!("Panel"),
+                [toggle_row(
+                    "close-on-click-outside",
+                    tr!("Close on a click outside"),
+                    Some(tr!(
+                        "A click in the game outside the panel closes it, like Esc. The click \
+                         itself still reaches the game"
+                    )),
+                    settings.close_on_click_outside,
+                    |settings| &mut settings.close_on_click_outside,
+                    cx,
+                )],
             ))
     }
 
