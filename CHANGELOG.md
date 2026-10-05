@@ -16,6 +16,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the settings' **Price check** section, lets a click anywhere in the game outside the price panel
   close it, as Esc does; the click itself still reaches the game. It's off by default, so the panel
   still closes only with Esc or its ×.
+- **What's new in the settings.** A new last section of the settings, **What's new**, lists every
+  version's changes, newest first, in the app's language, and marks the version you have.
 
 ## [0.1.6] - 2026-10-01
 

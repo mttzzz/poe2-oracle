@@ -1,11 +1,11 @@
 // The settings window (crates/poe2-oracle/src/ui/settings_view.rs, 1100 × 720 px) drawn from data:
-// the title bar, the sidebar with the six sections (the current one lit) and the version under
+// the title bar, the sidebar with the seven sections (the current one lit) and the version under
 // them, and one section's page -- its title and summary over the ornament rule, then its groups,
 // each a heading over a card of rows: a label, the notes under it and a control on the right.
 //
 // Data (data/settings.<lang>.json):
 //   window    the title bar's word after the app's name ("Settings")
-//   sections  the sidebar's six section names; `section` the index of the one shown
+//   sections  the sidebar's seven section names; `section` the index of the one shown
 //   summary   the shown section's line under its title
 //   version   the sidebar's last line ("version {version}")
 //   app_version  what {version} in `version` and in a row's label becomes when the service names

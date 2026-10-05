@@ -15,8 +15,9 @@ Open the settings in any of these ways:
 If the settings window is already open, any of these brings it to the front.
 
 The window opens in the middle of the monitor the game is on and stays on top of the game. Drag it
-by its title bar; resize it by its edges. The sections are listed on the left, the chosen section's
-settings on the right.
+by its title bar; resize it by its edges. The sections are listed on the left: **General**,
+**Price check**, **Quick actions**, **XP overlay**, **Account**, **Help** and **What's new**. The
+chosen section's settings are on the right.
 
 Every change applies and is saved at once: there is no Save or Cancel button. Text in a box applies
 when you press <kbd>Enter</kbd> or <kbd>Tab</kbd>, click elsewhere or close the window;
@@ -256,6 +257,16 @@ Section **Help**, group **Help**.
 - **Quit the app** → **Quit** closes PoE2 Oracle, as **Quit** in the tray icon's menu and **Close
   window** on the taskbar button do. The note says "Price checks, quick actions and the XP overlay
   stop until you start it again from the Start menu".
+
+## What's new
+
+Section **What's new**: what changed in each version of PoE2 Oracle, newest first. Every version is
+a group titled with its number and the day it came out (*0.1.7 · Oct 5, 2026*), and the version you
+have is marked **installed**. A group lists the changes by kind, **Added**, **Changed** or
+**Fixed**, each with its summary in bold and the details after it. The list is in the interface
+language and built into the app, so the section needs no internet and starts with the version you
+have. A newer version's changes are on the guide's [What's new](changelog.md) page, and show here
+once you have installed it.
 
 ## Where the settings are kept
 

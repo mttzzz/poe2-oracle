@@ -506,6 +506,16 @@ copies both changelogs next to the book for this (`Dockerfile`, `.dockerignore`)
 the page, where they would make each version's heading a link inside mdBook's own heading anchor,
 which browsers break apart.
 
+The settings' **What's new** section shows the same two files from inside the app, built in with
+`include_str!` (`crates/poe2-oracle/src/changelog.rs`). It reads them between the same anchor lines:
+a `## [X.Y.Z] - YYYY-MM-DD` heading is a release, a `###` heading a group of changes, and a bullet
+with the lines right under it a change, in which only `**bold**` and `` `code` `` are marks.
+`Unreleased` stays out of the app. A test fails when the two files list different versions or
+dates, when a release or a group is empty, when a mark never closes, when a group holds text
+outside its bullets (a paragraph after a blank line, a nested list), and when the newest release
+isn't the version in `Cargo.toml` (for `0.2.0-rc.1`, `0.2.0` will do): the commit that sets a new
+version also dates its section in both files.
+
 ### What the service counts
 
 Every count is a number per Moscow day, kept 120 days after it, with no address or id in it

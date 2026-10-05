@@ -2,6 +2,7 @@
 
 pub mod bound_input;
 pub mod brand;
+pub mod changelog;
 pub mod check_profile;
 pub mod craft_link;
 pub mod data_pack;

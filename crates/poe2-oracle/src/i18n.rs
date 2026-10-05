@@ -15,7 +15,7 @@
 //! - [`decimal`] writes a number with the language's decimal separator; [`number`] and
 //!   [`compact`] write prices and rates the way the panel shows them, [`integer`] a count,
 //!   [`percent`] a percentage, [`duration`] and [`duration_secs`] a length of time, [`day_month`]
-//!   a date.
+//!   and [`date`] a date.
 //!
 //! A test reads every `tr!`/`tr_n!` in the sources and checks that each has a Russian text in
 //! exactly one file, that the tables hold nothing else, and that every placeholder survives the
@@ -310,16 +310,32 @@ pub fn integer(value: u64) -> String {
     }
 }
 
-/// A day of the year without its year: `22.09` in Russian, `Sep 22` in English.
-pub fn day_month(day: u16, month: u16) -> String {
+/// The English abbreviation of month `month`, 1 to 12.
+fn month_name(month: u16) -> Option<&'static str> {
     const MONTHS: [&str; 12] = [
         "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
     ];
+    MONTHS.get(usize::from(month).wrapping_sub(1)).copied()
+}
+
+/// A day of the year without its year: `22.09` in Russian, `Sep 22` in English.
+pub fn day_month(day: u16, month: u16) -> String {
     match lang() {
         Lang::Russian => format!("{day:02}.{month:02}"),
-        Lang::English => match MONTHS.get(usize::from(month).wrapping_sub(1)) {
+        Lang::English => match month_name(month) {
             Some(name) => format!("{name} {day}"),
             None => format!("{month}/{day}"),
+        },
+    }
+}
+
+/// A day with its year: `05.10.2026` in Russian, `Oct 5, 2026` in English.
+pub fn date(year: u16, month: u16, day: u16) -> String {
+    match lang() {
+        Lang::Russian => format!("{day:02}.{month:02}.{year}"),
+        Lang::English => match month_name(month) {
+            Some(name) => format!("{name} {day}, {year}"),
+            None => format!("{month}/{day}/{year}"),
         },
     }
 }
@@ -702,6 +718,27 @@ mod tests {
         assert_eq!(
             in_both(|| format!("{} · {}", day_month(22, 9), day_month(1, 12))),
             ("22.09 · 01.12".to_owned(), "Sep 22 · Dec 1".to_owned())
+        );
+    }
+
+    #[test]
+    fn a_date_takes_each_languages_order_and_month_names() {
+        // The first and the last month are the table's two ends; Russian pads a day and a month to
+        // two digits, English writes the day as it is.
+        assert_eq!(
+            in_both(|| [date(2026, 10, 5), date(2026, 1, 1), date(2026, 12, 31)].join(" · ")),
+            (
+                "05.10.2026 · 01.01.2026 · 31.12.2026".to_owned(),
+                "Oct 5, 2026 · Jan 1, 2026 · Dec 31, 2026".to_owned()
+            )
+        );
+        // A month outside 1-12 can't index the table: the numbers stand instead of a panic.
+        assert_eq!(
+            in_both(|| [date(2026, 0, 5), date(2026, 13, 5)].join(" · ")),
+            (
+                "05.00.2026 · 05.13.2026".to_owned(),
+                "0/5/2026 · 13/5/2026".to_owned()
+            )
         );
     }
 

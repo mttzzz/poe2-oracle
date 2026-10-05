@@ -536,6 +536,17 @@ pub(crate) fn heading(face: &NameFont) -> Div {
 /// fading out to the right. The diamond and the rule each stand as tall as the row, so they
 /// share its axis.
 pub(crate) fn section_heading(face: &NameFont, title: &str) -> Div {
+    section_heading_beside(face, title, None::<Div>)
+}
+
+/// A [`section_heading`] with `beside` right after the name, before the rule: a small mark such
+/// as «установлена». The row stretches it to its own height, so it can centre its words on the
+/// row's axis.
+pub(crate) fn section_heading_beside(
+    face: &NameFont,
+    title: &str,
+    beside: Option<impl IntoElement>,
+) -> Div {
     let mark = canvas(
         |_, _, _| {},
         |bounds, (), window, cx| {
@@ -574,6 +585,7 @@ pub(crate) fn section_heading(face: &NameFont, title: &str) -> Div {
                 .text_color(rgb(GOLD))
                 .child(title.to_uppercase()),
         )
+        .children(beside)
         .child(rule)
 }
 

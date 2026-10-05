@@ -1,6 +1,6 @@
 {
     "window": "Settings",
-    "sections": ["General", "Price check", "Quick actions", "XP overlay", "Account", "Help"],
+    "sections": ["General", "Price check", "Quick actions", "XP overlay", "Account", "Help", "What's new"],
     "section": 0,
     "summary": "League, languages, scale, starting with Windows and updates",
     "version": "version {version}",

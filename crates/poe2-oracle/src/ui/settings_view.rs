@@ -1,8 +1,8 @@
 //! The settings window, in the game-styled look (`ui::style`): a title bar that drags the window,
-//! a sidebar with the six sections -- Общие, Проверка цены, Быстрые действия, Оверлей опыта,
-//! Аккаунт, Помощь -- and each section's page of cards. Its words are in the interface language
-//! (`crate::i18n`) that Общие's «Язык интерфейса» picks, worded anew on every render, so a change
-//! of language shows at once.
+//! a sidebar with the seven sections -- Общие, Проверка цены, Быстрые действия, Оверлей опыта,
+//! Аккаунт, Помощь, Что нового -- and each section's page of cards. Its words are in the interface
+//! language (`crate::i18n`) that Общие's «Язык интерфейса» picks, worded anew on every render, so
+//! a change of language shows at once.
 //!
 //! Every change applies at once, through one handler ([`SettingsView::change`]): the app takes
 //! the settings over (`PriceCheckApp::apply_settings`) and the file is written -- a write it
@@ -15,6 +15,8 @@
 //!
 //! Signing in and out of pathofexile.com (`crate::login`, `crate::session`) keeps its secret out
 //! of the settings; Помощь's buttons write reports, open folders and pages, and quit the app.
+//! Что нового changes nothing: it shows the changelog built into the app (`crate::changelog`), a
+//! group for each version, the one the player has marked.
 //!
 //! The window stays above the game (topmost), stepping down while the sign-in window -- which
 //! isn't topmost -- is open over it. × and Esc (with no menu open) close it, and so does
@@ -31,13 +33,14 @@ use std::time::{Duration, Instant};
 
 use gpui::{
     Animation, AnimationExt as _, AnyElement, App, Context, Entity, FocusHandle, Focusable,
-    IntoElement, KeyDownEvent, Keystroke, Modifiers, ModifiersChangedEvent, MouseButton,
-    MouseDownEvent, Render, SharedString, Window, WindowControlArea, div, linear_color_stop,
-    linear_gradient, prelude::*, px, relative, rgb,
+    FontWeight, HighlightStyle, IntoElement, KeyDownEvent, Keystroke, Modifiers,
+    ModifiersChangedEvent, MouseButton, MouseDownEvent, Render, SharedString, StyledText, Window,
+    WindowControlArea, div, linear_color_stop, linear_gradient, prelude::*, px, relative, rgb,
 };
 use serde_json::Value;
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, VK_0, VK_9, VK_SHIFT};
 
+use crate::changelog::{self, Group, Item, Release, Span};
 use crate::data_pack;
 use crate::diagnostics::{self, SetupProblem};
 use crate::i18n::{self, Lang};
@@ -62,7 +65,8 @@ use crate::ui::ornament::FRAME_CLEAR;
 use crate::ui::style::{
     ButtonKind, CARD_RADIUS, TRANSITION, alpha, appear, button, card, diamond, ease, ease_hover,
     ease_state, game_frame, heading, icon_button, keycaps, link, menu, ornament_rule, recorder,
-    section_heading, segmented, select, stepper, switch, switch_in, title_bar, title_button,
+    section_heading, section_heading_beside, segmented, select, stepper, switch, switch_in,
+    title_bar, title_button,
 };
 use crate::ui::text_field::{Committed, TextField};
 use crate::ui::theme::{
@@ -90,6 +94,8 @@ const CONTENT_INSET: f32 = 36.;
 const CONTENT_GLOW: f32 = 0.035;
 /// The league menu's width, px: room for «Своя лига · » and a private league's name.
 const LEAGUE_MENU_WIDTH: f32 = 280.;
+/// The window's line height, as a multiple of the text's size.
+const LINE_HEIGHT: f32 = 1.4;
 
 /// What one click of the scale stepper moves it by, in percent.
 const STEP_PERCENT: u16 = 5;
@@ -143,16 +149,18 @@ enum Section {
     XpOverlay,
     Account,
     Help,
+    WhatsNew,
 }
 
 impl Section {
-    const ALL: [Section; 6] = [
+    const ALL: [Section; 7] = [
         Section::General,
         Section::PriceCheck,
         Section::QuickActions,
         Section::XpOverlay,
         Section::Account,
         Section::Help,
+        Section::WhatsNew,
     ];
 
     fn title(self) -> &'static str {
@@ -163,6 +171,7 @@ impl Section {
             Section::XpOverlay => tr!("XP overlay"),
             Section::Account => tr!("Account"),
             Section::Help => tr!("Help"),
+            Section::WhatsNew => tr!("What's new"),
         }
     }
 
@@ -176,6 +185,7 @@ impl Section {
                 tr!("Signing in to pathofexile.com: private leagues and “sum” rows")
             }
             Section::Help => tr!("Bug reports, logs and about the app"),
+            Section::WhatsNew => tr!("Changes in each version"),
         }
     }
 
@@ -1086,6 +1096,7 @@ impl SettingsView {
                 .into_any_element(),
             Section::Account => self.render_account(face, cx).into_any_element(),
             Section::Help => self.render_help(face, cx).into_any_element(),
+            Section::WhatsNew => whats_new(face).into_any_element(),
         };
         div()
             .flex_1()
@@ -2147,7 +2158,7 @@ impl Render for SettingsView {
             .bg(rgb(BG_PANEL))
             .text_color(rgb(TEXT))
             .text_size(rems_from_px(14.))
-            .line_height(relative(1.4))
+            .line_height(relative(LINE_HEIGHT))
             .child(self.render_title_bar(face, cx))
             .child(appear(
                 "open",
@@ -2251,6 +2262,113 @@ fn warning_card(lines: impl IntoIterator<Item = String>) -> AnyElement {
                 .child(line)
         }))
         .into_any_element()
+}
+
+/// «Что нового»: a group for each release of the changelog built into the app
+/// (`crate::changelog`), newest first, in the interface language. However long that grows, it
+/// scrolls like every other section: `render_content` puts each section's body in one scrolling
+/// area.
+fn whats_new(face: &'static NameFont) -> impl IntoElement {
+    div().flex().flex_col().gap(rems_from_px(22.)).children(
+        changelog::releases()
+            .iter()
+            .map(|release| release_group(face, release)),
+    )
+}
+
+/// A release as a group: the version and the day it came out for the heading, with «установлена»
+/// beside them for the version the player has, over a card with a row for each kind of change.
+fn release_group(face: &'static NameFont, release: &Release) -> impl IntoElement {
+    let released = release.date;
+    let title = format!(
+        "{} · {}",
+        release.version,
+        i18n::date(released.year, released.month.into(), released.day.into())
+    );
+    let installed = (release.version == VERSION).then(|| {
+        div()
+            .flex()
+            .items_center()
+            .text_size(rems_from_px(11.))
+            .text_color(rgb(TEXT_DIM))
+            .child(tr!("installed"))
+    });
+    div()
+        .flex()
+        .flex_col()
+        .gap(rems_from_px(10.))
+        .child(section_heading_beside(face, &title, installed))
+        .child(card(release.groups.iter().map(change_row)))
+}
+
+/// A kind of change in a release: its title as the changelog words it -- Added, Добавлено -- over
+/// its items. A row of the release's card, set like a setting's, with the items where a setting
+/// has its notes.
+fn change_row(group: &Group) -> AnyElement {
+    div()
+        .flex()
+        .flex_col()
+        .gap(rems_from_px(8.))
+        .px(rems_from_px(14.))
+        .py(rems_from_px(12.))
+        .child(div().text_color(rgb(TEXT)).child(group.title.clone()))
+        .children(group.items.iter().map(change_item))
+        .into_any_element()
+}
+
+/// One change, set as the notes under a setting are -- 12 px, dim -- wrapped in the width left
+/// beside a small diamond. Its bold spans take the colour of the labels and a heavier weight, its
+/// code spans gold.
+fn change_item(item: &Item) -> impl IntoElement {
+    let mut words = String::new();
+    let mut marks = Vec::new();
+    for span in &item.spans {
+        let start = words.len();
+        words.push_str(span.text());
+        match span {
+            Span::Text(_) => {}
+            Span::Strong(_) => marks.push((start..words.len(), strong_words())),
+            Span::Code(_) => marks.push((start..words.len(), code_words())),
+        }
+    }
+    div()
+        .flex()
+        .items_start()
+        .gap(rems_from_px(8.))
+        .text_size(rems_from_px(12.))
+        .text_color(rgb(TEXT_DIM))
+        .child(
+            // As tall as the words' first line, so the diamond sits on its axis.
+            div()
+                .flex()
+                .flex_none()
+                .items_center()
+                .h(rems_from_px(12. * LINE_HEIGHT))
+                .child(diamond(6., BORDER_GOLD)),
+        )
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .child(StyledText::new(words).with_highlights(marks)),
+        )
+}
+
+/// How a bold span of an item reads among the dim words: bright as a label, and heavier.
+fn strong_words() -> HighlightStyle {
+    HighlightStyle {
+        color: Some(rgb(TEXT).into()),
+        font_weight: Some(FontWeight::SEMIBOLD),
+        ..HighlightStyle::default()
+    }
+}
+
+/// How a code span of an item reads among the dim words: gold.
+fn code_words() -> HighlightStyle {
+    HighlightStyle {
+        color: Some(rgb(GOLD_LIGHT).into()),
+        ..HighlightStyle::default()
+    }
 }
 
 /// A setting that is on or off: the whole row flips it -- at once, like every control here --
