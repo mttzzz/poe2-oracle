@@ -8,7 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- ANCHOR: releases. The guide's "What's new" page shows every section below, up to ANCHOR_END. -->
 
-## [0.1.7] - 2026-10-05
+## [Unreleased]
+
+### Fixed
+
+- **Links in What's new.** An address in a change no longer breaks in the middle across two lines:
+  links read as words and open in your browser.
+
+## [0.1.7] - 2026-10-06
 
 ### Added
 
@@ -25,17 +32,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- **The XP plate names your level after a restart or a login for the character you were just
-  levelling, instead of "next level in".** The app finds your level by comparing the bar with where
-  each of your characters' bars stood last time. But whenever it started reading the game's log, it
-  read back the recent stretch of it and counted every level-up it found there as news, so a
-  character that had gained several levels in the last day lost the bar position kept for it, and
-  your login found nobody. Now the log changes what the app knows only where it says something
-  new. The position is also written sooner: right after each level-up, soon after you change area
-  or log out, otherwise once a minute, and when the app quits, so that an app ended without
-  warning, by Windows shutting down or a crash, loses at most the last minute of play. A position
-  that much behind no longer matches the bar, and the plate says "next level in" until your next
-  level-up.
+- **The XP plate knows your level again after a restart.** If a character had gained levels lately,
+  the plate showed "next level in" instead of the level after you restarted the app or logged in.
+  Now the level shows right away. The app also saves the XP bar more often, so even a sudden
+  shutdown hardly throws it off. And if the plate still shows "next level in", the level appears as
+  soon as you reach the next one.
 
 ## [0.1.5] - 2026-09-30
 
@@ -94,7 +95,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   on a slow line, the app gave up on the download and tried again later, with the same result every
   time. A slow start no longer cuts the download short. Versions 0.1.0 and 0.1.1 still give up after
   30 seconds: if yours keeps saying "Couldn't update to version 0.1.2" in its settings, download
-  this version from https://oracle.pushka.biz/ and install it by hand, once.
+  this version from [oracle.pushka.biz](https://oracle.pushka.biz/) and install it by hand, once.
 
 ## [0.1.1] - 2026-09-28
 
@@ -119,8 +120,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.1.0] - 2026-09-27
 
-The first public release, on https://oracle.pushka.biz/. The installer isn't digitally signed yet,
-so Windows may say "Windows protected your PC": click **More info**, then **Run anyway**.
+The first public release, on [oracle.pushka.biz](https://oracle.pushka.biz/). The installer isn't
+digitally signed yet, so Windows may say "Windows protected your PC": click **More info**, then
+**Run anyway**.
 
 ### Added
 
@@ -181,7 +183,7 @@ so Windows may say "Windows protected your PC": click **More info**, then **Run 
 - **Reports to the developer** from a window of the app, with no account: a problem, an idea, or
   an item read or priced wrong, with the item's text and a diagnostics report if you like. After a
   crash, the next start opens this window with what the app reported attached. Without the app, the
-  form at https://oracle.pushka.biz/report.html takes a problem or an idea.
+  [form on the site](https://oracle.pushka.biz/report.html) takes a problem or an idea.
 - **Installer** for your Windows user, with no administrator rights needed: a Start menu shortcut
   and, if you like, a start with Windows. Its first page says what the app sends over the internet
   and links the privacy policy. Uninstalling keeps your settings unless you tick **Settings and

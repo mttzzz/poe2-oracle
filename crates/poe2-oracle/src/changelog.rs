@@ -1,7 +1,8 @@
 //! The changelog the settings' «Что нового» shows: `CHANGELOG.md` and `CHANGELOG.ru.md`, built into
 //! the app -- the section needs no internet -- and read into releases, each with its groups of
 //! changes and their items ([`releases`], from the interface language's file). Pure and not
-//! Windows-gated, so the native test pass covers it; `ui::settings_view` only draws it.
+//! Windows-gated, so the native test pass covers it; `ui::settings_view` draws it, and opens its
+//! links.
 //!
 //! The app reads what the files promise and no more:
 //! - the releases are the lines between the ones starting `<!-- ANCHOR: releases` and
@@ -11,8 +12,12 @@
 //! - `### Added` (`### Добавлено`) opens a group of changes, and a line starting `- ` an item in
 //!   it. The lines after that, up to a blank line, a new item or a heading, continue the item, each
 //!   joined to it by one space, so a mark may run over a line break;
-//! - in an item, `**bold**` and `` `code` `` are marks. A mark that never closes is plain text, as
-//!   is anything else the format doesn't have, a link say: it is shown as written;
+//! - in an item, `**bold**`, `` `code` `` and `[text](https://address)` are marks. A mark that
+//!   never closes is plain text, as is anything else the format doesn't have: it is shown as
+//!   written. So is a link whose text holds a mark or a bracket, or whose address doesn't start
+//!   `https://` or holds a space or a parenthesis. The app draws a link as its text, which opens
+//!   the address in the browser, never as the address: GPUI breaks a line before any `/`, so an
+//!   address written out would split in the middle;
 //! - prose between a release's heading and its first group, and an item outside any group, are not
 //!   shown.
 
@@ -66,13 +71,17 @@ pub enum Span {
     /// Words between backticks. Inside a bold stretch they cut it in two: the bold goes on after
     /// them.
     Code(String),
+    /// `[text](https://address)`: the plain words it shows, and the address it opens, which is
+    /// never shown. It cuts a bold stretch in two as code does.
+    Link { text: String, url: String },
 }
 
 impl Span {
-    /// The span's words, without the marks around them.
+    /// The span's words, without the marks around them: a link's are its text, not its address.
     pub fn text(&self) -> &str {
         match self {
             Span::Text(words) | Span::Strong(words) | Span::Code(words) => words,
+            Span::Link { text, .. } => text,
         }
     }
 }
@@ -233,10 +242,17 @@ enum Piece<'a> {
     /// A `**`.
     Bold,
     Code(&'a str),
+    /// A `[text](https://address)`, as [`link_at`] reads one.
+    Link {
+        text: &'a str,
+        url: &'a str,
+    },
 }
 
-/// `words` cut at its `**`s and its code spans. A backtick with no partner after it, or none with
-/// something between, is words; so is every `**` inside a code span.
+/// `words` cut at its `**`s, its code spans and its links. A backtick with no partner after it, or
+/// none with something between, is words; so is every `**` inside a code span, and a `[` that
+/// starts no link. The mark that starts first takes all it covers: a link in a code span is the
+/// code's own words, and a `**` or a backtick in a link's address is the address's.
 fn split_marks(words: &str) -> Vec<Piece<'_>> {
     let bytes = words.as_bytes();
     let mut pieces = Vec::new();
@@ -251,6 +267,8 @@ fn split_marks(words: &str) -> Vec<Piece<'_>> {
                 .find('`')
                 .filter(|&inside| inside > 0)
                 .map(|inside| (Piece::Code(&words[at + 1..at + 1 + inside]), inside + 2))
+        } else if bytes[at] == b'[' {
+            link_at(&words[at..]).map(|(text, url, length)| (Piece::Link { text, url }, length))
         } else {
             None
         };
@@ -271,8 +289,26 @@ fn split_marks(words: &str) -> Vec<Piece<'_>> {
     pieces
 }
 
+/// The link `rest` starts with, `[text](https://address)`: its text, its address and how many
+/// bytes it takes. `None` if `rest` starts with no link, a look-alike among those: the app can't
+/// draw one whose text is empty or holds a mark or a bracket, or whose address doesn't start
+/// `https://`, has nothing after that, or holds a space or a parenthesis (the first `)` ends the
+/// address, so one with a `)` of its own would be cut short).
+fn link_at(rest: &str) -> Option<(&str, &str, usize)> {
+    let (text, after) = rest.strip_prefix('[')?.split_once("](")?;
+    let (url, _) = after.split_once(')')?;
+    let plain = !text.is_empty() && !text.contains(['[', ']', '`']) && !text.contains("**");
+    let address = url
+        .strip_prefix("https://")
+        .is_some_and(|host| !host.is_empty())
+        && !url.contains(|c: char| c.is_whitespace() || c == '(');
+    // `[`, `](` and `)` take four bytes beside the text and the address.
+    (plain && address).then_some((text, url, text.len() + url.len() + 4))
+}
+
 /// The spans of an item's `words`. The `**`s pair up in order; the last of an odd number has no
-/// partner, and stays in the words as `**`.
+/// partner, and stays in the words as `**`. A code span or a link inside a bold stretch cuts it in
+/// two, and the bold goes on after it.
 fn spans(words: &str) -> Vec<Span> {
     let pieces = split_marks(words);
     let bold_marks = pieces
@@ -294,6 +330,10 @@ fn spans(words: &str) -> Vec<Span> {
             }
             Piece::Words(words) => push_words(&mut spans, words, strong),
             Piece::Code(code) => spans.push(Span::Code(code.to_owned())),
+            Piece::Link { text, url } => spans.push(Span::Link {
+                text: text.to_owned(),
+                url: url.to_owned(),
+            }),
         }
     }
     spans
@@ -323,6 +363,13 @@ mod tests {
 
     fn code(words: &str) -> Span {
         Span::Code(words.to_owned())
+    }
+
+    fn link(words: &str, address: &str) -> Span {
+        Span::Link {
+            text: words.to_owned(),
+            url: address.to_owned(),
+        }
     }
 
     fn day(year: u16, month: u8, day: u8) -> Date {
@@ -609,6 +656,161 @@ A note under the heading, which belongs to no group.
         );
     }
 
+    #[test]
+    fn a_link_is_its_text_and_the_address_it_opens() {
+        // In the middle of a sentence, as the changelogs write one.
+        assert_eq!(
+            spans("download from [oracle.pushka.biz](https://oracle.pushka.biz/) and install it"),
+            [
+                text("download from "),
+                link("oracle.pushka.biz", "https://oracle.pushka.biz/"),
+                text(" and install it"),
+            ]
+        );
+        // Beside bold and code, two in one item; an address with a path, a query and a fragment,
+        // and a text of several words.
+        assert_eq!(
+            spans(
+                "**Bold.** Use [the form on the site](https://a.test/report.html?lang=ru&x=1#top), \
+                 `code` or [another](https://b.test/)."
+            ),
+            [
+                strong("Bold."),
+                text(" Use "),
+                link(
+                    "the form on the site",
+                    "https://a.test/report.html?lang=ru&x=1#top"
+                ),
+                text(", "),
+                code("code"),
+                text(" or "),
+                link("another", "https://b.test/"),
+                text("."),
+            ]
+        );
+        // The whole item; text and address in any script, with no character cut through.
+        assert_eq!(
+            spans("[all of it](https://a.test/)"),
+            [link("all of it", "https://a.test/")]
+        );
+        assert_eq!(
+            spans("«[форму на сайте](https://a.test/ё)» é[é](https://a.test/)é"),
+            [
+                text("«"),
+                link("форму на сайте", "https://a.test/ё"),
+                text("» é"),
+                link("é", "https://a.test/"),
+                text("é"),
+            ]
+        );
+        // The item reads as its words alone: the address is never shown.
+        let item = Item {
+            spans: spans("Use [the form](https://a.test/x) or **ask**."),
+        };
+        assert_eq!(plain(&item), "Use the form or ask.");
+    }
+
+    #[test]
+    fn a_link_cuts_a_bold_stretch_in_two_as_code_does() {
+        assert_eq!(
+            spans("**Open [the site](https://a.test/) now.** Then"),
+            [
+                strong("Open "),
+                link("the site", "https://a.test/"),
+                strong(" now."),
+                text(" Then"),
+            ]
+        );
+        // The mark that starts first takes all it covers: a link in a code span is the code's own
+        // words, and a `**` or a backtick in a link's address is the address's own.
+        assert_eq!(
+            spans("`[x](https://a.test/)` then [y](https://a.test/**z**) and **w**"),
+            [
+                code("[x](https://a.test/)"),
+                text(" then "),
+                link("y", "https://a.test/**z**"),
+                text(" and "),
+                strong("w"),
+            ]
+        );
+        assert_eq!(
+            spans("[y](https://a.test/`z) and `c`"),
+            [link("y", "https://a.test/`z"), text(" and "), code("c")]
+        );
+    }
+
+    #[test]
+    fn a_link_that_is_not_one_stays_as_written() {
+        for words in [
+            // A bracket with nothing like a link after it, or with nothing closing it.
+            "A [x] alone, [y] [z] twice and a [ with nothing",
+            "A [x](",
+            "A [x]( with nothing closing it",
+            "A [x](https://a.test/ with nothing closing it",
+            // Another form: a gap, a reference, an autolink.
+            "A [x] (https://a.test/) with a gap",
+            "A [x][1] reference and an <https://a.test/> autolink",
+            // An address that is none: another scheme or none, nothing after `https://`...
+            "A [x](http://a.test/) over plain http",
+            "A [x](ftp://a.test/), [y](a.test/), [z](/a/b), [w](javascript:alert) and [v]()",
+            "A [x](https://) with no host",
+            // ...a space in it, or a parenthesis, which the first `)` would cut short.
+            "A [x](https://a.test/a b) with a space",
+            "A [x](https://a.test/a_(b)) with a parenthesis",
+            // No text to show.
+            "A [](https://a.test/) with no text",
+        ] {
+            assert_eq!(spans(words), [text(words)], "{words:?}");
+        }
+        // A link's text is plain words: with a mark in it there is no link, and the marks read as
+        // they do anywhere.
+        assert_eq!(
+            spans("[**x**](https://a.test/) and [`y`](https://a.test/)"),
+            [
+                text("["),
+                strong("x"),
+                text("](https://a.test/) and ["),
+                code("y"),
+                text("](https://a.test/)"),
+            ]
+        );
+        // A `[` that opens no link doesn't stop the one after it from being one.
+        assert_eq!(
+            spans("[a [b](https://a.test/) and [note] [c](https://a.test/)"),
+            [
+                text("[a "),
+                link("b", "https://a.test/"),
+                text(" and [note] "),
+                link("c", "https://a.test/"),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_link_may_run_over_a_line_break_in_its_text_but_not_in_its_address() {
+        let spans_of = |lines: &str| -> Vec<Span> {
+            let markdown = format!(
+                "<!-- ANCHOR: releases -->\n## [1.0.0] - 2026-01-01\n\n### Added\n\n- {lines}\n\
+                 <!-- ANCHOR_END: releases -->\n"
+            );
+            let mut releases = parse(&markdown);
+            releases.remove(0).groups.remove(0).items.remove(0).spans
+        };
+        assert_eq!(
+            spans_of("See [the form\n  on the site](https://a.test/) now."),
+            [
+                text("See "),
+                link("the form on the site", "https://a.test/"),
+                text(" now.")
+            ]
+        );
+        // The break is a space once the lines are joined, which an address can't hold.
+        assert_eq!(
+            spans_of("See [the form](https://a.test/\n  report.html) now."),
+            [text("See [the form](https://a.test/ report.html) now.")]
+        );
+    }
+
     /// The changelogs built into the app, with the files they come from.
     fn embedded() -> [(&'static str, &'static [Release]); 2] {
         [
@@ -857,6 +1059,86 @@ A note under the heading, which belongs to no group.
         let outside = "<!-- ANCHOR: releases -->\n## [Unreleased]\n\nA note.\n\n- One\n\n  Two.\n\
                        <!-- ANCHOR_END: releases -->\nText.\n\n### Added\n\nText.\n";
         assert_eq!(left_out(outside), None);
+    }
+
+    /// What would break across two lines in the middle of an address in «Что нового», and why: the
+    /// first item of `markdown`'s releases with an address written out in its words, or with a
+    /// link whose text has a `/`. `None` for a changelog with neither. GPUI may break a line
+    /// before any character that isn't part of a word, and a `/` isn't: an address splits as
+    /// readily after `https:/` as anywhere. A link's text with no `/` breaks between its words
+    /// only, and its address, which is never shown, breaks nowhere.
+    fn breaks_in_an_address(markdown: &str) -> Option<String> {
+        for release in parse(markdown) {
+            for item in release.groups.iter().flat_map(|group| &group.items) {
+                for span in &item.spans {
+                    match span {
+                        Span::Link { text, .. } if text.contains('/') => {
+                            return Some(format!(
+                                "{}: the link text {text:?} has a `/`, where a line may break: \
+                                 give the link a text of words",
+                                release.version
+                            ));
+                        }
+                        Span::Text(words) | Span::Strong(words) | Span::Code(words)
+                            if words.contains("://") =>
+                        {
+                            return Some(format!(
+                                "{}: {words:?} has an address written out, which breaks across \
+                                 two lines in the middle: make it a link, \
+                                 `[text](https://address)`, with a text that has no `/`",
+                                release.version
+                            ));
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    #[test]
+    fn no_address_of_the_changelogs_can_break_in_the_middle() {
+        for (file, markdown) in [
+            ("CHANGELOG.md", ENGLISH_CHANGELOG),
+            ("CHANGELOG.ru.md", RUSSIAN_CHANGELOG),
+        ] {
+            if let Some(problem) = breaks_in_an_address(markdown) {
+                panic!("{file}: {problem}");
+            }
+        }
+    }
+
+    #[test]
+    fn an_address_that_would_break_in_the_middle_is_found() {
+        let release = |item: &str| {
+            format!(
+                "<!-- ANCHOR: releases -->\n## [1.0.0] - 2026-01-01\n\n### Added\n\n- {item}\n\
+                 <!-- ANCHOR_END: releases -->\n"
+            )
+        };
+        for item in [
+            "Download from [oracle.pushka.biz](https://oracle.pushka.biz/), **bold** and `code`.",
+            "Fill in the [form on the site](https://oracle.pushka.biz/report.html).",
+            "Скачайте с [oracle.pushka.biz](https://oracle.pushka.biz/ru/) и не только.",
+            // A `/` in words is not an address.
+            "Rates of +186 %/h, a `/hideout` command and and/or are no addresses.",
+        ] {
+            assert_eq!(breaks_in_an_address(&release(item)), None, "{item:?}");
+        }
+        for item in [
+            "Download from https://oracle.pushka.biz/ and install it.",
+            "**Download from https://oracle.pushka.biz/.** And install it.",
+            "Open `https://oracle.pushka.biz/` in a browser.",
+            "See [https://oracle.pushka.biz/](https://oracle.pushka.biz/).",
+            "See [the site/form](https://oracle.pushka.biz/report.html).",
+            // Not links, so their addresses are written out.
+            "See [the form](http://oracle.pushka.biz/report.html).",
+            "See [the form](https://oracle.pushka.biz/report.html#a b).",
+            "See [the form](https://oracle.pushka.biz/a_(b)).",
+        ] {
+            assert!(breaks_in_an_address(&release(item)).is_some(), "{item:?}");
+        }
     }
 
     #[test]

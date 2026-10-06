@@ -509,12 +509,15 @@ which browsers break apart.
 The settings' **What's new** section shows the same two files from inside the app, built in with
 `include_str!` (`crates/poe2-oracle/src/changelog.rs`). It reads them between the same anchor lines:
 a `## [X.Y.Z] - YYYY-MM-DD` heading is a release, a `###` heading a group of changes, and a bullet
-with the lines right under it a change, in which only `**bold**` and `` `code` `` are marks.
-`Unreleased` stays out of the app. A test fails when the two files list different versions or
-dates, when a release or a group is empty, when a mark never closes, when a group holds text
-outside its bullets (a paragraph after a blank line, a nested list), and when the newest release
-isn't the version in `Cargo.toml` (for `0.2.0-rc.1`, `0.2.0` will do): the commit that sets a new
-version also dates its section in both files.
+with the lines right under it a change, in which only `**bold**`, `` `code` `` and links
+(`[text](https://address)`) are marks. The app draws a link as its text, which opens the address in
+the browser. Write an address that way, with a text that has no `/` in it, never bare: GPUI breaks a
+line before any `/`, so an address written out splits in the middle. `Unreleased` stays out of the
+app. A test fails when the two files list different versions or dates, when a release or a group is
+empty, when a mark never closes, when a group holds text outside its bullets (a paragraph after a
+blank line, a nested list), when an item shows an address written out or a link's text has a `/`,
+and when the newest release isn't the version in `Cargo.toml` (for `0.2.0-rc.1`, `0.2.0` will do):
+the commit that sets a new version also dates its section in both files.
 
 ### What the service counts
 

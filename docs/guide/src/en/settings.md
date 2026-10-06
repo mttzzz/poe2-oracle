@@ -261,7 +261,7 @@ Section **Help**, group **Help**.
 ## What's new
 
 Section **What's new**: what changed in each version of PoE2 Oracle, newest first. Every version is
-a group titled with its number and the day it came out (*0.1.7 · Oct 5, 2026*), and the version you
+a group titled with its number and the day it came out (*0.1.7 · Oct 6, 2026*), and the version you
 have is marked **installed**. A group lists the changes by kind, **Added**, **Changed** or
 **Fixed**, each with its summary in bold and the details after it. The list is in the interface
 language and built into the app, so the section needs no internet and starts with the version you

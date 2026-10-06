@@ -16,7 +16,7 @@
 //! Signing in and out of pathofexile.com (`crate::login`, `crate::session`) keeps its secret out
 //! of the settings; Помощь's buttons write reports, open folders and pages, and quit the app.
 //! Что нового changes nothing: it shows the changelog built into the app (`crate::changelog`), a
-//! group for each version, the one the player has marked.
+//! group for each version, the one the player has marked; a link in a change opens in the browser.
 //!
 //! The window stays above the game (topmost), stepping down while the sign-in window -- which
 //! isn't topmost -- is open over it. × and Esc (with no menu open) close it, and so does
@@ -28,14 +28,16 @@
 //! the scale sets, and the window grows and shrinks with its content -- about the pointer, which
 //! so stays on the stepper that changed the scale ([`SettingsView::follow_scale`]).
 
+use std::ops::Range;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    Animation, AnimationExt as _, AnyElement, App, Context, Entity, FocusHandle, Focusable,
-    FontWeight, HighlightStyle, IntoElement, KeyDownEvent, Keystroke, Modifiers,
-    ModifiersChangedEvent, MouseButton, MouseDownEvent, Render, SharedString, StyledText, Window,
-    WindowControlArea, div, linear_color_stop, linear_gradient, prelude::*, px, relative, rgb,
+    Animation, AnimationExt as _, AnyElement, App, Context, ElementId, Entity, FocusHandle,
+    Focusable, FontWeight, HighlightStyle, InteractiveText, IntoElement, KeyDownEvent, Keystroke,
+    Modifiers, ModifiersChangedEvent, MouseButton, MouseDownEvent, Render, SharedString,
+    StyledText, UnderlineStyle, Window, WindowControlArea, div, linear_color_stop, linear_gradient,
+    prelude::*, px, relative, rgb,
 };
 use serde_json::Value;
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, VK_0, VK_9, VK_SHIFT};
@@ -64,10 +66,10 @@ use crate::ui::fonts::{self, NameFont};
 use crate::ui::ornament::FRAME_CLEAR;
 use crate::ui::scrollbar::scroll_area;
 use crate::ui::style::{
-    ButtonKind, CARD_RADIUS, TRANSITION, alpha, appear, button, card, diamond, ease, ease_hover,
-    ease_state, game_frame, heading, icon_button, keycaps, link, menu, ornament_rule, recorder,
-    section_heading, section_heading_beside, segmented, select, stepper, switch, switch_in,
-    title_bar, title_button,
+    ButtonKind, CARD_RADIUS, Channel, TRANSITION, alpha, appear, button, card, diamond, ease,
+    ease_hover, ease_state, game_frame, heading, icon_button, keycaps, link, menu, ornament_rule,
+    recorder, section_heading, section_heading_beside, segmented, select, stepper, switch,
+    switch_in, title_bar, title_button,
 };
 use crate::ui::text_field::{Committed, TextField};
 use crate::ui::theme::{
@@ -2302,13 +2304,15 @@ fn release_group(face: &'static NameFont, release: &Release) -> impl IntoElement
         .flex_col()
         .gap(rems_from_px(10.))
         .child(section_heading_beside(face, &title, installed))
-        .child(card(release.groups.iter().map(change_row)))
+        .child(card(release.groups.iter().enumerate().map(
+            |(ix, group)| change_row(format!("change-{}-{ix}", release.version).into(), group),
+        )))
 }
 
 /// A kind of change in a release: its title as the changelog words it -- Added, Добавлено -- over
 /// its items. A row of the release's card, set like a setting's, with the items where a setting
-/// has its notes.
-fn change_row(group: &Group) -> AnyElement {
+/// has its notes. `key` names the row among the page's: its items' keys are made from it.
+fn change_row(key: SharedString, group: &Group) -> AnyElement {
     div()
         .flex()
         .flex_col()
@@ -2316,25 +2320,48 @@ fn change_row(group: &Group) -> AnyElement {
         .px(rems_from_px(14.))
         .py(rems_from_px(12.))
         .child(div().text_color(rgb(TEXT)).child(group.title.clone()))
-        .children(group.items.iter().map(change_item))
+        .children(
+            group
+                .items
+                .iter()
+                .enumerate()
+                .map(|(ix, item)| change_item((key.clone(), ix), item)),
+        )
         .into_any_element()
 }
 
 /// One change, set as the notes under a setting are -- 12 px, dim -- wrapped in the width left
 /// beside a small diamond. Its bold spans take the colour of the labels and a heavier weight, its
-/// code spans gold.
-fn change_item(item: &Item) -> impl IntoElement {
+/// code spans gold, and its links are drawn and act as the app's other text links do
+/// ([`LinkedWords`]). `key` names it among the page's.
+fn change_item(key: impl Into<ElementId>, item: &Item) -> impl IntoElement {
     let mut words = String::new();
     let mut marks = Vec::new();
+    let mut links = Vec::new();
     for span in &item.spans {
         let start = words.len();
         words.push_str(span.text());
+        let range = start..words.len();
         match span {
             Span::Text(_) => {}
-            Span::Strong(_) => marks.push((start..words.len(), strong_words())),
-            Span::Code(_) => marks.push((start..words.len(), code_words())),
+            Span::Strong(_) => marks.push((range, strong_words())),
+            Span::Code(_) => marks.push((range, code_words())),
+            Span::Link { url, .. } => links.push((range, SharedString::from(url.clone()))),
         }
     }
+    let words = if links.is_empty() {
+        StyledText::new(words)
+            .with_highlights(marks)
+            .into_any_element()
+    } else {
+        LinkedWords {
+            key: key.into(),
+            words: words.into(),
+            marks,
+            links,
+        }
+        .into_any_element()
+    };
     div()
         .flex()
         .items_start()
@@ -2350,12 +2377,7 @@ fn change_item(item: &Item) -> impl IntoElement {
                 .h(rems_from_px(12. * LINE_HEIGHT))
                 .child(diamond(6., BORDER_GOLD)),
         )
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .child(StyledText::new(words).with_highlights(marks)),
-        )
+        .child(div().flex_1().min_w_0().child(words))
 }
 
 /// How a bold span of an item reads among the dim words: bright as a label, and heavier.
@@ -2372,6 +2394,101 @@ fn code_words() -> HighlightStyle {
     HighlightStyle {
         color: Some(rgb(GOLD_LIGHT).into()),
         ..HighlightStyle::default()
+    }
+}
+
+/// How a link of an item reads among the dim words: as the app's other text links do ([`link`]),
+/// dim, warming to gold as `warmth` (0 to 1) rises; and underlined, as a link in running words is.
+fn link_words(warmth: f32) -> HighlightStyle {
+    HighlightStyle {
+        color: Some(rgb(blend(TEXT_DIM, GOLD_LIGHT, warmth)).into()),
+        underline: Some(UnderlineStyle {
+            thickness: px(1.),
+            color: None,
+            wavy: false,
+        }),
+        ..HighlightStyle::default()
+    }
+}
+
+/// An item's words with links in them. A link is drawn as the app's other text links are
+/// ([`link`]): dim, easing to gold under the pointer over [`TRANSITION`]. It is underlined too: a
+/// colour alone would not set a link apart from the words around it. A click on it opens its
+/// address in the browser, and the pointer is a hand over it. The address is never drawn, so no
+/// line breaks in the middle of it.
+#[derive(IntoElement)]
+struct LinkedWords {
+    /// Names the item among the page's, for what it keeps between frames.
+    key: ElementId,
+    words: SharedString,
+    /// The bold and code spans, as byte ranges of `words`, in order.
+    marks: Vec<(Range<usize>, HighlightStyle)>,
+    /// The links, in order: where each one's text lies in `words`, and the address it opens.
+    links: Vec<(Range<usize>, SharedString)>,
+}
+
+impl RenderOnce for LinkedWords {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let hover = window.use_keyed_state(self.key.clone(), cx, |_, _| LinkWarmth {
+            last: 0,
+            warmth: Channel::new(false),
+        });
+        let (warm, warmth) =
+            hover.update(cx, |hover, cx| (hover.last, hover.warmth.frame(window, cx)));
+        let mut highlights = self.marks;
+        highlights.extend(self.links.iter().enumerate().map(|(ix, (range, _))| {
+            (
+                range.clone(),
+                link_words(if ix == warm { warmth } else { 0. }),
+            )
+        }));
+        highlights.sort_by_key(|(range, _)| range.start);
+        let ranges: Vec<Range<usize>> = self.links.iter().map(|(range, _)| range.clone()).collect();
+        let urls: Vec<SharedString> = self.links.into_iter().map(|(_, url)| url).collect();
+        let text = InteractiveText::new(
+            (self.key.clone(), "words"),
+            StyledText::new(self.words).with_highlights(highlights),
+        )
+        .on_click(ranges.clone(), move |ix, _window, cx| {
+            cx.open_url(&urls[ix]);
+        })
+        // The pointer over a character of the words: on a link, or not.
+        .on_hover({
+            let hover = hover.clone();
+            move |at, _event, _window, cx| {
+                let over = at.and_then(|at| ranges.iter().position(|range| range.contains(&at)));
+                hover.update(cx, |hover, cx| hover.point(over, cx));
+            }
+        });
+        // A pointer that leaves the words' box altogether tells the text nothing; the box says so.
+        div()
+            .id(self.key)
+            .on_hover(move |hovered, _window, cx| {
+                if !*hovered {
+                    hover.update(cx, |hover, cx| hover.point(None, cx));
+                }
+            })
+            .child(text)
+    }
+}
+
+/// What an item with links keeps between frames: the link the pointer is on, or was on last, and
+/// how far it has warmed.
+struct LinkWarmth {
+    last: usize,
+    warmth: Channel,
+}
+
+impl LinkWarmth {
+    /// The pointer is now on the link `over` -- its index among the item's -- or on none.
+    fn point(&mut self, over: Option<usize>, cx: &mut Context<Self>) {
+        let moved = over.is_some_and(|link| link != self.last);
+        if let Some(link) = over {
+            self.last = link;
+        }
+        if self.warmth.turn(over.is_some()) || moved {
+            cx.notify();
+        }
     }
 }
 
