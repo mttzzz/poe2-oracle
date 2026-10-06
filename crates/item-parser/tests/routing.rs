@@ -515,8 +515,8 @@ fn reported_ring_and_spear_get_their_quality_dps_and_crit_rows() {
     // they carried.
     let stats = StatCatalog::default();
 
-    // A Breach ring with 62% attack-modifier quality from a catalyst, "how do I select the
-    // quality?": its typed quality is read and offered as an unchecked minimum.
+    // A Breach ring with 62% attack-modifier quality from a catalyst: its typed quality is read
+    // and offered as an unchecked minimum.
     let ring_item = parse_fixture("ru_report_yarostnyy_zavitok.txt");
     assert_eq!(ring_item.quality, Some(62));
     assert_eq!(ring_item.quality_type.as_deref(), Some("свойства атак"));
@@ -525,8 +525,8 @@ fn reported_ring_and_spear_get_their_quality_dps_and_crit_rows() {
     assert_eq!(quality.roll.as_ref().map(|r| r.value), Some(62.0));
     assert!(!quality.enabled && !quality.hidden);
 
-    // A unique lightning spear at 12.52% crit, "why is crit rounded, and no physical DPS?": its
-    // physical DPS, 66% of the total, is listed, and crit keeps both decimals in its minimum.
+    // A unique lightning spear at 12.52% crit: its physical DPS, 66% of the total, is listed, and
+    // crit keeps both decimals in its minimum.
     let spear = built("ru_report_rukopolozhennye.txt", &stats);
     assert!(!row(&spear, "equipment_filters.pdps").hidden);
     let crit = row(&spear, "equipment_filters.crit")
