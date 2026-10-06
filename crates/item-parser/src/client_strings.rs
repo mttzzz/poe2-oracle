@@ -30,6 +30,9 @@ pub struct ClientStrings {
     pub item_level: &'static str,
     pub sockets: &'static str,
     pub quality: &'static str,
+    /// The start of a typed quality line, a catalyst's on jewellery:
+    /// `Quality (Attack Modifiers): +20% (augmented)`, the kind in the brackets.
+    pub quality_typed: &'static str,
     pub armour: &'static str,
     pub evasion: &'static str,
     pub energy_shield: &'static str,
@@ -159,6 +162,7 @@ pub static EN: LazyLock<ClientStrings> = LazyLock::new(|| {
     item_level: "Item Level: ",
     sockets: "Sockets: ",
     quality: "Quality: ",
+    quality_typed: "Quality (",
     armour: "Armour: ",
     evasion: "Evasion Rating: ",
     energy_shield: "Energy Shield: ",
@@ -250,6 +254,7 @@ pub static RU: LazyLock<ClientStrings> = LazyLock::new(|| {
     item_level: "Уровень предмета: ",
     sockets: "Гнезда: ",
     quality: "Качество: ",
+    quality_typed: "Качество (",
     armour: "Броня: ",
     evasion: "Уклонение: ",
     energy_shield: "Энергетический щит: ",

@@ -489,12 +489,15 @@ fn has_weapon_properties(item: &ParsedItem) -> bool {
 }
 
 /// EE2's `roundRoll` (`filters/util.ts`): the value as its row shows it -- truncated to a whole
-/// number, or, for a decimal property, to 2 places below 2.3 and 1 place below 10. Unlike
-/// `roundRoll`, float noise is absorbed first: 2.07 attacks per second recomputed through 25%
-/// increased attack speed lands a hair below 2.07, which plain truncation shows as 2.06 (the
-/// `high_damage_rare_item_en` fixture's crossbow).
-fn shown_value(value: f64, dp: bool) -> f64 {
-    let places = if !dp || value.abs() >= 10.0 {
+/// number, or, for a decimal property, to 2 places below 2.3 and 1 place below 10. Critical hit
+/// chance keeps 2 places at any size, as the game prints it: `roundRoll`'s whole 12 for a 12.52%
+/// spear searched a looser minimum than the item has. Unlike `roundRoll`, float noise is absorbed
+/// first: 2.07 attacks per second recomputed through 25% increased attack speed lands a hair below
+/// 2.07, which plain truncation shows as 2.06 (the `high_damage_rare_item_en` fixture's crossbow).
+fn shown_value(trade_id: &str, value: f64, dp: bool) -> f64 {
+    let places = if trade_id == "equipment_filters.crit" {
+        2
+    } else if !dp || value.abs() >= 10.0 {
         0
     } else if value.abs() < 2.3 {
         2
@@ -525,7 +528,7 @@ fn property_row(
         tag: FilterTag::Property,
         tier: None,
         roll: Some(SearchFilterRoll {
-            value: shown_value(value, dp),
+            value: shown_value(trade_id, value, dp),
             min: None,
             max: None,
             dp,
@@ -587,23 +590,25 @@ fn rune_sockets_row(item: &ParsedItem) -> Option<SearchFilter> {
     ))
 }
 
-/// `create-item-filters.ts:229-253`: a minimum quality, only where quality says something about
-/// the item: a flask at 20% or more (enabled above 20%), exceptional quality above 20% on gear
-/// (enabled unless rare: EE2 takes a rare's crafting as mostly done, its quality as no selling
-/// point), and any charm (enabled from 10%).
+/// A minimum quality on any item that has quality (owner 2026-10-06: weapons, armour and
+/// jewellery alike), checked where `create-item-filters.ts:229-253` checks it: a flask above 20%,
+/// exceptional quality above 20% on gear unless rare (EE2 takes a rare's crafting as mostly done,
+/// its quality as no selling point), a charm from 10%. EE2 offers no row elsewhere; here it's
+/// listed unchecked. A catalyst's typed quality on jewellery is never checked: the trade site's
+/// quality filter counts any kind of quality, not the catalyst's own.
 fn quality_row(item: &ParsedItem, category: &str) -> Option<SearchFilter> {
     let quality = item.quality.filter(|&quality| quality != 0)?;
     let charm = category == "flask.charm";
-    let enabled = if quality >= 20 && is_flask(category) {
+    let enabled = if item.quality_type.is_some() {
+        false
+    } else if quality >= 20 && is_flask(category) {
         quality > 20
     } else if quality > 20
         && (is_flask(category) || charm || is_armour(category) || is_weapon(category))
     {
         item.rarity != Some(ItemRarity::Rare)
-    } else if charm {
-        quality >= 10
     } else {
-        return None;
+        charm && quality >= 10
     };
     Some(property_row(
         "Quality: #%",
@@ -671,7 +676,8 @@ fn armour_rows(item: &ParsedItem, rows: &mut Vec<SearchFilter>) {
 /// `weaponProps` (`item-property.ts:189-447`). Physical DPS is the physical damage at 20% quality
 /// times attacks per second, elemental DPS the fire, cold and lightning damage times attacks per
 /// second, total DPS their sum. Total and elemental DPS only exist on a weapon with elemental
-/// damage. EE2 hides the elemental DPS row under 15% of the total and the physical one under 67%.
+/// damage. A DPS row hides under 15% of the total: EE2 hides the physical one under 67%, which
+/// left a hybrid weapon's physical DPS (66% of a lightning spear's) behind the hidden rows' toggle.
 /// Reload time is better lower.
 fn weapon_rows(item: &ParsedItem, rows: &mut Vec<SearchFilter>) {
     let attacks_per_second = item.weapon_aps.unwrap_or(0.0);
@@ -703,7 +709,7 @@ fn weapon_rows(item: &ParsedItem, rows: &mut Vec<SearchFilter>) {
     }
     if physical != 0.0 {
         rows.push(SearchFilter {
-            hidden: physical_dps / total_dps < 0.67,
+            hidden: physical_dps / total_dps < 0.15,
             ..row(
                 "Physical DPS: #",
                 "equipment_filters.pdps",
@@ -848,13 +854,24 @@ mod tests {
     }
 
     #[test]
-    fn minor_dps_shares_are_hidden() {
+    fn only_dps_shares_under_15_percent_are_hidden() {
+        // 196 physical beside 360 fire, 35% of the total: a hybrid's physical DPS stays listed,
+        // where EE2 hides it under 67%.
         let mut mostly_fire = rare_mace();
         mostly_fire.weapon_elemental = vec![(ElementKind::Fire, 200, 400)];
         let rows = property_filters(&mostly_fire);
         assert!(
+            !row(&rows, "equipment_filters.pdps").hidden,
+            "35% of the total"
+        );
+
+        // 196 physical beside 2400 fire: under a tenth.
+        let mut barely_physical = rare_mace();
+        barely_physical.weapon_elemental = vec![(ElementKind::Fire, 1500, 2500)];
+        let rows = property_filters(&barely_physical);
+        assert!(
             row(&rows, "equipment_filters.pdps").hidden,
-            "below 67% of the total"
+            "below 15% of the total"
         );
 
         let mut barely_fire = rare_mace();
@@ -889,6 +906,28 @@ mod tests {
         let rows = property_filters(&corrupted);
         let armour = row(&rows, "equipment_filters.ar");
         assert_eq!(armour.roll.as_ref().expect("roll").value, 300.0);
+    }
+
+    #[test]
+    fn quality_is_offered_on_weapons_and_armour_and_checked_where_ee2_checks_it() {
+        let quality = |item: &ParsedItem| {
+            let rows = property_filters(item);
+            let row = row(&rows, "type_filters.quality");
+            (row.roll.as_ref().expect("roll").value, row.enabled)
+        };
+        // The rare mace's 10%: listed, unchecked.
+        assert_eq!(quality(&rare_mace()), (10.0, false));
+        let armour = |rarity, percent| ParsedItem {
+            rarity: Some(rarity),
+            category: category("armour.chest"),
+            armour: Some(300),
+            quality: Some(percent),
+            ..Default::default()
+        };
+        assert_eq!(quality(&armour(ItemRarity::Magic, 20)), (20.0, false));
+        // Exceptional quality above 20% on a non-rare: EE2 checks it.
+        assert_eq!(quality(&armour(ItemRarity::Magic, 23)), (23.0, true));
+        assert_eq!(quality(&armour(ItemRarity::Rare, 23)), (23.0, false));
     }
 
     #[test]

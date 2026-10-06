@@ -36,7 +36,8 @@ impl SearchProfile {
         let base = !unmodifiable
             && (item.is_fractured
                 || item.rarity == Some(ItemRarity::Normal)
-                || item.quality.is_some_and(|quality| quality > 20)
+                || (item.quality_type.is_none()
+                    && item.quality.is_some_and(|quality| quality > 20))
                 || item
                     .sockets
                     .is_some_and(|sockets| sockets.current > sockets.normal));

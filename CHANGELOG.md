@@ -10,8 +10,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Quality on every item.** A weapon, armour piece, ring or amulet with quality now lists its
+  quality among the price panel's filters, unchecked: tick it to find items with at least as much.
+  That includes a catalyst's quality on jewellery, such as "Quality (Attack Modifiers): +62%". The
+  trade site's quality filter can't tell the kinds of quality apart, so it finds any kind.
+
 ### Fixed
 
+- **Critical hit chance keeps its decimals.** A weapon with 12.52% critical hit chance showed and
+  searched 12%; now it's 12.52%.
+- **Physical DPS on weapons with elemental damage.** A weapon whose physical damage was under two
+  thirds of its total, like a spear with added lightning damage, hid its **Physical DPS** filter.
+  Now it's listed whenever physical damage is at least 15% of the total, as elemental DPS already
+  was.
 - **Links in What's new.** An address in a change no longer breaks in the middle across two lines:
   links read as words and open in your browser.
 

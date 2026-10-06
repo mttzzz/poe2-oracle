@@ -138,7 +138,11 @@ fn export(item: &ParsedItem) -> Option<Export> {
             .collect(),
         ns: item.sockets.map_or(0, |sockets| sockets.current),
         s: [],
-        q: item.quality.unwrap_or(0),
+        // The item's own quality; a catalyst's typed quality on jewellery isn't sent.
+        q: item
+            .quality
+            .filter(|_| item.quality_type.is_none())
+            .unwrap_or(0),
         l: item.item_level?,
         r: rarity,
         influences: [],

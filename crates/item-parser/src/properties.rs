@@ -115,6 +115,13 @@ fn range_after(line: &str, prefix: &str) -> Option<(u32, u32)> {
     Some((u32_after(lo, "")?, u32_after(hi, "")?))
 }
 
+/// A typed quality line, a catalyst's on jewellery: `Quality (Attack Modifiers): +20% (augmented)`,
+/// read as its kind and its value.
+fn typed_quality_after<'a>(line: &'a str, prefix: &str) -> Option<(&'a str, u32)> {
+    let (kind, value) = line.strip_prefix(prefix)?.split_once("): ")?;
+    Some((kind, u32_after(value, "")?))
+}
+
 fn element_of(tag: &str) -> Option<ElementKind> {
     match tag {
         "fire" => Some(ElementKind::Fire),
@@ -175,6 +182,7 @@ fn parse_properties_block(
 ) -> SectionResult {
     let recognized = section.iter().any(|line| {
         line.starts_with(cs.quality)
+            || typed_quality_after(line, cs.quality_typed).is_some()
             || line.starts_with(cs.armour)
             || line.starts_with(cs.evasion)
             || line.starts_with(cs.energy_shield)
@@ -200,6 +208,9 @@ fn parse_properties_block(
     for line in section {
         if let Some(v) = u32_after(line, cs.quality) {
             item.quality = Some(v);
+        } else if let Some((kind, v)) = typed_quality_after(line, cs.quality_typed) {
+            item.quality = Some(v);
+            item.quality_type = Some(kind.to_owned());
         } else if let Some(v) = u32_after(line, cs.armour) {
             item.armour = Some(v);
         } else if let Some(v) = u32_after(line, cs.evasion) {
@@ -675,6 +686,14 @@ mod tests {
         assert_eq!(
             stack_size_after("Stack Size: 2,448/40", "Stack Size: "),
             Some((2448, 40))
+        );
+        assert_eq!(
+            typed_quality_after("Quality (Attack Modifiers): +60% (augmented)", "Quality ("),
+            Some(("Attack Modifiers", 60))
+        );
+        assert_eq!(
+            typed_quality_after("Качество (свойства атак): +62% (augmented)", "Качество ("),
+            Some(("свойства атак", 62))
         );
     }
 }

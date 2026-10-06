@@ -508,3 +508,30 @@ fn gems_waystones_and_tablets_carry_ee2s_property_rows() {
     assert!(rarity.enabled);
     assert_eq!(rarity.roll.as_ref().and_then(|r| r.min), Some(9.0));
 }
+
+#[test]
+fn reported_ring_and_spear_get_their_quality_dps_and_crit_rows() {
+    // Two reports from the app, 2026-10-06 (0.1.7, RU client): `ru_report_*.txt`, the item texts
+    // they carried.
+    let stats = StatCatalog::default();
+
+    // A Breach ring with 62% attack-modifier quality from a catalyst, "how do I select the
+    // quality?": its typed quality is read and offered as an unchecked minimum.
+    let ring_item = parse_fixture("ru_report_yarostnyy_zavitok.txt");
+    assert_eq!(ring_item.quality, Some(62));
+    assert_eq!(ring_item.quality_type.as_deref(), Some("свойства атак"));
+    let ring = built("ru_report_yarostnyy_zavitok.txt", &stats);
+    let quality = row(&ring, "type_filters.quality");
+    assert_eq!(quality.roll.as_ref().map(|r| r.value), Some(62.0));
+    assert!(!quality.enabled && !quality.hidden);
+
+    // A unique lightning spear at 12.52% crit, "why is crit rounded, and no physical DPS?": its
+    // physical DPS, 66% of the total, is listed, and crit keeps both decimals in its minimum.
+    let spear = built("ru_report_rukopolozhennye.txt", &stats);
+    assert!(!row(&spear, "equipment_filters.pdps").hidden);
+    let crit = row(&spear, "equipment_filters.crit")
+        .roll
+        .as_ref()
+        .expect("crit roll");
+    assert_eq!((crit.value, crit.min), (12.52, Some(12.52)));
+}
