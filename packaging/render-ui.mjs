@@ -193,7 +193,14 @@ try {
     }
     page.close();
 } finally {
+    // Windows keeps the profile locked until the browser has really exited: wait for it (a few
+    // seconds at most), and let rm retry a lock that lingers, or the run ends with EBUSY.
+    const gone =
+        chrome.exitCode !== null || chrome.signalCode !== null
+            ? Promise.resolve()
+            : new Promise((resolve) => chrome.once("exit", resolve));
     chrome.kill();
     server.close();
-    await rm(profile, { recursive: true, force: true });
+    await Promise.race([gone, new Promise((resolve) => setTimeout(resolve, 5000))]);
+    await rm(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 }
