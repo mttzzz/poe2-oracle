@@ -42,81 +42,65 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- **Update automatically on the installer's first page.** The page that says what PoE2 Oracle
-  sends over the internet now has the setting's box. Untick it and the app never connects to
-  oracle.pushka.biz: from its very first start it neither updates itself nor is counted. The
-  settings can switch it back at any time, and a reinstall shows the box as your settings have it.
+- **Update automatically, right on the installer's first page.** You can turn it off
+  there, before the app ever starts, and it stays off until you turn it back on in the
+  settings. With it off the app stays offline and never updates itself.
 
 ## [0.1.4] - 2026-09-30
 
 ### Changed
 
-- **Starts, new installations and updates are counted, in numbers only.** While **Update
-  automatically** is on, the app's first connection to oracle.pushka.biz after each start adds a few
-  flags to its request: that it is a start, that it is this installation's first, the version it ran
-  last time if that was another one, and the interface language. The service turns them into
-  anonymous counts; no address or id is kept. For this the app keeps two small markers in
-  `%LOCALAPPDATA%\poe2-oracle\data`: `last-run-version` and, in a developer's test build, an empty
-  `dev`. With **Update automatically** off nothing is sent. The installer's privacy page and the
-  guide's privacy chapter say what is counted.
+- **Starts, installs and updates are counted, as numbers only.** While **Update
+  automatically** is on, the app tells oracle.pushka.biz when it starts, whether this is a
+  fresh install, and your interface language, so these can be counted. No name, address or
+  id is kept, and with **Update automatically** off nothing is sent. The installer's
+  privacy page and the guide say what is counted.
 
 ### Fixed
 
-- **The XP plate names the next level again after the app restarts or you log in, instead of "next
-  level in".** After a restart or a login the plate usually didn't know your level, which the
-  game's log gives only at a level-up, and said "next level in 2h 50m" until your next level-up,
-  which at level 94 takes days. Now, the first time it starts after this update, the app takes the
-  level from the game's log, reading back through it for each character's latest level-up; from
-  then on it takes it from where the bar stands: it compares the bar with where the bar of each of
-  your characters stood last time, and if exactly one matches, that is you. The level and bar
-  position of your last 20 characters are kept on your computer. If the app can't tell which of
-  them you are playing, the plate still says "next level in" until your next level-up.
+- **The XP plate shows your level again after a restart or a login.** After a restart or a
+  login the plate often didn't know your level and showed "next level in" until your next
+  level-up, which at high levels takes days. Now it works out your level on its own and shows
+  it right away. If it can't tell which character you're on, it still shows "next level in"
+  until your next level-up.
 
 ## [0.1.3] - 2026-09-29
 
 ### Fixed
 
-- **A light on the empty part of the XP bar no longer counts as experience.** A warm light in the
-  scene could make the overlay read the empty part of the game's XP bar as filled: a bar at 34%
-  read as 94% for about a minute, the overlay counted the difference as experience, and when the
-  bar went back it counted that as a level-up too, so a player at level 93 saw +186%/h where the
-  real rate was about +40%/h. The overlay now tells the filled part from the empty part by how
-  much brighter it is, so light on the bar, or a dimmer interface, changes nothing, and a bar it
-  can't read for certain stays unread. A drop of the bar counts as a level-up only when it goes
-  from nearly full to nearly empty or the game's log reports one, and a jump that was a misread,
-  because the bar goes back to where it started, is taken back.
+- **A light on the game's XP bar no longer inflates your levelling speed.** A warm light in
+  the scene could make the overlay misread the empty part of the bar as filled and count the
+  difference as experience: a player at level 93 saw +186%/h where the real rate was about
+  +40%/h. The overlay now reads the bar correctly through such light, and leaves a reading it
+  isn't sure of alone.
 
 ## [0.1.2] - 2026-09-29
 
 ### Fixed
 
-- **Automatic updates no longer fail when the installer is slow to start arriving.** When the
-  installer's first bytes took more than 30 seconds to come, while an antivirus checked it, say, or
-  on a slow line, the app gave up on the download and tried again later, with the same result every
-  time. A slow start no longer cuts the download short. Versions 0.1.0 and 0.1.1 still give up after
-  30 seconds: if yours keeps saying "Couldn't update to version 0.1.2" in its settings, download
-  this version from [oracle.pushka.biz](https://oracle.pushka.biz/) and install it by hand, once.
+- **Automatic updates no longer give up on a slow download.** If the installer was slow to
+  start arriving, while an antivirus checked it, say, or on a slow connection, the app
+  abandoned the update and kept retrying with the same result. Now it waits. Versions 0.1.0
+  and 0.1.1 still give up: if yours keeps saying "Couldn't update to version 0.1.2" in its
+  settings, download this version from [oracle.pushka.biz](https://oracle.pushka.biz/) and
+  install it once by hand.
 
 ## [0.1.1] - 2026-09-28
 
 ### Added
 
-- **XP overlay diagnostics.** With `RUST_LOG=warn,poe2_oracle=info,poe2_oracle::xp_tracker=debug`
-  the log shows every reading of the XP bar that changes something, every gain counted and, every
-  30 s of play, what the rate stands on. With `POE2_ORACLE_XP_DEBUG=1` the bar's pixels behind each
-  large jump are saved as PNG in `%LOCALAPPDATA%\poe2-oracle\data\xp-debug`, the newest 30 kept.
-  See CONTRIBUTING.
+- **Extra logging for the XP overlay,** to help track down a wrong levelling speed. How to
+  turn it on is in CONTRIBUTING.
 
 ### Fixed
 
-- **Pointing at the game's XP bar no longer inflates the rate.** With the pointer resting on the bar
-  for its tooltip, the bar read nearly full for as long as the pointer stayed, and the overlay
-  counted that as experience: a player at level 93 saw +250-350%/h for half an hour. The overlay now
-  leaves the bar unread while the pointer is on it, and for a second after.
-- **Any other misread of the bar no longer counts as experience.** A jump of more than 5% of a
-  level, or any drop, counts once the bar has shown it for 20 seconds; if the bar goes back before
-  that, it was a misread and changes nothing. A level-up the game's log reports still counts at
-  once.
+- **Resting the pointer on the game's XP bar no longer inflates your levelling speed.**
+  Holding the pointer over the bar for its tooltip made the overlay read it as nearly full
+  and count that as experience: a player at level 93 saw +250-350%/h for half an hour. The
+  overlay now ignores the bar while the pointer is on it.
+- **Other brief misreadings of the bar no longer count as experience.** A sudden jump or
+  drop now has to hold for a moment before it counts, so a one-off misread that corrects
+  itself changes nothing. A level-up the game reports still counts at once.
 
 ## [0.1.0] - 2026-09-27
 
