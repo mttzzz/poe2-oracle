@@ -8,7 +8,8 @@ official trade site. An XP overlay right on the game's HUD shows how fast you le
 the next level and how long the current map has run.
 
 **[Download for Windows](https://oracle.pushka.biz/download/latest)** ·
-[Website](https://oracle.pushka.biz/) · [Guide](https://oracle.pushka.biz/guide/en/introduction.html)
+[Website](https://oracle.pushka.biz/) · [Guide](https://oracle.pushka.biz/guide/en/introduction.html) ·
+[Watch the demo on YouTube](https://youtu.be/7KKJsgSsi7o)
 
 <img src="docs/guide/src/images/en/hero.webp" width="941" alt="The PoE2 Oracle price panel, a currency's market card and both XP overlay plates">
 

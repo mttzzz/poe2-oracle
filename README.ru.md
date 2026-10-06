@@ -9,7 +9,8 @@
 карта.
 
 **[Скачать для Windows](https://oracle.pushka.biz/download/latest)** ·
-[Сайт](https://oracle.pushka.biz/ru/) · [Руководство](https://oracle.pushka.biz/guide/ru/introduction.html)
+[Сайт](https://oracle.pushka.biz/ru/) · [Руководство](https://oracle.pushka.biz/guide/ru/introduction.html) ·
+[Демо-видео на YouTube](https://youtu.be/7KKJsgSsi7o) (на английском)
 
 <img src="docs/guide/src/images/ru/hero.webp" width="941" alt="Панель цены PoE2 Oracle, карточка рынка валюты и обе плашки оверлея опыта">
 
