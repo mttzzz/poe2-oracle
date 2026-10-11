@@ -72,6 +72,7 @@
   "▾ Totals and minor rows: {count} more": "▾ Суммарные и второстепенные: ещё {count}",
   "not part of the search": "не участвует в поиске",
   "Not in the search. Click to add it: its row appears, with bounds from this item's value.": "Не участвует в поиске. Нажмите, чтобы добавить: появится строка с границами от значения этой вещи.",
+  "Above item level {cap} this kind of item unlocks no new modifiers, so the search starts at {cap}.": "Выше {cap} уровня у таких предметов не появляется новых свойств, поэтому поиск начинается с {cap}.",
   "Tier {tier} of {count}": "Тир {tier} из {count}",
   "This tier: from {value}": "Этот тир: от {value}",
   "All tiers: {low}–{high}": "Все тиры: {low}–{high}",

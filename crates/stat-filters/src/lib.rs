@@ -62,6 +62,11 @@ pub enum RollBound {
     Lower,
     /// The minimum is the value whatever the profile: a fixed roll, a count, a level.
     AtLeast,
+    /// The minimum is the value, but no higher than the cap, whatever the profile: an item level
+    /// past which the item unlocks no more modifiers (`property::max_useful_item_level`). An item
+    /// level 83 sceptre reads 83 and searches from 82, as every level from 82 up rolls the same
+    /// modifiers.
+    AtLeastCapped(u32),
     /// The maximum is the value whatever the profile: a fixed roll a lower one beats.
     AtMost,
     /// Both bounds are the value: a map tier, a number naming something.
@@ -462,7 +467,7 @@ fn word_like_the_item(item: &ParsedItem, filters: &mut [SearchFilter]) {
         roll.bound = match roll.bound {
             RollBound::Higher => RollBound::Lower,
             RollBound::Lower => RollBound::Higher,
-            RollBound::AtLeast => RollBound::AtMost,
+            RollBound::AtLeast | RollBound::AtLeastCapped(_) => RollBound::AtMost,
             RollBound::AtMost => RollBound::AtLeast,
             RollBound::Exactly => RollBound::Exactly,
         };

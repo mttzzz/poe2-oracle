@@ -207,6 +207,10 @@ a modifier yourself to search for it, or pick **Exact match** to search them all
 - For the few modifiers where a lower number is better, **max** is filled in instead.
 - A waystone's tier and numbers that name something instead of measuring it, such as a timeless
   jewel's legend, are searched exactly: **min** and **max** are both that number.
+- An item level above the highest one that still unlocks something on its kind of item (82 for most
+  items, 81 for wands and staves) is searched from that one: an item level 83 sceptre reads 83 and
+  searches from 82, since every level from 82 up rolls the same modifiers. Hover its **min** to see
+  why.
 - **Broad −10%** doesn't lower item level, sockets, quality, a gem's level and sockets, a granted
   skill's level, a waystone's properties or a modifier that can roll only one value: they keep the
   same bound as in the other profiles.

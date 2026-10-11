@@ -104,6 +104,7 @@ fn bounds(value: f64, bound: RollBound, range: f64, property: bool) -> (Option<f
         RollBound::Higher => (Some(round(value - offset, false)), None),
         RollBound::Lower => (None, Some(round(value + offset, true))),
         RollBound::AtLeast => (Some(value), None),
+        RollBound::AtLeastCapped(cap) => (Some(value.min(f64::from(cap))), None),
         RollBound::AtMost => (None, Some(value)),
         RollBound::Exactly => (Some(value), Some(value)),
     }
@@ -135,6 +136,15 @@ mod tests {
         assert_eq!(broad(0.6, RollBound::Lower, true), (None, Some(0.66)));
         // Fixed and exact rolls ignore the range.
         assert_eq!(broad(3.0, RollBound::AtLeast, false), (Some(3.0), None));
+        // An item level past the cap searches from the cap; below it, from itself.
+        assert_eq!(
+            broad(83.0, RollBound::AtLeastCapped(82), true),
+            (Some(82.0), None)
+        );
+        assert_eq!(
+            broad(80.0, RollBound::AtLeastCapped(82), true),
+            (Some(80.0), None)
+        );
         assert_eq!(broad(3.0, RollBound::AtMost, false), (None, Some(3.0)));
         assert_eq!(
             broad(16.0, RollBound::Exactly, true),

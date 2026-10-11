@@ -535,3 +535,17 @@ fn reported_ring_and_spear_get_their_quality_dps_and_crit_rows() {
         .expect("crit roll");
     assert_eq!((crit.value, crit.min), (12.52, Some(12.52)));
 }
+
+#[test]
+fn a_reported_sceptre_reads_its_own_item_level_and_is_searched_from_the_useful_maximum() {
+    // The owner, 2026-10-11 (0.1.8, RU client): an item level 83 sceptre's row read
+    // «Уровень предмета: 82». No sceptre affix needs more than item level 82 (poe2db, 2026-10-11),
+    // so the search keeps starting there, while the row reads the item's own level.
+    let stats = StatCatalog::default();
+    let sceptre = built("ru_report_obraztsovyy_skipetr_stoika.txt", &stats);
+    let level = row(&sceptre, "type_filters.ilvl")
+        .roll
+        .as_ref()
+        .expect("item level roll");
+    assert_eq!((level.value, level.min), (83.0, Some(82.0)));
+}

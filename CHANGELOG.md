@@ -8,6 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- ANCHOR: releases. The guide's "What's new" page shows every section below, up to ANCHOR_END. -->
 
+## [Unreleased]
+
+### Fixed
+
+- **Item level of high-level items.** An item above item level 82 (81 for wands and staves) had
+  its item level row read 82, as an item level 83 sceptre's did. The row now shows the item's own
+  level. The search still starts at 82, as no modifier on such items needs a higher item level, and
+  the minimum's box says so on hover.
+
 ## [0.1.8] - 2026-10-06
 
 ### Added

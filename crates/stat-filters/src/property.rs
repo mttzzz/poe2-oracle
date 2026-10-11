@@ -545,7 +545,9 @@ fn property_row(
 }
 
 /// EE2's `maxUsefulItemLevel` (`filters/common.ts`): the item level past which a higher one
-/// unlocks nothing more on this kind of item; 1 means item level doesn't matter at all.
+/// unlocks nothing more on this kind of item; 1 means item level doesn't matter at all. Checked for
+/// sceptres on poe2db on 2026-10-11: their highest affix tiers (Allies in your Presence deal
+/// (105—119)% increased Damage, (61—65)% increased Spirit) need item level 82.
 fn max_useful_item_level(category: &str) -> u32 {
     match category {
         "weapon.wand" | "weapon.staff" => 81,
@@ -555,9 +557,12 @@ fn max_useful_item_level(category: &str) -> u32 {
     }
 }
 
-/// `create-item-filters.ts:379-405`: a minimum item level, capped at the useful maximum, for
-/// every non-unique whose item level matters -- enabled in the exact preset except on flasks and
-/// charms, and on any veiled item (`create-item-filters.ts:468-472`).
+/// `create-item-filters.ts:379-405`: a minimum item level for every non-unique whose item level
+/// matters -- enabled in the exact preset except on flasks and charms, and on any veiled item
+/// (`create-item-filters.ts:468-472`). EE2 caps its value at the useful maximum; here the row keeps
+/// the item's own level, which its label shows, and only the search's minimum stops at the cap
+/// (`RollBound::AtLeastCapped`): an item level 83 sceptre read "Item Level: 82" (owner,
+/// 2026-10-11).
 fn item_level_row(item: &ParsedItem, category: &str, exact: bool) -> Option<SearchFilter> {
     let item_level = item.item_level?;
     let max_useful = max_useful_item_level(category);
@@ -568,10 +573,10 @@ fn item_level_row(item: &ParsedItem, category: &str, exact: bool) -> Option<Sear
     Some(property_row(
         "Item Level: #",
         "type_filters.ilvl",
-        f64::from(item_level.min(max_useful)),
+        f64::from(item_level),
         false,
         enabled,
-        RollBound::AtLeast,
+        RollBound::AtLeastCapped(max_useful),
     ))
 }
 
@@ -951,8 +956,8 @@ mod tests {
         let item_level_roll = item_level.roll.as_ref().expect("roll");
         assert_eq!(
             (item_level_roll.value, item_level_roll.bound),
-            (82.0, RollBound::AtLeast),
-            "a minimum, capped at the useful maximum"
+            (84.0, RollBound::AtLeastCapped(82)),
+            "the item's own level, searched from the useful maximum"
         );
         assert!(
             row(&rows, "equipment_filters.rune_sockets").enabled,

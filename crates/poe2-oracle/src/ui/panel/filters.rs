@@ -14,7 +14,7 @@ use gpui::{
 };
 
 use poe2_domain::{ModGeneration, ParsedItem};
-use stat_filters::{FilterTag, SearchFilter, TierInfo};
+use stat_filters::{FilterTag, RollBound, SearchFilter, TierInfo};
 use trade_client::TradeSite;
 
 use crate::platform::win32::Win32Overlay;
@@ -353,6 +353,16 @@ fn render_filter_row(
     let slider = (searchable && filter.enabled)
         .then(|| Slider::of(filter))
         .flatten();
+    // An item level past the useful maximum is searched from the maximum
+    // (`RollBound::AtLeastCapped`): its minimum box says why it reads less than the row.
+    let min_hint = filter.roll.as_ref().and_then(|roll| match roll.bound {
+        RollBound::AtLeastCapped(cap) if roll.value > f64::from(cap) => Some(tr!(
+            "Above item level {cap} this kind of item unlocks no new modifiers, so the search \
+             starts at {cap}.",
+            cap = cap
+        )),
+        _ => None,
+    });
 
     let line = div()
         .flex()
@@ -371,7 +381,7 @@ fn render_filter_row(
         .child(text)
         .children(mark.map(|(key, mark)| render_mark_button(key, mark, cx)))
         .when(searchable && filter.roll.is_some(), |this| {
-            this.child(render_bounds(row, ui, window, cx))
+            this.child(render_bounds(row, ui, min_hint, window, cx))
         });
 
     let element = div()
@@ -879,6 +889,7 @@ fn render_tier(tier: u32) -> impl IntoElement {
 fn render_bounds(
     row: usize,
     ui: &FilterRowUi,
+    min_hint: Option<String>,
     window: &Window,
     cx: &Context<PriceCheckApp>,
 ) -> impl IntoElement {
@@ -889,21 +900,36 @@ fn render_bounds(
         .child(render_bound_input(
             row,
             true,
-            &ui.min_focus,
-            &ui.min_text,
-            ui.min_fresh,
+            BoundBox {
+                focus: &ui.min_focus,
+                text: &ui.min_text,
+                fresh: ui.min_fresh,
+                hint: min_hint,
+            },
             window,
             cx,
         ))
         .child(render_bound_input(
             row,
             false,
-            &ui.max_focus,
-            &ui.max_text,
-            ui.max_fresh,
+            BoundBox {
+                focus: &ui.max_focus,
+                text: &ui.max_text,
+                fresh: ui.max_fresh,
+                hint: None,
+            },
             window,
             cx,
         ))
+}
+
+/// A min/max box's state: its focus, its text, whether the click that focused it selected that
+/// text (`fresh`), and what it says on hover, if anything.
+struct BoundBox<'a> {
+    focus: &'a FocusHandle,
+    text: &'a str,
+    fresh: bool,
+    hint: Option<String>,
 }
 
 /// One min/max box: shows `text` (or the min/max placeholder while empty), its edge warming
@@ -917,12 +943,16 @@ fn render_bounds(
 fn render_bound_input(
     row: usize,
     is_min: bool,
-    focus_handle: &FocusHandle,
-    text: &str,
-    fresh: bool,
+    bound_box: BoundBox<'_>,
     window: &Window,
     cx: &Context<PriceCheckApp>,
 ) -> impl IntoElement {
+    let BoundBox {
+        focus: focus_handle,
+        text,
+        fresh,
+        hint,
+    } = bound_box;
     let focused = focus_handle.is_focused(window);
     let focus_for_click = focus_handle.clone();
     let focus_for_outside = focus_handle.clone();
@@ -992,7 +1022,8 @@ fn render_bound_input(
                         this.child(div().w(px(1.)).h(rems_from_px(14.)).bg(rgb(GOLD)))
                     })
             }
-        });
+        })
+        .when_some(hint, |this, hint| this.tooltip(hints::hint(hint)));
     ease_hover(key, element, move |element, hover| {
         let lit = if focused { 1. } else { 0.7 * hover };
         element

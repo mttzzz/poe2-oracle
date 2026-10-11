@@ -36,7 +36,7 @@ impl Slider {
         let roll = filter.roll.as_ref()?;
         let (low, high) = filter.tier_info?.range?;
         let handle = match roll.bound {
-            RollBound::Higher | RollBound::AtLeast => Handle::Min,
+            RollBound::Higher | RollBound::AtLeast | RollBound::AtLeastCapped(_) => Handle::Min,
             RollBound::Lower | RollBound::AtMost => Handle::Max,
             RollBound::Exactly => return None,
         };
@@ -87,7 +87,10 @@ impl Slider {
 /// sets a minimum: where a lower roll is better the floor is the tier's best end, not its worst.
 pub fn tier_minimum(filter: &SearchFilter) -> Option<f64> {
     let roll = filter.roll.as_ref()?;
-    if !matches!(roll.bound, RollBound::Higher | RollBound::AtLeast) {
+    if !matches!(
+        roll.bound,
+        RollBound::Higher | RollBound::AtLeast | RollBound::AtLeastCapped(_)
+    ) {
         return None;
     }
     filter.tier_info?.tier_floor
