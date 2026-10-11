@@ -704,3 +704,87 @@ fn a_reported_unique_goes_among_uniques_cultivated_as_it_is() {
         }
     }
 }
+
+/// The live catalog's stats the trade site files by kind of item, as in the reported charm.
+fn kind_forms_catalog() -> IndexedCatalog {
+    stat_catalog(&[
+        (
+            "implicit.stat_3310778564",
+            "Used when you take Chaos damage from a Hit",
+        ),
+        (
+            "explicit.stat_2678930256",
+            "#% of Chaos damage you prevent when Hit Recouped as Life and Mana during effect",
+        ),
+        ("explicit.stat_1256719186", "#% increased Duration (Flask)"),
+        ("explicit.stat_2541588185", "#% increased Duration (Charm)"),
+        (
+            "explicit.stat_1030153674",
+            "Recover #% of maximum Mana on Kill",
+        ),
+        (
+            "explicit.stat_1604736568",
+            "Recover #% of maximum Mana on Kill (Jewel)",
+        ),
+    ])
+}
+
+#[test]
+fn a_reported_charm_is_searched_by_the_charms_duration() {
+    // Report #9, 2026-10-11 (0.1.10, EN client): Forsaken Bangle's «19(15-25)% increased
+    // Duration» was searched as the flask's duration, which no charm listing carries, so the
+    // unique's exact search found nothing (the trade site: 0, and 1013 by the charm's stat).
+    let (bangle, filters) = reported("report_forsaken_bangle_en.txt", &kind_forms_catalog(), None);
+    assert!(bangle.unknown_mods.is_empty(), "{:?}", bangle.unknown_mods);
+    let duration = hash_row(&filters, "stat_2541588185");
+    assert_eq!(duration.trade_ids, ["explicit.stat_2541588185"]);
+    assert!(duration.enabled);
+    assert!(
+        !filters.iter().any(|filter| filter
+            .trade_ids
+            .iter()
+            .any(|id| id.ends_with("stat_1256719186"))),
+        "a charm row searches the flask's duration"
+    );
+}
+
+#[test]
+fn a_stat_filed_by_kind_of_item_takes_the_items_kind() {
+    let catalog = kind_forms_catalog();
+    let stat_of = |text: &str, line: &str| {
+        let item = parse_clipboard(text, ItemLanguage::English, &catalog).expect("parses");
+        item.mods
+            .iter()
+            .flat_map(|modifier| &modifier.stats)
+            .find(|stat| stat.text.starts_with(line))
+            .and_then(|stat| stat.stat_id.clone())
+            .unwrap_or_else(|| panic!("no {line:?} stat"))
+    };
+    // Items as the app copies them, with their modifiers' headers.
+    let flask = "Item Class: Life Flasks\nRarity: Magic\nUltimate Life Flask of the Sustainer\n\
+        --------\nRecovers 920 Life over 3 Seconds\nConsumes 10 of 75 Charges on use\n\
+        Currently has 0 Charges\n--------\nRequires: Level 60\n--------\nItem Level: 66\n\
+        --------\n{ Suffix Modifier \"of the Sustainer\" (Tier: 1) }\n\
+        25(21-25)% increased Duration\n--------\nRight click to drink. Can only hold charges \
+        while in belt. Refill at Wells or by killing monsters.\n";
+    assert_eq!(
+        stat_of(flask, "#% increased Duration"),
+        "explicit.stat_1256719186"
+    );
+    let jewel = "Item Class: Jewels\nRarity: Rare\nGrim Glimmer\nEmerald\n--------\n\
+        Item Level: 80\n--------\n{ Suffix Modifier \"of Absorption\" (Tier: 1) — Mana }\n\
+        Recover 2(1-2)% of maximum Mana on Kill\n--------\nPlace into an allocated Jewel \
+        Socket on the Passive Skill Tree. Right click to remove from the Socket.\n";
+    assert_eq!(
+        stat_of(jewel, "Recover #% of maximum Mana on Kill"),
+        "explicit.stat_1604736568"
+    );
+    let ring = "Item Class: Rings\nRarity: Rare\nDoom Loop\nAmethyst Ring\n--------\n\
+        Requires: Level 40\n--------\nItem Level: 80\n--------\n\
+        { Suffix Modifier \"of Absorption\" (Tier: 1) — Mana }\n\
+        Recover 2(1-2)% of maximum Mana on Kill\n";
+    assert_eq!(
+        stat_of(ring, "Recover #% of maximum Mana on Kill"),
+        "explicit.stat_1030153674"
+    );
+}

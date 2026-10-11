@@ -8,6 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- ANCHOR: releases. The guide's "What's new" page shows every section below, up to ANCHOR_END. -->
 
+## [Unreleased]
+
+### Fixed
+
+- **A charm's duration and a jewel's mana on kill.** A charm's "increased Duration" was searched
+  as a flask's, which no charm has, so a unique charm such as Forsaken Bangle found nothing. A
+  jewel's "Recover #% of maximum Mana on Kill" was searched as the one other items carry, which no
+  jewel has. Each is now searched as the trade site files it for that kind of item.
+
 ## [0.1.10] - 2026-10-11
 
 ### Fixed

@@ -20,8 +20,8 @@
 //!   remaining`, `Loads 2 additional bolts`): words may differ in their ending, and a
 //!   `ClientStrings::number_words` word ("an") may stand for `#` (value 1);
 //! - a weapon's accuracy and attack speed and an armour piece's defences and block are the
-//!   `(Local)` catalog stats, which print exactly like their global counterparts
-//!   (`LOCAL_STATS`).
+//!   `(Local)` catalog stats, which print exactly like their global counterparts, and a charm's
+//!   duration and a jewel's mana on kill are the `(Charm)` and `(Jewel)` ones (`ITEM_FORMS`).
 //! - a catalog text may print a number's sign (`+# к уровню всех умений Вихрь стрел`), which a
 //!   templated line never keeps (`roll.rs` templates `+1` to `#`): texts are indexed unsigned;
 //! - past all of these, EE2's own printed forms (`stat_forms`, from its `stats.ndjson`): a
@@ -252,38 +252,67 @@ fn replace_word(text: &str, from: &str, to: &str) -> Option<String> {
     None
 }
 
-/// Which items print a stat's `(Local)` form.
+/// Which items carry a stat in its own form.
 #[derive(Clone, Copy)]
-enum LocalOn {
+enum FormOn {
     Weapons,
     /// Armour pieces: every `armour.*` category but quivers, which hold no defences of their own.
     Armour,
+    /// Life and mana flasks: every `flask.*` category but charms.
+    Flasks,
+    Charms,
+    Jewels,
 }
 
-/// `(global hash, local hash, where the local one applies)`: every `(Local)` stat of the live
-/// catalog (2026-09-22), whose text is its global counterpart's plus ` (Local)`/` (На
-/// предмете)`. EE2 names both ids for these stats (`stats.ndjson`); the item's own kind decides.
-const LOCAL_STATS: [(&str, &str, LocalOn); 8] = [
+impl FormOn {
+    fn applies(self, category: &str) -> bool {
+        match self {
+            FormOn::Weapons => category.starts_with("weapon."),
+            FormOn::Armour => category.starts_with("armour.") && category != "armour.quiver",
+            FormOn::Flasks => category.starts_with("flask.") && category != "flask.charm",
+            FormOn::Charms => category == "flask.charm",
+            FormOn::Jewels => category == "jewel" || category.starts_with("jewel."),
+        }
+    }
+}
+
+/// `(stat's hash, its form's hash, the items that carry the form)`: every catalog stat the trade
+/// site files under another id on some kinds of item, whose text is the other's plus the kind in
+/// brackets. EE2 names both ids for these stats (`stats.ndjson`); the item's own kind decides.
+/// - `(Local)`/`(На предмете)`: a weapon's accuracy and attack speed, an armour piece's defences
+///   and block (live catalog, 2026-09-22).
+/// - `(Charm)` and `(Flask)`: `#% increased Duration`, which no catalog text prints as it is, so
+///   it comes from EE2's printed form (`stat_forms`), the flask's stat first. Report #9
+///   (2026-10-11): a unique charm was searched by the flask's stat, which no charm listing
+///   carries, and its exact search found nothing.
+/// - `(Jewel)`: `Recover #% of maximum Mana on Kill`, which jewel listings carry only in that form
+///   (2026-10-11: 0 jewels with the general stat, over 10000 with the jewel's).
+const ITEM_FORMS: [(&str, &str, FormOn); 11] = [
     // # to Accuracy Rating
-    ("stat_803737631", "stat_691932474", LocalOn::Weapons),
+    ("stat_803737631", "stat_691932474", FormOn::Weapons),
     // #% increased Attack Speed
-    ("stat_681332047", "stat_210067635", LocalOn::Weapons),
+    ("stat_681332047", "stat_210067635", FormOn::Weapons),
     // # to maximum Energy Shield
-    ("stat_3489782002", "stat_4052037485", LocalOn::Armour),
+    ("stat_3489782002", "stat_4052037485", FormOn::Armour),
     // # to Evasion Rating
-    ("stat_2144192055", "stat_53045048", LocalOn::Armour),
+    ("stat_2144192055", "stat_53045048", FormOn::Armour),
     // # to Armour
-    ("stat_809229260", "stat_3484657501", LocalOn::Armour),
+    ("stat_809229260", "stat_3484657501", FormOn::Armour),
     // #% increased Evasion Rating
-    ("stat_2106365538", "stat_124859000", LocalOn::Armour),
+    ("stat_2106365538", "stat_124859000", FormOn::Armour),
     // #% increased Armour
-    ("stat_2866361420", "stat_1062208444", LocalOn::Armour),
+    ("stat_2866361420", "stat_1062208444", FormOn::Armour),
     // #% increased Block chance
-    ("stat_4147897060", "stat_2481353198", LocalOn::Armour),
+    ("stat_4147897060", "stat_2481353198", FormOn::Armour),
+    // #% increased Duration: the flask's form, then the charm's
+    ("stat_1256719186", "stat_2541588185", FormOn::Charms),
+    ("stat_2541588185", "stat_1256719186", FormOn::Flasks),
+    // Recover #% of maximum Mana on Kill
+    ("stat_1030153674", "stat_1604736568", FormOn::Jewels),
 ];
 
-/// `stat`, or its `(Local)` form where `category` is an item that prints it locally.
-fn localized<'a>(
+/// `stat`, or its form for `category`'s kind of item (`ITEM_FORMS`).
+fn item_form<'a>(
     stat: &'a TradeStat,
     category: Option<&str>,
     index: &'a IndexedCatalog,
@@ -294,17 +323,11 @@ fn localized<'a>(
     let Some((mod_type, hash)) = stat.id.split_once('.') else {
         return stat;
     };
-    let Some(&(_, local, on)) = LOCAL_STATS.iter().find(|(global, ..)| *global == hash) else {
-        return stat;
-    };
-    let applies = match on {
-        LocalOn::Weapons => category.starts_with("weapon."),
-        LocalOn::Armour => category.starts_with("armour.") && category != "armour.quiver",
-    };
-    if !applies {
-        return stat;
-    }
-    index.by_id(&format!("{mod_type}.{local}")).unwrap_or(stat)
+    ITEM_FORMS
+        .iter()
+        .find(|&&(from, _, on)| from == hash && on.applies(category))
+        .and_then(|&(_, form, _)| index.by_id(&format!("{mod_type}.{form}")))
+        .unwrap_or(stat)
 }
 
 /// How one printed text resolved.
@@ -403,7 +426,7 @@ fn closes_reminder(line: &str) -> bool {
 /// Damage"]`) against the catalog for `modifier_type`, into one `ParsedStat` per stat: a stat
 /// printed over several lines becomes one, parenthesised reminder text none. A line nothing in
 /// the catalog matches still becomes a stat, with `stat_id: None`. `category` is the item's trade
-/// category, which picks a stat's local or global form.
+/// category, which picks the form of a stat the trade site files by kind of item (`ITEM_FORMS`).
 pub fn resolve_stat_lines(
     lines: &[&str],
     modifier_type: ModifierType,
@@ -494,7 +517,7 @@ fn stat_from<'a>(
     unscalable: bool,
     index: &'a IndexedCatalog,
 ) -> ParsedStat {
-    let stat = localized(resolved.stat, category, index);
+    let stat = item_form(resolved.stat, category, index);
     let mut parsed = rolled(Some(stat.id.clone()), stat.text.clone(), runs);
     if let Some(value) = resolved.implied.filter(|_| runs.is_empty()) {
         parsed.value = value;

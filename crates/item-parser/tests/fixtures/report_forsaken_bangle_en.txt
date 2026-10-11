@@ -1,0 +1,26 @@
+Item Class: Charms
+Rarity: Unique
+Forsaken Bangle
+Amethyst Charm
+--------
+Lasts 4,80 (augmented) Seconds
+Consumes 30 of 40 Charges on use
+Currently has 0 Charges
++18% to Chaos Resistance
+--------
+Requires: Level 40
+--------
+Item Level: 80
+--------
+{ Implicit Modifier }
+Used when you take Chaos damage from a Hit — Unscalable Value
+--------
+{ Unique Modifier — Charm, Life, Mana, Chaos }
+50% of Chaos damage you prevent when Hit Recouped as Life and Mana during effect
+{ Unique Modifier — Charm }
+19(15-25)% increased Duration
+--------
+Among the Templars, a secret few ate the sins of others.
+They bore this burden to empower their hidden Order.
+--------
+Used automatically when condition is met. Can only hold charges while in belt. Refill at Wells or by killing monsters.
