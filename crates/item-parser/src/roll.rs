@@ -7,9 +7,11 @@
 //! catalog text; the sign flip for the rest happens where a line resolves
 //! (`catalog_match.rs`), not here.
 
-/// One numeric run found in a stat line: `value(min-max)` or a bare `value` (a Unique-item fixed
-/// stat with no roll range prints just the number, no parens -- treated as `min == max == value`).
-/// `span` is the byte range in the source line this run occupied, for template substitution.
+/// One numeric run found in a stat line: `value(min-max)`, `value(fixed)` -- a corrupted unique's
+/// fixed stat its corruption moved, `+2(3) to Level of all Spell Skills`, the fixed value in
+/// brackets -- or a bare `value` (a Unique-item fixed stat with no roll range prints just the
+/// number, no parens -- treated as `min == max == value`). `span` is the byte range in the source
+/// line this run occupied, for template substitution.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct NumericRun {
     pub span: (usize, usize),
@@ -26,8 +28,10 @@ fn numeric_run_regex() -> &'static regex::Regex {
     // `"+8(5-8) to Strength"`; leaving the `+` as literal text in the template would make every
     // positive additive stat fail to match the catalog.
     static RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-        regex::Regex::new(r"([+-]?\d+(?:\.\d+)?)(?:\(([+-]?\d+(?:\.\d+)?)-([+-]?\d+(?:\.\d+)?)\))?")
-            .expect("numeric run regex")
+        regex::Regex::new(
+            r"([+-]?\d+(?:\.\d+)?)(?:\(([+-]?\d+(?:\.\d+)?)(?:-([+-]?\d+(?:\.\d+)?))?\))?",
+        )
+        .expect("numeric run regex")
     });
     &RE
 }
@@ -54,6 +58,11 @@ pub fn find_numeric_runs(line: &str) -> Vec<NumericRun> {
                 } else {
                     (min, max, dp)
                 }
+            }
+            // `+2(3)`: the stat's fixed value, which corruption moved to the one before it.
+            (Some(fixed_m), None) => {
+                let fixed: f64 = fixed_m.as_str().parse().expect("regex guarantees numeric");
+                (fixed, fixed, dp || fixed_m.as_str().contains('.'))
             }
             _ => (value, value, dp),
         };

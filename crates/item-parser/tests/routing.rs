@@ -549,3 +549,158 @@ fn a_reported_sceptre_reads_its_own_item_level_and_is_searched_from_the_useful_m
         .expect("item level roll");
     assert_eq!((level.value, level.min), (83.0, Some(82.0)));
 }
+
+/// A catalog of `(id, text)` entries, each filed under its id's own group.
+fn stat_catalog(entries: &[(&str, &str)]) -> IndexedCatalog {
+    IndexedCatalog::new(StatCatalog {
+        stats: entries
+            .iter()
+            .map(|&(id, text)| poe2_domain::TradeStat {
+                id: id.to_owned(),
+                text: text.to_owned(),
+                mod_type: id.split_once('.').map_or(id, |(kind, _)| kind).to_owned(),
+            })
+            .collect(),
+    })
+}
+
+/// A report fixture parsed against `catalog` and its rows under `profile`.
+fn reported(
+    name: &str,
+    catalog: &IndexedCatalog,
+    profile: Option<SearchProfile>,
+) -> (ParsedItem, Vec<stat_filters::SearchFilter>) {
+    let text = std::fs::read_to_string(format!(
+        "{}/tests/fixtures/{name}",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .expect("fixture text");
+    let language = if name.starts_with("ru_") {
+        ItemLanguage::Russian
+    } else {
+        ItemLanguage::English
+    };
+    let item = parse_clipboard(&text, language, catalog).unwrap_or_else(|e| panic!("{name}: {e}"));
+    let profile = profile.unwrap_or_else(|| SearchProfile::default_for(&item));
+    let filters =
+        stat_filters::build_filters(&item, profile, catalog, stat_filters::Session::SignedIn);
+    (item, filters)
+}
+
+/// The mod row of the stat `hash` (`stat_…`), whatever its group: not a pseudo total adding it in.
+fn hash_row<'a>(
+    filters: &'a [stat_filters::SearchFilter],
+    hash: &str,
+) -> &'a stat_filters::SearchFilter {
+    filters
+        .iter()
+        .find(|filter| {
+            filter.tag != stat_filters::FilterTag::Pseudo
+                && filter.trade_ids.iter().any(|id| id.ends_with(hash))
+        })
+        .unwrap_or_else(|| panic!("no {hash} row"))
+}
+
+#[test]
+fn reported_desecrated_and_fractured_rows_search_the_stat_of_any_kind() {
+    // Reports #7 (0.1.7, EN client) and #5 (0.1.8, RU client), 2026-10-11: a desecrated mana
+    // row found only desecrated mana, and a fractured row only fractured mods. The trade site's
+    // explicit filter finds all kinds, so the rows search that; the Crafting Base profile keeps a
+    // fractured row fractured. Ids and texts as the live catalogs have them.
+    let en = stat_catalog(&[
+        ("explicit.stat_1050105434", "# to maximum Mana"),
+        ("desecrated.stat_1050105434", "# to maximum Mana"),
+    ]);
+    let (_, boots) = reported("report_invasion_urge_en.txt", &en, None);
+    let mana = hash_row(&boots, "stat_1050105434");
+    assert_eq!(mana.tag, stat_filters::FilterTag::Desecrated);
+    assert_eq!(mana.trade_ids, ["explicit.stat_1050105434"]);
+
+    let ru = stat_catalog(&[
+        (
+            "explicit.stat_4067062424",
+            "Добавляет от # до # урона от холода к атакам",
+        ),
+        (
+            "fractured.stat_4067062424",
+            "Добавляет от # до # урона от холода к атакам",
+        ),
+    ]);
+    let (_, ring) = reported("ru_report_vetrenye_uzy.txt", &ru, None);
+    let cold = hash_row(&ring, "stat_4067062424");
+    assert_eq!(cold.tag, stat_filters::FilterTag::Fractured);
+    assert_eq!(cold.trade_ids, ["explicit.stat_4067062424"]);
+    let (_, base) = reported(
+        "ru_report_vetrenye_uzy.txt",
+        &ru,
+        Some(SearchProfile::CraftingBase),
+    );
+    assert_eq!(
+        hash_row(&base, "stat_4067062424").trade_ids,
+        ["fractured.stat_4067062424"]
+    );
+}
+
+#[test]
+fn a_reported_corrupted_uniques_moved_fixed_value_is_read() {
+    // Report #6, 2026-10-11 (0.1.7, EN client): Adonia's Ego's «+2(3) to Level of all Spell
+    // Skills», a fixed 3 its corruption moved to 2, had no row.
+    let catalog = stat_catalog(&[
+        ("explicit.stat_124131830", "# to Level of all Spell Skills"),
+        (
+            "explicit.stat_2593644209",
+            "#% to all Elemental Resistances per Power Charge",
+        ),
+    ]);
+    let (item, wand) = reported("report_adonias_ego_en.txt", &catalog, None);
+    // The catalog here has only these two stats: the wand's other lines stay unread.
+    assert!(
+        item.unknown_mods
+            .iter()
+            .all(|(text, _)| !text.contains("Level of all Spell Skills")
+                && !text.contains("per Power Charge")),
+        "unread: {:?}",
+        item.unknown_mods
+    );
+    let levels = hash_row(&wand, "stat_124131830")
+        .roll
+        .as_ref()
+        .expect("levels roll");
+    assert_eq!((levels.value, levels.min), (2.0, Some(2.0)));
+    let resistances = hash_row(&wand, "stat_2593644209")
+        .roll
+        .as_ref()
+        .expect("resistances roll");
+    assert_eq!(resistances.value, -9.0);
+}
+
+#[test]
+fn a_reported_unique_goes_among_uniques_cultivated_as_it_is() {
+    // Report #8, 2026-10-11 (0.1.7, EN client): The Adorned at 101% was priced at 20 divine among
+    // Vaal-cultivated ones («mutated» on the trade site), while those without start at hundreds.
+    let (adorned, _) = reported(
+        "report_the_adorned_en.txt",
+        &IndexedCatalog::default(),
+        None,
+    );
+    assert_eq!(adorned.mutated, Some(false));
+    let mutated_text = std::fs::read_to_string(format!(
+        "{}/tests/fixtures/report_the_adorned_en.txt",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .expect("fixture text")
+    .replace("{ Unique Modifier }", "{ Vaal Unique Modifier }");
+    let mutated = parse_clipboard(
+        &mutated_text,
+        ItemLanguage::English,
+        &IndexedCatalog::default(),
+    )
+    .expect("parses");
+    assert_eq!(mutated.mutated, Some(true));
+    for (item, expected) in [(&adorned, Some(false)), (&mutated, Some(true))] {
+        match route_search(item, &exchange_catalog(), &[]) {
+            SearchRoute::Filtered { scope } => assert_eq!(scope.misc.mutated, expected),
+            _ => panic!("expected a filtered search"),
+        }
+    }
+}

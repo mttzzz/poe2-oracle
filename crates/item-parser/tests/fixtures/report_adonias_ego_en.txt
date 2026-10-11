@@ -1,0 +1,32 @@
+Item Class: Wands
+Rarity: Unique
+Adonia's Ego
+Siphoning Wand
+--------
+Quality: +20% (augmented)
+--------
+Requires: Level 65, 22 (augmented) Int
+--------
+Sockets: S 
+--------
+Item Level: 82
+--------
+Grants Skill: Level 18 Power Siphon
+Grants Skill: Pinnacle of Power
+--------
+{ Unique Modifier — Mana }
++146(100-150) to maximum Mana
+{ Unique Modifier — Caster, Gem }
++2(3) to Level of all Spell Skills
+{ Unique Modifier — Caster, Speed }
+32(15-30)% increased Cast Speed
+{ Unique Modifier — Elemental, Resistance }
+-9(-10)% to all Elemental Resistances per Power Charge
+{ Unique Modifier }
++0(-1-+1) to Maximum Power Charges
+--------
+Adonia rose with eyes afire, emanating a ghastly aura, and
+broke off a carving from the wall of the Throne Room.
+"You think me powerless without my wand? Insult me again!"
+--------
+Corrupted

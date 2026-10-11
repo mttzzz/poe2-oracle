@@ -94,8 +94,10 @@
   "Augment: granted by what's socketed in the item — the search counts it only from listings' augments.": "Усилитель: свойство даёт вставленное в гнёзда предмета — поиск учитывает его только от усилителей лотов.",
   "Crafted: added by crafting — the search counts it only as a crafted modifier.": "Свойство мастера: добавлено крафтом — поиск учитывает его только как свойство мастера.",
   "Fractured: locked in, it can't be changed or removed — the search counts it only as a fractured modifier.": "Расколотое: закреплено, его не изменить и не убрать — поиск учитывает его только как расколотое свойство.",
+  "Fractured: locked in, it can't be changed or removed. The search counts the modifier whatever its kind; the Crafting base profile, only as fractured.": "Расколотое: закреплено, его не изменить и не убрать. Поиск учитывает это свойство любого вида, а профиль «База для крафта» — только расколотое.",
   "Enchantment: set on the item apart from its modifiers — the search counts it only as an enchantment.": "Зачарование: наложено отдельно от модификаторов предмета — поиск учитывает его только как зачарование.",
   "Desecrated: added by desecration — the search counts it only as a desecrated modifier.": "Очернённое: добавлено очернением — поиск учитывает его только как очернённое свойство.",
+  "Desecrated: added by desecration. The search counts the modifier whatever its kind.": "Очернённое: добавлено очернением. Поиск учитывает это свойство любого вида.",
   "min": "мин",
   "max": "макс",
 

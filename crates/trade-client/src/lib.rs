@@ -369,6 +369,11 @@ pub struct MiscChoices {
     pub sanctified: Option<bool>,
     pub fractured: Option<bool>,
     pub identified: Option<bool>,
+    /// A unique with Vaal Cultivation's modifiers goes among those, one without among those
+    /// without: a cultivated unique's mods are others, worth another price. Players' report #8,
+    /// 2026-10-11: The Adorned at 101% was priced among cultivated ones from 1 divine up, while
+    /// those without start at hundreds.
+    pub mutated: Option<bool>,
     /// The least unidentified tier a listing must have (`unidentified_tier.min`).
     pub unidentified_tier: Option<u32>,
 }
@@ -391,6 +396,9 @@ impl MiscChoices {
             sanctified: gear.then_some(item.is_sanctified),
             fractured: (exact && !item.is_fractured).then_some(false),
             identified: item.is_unidentified.then_some(false),
+            mutated: item
+                .mutated
+                .filter(|_| item.rarity == Some(ItemRarity::Unique) && !item.is_unidentified),
             unidentified_tier,
         }
     }
@@ -403,6 +411,7 @@ impl MiscChoices {
             ("sanctified", self.sanctified),
             ("fractured_item", self.fractured),
             ("identified", self.identified),
+            ("mutated", self.mutated),
         ]
         .into_iter()
         .filter_map(|(key, choice)| {

@@ -8,6 +8,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- ANCHOR: releases. The guide's "What's new" page shows every section below, up to ANCHOR_END. -->
 
+## [Unreleased]
+
+### Fixed
+
+- **Fractured, desecrated and crafted modifiers.** Their rows found only listings with the same
+  modifier fractured, desecrated or crafted too, which left most offers out. They now find the
+  modifier whatever its kind, as the trade site's own explicit filter does. The **Crafting base**
+  profile still searches a fractured modifier as fractured, which is what a base is bought for.
+  Hover the row's label to see which.
+- **A corrupted unique's changed value.** A unique modifier that corruption moved off its fixed
+  value, such as Adonia's Ego's "+2(3) to Level of all Spell Skills", had no row; it has one now,
+  searched from the item's own value.
+- **Cultivated uniques.** A unique changed by a Vaal Cultivation Orb and one it didn't change were
+  priced together, though their modifiers and prices differ: an uncultivated The Adorned was priced
+  among cultivated ones, at a few divines instead of hundreds. Each is now searched among its own
+  kind.
+
 ## [0.1.9] - 2026-10-11
 
 ### Fixed

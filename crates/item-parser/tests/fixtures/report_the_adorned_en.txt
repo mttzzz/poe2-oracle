@@ -1,0 +1,20 @@
+Item Class: Jewels
+Rarity: Unique
+The Adorned
+Diamond
+--------
+Limited to: 1
+--------
+Item Level: 82
+--------
+{ Unique Modifier }
+101(0-150)% increased Effect of Jewel Socket Passive Skills
+containing Corrupted Magic Jewels
+--------
+At their height, the Vaal glittered under the sun.
+A decade, a century, an aeon of prosperity...
+now nothing more than a passing wonder.
+--------
+Place into an allocated Jewel Socket on the Passive Skill Tree. Right click to remove from the Socket.
+--------
+Corrupted

@@ -197,10 +197,58 @@ pub fn build_filters(
     rows.rank(item);
     rows.pick(item, picking);
     let mut filters = rows.filters;
+    if picking == SearchProfile::CraftingBase {
+        fractured_only(catalog, &mut filters);
+    }
     settle_exact_kinds(item, picking, catalog, &mut filters);
     word_like_the_item(item, &mut filters);
     apply_profile(&mut filters, profile);
     filters
+}
+
+/// The Crafting Base profile searches a fractured row as fractured: on a base, the fractured mod
+/// is the point, no craft can change it. The other profiles search it as the stat of any kind
+/// (`any_kind_id`).
+fn fractured_only(catalog: &StatCatalog, filters: &mut [SearchFilter]) {
+    for filter in filters
+        .iter_mut()
+        .filter(|filter| filter.tag == FilterTag::Fractured)
+    {
+        let fractured: Vec<String> = filter
+            .trade_ids
+            .iter()
+            .filter_map(|id| {
+                let fractured = format!("fractured.{}", id.strip_prefix("explicit.")?);
+                catalog
+                    .stats
+                    .iter()
+                    .any(|stat| stat.id == fractured)
+                    .then_some(fractured)
+            })
+            .collect();
+        if !fractured.is_empty() {
+            filter.trade_ids = fractured;
+        }
+    }
+}
+
+/// The `explicit.` twin of a fractured, desecrated or crafted stat id, when the catalog has one:
+/// the trade site's explicit filter finds all three kinds (checked live on 2026-10-11 -- every
+/// listing a `desecrated.`, `fractured.` or `crafted.` filter found, its `explicit.` twin found
+/// too), so the row searches the stat whatever its kind, as EE2 does
+/// (`create-stat-filters.ts:236-246`). Players' reports #5 and #7, 2026-10-11: a desecrated or
+/// fractured row found only listings where the mod was desecrated or fractured too.
+fn any_kind_id(catalog: &StatCatalog, stat_id: &str) -> Option<String> {
+    let (kind, hash) = stat_id.split_once('.')?;
+    if !matches!(kind, "fractured" | "desecrated" | "crafted") {
+        return None;
+    }
+    let explicit = format!("explicit.{hash}");
+    catalog
+        .stats
+        .iter()
+        .any(|stat| stat.id == explicit)
+        .then_some(explicit)
 }
 
 /// `build_filters`'s rows, each with the item's mods behind it (indexes into `item.mods`): the
@@ -736,7 +784,10 @@ impl ModStatGroup {
             _ => self.text.clone(),
         };
         let filter = SearchFilter {
-            trade_ids: same_text_ids(catalog, &self.stat_id),
+            trade_ids: same_text_ids(
+                catalog,
+                &any_kind_id(catalog, &self.stat_id).unwrap_or(self.stat_id),
+            ),
             stat_ref: self.text,
             display_text,
             tag,

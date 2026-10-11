@@ -294,6 +294,11 @@ pub struct ParsedItem {
     pub is_veiled: bool,
     pub is_unmodifiable: bool,
     pub is_sanctified: bool,
+    /// A unique's Vaal Cultivation: `Some(true)` when a modifier's header is `Vaal Unique
+    /// Modifier` (the trade site's "mutated"), `Some(false)` when its modifiers carry headers but
+    /// none of those, `None` for a text without modifier headers, which can't tell.
+    #[serde(default)]
+    pub mutated: Option<bool>,
     /// PoE2-specific alternate-art unique variant (`ParsedItem.ts`'s `isFoil?`).
     pub is_foil: bool,
     pub influences: Vec<Influence>,

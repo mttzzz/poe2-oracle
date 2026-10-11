@@ -147,6 +147,10 @@ fn parse_bracket_form(
         }
     }
 
+    // Headers say whether a unique carries Vaal Cultivation's modifiers; a plain copy can't.
+    if item.mutated.is_none() {
+        item.mutated = Some(false);
+    }
     for (mod_line, stat_lines) in blocks {
         let (default_type, stripped_lines) = strip_flat_suffix(&stat_lines);
 
@@ -197,6 +201,9 @@ fn parse_bracket_form(
                 } else {
                     None
                 };
+                if type_str == cs.vaal_unique_modifier {
+                    item.mutated = Some(true);
+                }
                 if type_str == cs.implicit_modifier {
                     modifier_type = ModifierType::Implicit;
                 } else if type_str == cs.enchant_modifier {

@@ -105,9 +105,11 @@ the pointer. Hover any of them for an explanation.
 | **Unidentified only** ↔ **Identified too** | For an unidentified item, only unidentified listings count by default: identified ones sell for their modifiers. Click to include identified ones. |
 | **Stats: N of M** | How many of the listed searchable rows are selected. Click to select all of them, or none. |
 
-A unique item has no rarity chip: its name already pins the search down. Mirrored and sanctified
-listings are left out of the search for ordinary gear unless your item is one; there is no chip
-for that.
+A unique item has no rarity chip: its name already pins the search down. A unique that a Vaal
+Cultivation Orb changed (it has a **Vaal Unique Modifier**; the trade site's filter is **Cultivated
+Vaal Unique**) is searched among cultivated ones, and one it didn't change among those it didn't:
+their modifiers differ, and so do their prices. Mirrored and sanctified listings are left out of the
+search for ordinary gear unless your item is one; there is no chip for either.
 
 ## Filters
 
@@ -131,7 +133,10 @@ roll highlighted in blue, a tier badge and **min**/**max** boxes; a ticked modif
 app knows also has a roll slider under it (see [Min and max](#min-and-max)). The tier badge is
 gold-filled for T1, gold-outlined for T2 and grey for lower tiers. Small labels before the modifier
 text, after the tier badge if there is one, say where a modifier comes from: **augment** (from a
-rune or other augment), **crafted**, **fractured**, **enchant** (enchantment), **desecrated**. The
+rune or other augment), **crafted**, **fractured**, **enchant** (enchantment), **desecrated**. A
+fractured, desecrated or crafted modifier is searched whatever its kind on the listing, as a buyer
+of the stat doesn't care how it got there; the **Crafting base** profile searches a fractured one as
+fractured only, since on a base that is the point. Hover the label to see which. The
 label **sum** in the same place, explained when you hover it, marks a total whose value adds up the
 stat from all the item's modifiers: the trade site searches listings by the same sum. Rows labelled
 **sum** appear only while PoE2 Oracle is signed in to pathofexile.com (section **Account** of the

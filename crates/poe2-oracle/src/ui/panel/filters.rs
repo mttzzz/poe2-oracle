@@ -337,7 +337,7 @@ fn render_filter_row(
             })
             .child(render_tier(tier))
     });
-    let badge = source_badge(filter.tag);
+    let badge = source_badge(filter);
     let badges = (tier.is_some() || badge.is_some() || filter.weighted_sum).then(|| {
         div()
             .flex()
@@ -794,11 +794,17 @@ fn display_template(filter: &SearchFilter, site: TradeSite) -> &str {
 
 /// EE2's coloured source badges (`FilterModifier.vue`'s `.tag-*` classes; the trade site's names
 /// of the stat groups) for the kinds that change what an item is worth, saying on hover what the
-/// kind is and that the search counts the stat only as that kind: the row's trade ids are the
-/// kind's own (`rune.`, `fractured.`, `enchant.`, `desecrated.`, `crafted.`). `None` for the plain
-/// ones the section header already names.
-fn source_badge(tag: FilterTag) -> Option<impl IntoElement> {
-    let (label, hint, bg, fg) = match tag {
+/// kind is and how the search counts the stat: only as that kind while the row's trade ids are
+/// the kind's own (`rune.`, `fractured.`, `enchant.`, `desecrated.`, `crafted.`), whatever its
+/// kind once they are `explicit.` -- a fractured or desecrated row's, outside the Crafting Base
+/// profile (`stat_filters::build_filters`). `None` for the plain ones the section header already
+/// names.
+fn source_badge(filter: &SearchFilter) -> Option<impl IntoElement> {
+    let any_kind = filter
+        .trade_ids
+        .first()
+        .is_some_and(|id| id.starts_with("explicit."));
+    let (label, hint, bg, fg) = match filter.tag {
         FilterTag::Rune => (
             tr!("augment"),
             tr!(
@@ -816,10 +822,17 @@ fn source_badge(tag: FilterTag) -> Option<impl IntoElement> {
         ),
         FilterTag::Fractured => (
             tr!("fractured"),
-            tr!(
-                "Fractured: locked in, it can't be changed or removed — the search counts it only \
-                 as a fractured modifier."
-            ),
+            if any_kind {
+                tr!(
+                    "Fractured: locked in, it can't be changed or removed. The search counts the \
+                     modifier whatever its kind; the Crafting base profile, only as fractured."
+                )
+            } else {
+                tr!(
+                    "Fractured: locked in, it can't be changed or removed — the search counts it \
+                     only as a fractured modifier."
+                )
+            },
             BADGE_FRACTURED_BG,
             BADGE_INK,
         ),
@@ -834,10 +847,17 @@ fn source_badge(tag: FilterTag) -> Option<impl IntoElement> {
         ),
         FilterTag::Desecrated => (
             tr!("desecrated"),
-            tr!(
-                "Desecrated: added by desecration — the search counts it only as a desecrated \
-                 modifier."
-            ),
+            if any_kind {
+                tr!(
+                    "Desecrated: added by desecration. The search counts the modifier whatever its \
+                     kind."
+                )
+            } else {
+                tr!(
+                    "Desecrated: added by desecration — the search counts it only as a desecrated \
+                     modifier."
+                )
+            },
             BADGE_DESECRATED_BG,
             BADGE_DESECRATED_TEXT,
         ),

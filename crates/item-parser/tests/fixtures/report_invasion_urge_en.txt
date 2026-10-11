@@ -1,0 +1,29 @@
+Item Class: Boots
+Rarity: Rare
+Invasion Urge
+Sekhema Sandals
+--------
+Quality: +21% (augmented)
+Energy Shield: 153 (augmented)
+--------
+Requires: Level 80, 104 (augmented) Int
+--------
+Sockets: S 
+--------
+Item Level: 83
+--------
+18% increased Armour, Evasion and Energy Shield (rune)
+--------
+{ Prefix Modifier "Hellion's" (Tier: 1) — Speed }
+35% increased Movement Speed
+{ Desecrated Prefix Modifier "Chalybeous" (Tier: 1) — Mana }
++113(105-124) to maximum Mana
+{ Prefix Modifier "Djinn's" (Tier: 2) }
+34(33-38)% increased Energy Shield
++64(64-94) to Stun Threshold
+{ Suffix Modifier "of Ephij" (Tier: 1) — Elemental, Lightning, Resistance }
++44(41-45)% to Lightning Resistance
+{ Suffix Modifier "of the Tempest" (Tier: 4) — Elemental, Lightning, Resistance }
++29(26-30)% to Lightning Resistance
+{ Crafted Suffix Modifier "of the Stars" }
++14(10-15) to Spirit
