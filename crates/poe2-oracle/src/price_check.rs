@@ -30,7 +30,7 @@ use gpui::{
 use http_client::HttpClient;
 use item_parser::{IndexedCatalog, ItemLanguage, ParseError};
 use poe2_domain::{ItemRarity, ParsedItem};
-use trade_client::catalog::{ItemTypeEntry, StaticCurrency};
+use trade_client::catalog::{ItemTypeEntry, StaticCurrency, uniques_of_base};
 use trade_client::cx::{Market, MarketPrice};
 use trade_client::private_leagues::{self, PrivateLeague};
 use trade_client::rate_limit::RateLimiter;
@@ -531,6 +531,28 @@ impl StateChoice {
     }
 }
 
+/// Which unique an unidentified unique item is, where its base has several: the game's text
+/// doesn't say -- its art does -- while the trade site knows it of every unidentified listing and
+/// finds them by name. Report #10 (2026-10-11): an unidentified corrupted Diamond was priced
+/// among all seven unique Diamonds, from 1 exalted (Megalomaniac), where an unidentified The
+/// Adorned started at 1000 divine.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UniqueChoice {
+    /// The base's uniques, named in the trade site's language (`catalog::uniques_of_base`).
+    pub names: Vec<String>,
+    /// The one the player picked; `None` searches every unique of the base.
+    pub picked: Option<usize>,
+}
+
+impl UniqueChoice {
+    /// The picked unique's name.
+    pub fn picked_name(&self) -> Option<&str> {
+        self.picked
+            .and_then(|at| self.names.get(at))
+            .map(String::as_str)
+    }
+}
+
 pub struct PriceCheckApp {
     http_client: Arc<dyn HttpClient>,
     league: String,
@@ -588,6 +610,8 @@ pub struct PriceCheckApp {
     pub league_menu: bool,
     /// The profile select's menu is open (`ui::panel::results`).
     pub profile_menu: bool,
+    /// The unique chip's menu is open (`ui::panel::nameplate`).
+    pub unique_menu: bool,
     /// The item trades on the Currency Exchange: priced from the market alone -- no filters, no
     /// trade search (`SearchRoute::Market`).
     pub priced_by_market: bool,
@@ -625,6 +649,9 @@ pub struct PriceCheckApp {
     /// An unidentified item's search among unidentified listings
     /// (`trade_client::MiscChoices::identified`), or, dropped by the player, identified ones too.
     pub identification: Option<StateChoice>,
+    /// Which unique an unidentified unique item is, where its base has several. Reset for every
+    /// new item.
+    pub unique: Option<UniqueChoice>,
     /// The rarity a non-unique item's search admits, where it can admit two.
     pub rarity: Option<RarityChoice>,
     /// The player asked for an exchange item's trade listings where poe2scout priced it
@@ -697,6 +724,7 @@ impl PriceCheckApp {
             hotkey_busy: false,
             league_menu: false,
             profile_menu: false,
+            unique_menu: false,
             priced_by_market: false,
             placement: None,
             panel_side: None,
@@ -708,6 +736,7 @@ impl PriceCheckApp {
             scope: None,
             corruption: None,
             identification: None,
+            unique: None,
             rarity: None,
             listings_wanted: false,
             one_fewer_next: false,
@@ -853,6 +882,7 @@ impl PriceCheckApp {
         self.filter_ui.clear();
         self.profile = None;
         self.profile_menu = false;
+        self.unique_menu = false;
         self.roll_drag = None;
         self.problem = Some(problem);
         self.search = SearchState::NotSearched;
@@ -1526,6 +1556,23 @@ impl PriceCheckApp {
         cx.notify();
     }
 
+    /// Opens or closes the unique chip's menu.
+    pub fn set_unique_menu(&mut self, open: bool, cx: &mut Context<Self>) {
+        self.unique_menu = open;
+        cx.notify();
+    }
+
+    /// Searches at once among the unidentified listings of the unique the player picked from the
+    /// unique chip's menu, or of every unique of the base for `None` (`UniqueChoice::picked`).
+    pub fn choose_unique(&mut self, picked: Option<usize>, cx: &mut Context<Self>) {
+        self.unique_menu = false;
+        if let Some(choice) = &mut self.unique {
+            choice.picked = picked;
+            self.spawn_search(cx);
+        }
+        cx.notify();
+    }
+
     /// Sets the item's search up the way `profile` does and searches it, once: the player's pick
     /// from the profile select's menu, or the «Широкий −10 %» button after nothing matched. Broad
     /// keeps the rows the player checked and lowers their minimums from the rolls
@@ -1795,12 +1842,13 @@ impl PriceCheckApp {
     }
 
     /// What closes the panel from outside it, by Esc or -- with `Settings::close_on_click_outside`
-    /// on -- by a click in the game outside it (`click_away`): an open menu, the league's or the
-    /// profile's, closes first, the panel with the next press or click.
+    /// on -- by a click in the game outside it (`click_away`): an open menu, the league's, the
+    /// profile's or the unique chip's, closes first, the panel with the next press or click.
     fn dismiss(&mut self, cx: &mut Context<Self>) {
-        if self.league_menu || self.profile_menu {
+        if self.league_menu || self.profile_menu || self.unique_menu {
             self.league_menu = false;
             self.profile_menu = false;
+            self.unique_menu = false;
             cx.notify();
         } else if self.visible {
             self.visible = false;
@@ -2081,13 +2129,16 @@ async fn load_site_catalog(
     )
     .await
     .with_context(|| format!("loading {site_name} static item list"))?;
+    // The list keeps each unique's name since 0.1.12 (`ItemTypeEntry::unique`), under a new name:
+    // the old one, `item-types[-ru].json`, has none and goes.
+    let _ = std::fs::remove_file(cache_dir.join(format!("item-types{suffix}.json")));
     let item_types = trade_client::cache::load_or_fetch(
-        &cache_dir.join(format!("item-types{suffix}.json")),
+        &cache_dir.join(format!("items{suffix}.json")),
         max_age,
         trade_client::catalog::fetch_item_types(client, site),
     )
     .await
-    .with_context(|| format!("loading {site_name} base type list"))?;
+    .with_context(|| format!("loading {site_name} item list"))?;
     let leagues = trade_client::cache::load_or_fetch(
         &cache_dir.join(format!("leagues{suffix}.json")),
         LEAGUES_MAX_AGE,
@@ -2532,6 +2583,7 @@ async fn run_price_check(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
         state.show_panel(placement);
         state.league_menu = false;
         state.profile_menu = false;
+        state.unique_menu = false;
         state.item_text = Some(text.clone());
         let parsed = match item_site(&text, state.settings.client_language.item_language()) {
             Some((language, site)) => {
@@ -2577,6 +2629,24 @@ async fn run_price_check(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
                     }
                     _ => None,
                 };
+                // An unidentified unique: which of its base's uniques it is, where there are
+                // several (`UniqueChoice`).
+                let unique = match &route {
+                    SearchRoute::Filtered { scope }
+                        if item.rarity == Some(ItemRarity::Unique) && item.is_unidentified =>
+                    {
+                        let names = scope
+                            .base_type
+                            .as_deref()
+                            .map(|base| uniques_of_base(&catalog.item_types, base))
+                            .unwrap_or_default();
+                        (names.len() > 1).then(|| UniqueChoice {
+                            names: names.into_iter().map(str::to_owned).collect(),
+                            picked: None,
+                        })
+                    }
+                    _ => None,
+                };
                 state.priced_by_market = matches!(route, SearchRoute::Market { .. });
                 // Only a filtered search goes by the rows a profile sets up.
                 state.profile = matches!(route, SearchRoute::Filtered { .. }).then_some(profile);
@@ -2598,6 +2668,7 @@ async fn run_price_check(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
                     _ => None,
                 };
                 state.scope = scope;
+                state.unique = unique;
                 state.item = Some(item);
                 state.problem = None;
                 state.show_hidden = false;
@@ -2762,6 +2833,12 @@ pub async fn run_search(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
         }
         if let (SearchRoute::Filtered { scope }, Some(choice)) = (&mut route, &state.scope) {
             *scope = choice.current().clone();
+        }
+        if let (SearchRoute::Filtered { scope }, Some(name)) = (
+            &mut route,
+            state.unique.as_ref().and_then(UniqueChoice::picked_name),
+        ) {
+            scope.name = Some(name.to_owned());
         }
         if let SearchRoute::Filtered { scope } = &mut route {
             if state.corruption.is_some_and(|choice| !choice.on) {

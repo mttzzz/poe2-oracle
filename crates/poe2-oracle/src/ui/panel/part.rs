@@ -96,7 +96,9 @@ impl Piece {
             (Piece::Nameplate, Some(item)) => {
                 Some(render_nameplate(item, state.trade_site(), cx).into_any_element())
             }
-            (Piece::Chips, Some(item)) => Some(render_chips(state, item, cx).into_any_element()),
+            (Piece::Chips, Some(item)) => {
+                Some(render_chips(state, item, window, cx).into_any_element())
+            }
             (Piece::Toolbar, Some(_)) => {
                 results::render_toolbar(state, window, cx).map(IntoElement::into_any_element)
             }

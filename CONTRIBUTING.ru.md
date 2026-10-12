@@ -273,7 +273,7 @@ python3 packaging/data/generate_item_refs.py <EE2>/renderer/public/data <пап�
 Чтобы проверить результат на настоящих предметах, соберите тексты предметов из игры (у торговца,
 в тайнике, в инвентаре) в один файл, разделяя их строками, начинающимися с `####`, скопируйте
 каталоги из кэша программы (`stat-catalog[-ru].json`, `static-items[-ru].json` и
-`item-types[-ru].json` из `%LOCALAPPDATA%\poe2-oracle\cache`) в отдельную папку и запустите:
+`items[-ru].json` из `%LOCALAPPDATA%\poe2-oracle\cache`) в отдельную папку и запустите:
 
 ```sh
 cargo run -p item-parser --example sweep -- <папка с каталогами> <файл с текстами>

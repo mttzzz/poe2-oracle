@@ -8,7 +8,7 @@
 //! ```
 //!
 //! `<cache dir>` holds the app's catalog caches (`%LOCALAPPDATA%\poe2-oracle\cache`:
-//! `stat-catalog[-ru].json`, `static-items[-ru].json`, `item-types[-ru].json`); each text goes
+//! `stat-catalog[-ru].json`, `static-items[-ru].json`, `items[-ru].json`); each text goes
 //! through its own language's set. The texts file holds the texts separated by lines starting with
 //! `####`. Prints one line per text, then the troubled ones in full; exits non-zero if any.
 
@@ -46,7 +46,7 @@ fn catalogs(dir: &Path, suffix: &str) -> Catalogs {
     Catalogs {
         stats: IndexedCatalog::new(cached!(dir, format!("stat-catalog{suffix}.json"))),
         currencies: cached!(dir, format!("static-items{suffix}.json")),
-        item_types: cached!(dir, format!("item-types{suffix}.json")),
+        item_types: cached!(dir, format!("items{suffix}.json")),
     }
 }
 

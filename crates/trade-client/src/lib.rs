@@ -2649,6 +2649,7 @@ mod route_search_tests {
         .map(|type_name| ItemTypeEntry {
             group_label: String::new(),
             type_name: type_name.to_owned(),
+            unique: None,
         })
         .collect();
         for (name, base) in [
@@ -2722,6 +2723,7 @@ mod route_search_tests {
             .map(|&name| ItemTypeEntry {
                 group_label: "Flasks".to_owned(),
                 type_name: name.to_owned(),
+                unique: None,
             })
             .collect()
     }

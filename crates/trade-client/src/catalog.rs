@@ -138,17 +138,29 @@ pub async fn fetch_static_currencies(
 }
 
 /// One entry from `/data/items`: a coarse group label plus a base-type name, e.g.
-/// `group_label: "Weapons"`, `type_name: "Glass Shank"`.
+/// `group_label: "Weapons"`, `type_name: "Glass Shank"`, and for a unique of that base its name,
+/// e.g. `unique: Some("The Adorned")` on a `type_name: "Diamond"` -- in the site's language.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ItemTypeEntry {
     pub group_label: String,
     pub type_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unique: Option<String>,
 }
 
 #[derive(Deserialize)]
 struct ItemEntry {
     #[serde(rename = "type")]
     type_name: String,
+    name: Option<String>,
+    #[serde(default)]
+    flags: ItemFlags,
+}
+
+#[derive(Deserialize, Default)]
+struct ItemFlags {
+    #[serde(default)]
+    unique: bool,
 }
 
 fn parse_item_types(body: &str) -> Result<Vec<ItemTypeEntry>> {
@@ -162,9 +174,20 @@ fn parse_item_types(body: &str) -> Result<Vec<ItemTypeEntry>> {
             group.entries.into_iter().map(move |entry| ItemTypeEntry {
                 group_label: group_label.clone(),
                 type_name: entry.type_name,
+                unique: entry.name.filter(|_| entry.flags.unique),
             })
         })
         .collect())
+}
+
+/// The uniques of `base` among `item_types`, by name, in the catalog's order: what an
+/// unidentified unique of that base can be ([`ItemTypeEntry::unique`]).
+pub fn uniques_of_base<'a>(item_types: &'a [ItemTypeEntry], base: &str) -> Vec<&'a str> {
+    item_types
+        .iter()
+        .filter(|entry| entry.type_name == base)
+        .filter_map(|entry| entry.unique.as_deref())
+        .collect()
 }
 
 /// `GET /api/trade2/data/items`.
@@ -261,16 +284,45 @@ mod tests {
                 ItemTypeEntry {
                     group_label: "Weapons".into(),
                     type_name: "Glass Shank".into(),
+                    unique: None,
                 },
                 ItemTypeEntry {
                     group_label: "Weapons".into(),
                     type_name: "Rusted Sword".into(),
+                    unique: None,
                 },
                 ItemTypeEntry {
                     group_label: "Flasks".into(),
                     type_name: "Small Life Flask".into(),
+                    unique: None,
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn a_bases_uniques_are_what_an_unidentified_one_can_be() {
+        // The live `/data/items` shape (2026-10-12): a unique is its base's type with its name and
+        // the unique flag; no other entry has a name.
+        let body = r#"{"result":[
+            {"label":"Jewels","entries":[
+                {"type":"Diamond","text":"Diamond"},
+                {"type":"Diamond","text":"The Adorned Diamond","name":"The Adorned","flags":{"unique":true}},
+                {"type":"Diamond","text":"Megalomaniac Diamond","name":"Megalomaniac","flags":{"unique":true}}
+            ]},
+            {"label":"Flasks","entries":[
+                {"type":"Amethyst Charm","text":"Amethyst Charm"},
+                {"type":"Amethyst Charm","text":"Forsaken Bangle Amethyst Charm","name":"Forsaken Bangle","flags":{"unique":true}}
+            ]}
+        ]}"#;
+        let types = parse_item_types(body).expect("should parse");
+        assert_eq!(
+            uniques_of_base(&types, "Diamond"),
+            ["The Adorned", "Megalomaniac"]
+        );
+        assert_eq!(
+            uniques_of_base(&types, "Amethyst Charm"),
+            ["Forsaken Bangle"]
         );
     }
 }

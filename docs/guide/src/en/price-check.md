@@ -111,6 +111,12 @@ Vaal Unique**) is searched among cultivated ones, and one it didn't change among
 their modifiers differ, and so do their prices. Mirrored and sanctified listings are left out of the
 search for ordinary gear unless your item is one; there is no chip for either.
 
+An unidentified unique names only its base: its text doesn't say which unique it is, though its art
+shows it. Where the base has several uniques, the chip **Unique: any** ▾ opens a list of them. Pick
+the one your item is, and the search finds only unidentified listings of that unique: the trade site
+tells them apart, and their prices differ a lot. **Any of them** searches every unique of the base
+again.
+
 ## Filters
 
 Below the chips, the item's properties and modifiers are listed in sections:

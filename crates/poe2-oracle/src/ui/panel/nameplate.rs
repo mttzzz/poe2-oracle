@@ -4,7 +4,7 @@
 //! are: rarity reads before the name does.
 
 use gpui::{
-    AnyElement, Context, IntoElement, MouseDownEvent, ObjectFit, SharedString, div, img,
+    AnyElement, Context, IntoElement, MouseDownEvent, ObjectFit, SharedString, Window, div, img,
     linear_color_stop, linear_gradient, prelude::*, rgb,
 };
 
@@ -14,21 +14,25 @@ use trade_client::{RarityFilter, TradeSite};
 use crate::craft_link;
 use crate::i18n;
 use crate::item_refs;
-use crate::price_check::PriceCheckApp;
+use crate::price_check::{PriceCheckApp, UniqueChoice};
 use crate::tr;
 use crate::ui::fonts;
 use crate::ui::hint as hints;
-use crate::ui::style::{self, chip, heading, link, ornament_rule};
+use crate::ui::style::{self, chip, heading, link, menu_row, ornament_rule};
 use crate::ui::theme::{
     BANNER_EDGE, BANNER_TINT, BG_NAMEPLATE, CONTENT_PADDING, CURRENCY_NAME, GEM_NAME, RARITY_MAGIC,
-    RARITY_NORMAL, RARITY_RARE, RARITY_UNIQUE, TEXT, TEXT_VALUE, TEXT_WARNING, blend, rems_from_px,
+    RARITY_NORMAL, RARITY_RARE, RARITY_UNIQUE, TEXT, TEXT_DIM, TEXT_VALUE, TEXT_WARNING, blend,
+    rems_from_px,
 };
 
 use super::filters::shows_property;
+use super::menu::render_menu;
 use super::results::render_link;
 
 /// Edge of the item art beside the name.
 const ART_SIZE: f32 = 48.;
+/// The least width of the unique chip's menu.
+const UNIQUE_MENU_WIDTH: f32 = 200.;
 
 /// The item's name -- and, for rares and uniques, its base type -- in the game's own name colour
 /// and in the stand-in for its tooltip face on the item's client language (see `fonts`), like its
@@ -148,14 +152,15 @@ fn name_color(item: &ParsedItem) -> u32 {
     }
 }
 
-/// Item class (or the base type the search goes by), level, requirement, sockets, quality,
-/// corruption, and how many of the listed searchable stats are selected -- EE2's chip row. The
-/// level, sockets and quality stay out where a property row or chip below shows the same value
-/// (`filters::shows_property`). A click on the count checks them all, or all off
-/// (`PriceCheckApp::toggle_all_filters`).
+/// Item class (or the base type the search goes by), which unique an unidentified one is, level,
+/// requirement, sockets, quality, corruption, and how many of the listed searchable stats are
+/// selected -- EE2's chip row. The level, sockets and quality stay out where a property row or
+/// chip below shows the same value (`filters::shows_property`). A click on the count checks them
+/// all, or all off (`PriceCheckApp::toggle_all_filters`).
 pub(super) fn render_chips(
     state: &PriceCheckApp,
     item: &ParsedItem,
+    window: &Window,
     cx: &Context<PriceCheckApp>,
 ) -> impl IntoElement {
     let (selected, searchable) = state
@@ -223,6 +228,39 @@ pub(super) fn render_chips(
         }
         None => class.map(|class| chip(None, class, TEXT).into_any_element()),
     };
+    // Which unique an unidentified one is, where its base has several (`PriceCheckApp::unique`):
+    // a select whose menu lists them.
+    let unique = state.unique.as_ref().map(|choice| {
+        let value: SharedString = match choice.picked_name() {
+            Some(name) => name.to_owned().into(),
+            None => tr!("any").into(),
+        };
+        div()
+            .id("unique")
+            .flex()
+            .flex_col()
+            .flex_none()
+            .tooltip(hints::hint(tr!(
+                "The text of an unidentified item doesn't say which unique it is — its art does. \
+                 Pick it to search only for unidentified listings of that unique: the trade site \
+                 tells them apart, and their prices differ a lot."
+            )))
+            .child(style::select(
+                "select",
+                div()
+                    .flex()
+                    .gap(rems_from_px(4.))
+                    .child(div().text_color(rgb(TEXT_DIM)).child(tr!("Unique:")))
+                    .child(value),
+                true,
+                cx.listener(|view, _event: &MouseDownEvent, _window, cx| {
+                    view.set_unique_menu(true, cx);
+                }),
+            ))
+            .when(state.unique_menu, |this| {
+                this.child(render_unique_menu(choice, window, cx))
+            })
+    });
     // The item's own state, matched by default as PoE Overlay II does: "Можно изменить" there.
     let corruption = state.corruption.map(|choice| {
         let (value, hint) = match (choice.value, choice.on) {
@@ -322,6 +360,7 @@ pub(super) fn render_chips(
         .gap_y(rems_from_px(4.))
         .pt(rems_from_px(8.))
         .children(item_type)
+        .children(unique)
         .children(item_level.map(|level| chip(Some(tr!("Item Level:")), level.to_string(), TEXT)))
         .children(
             required_level.map(|level| chip(Some(tr!("Required Level:")), level.to_string(), TEXT)),
@@ -355,6 +394,43 @@ pub(super) fn render_chips(
                 cx,
             )
         }))
+}
+
+/// The unique chip's menu: «any of them» -- every unique of the base -- then each of them, the
+/// current one marked; a pick searches at once (`PriceCheckApp::choose_unique`).
+fn render_unique_menu(
+    choice: &UniqueChoice,
+    window: &Window,
+    cx: &Context<PriceCheckApp>,
+) -> impl IntoElement {
+    let any = menu_row(
+        0,
+        choice.picked.is_none(),
+        div().child(tr!("Any of them")),
+        cx.listener(|view, _event: &MouseDownEvent, _window, cx| {
+            view.choose_unique(None, cx);
+        }),
+    )
+    .into_any_element();
+    let names = choice.names.iter().enumerate().map(|(at, name)| {
+        menu_row(
+            at + 1,
+            choice.picked == Some(at),
+            div().min_w_0().truncate().child(name.clone()),
+            cx.listener(move |view, _event: &MouseDownEvent, _window, cx| {
+                view.choose_unique(Some(at), cx);
+            }),
+        )
+        .into_any_element()
+    });
+    render_menu(
+        "unique-menu",
+        std::iter::once(any).chain(names),
+        UNIQUE_MENU_WIDTH,
+        |view, cx| view.set_unique_menu(false, cx),
+        window,
+        cx,
+    )
 }
 
 /// A chip a click turns to its other state for the next search -- the item-type chip, when the

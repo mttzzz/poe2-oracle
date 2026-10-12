@@ -263,7 +263,7 @@ module comment and in `about.hbs`, which copies them into the third-party notice
 
 To check the result against real items, sweep item texts from the game (a vendor, the stash, your
 inventory) into one file, separated by lines starting with `####`, copy the app's cached catalogs
-(`stat-catalog[-ru].json`, `static-items[-ru].json` and `item-types[-ru].json` from
+(`stat-catalog[-ru].json`, `static-items[-ru].json` and `items[-ru].json` from
 `%LOCALAPPDATA%\poe2-oracle\cache`) into a folder, and run:
 
 ```sh

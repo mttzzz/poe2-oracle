@@ -8,6 +8,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- ANCHOR: releases. The guide's "What's new" page shows every section below, up to ANCHOR_END. -->
 
+## [Unreleased]
+
+### Added
+
+- **Which unique an unidentified one is.** An unidentified unique names only its base, so it was
+  priced among every unique of that base: an unidentified The Adorned among Megalomaniacs, from 1
+  exalted where it starts at 1000 divine. Where a base has several uniques, the new chip
+  **Unique** lists them: pick the one your item is, as its art shows, and the search finds only
+  unidentified listings of that unique.
+
 ## [0.1.11] - 2026-10-11
 
 ### Fixed
