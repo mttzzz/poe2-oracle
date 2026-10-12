@@ -18,8 +18,8 @@
         { "label": "Class:", "value": "Helmets", "toggle": true },
         { "label": "Required Level:", "value": "59" },
         { "label": "Quality:", "value": "+20%", "color": "value" },
-        { "label": "Rarity:", "value": "Rare", "toggle": true },
-        { "value": "Modifiable", "toggle": true },
+        { "label": "Rarity:", "value": "Rare", "select": true },
+        { "value": "Uncorrupted only", "select": true },
         { "label": "Stats:", "value": "3 of 8", "toggle": true }
     ],
     "profile": { "label": "Profile:", "choice": "Quick price" },

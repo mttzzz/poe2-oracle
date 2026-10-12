@@ -13,7 +13,7 @@
 //   item      { art, name, base, rarity: normal|magic|rare|unique|currency|gem, lang: the client
 //             language the item was copied in, which sets its name's face }
 //   links     the nameplate's links, arrows included
-//   chips     [{ label, value, toggle: the edged ↔ kind, color: "value"|"warning" }]
+//   chips     [{ label, value, toggle: the edged ↔ kind, select: the ▾ kind, color: "value"|"warning" }]
 //   profile   { label, choice }, or none
 //   bounds    the min and max boxes' placeholders { min, max }
 //   sections  [{ title, rows, chips }]: a row { checked, tier, source: { kind: desecrated|
@@ -73,9 +73,11 @@ export function render(data, lang) {
                     "div",
                     "oui-panel-chips",
                     (data.chips ?? []).map((fact) =>
-                        fact.toggle
-                            ? toggleChip(fact.label, fact.value)
-                            : chip(fact.label, fact.value, CHIP_COLORS[fact.color]),
+                        fact.select
+                            ? select([fact.label && h("span", "oui-label", fact.label), h("span", null, fact.value)], true)
+                            : fact.toggle
+                              ? toggleChip(fact.label, fact.value)
+                              : chip(fact.label, fact.value, CHIP_COLORS[fact.color]),
                     ),
                 ),
                 data.profile &&

@@ -78,6 +78,16 @@
     gap: var(--p6);
 }
 
+/* A chip-row select (nameplate.rs `select_chip`): its label dimmed before its choice. */
+.oui-panel-chips .oui-select > :first-child {
+    display: flex;
+    gap: var(--p4);
+}
+
+.oui-panel-chips .oui-select .oui-label {
+    color: var(--text-dim);
+}
+
 .oui-panel .oui-chip--check::before {
     width: var(--p12);
     height: var(--p12);

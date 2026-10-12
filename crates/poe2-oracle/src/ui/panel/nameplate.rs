@@ -14,7 +14,7 @@ use trade_client::{RarityFilter, TradeSite};
 use crate::craft_link;
 use crate::i18n;
 use crate::item_refs;
-use crate::price_check::{PriceCheckApp, UniqueChoice};
+use crate::price_check::{ChipMenu, Corruption, PriceCheckApp};
 use crate::tr;
 use crate::ui::fonts;
 use crate::ui::hint as hints;
@@ -31,8 +31,8 @@ use super::results::render_link;
 
 /// Edge of the item art beside the name.
 const ART_SIZE: f32 = 48.;
-/// The least width of the unique chip's menu.
-const UNIQUE_MENU_WIDTH: f32 = 200.;
+/// The least width of a chip-row select's menu.
+const CHIP_MENU_WIDTH: f32 = 200.;
 
 /// The item's name -- and, for rares and uniques, its base type -- in the game's own name colour
 /// and in the stand-in for its tooltip face on the item's client language (see `fonts`), like its
@@ -228,71 +228,53 @@ pub(super) fn render_chips(
         }
         None => class.map(|class| chip(None, class, TEXT).into_any_element()),
     };
-    // Which unique an unidentified one is, where its base has several (`PriceCheckApp::unique`):
-    // a select whose menu lists them.
+    // Which unique an unidentified one is, where its base has several (`PriceCheckApp::unique`).
     let unique = state.unique.as_ref().map(|choice| {
-        let value: SharedString = match choice.picked_name() {
-            Some(name) => name.to_owned().into(),
-            None => tr!("any").into(),
-        };
-        div()
-            .id("unique")
-            .flex()
-            .flex_col()
-            .flex_none()
-            .tooltip(hints::hint(tr!(
-                "The text of an unidentified item doesn't say which unique it is — its art does. \
-                 Pick it to search only for unidentified listings of that unique: the trade site \
-                 tells them apart, and their prices differ a lot."
-            )))
-            .child(style::select(
-                "select",
-                div()
-                    .flex()
-                    .gap(rems_from_px(4.))
-                    .child(div().text_color(rgb(TEXT_DIM)).child(tr!("Unique:")))
-                    .child(value),
-                true,
-                cx.listener(|view, _event: &MouseDownEvent, _window, cx| {
-                    view.set_unique_menu(true, cx);
-                }),
-            ))
-            .when(state.unique_menu, |this| {
-                this.child(render_unique_menu(choice, window, cx))
-            })
+        let choices = std::iter::once(SharedString::from(tr!("any")))
+            .chain(choice.names.iter().cloned().map(SharedString::from))
+            .collect();
+        select_chip(
+            SelectChip {
+                menu: ChipMenu::Unique,
+                label: Some(tr!("Unique:")),
+                choices,
+                current: choice.picked.map_or(0, |at| at + 1),
+                hint: tr!(
+                    "The text of an unidentified item doesn't say which unique it is — its art \
+                     does. Pick it to search only for unidentified listings of that unique: the \
+                     trade site tells them apart, and their prices differ a lot."
+                ),
+                choose: PriceCheckApp::choose_unique,
+            },
+            state,
+            window,
+            cx,
+        )
     });
-    // The item's own state, matched by default as PoE Overlay II does: "Можно изменить" there.
-    let corruption = state.corruption.map(|choice| {
-        let (value, hint) = match (choice.value, choice.on) {
-            (false, true) => (
-                tr!("Modifiable"),
-                tr!(
-                    "Only listings that can still be modified: corrupted ones are left out — they \
-                     can't be improved, and they can have modifiers this item doesn't. Click to \
-                     include them."
+    // Which listings the search takes by corruption: those in the item's own state by default
+    // (`PriceCheckApp::corruption`).
+    let corruption = state.corruption.map(|current| {
+        select_chip(
+            SelectChip {
+                menu: ChipMenu::Corruption,
+                label: None,
+                choices: Corruption::CHOICES
+                    .iter()
+                    .map(|&choice| corruption_label(choice).into())
+                    .collect(),
+                current: Corruption::CHOICES
+                    .iter()
+                    .position(|&choice| choice == current)
+                    .unwrap_or(0),
+                hint: tr!(
+                    "Which listings count by corruption. It starts on this item's own state: \
+                     corrupted ones can't be improved, and corruption changes their modifiers. \
+                     Picking one searches again at once."
                 ),
-            ),
-            (true, true) => (
-                tr!("Corrupted only"),
-                tr!(
-                    "This item is corrupted: only corrupted listings count, whose corruption \
-                     changed their modifiers the same way. Click to include uncorrupted ones too."
-                ),
-            ),
-            (_, false) => (
-                tr!("Corrupted or not"),
-                tr!(
-                    "Corruption is ignored. Click to search only for listings in the same state \
-                     as this item."
-                ),
-            ),
-        };
-        toggle_chip(
-            "corruption",
-            None,
-            value,
-            hint,
-            PriceCheckApp::toggle_corruption,
+                choose: PriceCheckApp::choose_corruption,
+            },
+            state,
+            window,
             cx,
         )
     });
@@ -320,34 +302,31 @@ pub(super) fn render_chips(
             cx,
         )
     });
+    // The rarity the search takes: the item's own by default (`PriceCheckApp::rarity`).
     let rarity = state.rarity.map(|choice| {
-        let (value, hint) = match choice.current() {
-            RarityFilter::Magic => (
-                tr!("Magic"),
-                tr!("Searches Magic items only. Click to search every rarity but Unique."),
-            ),
-            RarityFilter::Rare => (
-                tr!("Rare"),
-                tr!("Searches Rare items only. Click to search every rarity but Unique."),
-            ),
-            RarityFilter::Normal => (
-                tr!("Normal"),
-                tr!("Searches Normal items only. Click to search every rarity but Unique."),
-            ),
-            RarityFilter::NonUnique | RarityFilter::Unique => (
-                tr!("Any Non-Unique"),
-                tr!(
-                    "Searches items of every rarity but Unique. Click to search only items of \
-                     this one's rarity."
+        select_chip(
+            SelectChip {
+                menu: ChipMenu::Rarity,
+                label: Some(tr!("Rarity:")),
+                choices: choice
+                    .choices
+                    .iter()
+                    .map(|&rarity| rarity_label(rarity).into())
+                    .collect(),
+                current: choice
+                    .choices
+                    .iter()
+                    .position(|&rarity| rarity == choice.current)
+                    .unwrap_or(0),
+                hint: tr!(
+                    "Which rarity the search takes. It starts on this item's own: a magic item is \
+                     compared with magic ones, a rare with rares. Picking one searches again at \
+                     once."
                 ),
-            ),
-        };
-        toggle_chip(
-            "rarity",
-            Some(tr!("Rarity:")),
-            value,
-            hint,
-            PriceCheckApp::toggle_rarity,
+                choose: PriceCheckApp::choose_rarity,
+            },
+            state,
+            window,
             cx,
         )
     });
@@ -396,47 +375,102 @@ pub(super) fn render_chips(
         }))
 }
 
-/// The unique chip's menu: «any of them» -- every unique of the base -- then each of them, the
-/// current one marked; a pick searches at once (`PriceCheckApp::choose_unique`).
-fn render_unique_menu(
-    choice: &UniqueChoice,
+/// A rarity as the rarity select says it.
+fn rarity_label(rarity: RarityFilter) -> &'static str {
+    match rarity {
+        RarityFilter::Normal => tr!("Normal"),
+        RarityFilter::Magic => tr!("Magic"),
+        RarityFilter::Rare => tr!("Rare"),
+        RarityFilter::NonUnique | RarityFilter::Unique => tr!("Any Non-Unique"),
+    }
+}
+
+/// A corruption choice as the corruption select says it.
+fn corruption_label(choice: Corruption) -> &'static str {
+    match choice {
+        Corruption::Uncorrupted => tr!("Uncorrupted only"),
+        Corruption::Corrupted => tr!("Corrupted only"),
+        Corruption::Either => tr!("Corrupted or not"),
+    }
+}
+
+/// A select of the chip row ([`select_chip`]): `label` before its current choice, `hint` on
+/// hover, and its menu `menu` of `choices`, a pick of which runs `choose` with its index.
+struct SelectChip {
+    menu: ChipMenu,
+    label: Option<&'static str>,
+    choices: Vec<SharedString>,
+    current: usize,
+    hint: &'static str,
+    choose: fn(&mut PriceCheckApp, usize, &mut Context<PriceCheckApp>),
+}
+
+/// A chip-row select -- which unique an unidentified one is, the rarity, the corruption: its label
+/// and current choice in a compact select with a gold ▾, which opens its menu below it, every
+/// choice listed and the current one marked (`menu::render_menu`).
+fn select_chip(
+    chip: SelectChip,
+    state: &PriceCheckApp,
     window: &Window,
     cx: &Context<PriceCheckApp>,
 ) -> impl IntoElement {
-    let any = menu_row(
-        0,
-        choice.picked.is_none(),
-        div().child(tr!("Any of them")),
-        cx.listener(|view, _event: &MouseDownEvent, _window, cx| {
-            view.choose_unique(None, cx);
-        }),
-    )
-    .into_any_element();
-    let names = choice.names.iter().enumerate().map(|(at, name)| {
-        menu_row(
-            at + 1,
-            choice.picked == Some(at),
-            div().min_w_0().truncate().child(name.clone()),
+    let (key, menu_key) = match chip.menu {
+        ChipMenu::Unique => ("unique", "unique-menu"),
+        ChipMenu::Rarity => ("rarity", "rarity-menu"),
+        ChipMenu::Corruption => ("corruption", "corruption-menu"),
+    };
+    let SelectChip {
+        menu,
+        label,
+        choices,
+        current,
+        hint,
+        choose,
+    } = chip;
+    let value = choices.get(current).cloned().unwrap_or_default();
+    div()
+        .id(key)
+        .flex()
+        .flex_col()
+        .flex_none()
+        .tooltip(hints::hint(hint))
+        .child(style::select(
+            "select",
+            div()
+                .flex()
+                .gap(rems_from_px(4.))
+                .children(label.map(|label| div().text_color(rgb(TEXT_DIM)).child(label)))
+                .child(value),
+            true,
             cx.listener(move |view, _event: &MouseDownEvent, _window, cx| {
-                view.choose_unique(Some(at), cx);
+                view.set_chip_menu(Some(menu), cx);
             }),
-        )
-        .into_any_element()
-    });
-    render_menu(
-        "unique-menu",
-        std::iter::once(any).chain(names),
-        UNIQUE_MENU_WIDTH,
-        |view, cx| view.set_unique_menu(false, cx),
-        window,
-        cx,
-    )
+        ))
+        .when(state.chip_menu == Some(menu), |this| {
+            let rows = choices.into_iter().enumerate().map(|(at, choice)| {
+                menu_row(
+                    at,
+                    at == current,
+                    div().min_w_0().truncate().child(choice),
+                    cx.listener(move |view, _event: &MouseDownEvent, _window, cx| {
+                        choose(view, at, cx);
+                    }),
+                )
+            });
+            this.child(render_menu(
+                menu_key,
+                rows,
+                CHIP_MENU_WIDTH,
+                |view, cx| view.set_chip_menu(None, cx),
+                window,
+                cx,
+            ))
+        })
 }
 
 /// A chip a click turns to its other state for the next search -- the item-type chip, when the
 /// search can go by the item's class or its base type (`PriceCheckApp::toggle_scope`), the
-/// rarity one (`PriceCheckApp::toggle_rarity`), the corruption and identification ones
-/// (`PriceCheckApp::toggle_corruption`, `toggle_identification`), the stats count
+/// identification one (`PriceCheckApp::toggle_identification`), the stats count
 /// (`PriceCheckApp::toggle_all_filters`) -- saying on hover what it does (`hint`).
 fn toggle_chip(
     key: &'static str,

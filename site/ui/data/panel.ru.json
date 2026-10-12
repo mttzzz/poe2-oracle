@@ -18,8 +18,8 @@
         { "label": "Класс:", "value": "Шлемы", "toggle": true },
         { "label": "Требуется ур.:", "value": "59" },
         { "label": "Качество:", "value": "+20%", "color": "value" },
-        { "label": "Редкость:", "value": "редкие", "toggle": true },
-        { "value": "Можно изменить", "toggle": true },
+        { "label": "Редкость:", "value": "редкие", "select": true },
+        { "value": "Только неосквернённые", "select": true },
         { "label": "Св-ва:", "value": "3 из 8", "toggle": true }
     ],
     "profile": { "label": "Профиль:", "choice": "Быстрая цена" },

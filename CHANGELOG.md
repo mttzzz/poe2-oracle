@@ -8,6 +8,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- ANCHOR: releases. The guide's "What's new" page shows every section below, up to ANCHOR_END. -->
 
+## [Unreleased]
+
+### Changed
+
+- **Rarity and corruption are lists.** The rarity and corruption chips open a list of every
+  option: **Normal**, **Magic**, **Rare** or **Any Non-Unique**, and **Uncorrupted only**,
+  **Corrupted only** or **Corrupted or not**. A click used to switch only between two, so a
+  corrupted item couldn't be priced among uncorrupted listings. Picking an option searches again
+  at once.
+
 ## [0.1.12] - 2026-10-12
 
 ### Added

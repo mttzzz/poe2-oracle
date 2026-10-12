@@ -99,11 +99,15 @@ the pointer. Hover any of them for an explanation.
 | Chip | What it switches |
 |---|---|
 | **Class: …** ↔ **Base: …** | Search among every item of the class (a rare is compared with its whole class by default) or only among items of this base type. The base can matter on its own: a base implicit, a sought-after base. |
-| **Rarity: …** | **Magic**, **Rare** or **Normal** searches only items of the same rarity; **Any Non-Unique** searches every rarity except unique. The chip starts on the item's own rarity, so a magic item is compared with magic items and a rare with rare items; a click switches it to **Any Non-Unique**, and another click back. |
-| **Modifiable** ↔ **Corrupted or not** | For an item that is not corrupted, corrupted listings are left out by default: they cannot be changed and may have modifiers this item lacks. Click to include them. |
-| **Corrupted only** ↔ **Corrupted or not** | For a corrupted item, only corrupted listings count by default, since corruption changed them the same way. Click to include uncorrupted ones. |
 | **Unidentified only** ↔ **Identified too** | For an unidentified item, only unidentified listings count by default: identified ones sell for their modifiers. Click to include identified ones. |
 | **Stats: N of M** | How many of the listed searchable rows are selected. Click to select all of them, or none. |
+
+Chips with a gold **▾** open a list of every option; picking one searches again at once.
+
+| Chip | What it picks |
+|---|---|
+| **Rarity: …** ▾ | **Normal**, **Magic**, **Rare** or **Any Non-Unique**. It starts on the item's own rarity: a magic item is compared with magic items, a rare with rare items. |
+| **Uncorrupted only**, **Corrupted only** or **Corrupted or not** ▾ | Which listings count by corruption. It starts on the item's own state: corrupted listings can't be improved, and corruption changed their modifiers. |
 
 A unique item has no rarity chip: its name already pins the search down. A unique that a Vaal
 Cultivation Orb changed (it has a **Vaal Unique Modifier**; the trade site's filter is **Cultivated
@@ -112,10 +116,9 @@ their modifiers differ, and so do their prices. Mirrored and sanctified listings
 search for ordinary gear unless your item is one; there is no chip for either.
 
 An unidentified unique names only its base: its text doesn't say which unique it is, though its art
-shows it. Where the base has several uniques, the chip **Unique: any** ▾ opens a list of them. Pick
-the one your item is, and the search finds only unidentified listings of that unique: the trade site
-tells them apart, and their prices differ a lot. **Any of them** searches every unique of the base
-again.
+shows it. Where the base has several uniques, the chip **Unique: any** ▾ lists them. Pick the one
+your item is, and the search finds only unidentified listings of that unique: the trade site tells
+them apart, and their prices differ a lot. **any** searches every unique of the base again.
 
 ## Filters
 

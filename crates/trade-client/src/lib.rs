@@ -1021,8 +1021,8 @@ fn has_category_search(category_id: &str) -> bool {
 /// (EE2 widens most items to every non-unique): a magic item among magic ones -- its one prefix
 /// and one suffix are the whole item, and a buyer after a magic base doesn't take a rare -- a rare
 /// among rares, which a magic item sharing its few selected mods would price low, and a normal
-/// base among normal ones. [`other_rarity`] is the panel's way to every non-unique. Uniques get
-/// none: their name pins them down.
+/// base among normal ones. [`rarity_choices`] are the panel's others. Uniques get none: their
+/// name pins them down.
 fn own_rarity(item: &ParsedItem) -> Option<RarityFilter> {
     match item.rarity? {
         ItemRarity::Normal => Some(RarityFilter::Normal),
@@ -1032,18 +1032,18 @@ fn own_rarity(item: &ParsedItem) -> Option<RarityFilter> {
     }
 }
 
-/// The other rarity a filtered search of `item` can admit than `current`: every non-unique one
-/// where it admits only the item's own, and back. `None` for a unique, or where `current` is
-/// neither (an unidentified unique's `unique`).
-pub fn other_rarity(current: RarityFilter, item: &ParsedItem) -> Option<RarityFilter> {
+/// The rarities the player can pick for a filtered search of `item` that admits `current` -- the
+/// panel's rarity select: each non-unique one, or all of them together, for a non-unique item,
+/// whose search starts on its own. `None` for a unique, or where `current` is neither the item's
+/// own nor every non-unique (an unidentified unique's `unique`).
+pub fn rarity_choices(current: RarityFilter, item: &ParsedItem) -> Option<[RarityFilter; 4]> {
     let own = own_rarity(item)?;
-    if current == RarityFilter::NonUnique {
-        Some(own)
-    } else if current == own {
-        Some(RarityFilter::NonUnique)
-    } else {
-        None
-    }
+    (current == own || current == RarityFilter::NonUnique).then_some([
+        RarityFilter::Normal,
+        RarityFilter::Magic,
+        RarityFilter::Rare,
+        RarityFilter::NonUnique,
+    ])
 }
 
 /// The item's base type in its site's language: the nameplate's base-type line where it has one
@@ -2940,27 +2940,27 @@ mod route_search_tests {
     }
 
     #[test]
-    fn the_rarity_chip_switches_between_the_items_own_rarity_and_every_non_unique() {
+    fn a_non_unique_item_can_be_searched_at_any_non_unique_rarity() {
         let item = |rarity| ParsedItem {
             rarity: Some(rarity),
             ..ParsedItem::default()
         };
+        let every = Some([
+            RarityFilter::Normal,
+            RarityFilter::Magic,
+            RarityFilter::Rare,
+            RarityFilter::NonUnique,
+        ]);
         let magic = item(ItemRarity::Magic);
+        assert_eq!(rarity_choices(RarityFilter::Magic, &magic), every);
+        assert_eq!(rarity_choices(RarityFilter::NonUnique, &magic), every);
         assert_eq!(
-            other_rarity(RarityFilter::Magic, &magic),
-            Some(RarityFilter::NonUnique)
-        );
-        assert_eq!(
-            other_rarity(RarityFilter::NonUnique, &magic),
-            Some(RarityFilter::Magic)
-        );
-        assert_eq!(
-            other_rarity(RarityFilter::NonUnique, &item(ItemRarity::Rare)),
-            Some(RarityFilter::Rare)
+            rarity_choices(RarityFilter::NonUnique, &item(ItemRarity::Rare)),
+            every
         );
         // An unidentified unique's `unique` has no other way.
         assert_eq!(
-            other_rarity(RarityFilter::Unique, &item(ItemRarity::Unique)),
+            rarity_choices(RarityFilter::Unique, &item(ItemRarity::Unique)),
             None
         );
     }

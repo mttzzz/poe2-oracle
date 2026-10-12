@@ -491,31 +491,21 @@ impl ScopeChoice {
     }
 }
 
-/// The rarity a non-unique item's filtered search admits: the default `trade_client` chose (the
-/// item's own rarity: a magic item among magic ones, a rare among rares) or the other one
-/// (`trade_client::other_rarity`) -- the panel's rarity chip, PoE Overlay II's rarity toggle.
+/// The rarity a non-unique item's filtered search admits, picked from the panel's rarity select:
+/// the item's own by default, as `trade_client` chose it (a magic item among magic ones, a rare
+/// among rares), or any other non-unique one, or all of them together
+/// (`trade_client::rarity_choices`).
 #[derive(Debug, Clone, Copy)]
 pub struct RarityChoice {
-    default: RarityFilter,
-    other: RarityFilter,
-    /// The player chose the other rarity. Reset for every new item.
-    pub switched_on: bool,
+    /// What the select offers, in its order.
+    pub choices: [RarityFilter; 4],
+    /// The rarity the search admits now. Reset for every new item.
+    pub current: RarityFilter,
 }
 
-impl RarityChoice {
-    /// The rarity the search admits now.
-    pub fn current(&self) -> RarityFilter {
-        if self.switched_on {
-            self.other
-        } else {
-            self.default
-        }
-    }
-}
-
-/// A yes/no trade filter the item's own state sets (`trade_client::MiscChoices`) -- corrupted or
-/// not, unidentified -- which the player can drop for the next search, taking listings either
-/// way: the panel's corruption and identification chips.
+/// A yes/no trade filter the item's own state sets (`trade_client::MiscChoices`) -- unidentified
+/// -- which the player can drop for the next search, taking listings either way: the panel's
+/// identification chip.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StateChoice {
     /// The state the search asks for.
@@ -528,6 +518,44 @@ impl StateChoice {
     /// The search matches `value`, as it does by default.
     fn matched(value: bool) -> Self {
         StateChoice { value, on: true }
+    }
+}
+
+/// Which listings the search takes by corruption (`trade_client::MiscChoices::corrupted`), picked
+/// from the panel's corruption select: those in the item's own state by default, as PoE Overlay
+/// II matches them -- an uncorrupted item among uncorrupted listings, which can still be improved,
+/// a corrupted one among corrupted ones -- or those in the other state, or either.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Corruption {
+    Uncorrupted,
+    Corrupted,
+    Either,
+}
+
+impl Corruption {
+    /// What the select offers, in its order.
+    pub const CHOICES: [Corruption; 3] = [
+        Corruption::Uncorrupted,
+        Corruption::Corrupted,
+        Corruption::Either,
+    ];
+
+    /// Listings in the state `corrupted` says.
+    fn matching(corrupted: bool) -> Self {
+        if corrupted {
+            Corruption::Corrupted
+        } else {
+            Corruption::Uncorrupted
+        }
+    }
+
+    /// The search's `corrupted` filter: `None` takes either.
+    fn filter(self) -> Option<bool> {
+        match self {
+            Corruption::Uncorrupted => Some(false),
+            Corruption::Corrupted => Some(true),
+            Corruption::Either => None,
+        }
     }
 }
 
@@ -551,6 +579,14 @@ impl UniqueChoice {
             .and_then(|at| self.names.get(at))
             .map(String::as_str)
     }
+}
+
+/// A select of the panel's chip row, whose menu can be open (`ui::panel::nameplate`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChipMenu {
+    Unique,
+    Rarity,
+    Corruption,
 }
 
 pub struct PriceCheckApp {
@@ -610,8 +646,8 @@ pub struct PriceCheckApp {
     pub league_menu: bool,
     /// The profile select's menu is open (`ui::panel::results`).
     pub profile_menu: bool,
-    /// The unique chip's menu is open (`ui::panel::nameplate`).
-    pub unique_menu: bool,
+    /// The chip-row select whose menu is open (`ui::panel::nameplate`).
+    pub chip_menu: Option<ChipMenu>,
     /// The item trades on the Currency Exchange: priced from the market alone -- no filters, no
     /// trade search (`SearchRoute::Market`).
     pub priced_by_market: bool,
@@ -642,17 +678,16 @@ pub struct PriceCheckApp {
     pub show_hidden: bool,
     /// The item's search by its category or by its base type, when it can go by either.
     pub scope: Option<ScopeChoice>,
-    /// The item's corruption the search matches (`trade_client::MiscChoices::corrupted`): an
-    /// uncorrupted item among listings that can still be modified, a corrupted one among
-    /// corrupted ones -- or, dropped by the player, either. `None` where the search takes either.
-    pub corruption: Option<StateChoice>,
+    /// Which listings the search takes by corruption, where it matches the item's state at all
+    /// (`Corruption`). Reset for every new item.
+    pub corruption: Option<Corruption>,
     /// An unidentified item's search among unidentified listings
     /// (`trade_client::MiscChoices::identified`), or, dropped by the player, identified ones too.
     pub identification: Option<StateChoice>,
     /// Which unique an unidentified unique item is, where its base has several. Reset for every
     /// new item.
     pub unique: Option<UniqueChoice>,
-    /// The rarity a non-unique item's search admits, where it can admit two.
+    /// The rarity a non-unique item's search admits, where the player can pick it.
     pub rarity: Option<RarityChoice>,
     /// The player asked for an exchange item's trade listings where poe2scout priced it
     /// (`search_listings`): its searches go to the trade site. Reset for every new item.
@@ -724,7 +759,7 @@ impl PriceCheckApp {
             hotkey_busy: false,
             league_menu: false,
             profile_menu: false,
-            unique_menu: false,
+            chip_menu: None,
             priced_by_market: false,
             placement: None,
             panel_side: None,
@@ -882,7 +917,7 @@ impl PriceCheckApp {
         self.filter_ui.clear();
         self.profile = None;
         self.profile_menu = false;
-        self.unique_menu = false;
+        self.chip_menu = None;
         self.roll_drag = None;
         self.problem = Some(problem);
         self.search = SearchState::NotSearched;
@@ -1387,13 +1422,17 @@ impl PriceCheckApp {
         }
     }
 
-    /// Drops the item's corruption from its search, or matches it again (`corruption`); takes
-    /// effect with the next search.
-    pub fn toggle_corruption(&mut self, cx: &mut Context<Self>) {
-        if let Some(choice) = &mut self.corruption {
-            choice.on = !choice.on;
-            cx.notify();
+    /// Searches at once among the listings the player picked from the corruption select
+    /// (`Corruption::CHOICES`, by index).
+    pub fn choose_corruption(&mut self, at: usize, cx: &mut Context<Self>) {
+        self.chip_menu = None;
+        if let Some(choice) = &mut self.corruption
+            && let Some(&picked) = Corruption::CHOICES.get(at)
+        {
+            *choice = picked;
+            self.spawn_search(cx);
         }
+        cx.notify();
     }
 
     /// Lets identified listings into an unidentified item's search, or leaves them out again
@@ -1405,13 +1444,17 @@ impl PriceCheckApp {
         }
     }
 
-    /// Switches a non-unique item's search between its own rarity and every non-unique one
-    /// (`RarityChoice`); takes effect with the next search.
-    pub fn toggle_rarity(&mut self, cx: &mut Context<Self>) {
-        if let Some(choice) = &mut self.rarity {
-            choice.switched_on = !choice.switched_on;
-            cx.notify();
+    /// Searches at once at the rarity the player picked from the rarity select
+    /// (`RarityChoice::choices`, by index).
+    pub fn choose_rarity(&mut self, at: usize, cx: &mut Context<Self>) {
+        self.chip_menu = None;
+        if let Some(choice) = &mut self.rarity
+            && let Some(&picked) = choice.choices.get(at)
+        {
+            choice.current = picked;
+            self.spawn_search(cx);
         }
+        cx.notify();
     }
 
     /// Steps the player's mark on a waystone modifier (by its trade stat id) through none,
@@ -1556,18 +1599,19 @@ impl PriceCheckApp {
         cx.notify();
     }
 
-    /// Opens or closes the unique chip's menu.
-    pub fn set_unique_menu(&mut self, open: bool, cx: &mut Context<Self>) {
-        self.unique_menu = open;
+    /// Opens a chip-row select's menu, or closes it (`None`).
+    pub fn set_chip_menu(&mut self, menu: Option<ChipMenu>, cx: &mut Context<Self>) {
+        self.chip_menu = menu;
         cx.notify();
     }
 
     /// Searches at once among the unidentified listings of the unique the player picked from the
-    /// unique chip's menu, or of every unique of the base for `None` (`UniqueChoice::picked`).
-    pub fn choose_unique(&mut self, picked: Option<usize>, cx: &mut Context<Self>) {
-        self.unique_menu = false;
+    /// unique select -- its first choice, «any», is every unique of the base
+    /// (`UniqueChoice::picked`).
+    pub fn choose_unique(&mut self, at: usize, cx: &mut Context<Self>) {
+        self.chip_menu = None;
         if let Some(choice) = &mut self.unique {
-            choice.picked = picked;
+            choice.picked = at.checked_sub(1).filter(|&name| name < choice.names.len());
             self.spawn_search(cx);
         }
         cx.notify();
@@ -1843,12 +1887,12 @@ impl PriceCheckApp {
 
     /// What closes the panel from outside it, by Esc or -- with `Settings::close_on_click_outside`
     /// on -- by a click in the game outside it (`click_away`): an open menu, the league's, the
-    /// profile's or the unique chip's, closes first, the panel with the next press or click.
+    /// profile's or a chip's, closes first, the panel with the next press or click.
     fn dismiss(&mut self, cx: &mut Context<Self>) {
-        if self.league_menu || self.profile_menu || self.unique_menu {
+        if self.league_menu || self.profile_menu || self.chip_menu.is_some() {
             self.league_menu = false;
             self.profile_menu = false;
-            self.unique_menu = false;
+            self.chip_menu = None;
             cx.notify();
         } else if self.visible {
             self.visible = false;
@@ -2583,7 +2627,7 @@ async fn run_price_check(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
         state.show_panel(placement);
         state.league_menu = false;
         state.profile_menu = false;
-        state.unique_menu = false;
+        state.chip_menu = None;
         state.item_text = Some(text.clone());
         let parsed = match item_site(&text, state.settings.client_language.item_language()) {
             Some((language, site)) => {
@@ -2654,15 +2698,14 @@ async fn run_price_check(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
                     SearchRoute::Filtered { scope } => Some(scope.misc),
                     _ => None,
                 };
-                state.corruption = misc.and_then(|misc| misc.corrupted.map(StateChoice::matched));
+                state.corruption = misc.and_then(|misc| misc.corrupted.map(Corruption::matching));
                 state.identification =
                     misc.and_then(|misc| misc.identified.map(StateChoice::matched));
                 state.rarity = match &route {
                     SearchRoute::Filtered { scope } => scope.rarity.and_then(|default| {
-                        trade_client::other_rarity(default, &item).map(|other| RarityChoice {
-                            default,
-                            other,
-                            switched_on: false,
+                        trade_client::rarity_choices(default, &item).map(|choices| RarityChoice {
+                            choices,
+                            current: default,
                         })
                     }),
                     _ => None,
@@ -2841,15 +2884,15 @@ pub async fn run_search(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
             scope.name = Some(name.to_owned());
         }
         if let SearchRoute::Filtered { scope } = &mut route {
-            if state.corruption.is_some_and(|choice| !choice.on) {
-                scope.misc.corrupted = None;
+            if let Some(choice) = state.corruption {
+                scope.misc.corrupted = choice.filter();
             }
             if state.identification.is_some_and(|choice| !choice.on) {
                 scope.misc.identified = None;
             }
         }
         if let (SearchRoute::Filtered { scope }, Some(choice)) = (&mut route, state.rarity) {
-            scope.rarity = Some(choice.current());
+            scope.rarity = Some(choice.current);
         }
         if let SearchRoute::Filtered { scope } = &mut route {
             scope.price = state.price_currency;
