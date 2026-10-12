@@ -184,6 +184,9 @@ webview2-com = "0.39"
 # Test builds only: POE2_ORACLE_API_BASE may name a plain-http service, such as the lane's
 # http://poe2-oracle-main.lanes.internal, for reports and updates alike.
 dev-endpoints = ["oracle-protocol/dev-endpoints"]
+# Test builds only: the price check takes the item in data\stand-in instead of the game's copy,
+# and draws its art over the game (src/stand_in.rs).
+stand-in = []
 
 [build-dependencies]
 # build.rs embeds the app icon and VERSIONINFO into the exe: rc.exe on MSVC, mingw's windres on the

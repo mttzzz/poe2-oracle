@@ -2599,10 +2599,21 @@ async fn run_price_check(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
     if hotkey.shift {
         release.push(VK_SHIFT);
     }
-    let clipboard_text = clipboard_poll::poll_item_clipboard(cx, move || {
-        synth_input::send_copy_item_combo(mod_key, keep_mod_keys, &release)
-    })
-    .await;
+    // A stand-in build's item, when one is set: the game's copy of the item under the cursor
+    // without asking the game (`stand_in`).
+    #[cfg(feature = "stand-in")]
+    let stand_in = crate::stand_in::item_text();
+    #[cfg(not(feature = "stand-in"))]
+    let stand_in: Option<String> = None;
+    let clipboard_text = match stand_in {
+        Some(text) => Some(text),
+        None => {
+            clipboard_poll::poll_item_clipboard(cx, move || {
+                synth_input::send_copy_item_combo(mod_key, keep_mod_keys, &release)
+            })
+            .await
+        }
+    };
 
     let Some(text) = clipboard_text else {
         // Usually no item under the cursor: nothing to say, as in EE2 (its empty `.catch`). But a

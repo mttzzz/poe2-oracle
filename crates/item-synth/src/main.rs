@@ -1,17 +1,24 @@
 //! `item-synth`: makes items from trade listings and keeps them in the library.
 //!
 //! ```text
-//! item-synth order <name> --query <json|@file> [--order <words>] [--league <id>] [--pick <n>]
-//!                         [--class <English class>] [--note]
+//! item-synth order <name> (--query <json|@file> | --from <saved search>) [--order <words>]
+//!                         [--league <id>] [--pick <n>] [--class <English class>] [--note]
 //! item-synth check [<name>...]
-//! item-synth render <item.json> --lang en|ru [--class <English class>] [--note]
+//! item-synth render <item.json> --lang en|ru [--class <English class>] [--note] [--check]
+//!                   [--body]
+//! item-synth stand-in <name> --lang en|ru --out <folder> [--art]
 //! ```
 //!
 //! `order` searches the English trade site with the query (`query` of a search request), takes
 //! the first listing it can write (or the `--pick`th), fetches it from both sites, writes its
 //! texts, parses them back the way the app does, runs the app's own search for each and saves
-//! the entry under `<name>`. `check` writes and parses the library's entries again against the
-//! live catalogs. `render` writes one item JSON (a listing's `item`, or the whole listing).
+//! the entry under `<name>`; `--from` takes the listings from a saved search's results instead
+//! (`{"query": ..., "en": [...], "ru": [...]}`, fetch results). `check` writes and parses the
+//! library's entries again against the live catalogs, and rebuilds the library's catalogs.
+//! `render` writes one item JSON (a listing's `item`, or the whole listing); `--check` parses it
+//! back, `--body` prints the app's search request for it. `stand-in` puts a library item where a
+//! stand-in build of the app takes it from (`--out`: that build's `data\stand-in` folder, or a
+//! folder to copy there), its art too with `--art`.
 //!
 //! Run it from the repository root, where it keeps the trade catalogs and RePoE's base item
 //! table it downloads in `.tmp/item-synth`. The trade site's limits are shared with the app and
@@ -60,7 +67,10 @@ fn run(args: Vec<String>) -> Result<()> {
         Some("order") => order(args),
         Some("check") => check(args),
         Some("render") => render_file(args),
-        _ => bail!("usage: item-synth order|check|render ... (see the source's doc comment)"),
+        Some("stand-in") => stand_in(args),
+        _ => bail!(
+            "usage: item-synth order|check|render|stand-in ... (see the source's doc comment)"
+        ),
     }
 }
 
@@ -132,6 +142,29 @@ fn site_of(language: ItemLanguage) -> TradeSite {
 /// Where the tool keeps what it downloads.
 fn cache_dir() -> PathBuf {
     PathBuf::from(".tmp/item-synth")
+}
+
+/// Writes a library item for a stand-in build (`poe2-oracle --features stand-in`, its
+/// `src/stand_in.rs`): its text as `item.txt` in `--out`, and with `--art` the listing's art as
+/// `art.png`.
+fn stand_in(mut args: Args) -> Result<()> {
+    let art = args.switch("--art");
+    let language = language_of(&args.flag("--lang").context("--lang en|ru")?)?;
+    let out = PathBuf::from(args.flag("--out").context("--out <folder>")?);
+    let slug = args.next().context("a library item's name")?;
+    args.done()?;
+    let entry = Entry::load(&library::root().join(&slug))?;
+    std::fs::create_dir_all(&out).with_context(|| format!("creating {}", out.display()))?;
+    std::fs::write(out.join("item.txt"), entry.texts.get(language))?;
+    eprintln!("wrote {}", out.join("item.txt").display());
+    if art {
+        let icon = &entry.items.get(language).icon;
+        let tool = Tool::new()?;
+        let png = futures::executor::block_on(tool.download(icon))?;
+        std::fs::write(out.join("art.png"), png)?;
+        eprintln!("wrote {}", out.join("art.png").display());
+    }
+    Ok(())
 }
 
 fn render_file(mut args: Args) -> Result<()> {
@@ -247,21 +280,26 @@ impl Tool {
                 continue;
             }
             eprintln!("downloading {url}");
-            let mut response = self
-                .client
-                .get(url, http_client::AsyncBody::default(), true)
-                .await
-                .with_context(|| format!("GET {url}"))?;
-            ensure!(
-                response.status().is_success(),
-                "GET {url}: {}",
-                response.status()
-            );
-            let mut body = Vec::new();
-            futures::AsyncReadExt::read_to_end(response.body_mut(), &mut body).await?;
-            std::fs::write(&path, body)?;
+            std::fs::write(&path, self.download(url).await?)?;
         }
         Classes::load(&dir)
+    }
+
+    /// A file off the web (not the trade API): RePoE's tables, an item's art.
+    async fn download(&self, url: &str) -> Result<Vec<u8>> {
+        let mut response = self
+            .client
+            .get(url, http_client::AsyncBody::default(), true)
+            .await
+            .with_context(|| format!("GET {url}"))?;
+        ensure!(
+            response.status().is_success(),
+            "GET {url}: {}",
+            response.status()
+        );
+        let mut body = Vec::new();
+        futures::AsyncReadExt::read_to_end(response.body_mut(), &mut body).await?;
+        Ok(body)
     }
 
     /// One site's catalogs the app parses and routes with, cached for a day.

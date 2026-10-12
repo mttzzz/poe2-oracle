@@ -52,3 +52,6 @@ pub mod login;
 pub mod price_check;
 #[cfg(target_os = "windows")]
 pub mod updates;
+// The developer's stand-in item: test builds only (`--features stand-in`), never a release.
+#[cfg(all(target_os = "windows", feature = "stand-in"))]
+pub mod stand_in;

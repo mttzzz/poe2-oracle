@@ -945,6 +945,8 @@ pub fn run() {
     if closed_replaced {
         log::warn!("the copy this one replaces didn't quit in time and was closed");
     }
+    #[cfg(feature = "stand-in")]
+    crate::stand_in::start();
     // Before GPUI starts: its vsync thread loads the `RedrawWindow` and `DwmFlush` imports once,
     // before its loop. The park on this thread, GPUI's UI thread, whose windows' shows wake it.
     redraw_filter::install();
