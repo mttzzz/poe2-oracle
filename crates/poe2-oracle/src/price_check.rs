@@ -523,40 +523,38 @@ impl StateChoice {
     }
 }
 
-/// Which listings the search takes by corruption (`trade_client::MiscChoices::corrupted`), picked
-/// from the panel's corruption select: those in the item's own state by default, as PoE Overlay
-/// II matches them -- an uncorrupted item among uncorrupted listings, which can still be improved,
-/// a corrupted one among corrupted ones -- or those in the other state, or either.
+/// Which listings the search takes by a state an item has or not -- corruption, sanctification
+/// (`trade_client::MiscChoices::corrupted`, `sanctified`) -- picked from the panel's select for it:
+/// those in the item's own state by default, as PoE Overlay II matches them -- an uncorrupted item
+/// among uncorrupted listings, which can still be improved, a corrupted one among corrupted ones --
+/// or those in the other state, or either.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Corruption {
-    Uncorrupted,
-    Corrupted,
+pub enum StateFilter {
+    Without,
+    With,
     Either,
 }
 
-impl Corruption {
-    /// What the select offers, in its order.
-    pub const CHOICES: [Corruption; 3] = [
-        Corruption::Uncorrupted,
-        Corruption::Corrupted,
-        Corruption::Either,
-    ];
+impl StateFilter {
+    /// What a select offers, in its order.
+    pub const CHOICES: [StateFilter; 3] =
+        [StateFilter::Without, StateFilter::With, StateFilter::Either];
 
-    /// Listings in the state `corrupted` says.
-    fn matching(corrupted: bool) -> Self {
-        if corrupted {
-            Corruption::Corrupted
+    /// Listings in the state `has` says.
+    fn matching(has: bool) -> Self {
+        if has {
+            StateFilter::With
         } else {
-            Corruption::Uncorrupted
+            StateFilter::Without
         }
     }
 
-    /// The search's `corrupted` filter: `None` takes either.
+    /// The search's filter of the state: `None` takes either.
     fn filter(self) -> Option<bool> {
         match self {
-            Corruption::Uncorrupted => Some(false),
-            Corruption::Corrupted => Some(true),
-            Corruption::Either => None,
+            StateFilter::Without => Some(false),
+            StateFilter::With => Some(true),
+            StateFilter::Either => None,
         }
     }
 }
@@ -605,6 +603,7 @@ pub enum ChipMenu {
     Unique,
     Rarity,
     Corruption,
+    Sanctification,
 }
 
 pub struct PriceCheckApp {
@@ -697,8 +696,14 @@ pub struct PriceCheckApp {
     /// The item's search by its category or by its base type, when it can go by either.
     pub scope: Option<ScopeChoice>,
     /// Which listings the search takes by corruption, where it matches the item's state at all
-    /// (`Corruption`). Reset for every new item.
-    pub corruption: Option<Corruption>,
+    /// (`StateFilter`). Reset for every new item.
+    pub corruption: Option<StateFilter>,
+    /// Which listings a sanctified item's search takes by sanctification: sanctified ones by
+    /// default (`StateFilter`). Sanctified listings stay out of other items' searches with no
+    /// select: what a buyer compares an item with is items that can still be modified, and the
+    /// chip row stays short. Player report #11 (2026-10-12): a sanctified amulet was searched
+    /// among sanctified listings only, with nothing to change it. Reset for every new item.
+    pub sanctification: Option<StateFilter>,
     /// An unidentified item's search among unidentified listings
     /// (`trade_client::MiscChoices::identified`), or, dropped by the player, identified ones too.
     pub identification: Option<StateChoice>,
@@ -791,6 +796,7 @@ impl PriceCheckApp {
             show_hidden: false,
             scope: None,
             corruption: None,
+            sanctification: None,
             identification: None,
             unique: None,
             rarity: None,
@@ -1445,11 +1451,28 @@ impl PriceCheckApp {
     }
 
     /// Searches at once among the listings the player picked from the corruption select
-    /// (`Corruption::CHOICES`, by index).
+    /// (`StateFilter::CHOICES`, by index).
     pub fn choose_corruption(&mut self, at: usize, cx: &mut Context<Self>) {
+        self.choose_state(|app| &mut app.corruption, at, cx);
+    }
+
+    /// Searches at once among the listings the player picked from the sanctification select
+    /// (`StateFilter::CHOICES`, by index).
+    pub fn choose_sanctification(&mut self, at: usize, cx: &mut Context<Self>) {
+        self.choose_state(|app| &mut app.sanctification, at, cx);
+    }
+
+    /// Sets the choice of the state select whose field `select` gives to `StateFilter::CHOICES`'s
+    /// `at`th and searches at once.
+    fn choose_state(
+        &mut self,
+        select: fn(&mut Self) -> &mut Option<StateFilter>,
+        at: usize,
+        cx: &mut Context<Self>,
+    ) {
         self.chip_menu = None;
-        if let Some(choice) = &mut self.corruption
-            && let Some(&picked) = Corruption::CHOICES.get(at)
+        if let Some(choice) = select(self)
+            && let Some(&picked) = StateFilter::CHOICES.get(at)
         {
             *choice = picked;
             self.spawn_search(cx);
@@ -2891,7 +2914,11 @@ async fn run_price_check(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
                     SearchRoute::Filtered { scope } => Some(scope.misc),
                     _ => None,
                 };
-                state.corruption = misc.and_then(|misc| misc.corrupted.map(Corruption::matching));
+                state.corruption = misc.and_then(|misc| misc.corrupted.map(StateFilter::matching));
+                state.sanctification = misc
+                    .and_then(|misc| misc.sanctified)
+                    .filter(|&sanctified| sanctified)
+                    .map(StateFilter::matching);
                 state.identification =
                     misc.and_then(|misc| misc.identified.map(StateChoice::matched));
                 state.rarity = match &route {
@@ -3106,6 +3133,9 @@ pub async fn run_search(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
         if let SearchRoute::Filtered { scope } = &mut route {
             if let Some(choice) = state.corruption {
                 scope.misc.corrupted = choice.filter();
+            }
+            if let Some(choice) = state.sanctification {
+                scope.misc.sanctified = choice.filter();
             }
             if state.identification.is_some_and(|choice| !choice.on) {
                 scope.misc.identified = None;

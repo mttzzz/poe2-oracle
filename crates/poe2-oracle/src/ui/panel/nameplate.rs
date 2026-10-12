@@ -14,7 +14,7 @@ use trade_client::{RarityFilter, TradeSite};
 use crate::craft_link;
 use crate::i18n;
 use crate::item_refs;
-use crate::price_check::{ChipMenu, Corruption, PriceCheckApp};
+use crate::price_check::{ChipMenu, PriceCheckApp, StateFilter};
 use crate::tr;
 use crate::ui::fonts;
 use crate::ui::hint as hints;
@@ -153,10 +153,10 @@ fn name_color(item: &ParsedItem) -> u32 {
 }
 
 /// Item class (or the base type the search goes by), which unique an unidentified one is, level,
-/// requirement, sockets, quality, corruption, and how many of the listed searchable stats are
-/// selected -- EE2's chip row. The level, sockets and quality stay out where a property row or
-/// chip below shows the same value (`filters::shows_property`). A click on the count checks them
-/// all, or all off (`PriceCheckApp::toggle_all_filters`).
+/// requirement, sockets, quality, corruption, sanctification, and how many of the listed
+/// searchable stats are selected -- EE2's chip row. The level, sockets and quality stay out where
+/// a property row or chip below shows the same value (`filters::shows_property`). A click on the
+/// count checks them all, or all off (`PriceCheckApp::toggle_all_filters`).
 pub(super) fn render_chips(
     state: &PriceCheckApp,
     item: &ParsedItem,
@@ -256,27 +256,41 @@ pub(super) fn render_chips(
             cx,
         )
     });
-    // Which listings the search takes by corruption: those in the item's own state by default
-    // (`PriceCheckApp::corruption`).
+    // Which listings the search takes by corruption, and a sanctified item's by sanctification:
+    // those in the item's own state by default (`PriceCheckApp::corruption`,
+    // `PriceCheckApp::sanctification`).
     let corruption = state.corruption.map(|current| {
         select_chip(
-            SelectChip {
-                menu: ChipMenu::Corruption,
-                label: None,
-                choices: Corruption::CHOICES
-                    .iter()
-                    .map(|&choice| corruption_label(choice).into())
-                    .collect(),
-                current: Corruption::CHOICES
-                    .iter()
-                    .position(|&choice| choice == current),
-                hint: tr!(
+            state_chip(
+                ChipMenu::Corruption,
+                current,
+                corruption_label,
+                tr!(
                     "Which listings count by corruption. It starts on this item's own state: \
                      corrupted ones can't be improved, and corruption changes their modifiers. \
                      Picking one searches again at once."
                 ),
-                choose: PriceCheckApp::choose_corruption,
-            },
+                PriceCheckApp::choose_corruption,
+            ),
+            state,
+            window,
+            cx,
+        )
+    });
+    let sanctification = state.sanctification.map(|current| {
+        select_chip(
+            state_chip(
+                ChipMenu::Sanctification,
+                current,
+                sanctification_label,
+                tr!(
+                    "Which listings count by sanctification. It starts on this item's own state: \
+                     sanctified ones can't be modified, and sanctifying moved their modifiers' \
+                     values up or down, past their usual ranges too. Picking one searches again \
+                     at once."
+                ),
+                PriceCheckApp::choose_sanctification,
+            ),
             state,
             window,
             cx,
@@ -362,6 +376,7 @@ pub(super) fn render_chips(
         .children(rarity)
         .children(identification)
         .children(corruption)
+        .children(sanctification)
         .children((searchable > 0).then(|| {
             toggle_chip(
                 "stats",
@@ -389,11 +404,44 @@ fn rarity_label(rarity: RarityFilter) -> &'static str {
 }
 
 /// A corruption choice as the corruption select says it.
-fn corruption_label(choice: Corruption) -> &'static str {
+fn corruption_label(choice: StateFilter) -> &'static str {
     match choice {
-        Corruption::Uncorrupted => tr!("Uncorrupted only"),
-        Corruption::Corrupted => tr!("Corrupted only"),
-        Corruption::Either => tr!("Corrupted or not"),
+        StateFilter::Without => tr!("Uncorrupted only"),
+        StateFilter::With => tr!("Corrupted only"),
+        StateFilter::Either => tr!("Corrupted or not"),
+    }
+}
+
+/// A sanctification choice as the sanctification select says it.
+fn sanctification_label(choice: StateFilter) -> &'static str {
+    match choice {
+        StateFilter::Without => tr!("Unsanctified only"),
+        StateFilter::With => tr!("Sanctified only"),
+        StateFilter::Either => tr!("Sanctified or not"),
+    }
+}
+
+/// A select of the listings the search takes by a state an item has or not, at `current`: its
+/// choices (`StateFilter::CHOICES`) as `label` says them.
+fn state_chip(
+    menu: ChipMenu,
+    current: StateFilter,
+    label: fn(StateFilter) -> &'static str,
+    hint: &'static str,
+    choose: fn(&mut PriceCheckApp, usize, &mut Context<PriceCheckApp>),
+) -> SelectChip {
+    SelectChip {
+        menu,
+        label: None,
+        choices: StateFilter::CHOICES
+            .iter()
+            .map(|&choice| label(choice).into())
+            .collect(),
+        current: StateFilter::CHOICES
+            .iter()
+            .position(|&choice| choice == current),
+        hint,
+        choose,
     }
 }
 
@@ -409,9 +457,9 @@ struct SelectChip {
     choose: fn(&mut PriceCheckApp, usize, &mut Context<PriceCheckApp>),
 }
 
-/// A chip-row select -- which unique an unidentified one is, the rarity, the corruption: its label
-/// and current choice in a compact select with a gold ▾, which opens its menu below it, every
-/// choice listed and the current one marked (`menu::render_menu`).
+/// A chip-row select -- which unique an unidentified one is, the rarity, the corruption, the
+/// sanctification: its label and current choice in a compact select with a gold ▾, which opens its
+/// menu below it, every choice listed and the current one marked (`menu::render_menu`).
 fn select_chip(
     chip: SelectChip,
     state: &PriceCheckApp,
@@ -422,6 +470,7 @@ fn select_chip(
         ChipMenu::Unique => ("unique", "unique-menu"),
         ChipMenu::Rarity => ("rarity", "rarity-menu"),
         ChipMenu::Corruption => ("corruption", "corruption-menu"),
+        ChipMenu::Sanctification => ("sanctification", "sanctification-menu"),
     };
     let SelectChip {
         menu,

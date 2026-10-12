@@ -8,6 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- ANCHOR: releases. The guide's "What's new" page shows every section below, up to ANCHOR_END. -->
 
+## [Unreleased]
+
+### Added
+
+- **Sanctification is a list too.** A sanctified item was searched among sanctified listings only,
+  and nothing in the panel changed that. Its chip row now has a list like corruption's: **Sanctified
+  only**, where it starts, **Unsanctified only** or **Sanctified or not**. Picking one searches again
+  at once.
+
 ## [0.1.14] - 2026-10-12
 
 ### Added

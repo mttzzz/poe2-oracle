@@ -361,7 +361,8 @@ impl PriceCurrency {
 /// is after -- and a corrupted one among corrupted ones, whose implicits and sockets it shares;
 /// the same for mirrored and sanctified items. An unidentified item goes among unidentified
 /// listings, which are what it sells as: an identified one shows its mods. The panel lets the
-/// player drop the corruption and identification choices for the next search.
+/// player change the corruption choice and a sanctified item's sanctification one, and drop the
+/// identification one, for the next search.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct MiscChoices {
     pub corrupted: Option<bool>,
