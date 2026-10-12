@@ -130,8 +130,8 @@ fn parse_fixture(name: &str) -> ParsedItem {
 
 /// The route an item should get, by the rules `route_search` documents: exchange names to the
 /// market (logbooks and magic, rare and unique items excepted), gems to a filtered search by
-/// type, other currency, fragments, cards and unidentified uniques to an exact type search, gear
-/// and everything else to a filtered search.
+/// type, other currency, fragments and cards to an exact type search, gear and everything else --
+/// an unidentified unique too, by its base among unidentified uniques -- to a filtered search.
 fn expected_kind(item: &ParsedItem, catalog: &[StaticCurrency]) -> &'static str {
     let category = item.category.as_ref().map(|c| c.id.as_str()).unwrap_or("");
     let tradable_as_commodity = category != "map.logbook"
@@ -143,11 +143,7 @@ fn expected_kind(item: &ParsedItem, catalog: &[StaticCurrency]) -> &'static str 
         "market"
     } else if category.starts_with("gem") {
         "filtered"
-    } else if category.starts_with("currency")
-        || category == "map.fragment"
-        || category == "card"
-        || (item.is_unidentified && item.rarity == Some(ItemRarity::Unique))
-    {
+    } else if category.starts_with("currency") || category == "map.fragment" || category == "card" {
         "exact"
     } else {
         "filtered"
