@@ -433,7 +433,10 @@ fn select_chip(
         .flex()
         .flex_col()
         .flex_none()
-        .tooltip(hints::hint(hint))
+        // The hint would cover the menu hanging below: none while it's open.
+        .when(state.chip_menu != Some(menu), |this| {
+            this.tooltip(hints::hint(hint))
+        })
         .child(style::select(
             "select",
             div()

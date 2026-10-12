@@ -84,10 +84,13 @@ fn render_league_select(
         .flex()
         .flex_col()
         .min_w_0()
-        .tooltip(hints::hint(tr!(
-            "The league the search runs in. Click to change it: the choice is saved to the \
-             settings, and the search runs again in the new league."
-        )))
+        // The hint would cover the menu hanging below: none while it's open.
+        .when(!state.league_menu, |this| {
+            this.tooltip(hints::hint(tr!(
+                "The league the search runs in. Click to change it: the choice is saved to the \
+                 settings, and the search runs again in the new league."
+            )))
+        })
         .child(select(
             "select",
             label,

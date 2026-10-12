@@ -18,6 +18,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   corrupted item couldn't be priced among uncorrupted listings. Picking an option searches again
   at once.
 
+### Fixed
+
+- **Hints over open lists.** The hint of the league, profile, rarity and corruption selects showed
+  up over the list the select had just opened, covering its first options. It now stays away while
+  the list is open.
+
 ## [0.1.12] - 2026-10-12
 
 ### Added

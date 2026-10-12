@@ -94,10 +94,13 @@ pub(super) fn render_toolbar(
                     .flex()
                     .flex_col()
                     .min_w_0()
-                    .tooltip(hints::hint(tr!(
-                        "How to search for this item: which stats are checked and their \
-                         minimums. Picking a profile searches again at once."
-                    )))
+                    // The hint would cover the menu hanging below: none while it's open.
+                    .when(!state.profile_menu, |this| {
+                        this.tooltip(hints::hint(tr!(
+                            "How to search for this item: which stats are checked and their \
+                             minimums. Picking a profile searches again at once."
+                        )))
+                    })
                     .child(select(
                         "select",
                         profile_label(profile),
