@@ -10,12 +10,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Which unique it is, by its art.** An unidentified unique's text names only its base. Where the
+  base has several uniques, the price check now tells which one it is by its art under the cursor
+  and searches that unique's unidentified listings at once; the **Unique:** chip names it. When the
+  art doesn't settle it (two uniques look alike, or something covers the item), the panel asks,
+  likeliest first, and searches nothing until you answer. The chip's list still picks another one;
+  it no longer has **any**, which searched every unique of the base together.
+
 ### Fixed
 
 - **Weapons with chaos damage.** A weapon's chaos damage line went unread, so its total DPS
   counted only its physical and elemental damage, and the search for it went among far weaker
   weapons: Widowhail's 82 DPS was searched from 19. Total DPS now counts chaos damage, as the trade
   site does.
+- **Pictures of uniques.** Prism of Belief and Blackflame showed art the game no longer draws,
+  Loreweave, Runeseeker's Call and The Master's Reach showed none, and Reverie and Splinter of
+  Lorrata were unknown, so they had no poe2db and wiki links either. They now show the art the trade
+  site shows.
 
 ## [0.1.13] - 2026-10-12
 

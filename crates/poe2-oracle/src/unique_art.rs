@@ -121,11 +121,52 @@ pub struct Look {
     pub cell: f32,
 }
 
-/// Colours as fractions, row after row.
+impl Look {
+    /// The look at the art's scale for each cell size tried ([`CELL_FACTORS`]): made once a check
+    /// and matched against every candidate's art ([`score`]).
+    pub fn scaled(&self) -> Scaled {
+        let levels = CELL_FACTORS
+            .iter()
+            .map(|factor| {
+                let scale = ART_CELL / (self.cell * factor);
+                let width = ((self.pixels.width() as f32 * scale).round() as u32).max(1);
+                let height = ((self.pixels.height() as f32 * scale).round() as u32).max(1);
+                let full = imageops::resize(&self.pixels, width, height, FilterType::Triangle);
+                let half = imageops::resize(
+                    &full,
+                    (width / 2).max(1),
+                    (height / 2).max(1),
+                    FilterType::Triangle,
+                );
+                Level {
+                    full: Plane::of(&full),
+                    half: Plane::of(&half),
+                    cursor: (self.cursor.0 * scale, self.cursor.1 * scale),
+                }
+            })
+            .collect();
+        Scaled { levels }
+    }
+}
+
+/// A [`Look`] at the art's scale, for each cell size tried.
+pub struct Scaled {
+    levels: Vec<Level>,
+}
+
+/// The look at one cell size: at the art's scale and at half of it, and where the cursor is in
+/// the first.
+struct Level {
+    full: Plane,
+    half: Plane,
+    cursor: (f32, f32),
+}
+
+/// A picture's colours, row after row.
 struct Plane {
     width: usize,
     height: usize,
-    colours: Vec<[f32; 3]>,
+    colours: Vec<[u8; 3]>,
 }
 
 impl Plane {
@@ -137,7 +178,7 @@ impl Plane {
                 .pixels()
                 .map(|pixel| {
                     let [r, g, b, _] = pixel.0;
-                    [r, g, b].map(|c| f32::from(c) / 255.0)
+                    [r, g, b]
                 })
                 .collect(),
         }
@@ -149,7 +190,7 @@ impl Plane {
         let mut sums = [0.0f32; 3];
         let mut squares = 0.0f32;
         for &(dx, dy, centred) in &template.pixels {
-            let colour = self.colours[(y + dy) * self.width + x + dx];
+            let colour = self.colours[(y + dy) * self.width + x + dx].map(|c| f32::from(c) / 255.0);
             for c in 0..3 {
                 product += colour[c] * centred[c];
                 sums[c] += colour[c];
@@ -188,32 +229,20 @@ impl Plane {
 
 /// How well `reference` matches the item under the cursor in `look`: its best correlation, -1 to
 /// 1, over every place and cell size the item can have there.
-pub fn score(look: &Look, reference: &Reference) -> f32 {
+pub fn score(look: &Scaled, reference: &Reference) -> f32 {
     let mut best = -1.0f32;
-    for factor in CELL_FACTORS {
-        let scale = ART_CELL / (look.cell * factor);
-        let width = ((look.pixels.width() as f32 * scale).round() as u32).max(1);
-        let height = ((look.pixels.height() as f32 * scale).round() as u32).max(1);
-        let full = imageops::resize(&look.pixels, width, height, FilterType::Triangle);
-        let half = imageops::resize(
-            &full,
-            (width / 2).max(1),
-            (height / 2).max(1),
-            FilterType::Triangle,
-        );
-        let (full, half) = (Plane::of(&full), Plane::of(&half));
-        let cursor = (look.cursor.0 * scale, look.cursor.1 * scale);
+    for level in &look.levels {
         // Every top left that keeps the cursor on the art, at half scale.
         let (tw, th) = (reference.half.width as f32, reference.half.height as f32);
-        let (cx, cy) = (cursor.0 / 2.0, cursor.1 / 2.0);
-        let Some((_, x, y)) = half.best(
+        let (cx, cy) = (level.cursor.0 / 2.0, level.cursor.1 / 2.0);
+        let Some((_, x, y)) = level.half.best(
             &reference.half,
             (cx - tw).floor() as i32..=cx.ceil() as i32,
             (cy - th).floor() as i32..=cy.ceil() as i32,
         ) else {
             continue;
         };
-        if let Some((score, _, _)) = full.best(
+        if let Some((score, _, _)) = level.full.best(
             &reference.full,
             x * 2 - REFINE..=x * 2 + REFINE,
             y * 2 - REFINE..=y * 2 + REFINE,
@@ -319,7 +348,8 @@ mod tests {
                     cursor: (pixels.width() as f32 / 2.0, pixels.height() as f32 / 2.0),
                     pixels,
                     cell: 105.0 * scale,
-                };
+                }
+                .scaled();
                 let scores: Vec<Option<f32>> = references
                     .iter()
                     .map(|reference| Some(score(&look, reference)))

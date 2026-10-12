@@ -21,7 +21,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use anyhow::{Context as _, Result, ensure};
+use anyhow::{Context as _, Result, bail, ensure};
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 use gpui::{
     AnyWindowHandle, App, AppContext as _, AsyncApp, ClipboardItem, Context, Entity, FocusHandle,
@@ -725,6 +725,9 @@ pub struct PriceCheckApp {
     /// Bumped by every search: only the newest one may write `search` -- a slower, older search
     /// (an earlier item, or filters since edited) must not overwrite what the panel now shows.
     search_generation: u64,
+    /// Bumped by every check: the unique art's verdict (`recognize_unique`) is only the check's it
+    /// was read for -- two unidentified uniques of one base can have the very same text.
+    check_generation: u64,
     /// Recent searches' listings by `search_key`, newest last, each with when it arrived: a
     /// repeated search within `SEARCH_CACHE_TTL` is answered without the trade API.
     search_cache: Vec<(String, Instant, SearchResults)>,
@@ -797,6 +800,7 @@ impl PriceCheckApp {
             copied_whisper: None,
             listing_actions: Vec::new(),
             search_generation: 0,
+            check_generation: 0,
             search_cache: Vec::new(),
             site: TradeSite::International,
             market: None,
@@ -2335,14 +2339,15 @@ async fn current_scout(
 
 /// Tells which of its base's uniques an unidentified unique is, by `look`, the screen around the
 /// cursor at the moment of the check (`unique_art`), then searches for it -- or, when the art
-/// doesn't tell, asks the player (`Recognition::Asking`) and searches nothing. Each candidate's
-/// art comes from the trade site's CDN once and from the disk cache after
-/// ([`unique_art_of`]). The verdict and every score go to the log.
+/// doesn't tell, asks the player (`Recognition::Asking`) and searches nothing. A candidate's score
+/// is its best art's (`item_refs::ItemRef::art_urls`: a unique drawn differently on its bases has
+/// several), each art from the trade site's CDN once and from the disk cache after ([`art_at`]).
+/// The verdict and every score go to the log.
 async fn recognize_unique(
     view: &Entity<PriceCheckApp>,
     cx: &mut AsyncApp,
     look: Option<unique_art::Look>,
-    text: String,
+    check: u64,
 ) {
     let Some((client, names, base)) = view.read_with(cx, |state, _| {
         let names = state.unique.as_ref()?.names.clone();
@@ -2357,19 +2362,34 @@ async fn recognize_unique(
             let names = names.clone();
             cx.background_executor()
                 .spawn(async move {
-                    let mut scores = Vec::with_capacity(names.len());
-                    for name in &names {
-                        let art = unique_art_of(&client, name).await.unwrap_or_else(|err| {
-                            log::warn!("unique art: {name}: {err:#}");
-                            None
-                        });
-                        scores.push(
-                            art.as_ref()
-                                .and_then(unique_art::Reference::new)
-                                .map(|reference| unique_art::score(&look, &reference)),
-                        );
-                    }
-                    scores
+                    // Every candidate's arts at once: only a base's first check waits on the CDN.
+                    let arts = futures::future::join_all(names.iter().map(|name| {
+                        let client = &client;
+                        async move {
+                            let urls: Vec<String> = item_refs::lookup(RefKind::Unique, name)
+                                .into_iter()
+                                .flat_map(|found| found.art_urls())
+                                .collect();
+                            let mut arts = Vec::with_capacity(urls.len());
+                            for url in urls {
+                                match art_at(client, &url).await {
+                                    Ok(art) => arts.push(art),
+                                    Err(err) => log::warn!("unique art: {name}: {err:#}"),
+                                }
+                            }
+                            arts
+                        }
+                    }))
+                    .await;
+                    let look = look.scaled();
+                    arts.iter()
+                        .map(|arts| {
+                            arts.iter()
+                                .filter_map(unique_art::Reference::new)
+                                .map(|reference| unique_art::score(&look, &reference))
+                                .reduce(f32::max)
+                        })
+                        .collect::<Vec<Option<f32>>>()
                 })
                 .await
         }
@@ -2398,7 +2418,7 @@ async fn recognize_unique(
     );
     view.update(cx, |state, cx| {
         // A newer check took the panel over, or the player picked one already.
-        if state.item_text.as_deref() != Some(text.as_str()) {
+        if state.check_generation != check {
             return;
         }
         let search = match state.unique.as_mut() {
@@ -2422,20 +2442,13 @@ async fn recognize_unique(
     });
 }
 
-/// A unique's art as the trade site serves it, from `paths::cache_dir()/unique-art`, or fetched
-/// once and kept there. `None` when the item reference table has no art for it.
-async fn unique_art_of(
-    client: &Arc<dyn HttpClient>,
-    name: &str,
-) -> Result<Option<image::RgbaImage>> {
-    let Some(url) = item_refs::lookup(RefKind::Unique, name).and_then(|found| found.icon_url())
-    else {
-        return Ok(None);
-    };
+/// The art at `url` (the trade site's CDN), from `paths::cache_dir()/unique-art`, or fetched once
+/// and kept there.
+async fn art_at(client: &Arc<dyn HttpClient>, url: &str) -> Result<image::RgbaImage> {
     // The URL's last two parts -- the art's hash and its file name -- name it in the cache.
     let mut parts = url.rsplit('/');
     let (Some(file), Some(hash)) = (parts.next(), parts.next()) else {
-        return Ok(None);
+        bail!("{url} names no art");
     };
     let dir = paths::cache_dir().join("unique-art");
     let path = dir.join(format!("{hash}-{file}"));
@@ -2443,7 +2456,7 @@ async fn unique_art_of(
         Ok(bytes) => bytes,
         Err(_) => {
             let mut response = client
-                .get(&url, http_client::AsyncBody::default(), true)
+                .get(url, http_client::AsyncBody::default(), true)
                 .await
                 .with_context(|| format!("GET {url}"))?;
             ensure!(
@@ -2461,7 +2474,7 @@ async fn unique_art_of(
     };
     let art = image::load_from_memory_with_format(&bytes, image::ImageFormat::Png)
         .with_context(|| format!("{url} is no PNG"))?;
-    Ok(Some(art.into_rgba8()))
+    Ok(art.into_rgba8())
 }
 
 /// Whether there's no session to look the account's private leagues up with: none stored, or the
@@ -2807,6 +2820,7 @@ async fn run_price_check(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
         state.profile_menu = false;
         state.chip_menu = None;
         state.item_text = Some(text.clone());
+        state.check_generation += 1;
         let parsed = match item_site(&text, state.settings.client_language.item_language()) {
             Some((language, site)) => {
                 state.site = site;
@@ -2919,8 +2933,9 @@ async fn run_price_check(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
             .unique
             .as_ref()
             .is_some_and(|choice| choice.recognition == Recognition::Looking)
+            .then_some(state.check_generation)
     });
-    let look = if looking {
+    let look = if looking.is_some() {
         cursor.and_then(item_art::look_around)
     } else {
         None
@@ -2946,10 +2961,9 @@ async fn run_price_check(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
     // Detached: the next press -- another check, a quick action -- must not wait on the network
     // (a rate-limit wait alone can take `MAX_RATE_LIMIT_WAIT`). A newer search supersedes this
     // one through `search_generation`.
-    if looking {
+    if let Some(check) = looking {
         let view = view.clone();
-        let text = text.clone();
-        cx.spawn(async move |cx| recognize_unique(&view, cx, look, text).await)
+        cx.spawn(async move |cx| recognize_unique(&view, cx, look, check).await)
             .detach();
     } else if has_item {
         let view = view.clone();

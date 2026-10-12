@@ -1,12 +1,26 @@
-# Uniques whose art Exiled Exchange 2's item database lacks, gives as their base's, or which it
-# doesn't list at all: the art the trade site's listings of each show (their item's `icon`, fetched
-# 2026-10-12), which is the art the game draws -- what the price check recognizes an unidentified
-# unique by. The English name, the Russian one (the trade site's) and the art URL's path after
-# https://web.poecdn.com/gen/image/, a tab apart; generate_item_refs.py puts the art in place of
-# the database's, or adds the unique when the database has no such row.
+# Uniques whose art Exiled Exchange 2's item database lacks, has stale (GGG redrew it since), gives
+# as their base's, or which it doesn't list at all: the art the trade site's listings of each show
+# (their item's `icon`, the market collector's stored listings and fetches of 2026-10-12), which
+# is the art the game draws -- what the price check recognizes an unidentified unique by. The
+# English name, the Russian one (the trade site's) and the art URL's path after
+# https://web.poecdn.com/gen/image/, a tab apart; a unique drawn differently on its bases (Grand
+# Spectrum on each gem) has a line for each, the art the panel shows first. generate_item_refs.py
+# puts the art in place of the database's, or adds the unique when the database has no such row.
+Blackflame	Чёрное пламя	WzI1LDE0LHsiZiI6IjJESXRlbXMvUmluZ3MvVW5pcXVlcy9CbGFja2ZsYW1lIiwidyI6MSwiaCI6MSwic2NhbGUiOjEsInJlYWxtIjoicG9lMiJ9XQ/8d695fb7b5/Blackflame.png
 Byrnabas	Барнабас	WzI1LDE0LHsiZiI6IjJESXRlbXMvQmVsdHMvVW5pcXVlcy9CeXJuYWJhcyIsInciOjIsImgiOjEsInNjYWxlIjoxLCJyZWFsbSI6InBvZTIifV0/f4ee3256e9/Byrnabas.png
 Call of the Brotherhood	Зов братьев	WzI1LDE0LHsiZiI6IjJESXRlbXMvUmluZ3MvVW5pcXVlcy9DYWxsT2ZUaGVCcm90aGVyaG9vZCIsInciOjEsImgiOjEsInNjYWxlIjoxLCJyZWFsbSI6InBvZTIifV0/217e78da44/CallOfTheBrotherhood.png
 Eshtera's Path	Путь Эштеры	WzI1LDE0LHsiZiI6IjJESXRlbXMvUmluZ3MvVW5pcXVlcy9SaW1ldmVpbFNlYWwiLCJ3IjoxLCJoIjoxLCJzY2FsZSI6MSwicmVhbG0iOiJwb2UyIn1d/d80ec95524/RimeveilSeal.png
+Grand Spectrum	Великий образ	WzI1LDE0LHsiZiI6IjJESXRlbXMvSmV3ZWxzL1VuaXF1ZXMvR3JhbmRTcGVjdHJ1bV9TYXBwaGlyZSIsInciOjEsImgiOjEsInNjYWxlIjoxLCJyZWFsbSI6InBvZTIifV0/514d06d40e/GrandSpectrum_Sapphire.png
+Grand Spectrum	Великий образ	WzI1LDE0LHsiZiI6IjJESXRlbXMvSmV3ZWxzL1VuaXF1ZXMvR3JhbmRTcGVjdHJ1bV9SdWJ5IiwidyI6MSwiaCI6MSwic2NhbGUiOjEsInJlYWxtIjoicG9lMiJ9XQ/8d964b3e88/GrandSpectrum_Ruby.png
+Grand Spectrum	Великий образ	WzI1LDE0LHsiZiI6IjJESXRlbXMvSmV3ZWxzL1VuaXF1ZXMvR3JhbmRTcGVjdHJ1bV9FbWVyYWxkIiwidyI6MSwiaCI6MSwic2NhbGUiOjEsInJlYWxtIjoicG9lMiJ9XQ/687a109210/GrandSpectrum_Emerald.png
+Loreweave	Плетение преданий	WzI1LDE0LHsiZiI6IjJESXRlbXMvQXJtb3Vycy9Cb2R5QXJtb3Vycy9VbmlxdWVzL0xvcmV3ZWF2ZSIsInciOjIsImgiOjMsInNjYWxlIjoxLCJyZWFsbSI6InBvZTIifV0/7156b9c8aa/Loreweave.png
+Prism of Belief	Призма убеждений	WzI1LDE0LHsiZiI6IjJESXRlbXMvSmV3ZWxzL1VuaXF1ZXMvUHJpc21PZkJlbGllZiIsInciOjEsImgiOjEsInNjYWxlIjoxLCJyZWFsbSI6InBvZTIifV0/2b712e8d07/PrismOfBelief.png
+Reverie	Грёза	WzI1LDE0LHsiZiI6IjJESXRlbXMvQXJtb3Vycy9Cb2R5QXJtb3Vycy9VbmlxdWVzL0h1c2tPZkRyZWFtcyIsInciOjIsImgiOjMsInNjYWxlIjoxLCJyZWFsbSI6InBvZTIifV0/62b9636e39/HuskOfDreams.png
+Runeseeker's Call	Клич искателя рун	WzI1LDE0LHsiZiI6IjJESXRlbXMvV2VhcG9ucy9PbmVIYW5kV2VhcG9ucy9XYW5kcy9VbmlxdWVzL1J1bmljRGl2aW5lciIsInciOjIsImgiOjMsInNjYWxlIjoxLCJyZWFsbSI6InBvZTIifV0/df89e6455f/RunicDiviner.png
 Safrin's Resolve	Решимость Сафрина	WzI1LDE0LHsiZiI6IjJESXRlbXMvUmluZ3MvVW5pcXVlcy9FbWJlcmhlYXJ0U2VhbCIsInciOjEsImgiOjEsInNjYWxlIjoxLCJyZWFsbSI6InBvZTIifV0/4cc4a73cfb/EmberheartSeal.png
+Skysliver	Небесный осколок	WzI1LDE0LHsiZiI6IjJESXRlbXMvV2VhcG9ucy9PbmVIYW5kV2VhcG9ucy9PbmVIYW5kU3BlYXJzL1VuaXF1ZXMvU2t5c2xpdmVyIiwidyI6MSwiaCI6NCwic2NhbGUiOjEsInJlYWxtIjoicG9lMiJ9XQ/b495502d39/Skysliver.png
+Splinter of Loratta	Осколок Лоратты	WzI1LDE0LHsiZiI6IjJESXRlbXMvV2VhcG9ucy9PbmVIYW5kV2VhcG9ucy9PbmVIYW5kU3BlYXJzL1VuaXF1ZXMvU3BsaW50ZXJPZkxvcnJhdGEiLCJ3IjoxLCJoIjo0LCJzY2FsZSI6MSwicmVhbG0iOiJwb2UyIn1d/a7d5da386c/SplinterOfLorrata.png
+Splinter of Lorrata	Осколок Лоратты	WzI1LDE0LHsiZiI6IjJESXRlbXMvV2VhcG9ucy9PbmVIYW5kV2VhcG9ucy9PbmVIYW5kU3BlYXJzL1VuaXF1ZXMvU3BsaW50ZXJPZkxvcnJhdGEiLCJ3IjoxLCJoIjo0LCJzY2FsZSI6MSwicmVhbG0iOiJwb2UyIn1d/a7d5da386c/SplinterOfLorrata.png
+The Master's Reach	Власть Хозяина	WzI1LDE0LHsiZiI6IjJESXRlbXMvQXJtb3Vycy9HbG92ZXMvVW5pcXVlcy9EYXJrcmVhY2giLCJ3IjoyLCJoIjoyLCJzY2FsZSI6MSwicmVhbG0iOiJwb2UyIn1d/417d2f3127/Darkreach.png
 Whisper of the Brotherhood	Шёпот братства	WzI1LDE0LHsiZiI6IjJESXRlbXMvUmluZ3MvVW5pcXVlcy9XaGlzcGVyT2ZUaGVCcm90aGVyaG9vZCIsInciOjEsImgiOjEsInNjYWxlIjoxLCJyZWFsbSI6InBvZTIifV0/4f026422fc/WhisperOfTheBrotherhood.png
 Zaida's Longevity	Долгожительство Заиды	WzI1LDE0LHsiZiI6IjJESXRlbXMvUmluZ3MvVW5pcXVlcy9TdG9ybWZvcmdlZFNlYWwiLCJ3IjoxLCJoIjoxLCJzY2FsZSI6MSwicmVhbG0iOiJwb2UyIn1d/6141e5df38/StormforgedSeal.png

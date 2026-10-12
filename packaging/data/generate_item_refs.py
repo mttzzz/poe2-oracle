@@ -12,8 +12,9 @@ Russian names are the same item. Rows without a reference name are skipped, repe
 item already written (a gem listed once per variant) are dropped, and art the database doesn't
 have (`%NOT_FOUND%`) is left empty. Art URLs are stored without the CDN prefix every one of them
 shares; `crate::item_refs` puts it back. The uniques in `unique-art.tsv` take their art from it
-(the trade site's, where the database has none or their base's), and those the database doesn't
-list at all are added after its rows.
+(the trade site's, where the database has none, stale art or their base's), and those the
+database doesn't list at all are added after its rows. A unique drawn differently on its bases
+gets each art, space-joined, the one the panel shows first.
 
 The fifth field lists, space-joined, every released base of the row's English name in the item
 classes Craft of Exile's item groups cover (`CRAFTED_CLASSES`; bases for sale nowhere and `[DNT]`
@@ -113,13 +114,18 @@ def crafted_bases(ee2_dir, repoe_dir):
 
 
 def unique_art():
-    """`unique-art.tsv`: each unique's English name -> (Russian name, art path)."""
+    """`unique-art.tsv`: each unique's English name -> (Russian name, its arts space-joined)."""
     art = {}
     for line in UNIQUE_ART.read_text(encoding="utf-8").splitlines():
         if not line or line.startswith("#"):
             continue
         en, ru, icon = line.split("\t")
-        art[en] = (ru, icon)
+        if " " in icon:
+            sys.exit(f"{UNIQUE_ART}: {en}'s art holds a space")
+        russian, icons = art.get(en, (ru, ""))
+        if russian != ru:
+            sys.exit(f"{UNIQUE_ART}: {en} is {russian} and {ru}")
+        art[en] = (ru, f"{icons} {icon}".strip())
     return art
 
 

@@ -2,6 +2,6 @@
 # made and that day's number, 01 first), the oldest app version that reads them, and the SHA-256
 # of their sha256sum listing. Change a table and `cargo test -p oracle-data` fails until the
 # version is a new one and the digest is the tables'. See CONTRIBUTING.md, "Game data packs".
-version 2026101201
-min_app 0.1.0
-tables c46b0d459af697cf986c0b64dd52e991c4b161c4c580538edcf58529569a5518
+version 2026101202
+min_app 0.1.14
+tables 95ed3b6b44e56ac8ba37df4cc2f0c7a629e6103a7a6aaa6566c27b77e9066ff5

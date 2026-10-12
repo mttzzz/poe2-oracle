@@ -5,8 +5,8 @@ Its items' names and art come from Exiled Exchange 2's item database
 keying each base's implicit lines from its stat database (renderer/public/data/en/stats.ndjson);
 the stat direction table in crates/stat-filters/src/better.rs is taken from that stat database too.
 All at https://github.com/Kvan7/Exiled-Exchange-2, commit 0c9c9ba017b1b9b0a3779fe7f8700255753e2e39,
-distributed under the MIT License (below). The few uniques that database has no art of their own
-for, or doesn't list, take their names and art from Path of Exile's trade site
+distributed under the MIT License (below). The few uniques whose art that database lacks or has
+stale, or which it doesn't list, take their names and art from Path of Exile's trade site
 (https://www.pathofexile.com/trade2, packaging/data/unique-art.tsv): Grinding Gear Games' own.
 
 The MIT License of Exiled Exchange 2:

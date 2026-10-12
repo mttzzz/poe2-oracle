@@ -63,6 +63,9 @@ crates/
   trade-client/    trade API (leagues, catalogs, search, fetch, rate limits), the Currency Exchange
                    market from GGG's hourly exchange data, poe2scout prices
   poe2-domain/     shared item and stat types, no I/O
+  item-synth/      items made from real trade listings, written as the game copies them in English
+                   and Russian: a library of them that CI parses back, and the stand-in build's
+                   items
   auto-update/     the live link to oracle.pushka.biz's event stream (reconnecting with backoff),
                    release and data pack checks, Ed25519-verified SHA256SUMS and the
                    SHA-256-checked download of the installer or the data pack
@@ -199,6 +202,50 @@ missing or damaged file is an empty book; the player never sees an error.
   first-run read there is `xp: level book seeded with N characters from the game log`. Neither
   names a character.
 
+## Items made from trade listings
+
+`crates/item-synth` writes items the way the game copies them, in English and Russian, from real
+listings on the trade site, and keeps them in a library (`crates/item-synth/library`, a folder per
+item: the listing from both sites, the two texts and the stat catalogs they were checked with). CI
+writes every library item again and parses it back the way the app does
+(`crates/item-synth/tests/library.rs`), so a change to the writer, or to the parser, that loses
+something of a real item fails there. Run it from the repository root, where it keeps what it
+downloads in `.tmp/item-synth`; its source's doc comment lists every option:
+
+```sh
+# A new library item: the first listing of a trade search query that it can write
+cargo run -p item-synth -- order rare-ring --query @query.json
+
+# One listing's text (a fetch result's `item`), parsed back the way the app reads it
+cargo run -p item-synth -- render item.json --lang en --check
+
+# Write and parse every library item again against the live catalogs
+cargo run -p item-synth -- check
+```
+
+Each request to the trade site waits 20 seconds after the one before, and a refusal (`429`) stops
+the tool: the site's limits are shared with the app and with anything else on your address.
+
+### Trying the app on an item you don't have
+
+A build with the `stand-in` feature takes the item from `%LOCALAPPDATA%\poe2-oracle\data\stand-in`
+instead of the game's copy. `packaging/build-release.ps1` never builds it, and CI only
+type-checks it:
+
+```powershell
+cargo build -p poe2-oracle --release --features stand-in
+cargo run -p item-synth -- stand-in unidentified-unique-diamond --lang ru --out "$env:LOCALAPPDATA\poe2-oracle\data\stand-in" --art
+```
+
+With `item.txt` there, a price check takes it as the item under the cursor and presses no copy
+keys; the rest is real: the game, the cursor's place, the panel, the searches. With `art.png` and
+`place.txt` beside it (`x y width height` on one line, in physical screen pixels: an inventory cell
+is 105 pixels with the game 2160 pixels high), the art is drawn over the game at that place, the
+way the game draws an item in its cells. That is what the check that tells an unidentified unique
+by its art reads off the screen (`src/unique_art.rs`; the log's `unique art:` line gives each
+candidate's score). Put the place on empty inventory cells, hover it and press the hotkey. Delete
+the files to stop; the art follows them within a second.
+
 ## Checks (what CI runs)
 
 CI (`.github/workflows/ci.yml`) runs on Linux, in the container built from
@@ -216,6 +263,7 @@ docker run --rm --user "$(id -u):$(id -g)" -v "$PWD":/workspace -w /workspace \
     cargo fmt --all -- --check
     cargo clippy --workspace --all-targets --exclude poe2-oracle -- -D warnings
     cargo clippy -p poe2-oracle --all-targets --target x86_64-pc-windows-gnu -- -D warnings
+    cargo clippy -p poe2-oracle --all-targets --target x86_64-pc-windows-gnu --features stand-in -- -D warnings
     cargo test --workspace --exclude poe2-oracle
     cargo test -p poe2-oracle --lib
     cargo build --workspace --exclude oracle-web --target x86_64-pc-windows-gnu
@@ -260,6 +308,16 @@ python3 packaging/data/generate_item_refs.py <EE2>/renderer/public/data <RePoE f
 same stat database; its module comment says how. Don't edit the generated `.tsv` files by hand. When
 you move to another EE2 commit, update the commit in those three `NOTICE` files, in `better.rs`'s
 module comment and in `about.hbs`, which copies them into the third-party notices.
+
+The price check tells an unidentified unique by its art (`src/unique_art.rs`), so a unique's art in
+the item reference table must be the one the game draws now. EE2's database lags behind: GGG
+redraws uniques, and for a few the database has no art or their base's.
+`packaging/data/unique-art.tsv` sets those from the trade site, as a current listing of each shows
+it (a fetch result's `item.icon`; poe2scout's `IconUrl` can be stale too). After a patch, compare
+the art of the uniques of every base that has several with their listings, add a line for each
+that differs, and regenerate the table. A unique whose art the table has wrong is told apart
+poorly: its check asks which one it is instead of telling, and the log's `unique art:` line shows
+its own art scoring low.
 
 To check the result against real items, sweep item texts from the game (a vendor, the stash, your
 inventory) into one file, separated by lines starting with `####`, copy the app's cached catalogs

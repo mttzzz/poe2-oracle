@@ -53,8 +53,12 @@ pub fn round_trip(
         Frame::Rare | Frame::Unique if item.identified => {
             (item.name.as_str(), Some(item.type_line.as_str()))
         }
-        // The parser drops a normal item's `Superior`, as the game's base name has none.
+        // The parser drops the quality wording (`Superior`, `Exceptional`) from a name that is the
+        // item's base -- a normal item's, or an unidentified one's -- as the game's base name has none.
         Frame::Normal => (item.base_type.as_str(), None),
+        Frame::Magic | Frame::Rare | Frame::Unique if !item.identified => {
+            (item.base_type.as_str(), None)
+        }
         _ => (item.type_line.as_str(), None),
     };
     expect("name", name.to_owned(), parsed.name.clone());

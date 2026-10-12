@@ -129,13 +129,26 @@ fn parse_base(field: &str) -> Option<BaseOf<'_>> {
 }
 
 impl ItemRef {
-    /// The item's art on the trade site's CDN; `None` where the database has none.
+    /// The item's art on the trade site's CDN; `None` where the database has none. A unique drawn
+    /// differently on its bases has this one shown ([`Self::art_urls`] has them all).
     pub fn icon_url(&self) -> Option<String> {
-        match self.icon_tail {
-            "" => None,
-            tail if tail.starts_with("http") => Some(tail.to_owned()),
-            tail => Some(format!("{ICON_PREFIX}{tail}")),
-        }
+        self.art_urls().next()
+    }
+
+    /// Every art of the item on the trade site's CDN: one, or for a unique drawn differently on
+    /// its bases (Grand Spectrum on each gem), each of them.
+    pub fn art_urls(&self) -> impl Iterator<Item = String> + use<> {
+        let tails: &'static str = self.icon_tail;
+        tails
+            .split(' ')
+            .filter(|tail| !tail.is_empty())
+            .map(|tail| {
+                if tail.starts_with("http") {
+                    tail.to_owned()
+                } else {
+                    format!("{ICON_PREFIX}{tail}")
+                }
+            })
     }
 
     /// The item's poe2db page, in Russian or English. poe2db names every page after the English
@@ -190,8 +203,9 @@ static INDEX: LazyLock<HashMap<(RefKind, &'static str), ItemRef>> = LazyLock::ne
 pub struct ItemRefs<'a>(HashMap<(RefKind, &'a str), ItemRefOf<'a>>);
 
 /// Reads an item reference table: one row per item -- its kind (`gem`, `item` or `unique`), its
-/// English and Russian names, its art (empty for none) and its bases, each as `parse_base` reads
-/// one. An error names the first row that isn't one; a table without rows is one too.
+/// English and Russian names, its art (empty for none; a unique drawn differently on its bases has
+/// each, space-joined, the one shown first) and its bases, each as `parse_base` reads one. An
+/// error names the first row that isn't one; a table without rows is one too.
 pub fn read_table(table: &str) -> Result<ItemRefs<'_>, String> {
     let mut index = HashMap::new();
     for (number, line) in table.lines().enumerate() {
@@ -379,6 +393,29 @@ mod tests {
         assert_eq!(gem.map(|found| found.ref_name), Some("Herald of Ice"));
         // Nothing to link for a name the database doesn't know.
         assert_eq!(refs_for(&item(None, "currency", "Не предмет", None)), None);
+    }
+
+    #[test]
+    fn a_unique_drawn_differently_on_its_bases_has_every_art_and_shows_the_first() {
+        let spectrum = lookup(RefKind::Unique, "Великий образ").expect("a known unique");
+        let arts: Vec<String> = spectrum.art_urls().collect();
+        let files: Vec<&str> = arts
+            .iter()
+            .map(|url| url.rsplit('/').next().unwrap_or_default())
+            .collect();
+        assert_eq!(
+            files,
+            [
+                "GrandSpectrum_Sapphire.png",
+                "GrandSpectrum_Ruby.png",
+                "GrandSpectrum_Emerald.png"
+            ]
+        );
+        assert!(arts.iter().all(|url| url.starts_with(ICON_PREFIX)));
+        assert_eq!(spectrum.icon_url().as_ref(), arts.first());
+        // No art, no URL.
+        let table = read_table("unique\tBare\tГолый\t\t\n").expect("a well-formed table");
+        assert_eq!(table.0[&(RefKind::Unique, "Bare")].art_urls().count(), 0);
     }
 
     #[test]

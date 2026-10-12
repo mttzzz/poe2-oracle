@@ -116,9 +116,13 @@ their modifiers differ, and so do their prices. Mirrored and sanctified listings
 search for ordinary gear unless your item is one; there is no chip for either.
 
 An unidentified unique names only its base: its text doesn't say which unique it is, though its art
-shows it. Where the base has several uniques, the chip **Unique: any** ▾ lists them. Pick the one
-your item is, and the search finds only unidentified listings of that unique: the trade site tells
-them apart, and their prices differ a lot. **any** searches every unique of the base again.
+shows it. Where the base has several uniques, the app tells which one it is by its art: as you press
+the hotkey, it compares the item under the cursor with the art of each of the base's uniques (the
+trade site's), and the chip **Unique:** ▾ names the one it found. The search then finds only
+unidentified listings of that unique: the trade site tells them apart, and their prices differ a
+lot. When the art doesn't settle it (two uniques look alike, or something covers the item), the
+panel asks instead: it offers the likeliest one with a **Yes** button and the others' art to click,
+and searches nothing until you answer. The chip's list picks another unique at any time.
 
 ## Filters
 
@@ -415,8 +419,8 @@ An identified unique is searched by its name. Above the results, **poe2scout pri
 price on poe2scout, with the currency's icon; in a private league, the public league's price, which
 the line names ([In a private league](#in-a-private-league)).
 
-An unidentified unique is compared with unidentified uniques of the same base. It has no poe2scout
-line, since its name is not known yet.
+An unidentified unique is compared with unidentified listings of the same unique, told by its art
+([The chip row](#the-chip-row)). It has no poe2scout line: its text doesn't name it.
 
 ## Waystones
 

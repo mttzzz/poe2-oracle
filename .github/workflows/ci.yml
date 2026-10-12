@@ -60,7 +60,8 @@ jobs:
       # platform-independent modules (`--lib`). Every other crate -- oracle-protocol, oracle-web
       # and release-sign included -- goes through the native clippy and test passes. oracle-web is
       # the Linux server behind oracle.pushka.biz (the root Dockerfile, deploy.yml), so the
-      # windows-gnu build leaves it out.
+      # windows-gnu build leaves it out. The app's test-only stand-in build (`--features stand-in`,
+      # never in a release) gets a clippy pass of its own, so that its code keeps compiling.
       #
       # No incremental state and no debug info (CARGO_INCREMENTAL, CARGO_PROFILE_DEV_DEBUG): CI builds
       # each crate once and throws the result away, and without them the debug builds take a
@@ -81,6 +82,7 @@ jobs:
               cargo fmt --all -- --check
               cargo clippy --workspace --all-targets --exclude poe2-oracle -- -D warnings
               cargo clippy -p poe2-oracle --all-targets --target x86_64-pc-windows-gnu -- -D warnings
+              cargo clippy -p poe2-oracle --all-targets --target x86_64-pc-windows-gnu --features stand-in -- -D warnings
               cargo test --workspace --exclude poe2-oracle
               cargo test -p poe2-oracle --lib
               cargo build --workspace --exclude oracle-web --target x86_64-pc-windows-gnu
