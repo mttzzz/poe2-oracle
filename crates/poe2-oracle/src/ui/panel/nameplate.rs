@@ -228,21 +228,26 @@ pub(super) fn render_chips(
         }
         None => class.map(|class| chip(None, class, TEXT).into_any_element()),
     };
-    // Which unique an unidentified one is, where its base has several (`PriceCheckApp::unique`).
+    // Which unique an unidentified one is, where its base has several (`PriceCheckApp::unique`):
+    // told by its art, asked for when the art doesn't tell, or picked here.
     let unique = state.unique.as_ref().map(|choice| {
-        let choices = std::iter::once(SharedString::from(tr!("any")))
-            .chain(choice.names.iter().cloned().map(SharedString::from))
+        let choices = choice
+            .names
+            .iter()
+            .cloned()
+            .map(SharedString::from)
             .collect();
         select_chip(
             SelectChip {
                 menu: ChipMenu::Unique,
                 label: Some(tr!("Unique:")),
                 choices,
-                current: choice.picked.map_or(0, |at| at + 1),
+                current: choice.picked,
                 hint: tr!(
                     "The text of an unidentified item doesn't say which unique it is — its art \
-                     does. Pick it to search only for unidentified listings of that unique: the \
-                     trade site tells them apart, and their prices differ a lot."
+                     does, and the app tells it by the art under the cursor. Pick another one to \
+                     search for its unidentified listings instead: the trade site tells them \
+                     apart, and their prices differ a lot."
                 ),
                 choose: PriceCheckApp::choose_unique,
             },
@@ -264,8 +269,7 @@ pub(super) fn render_chips(
                     .collect(),
                 current: Corruption::CHOICES
                     .iter()
-                    .position(|&choice| choice == current)
-                    .unwrap_or(0),
+                    .position(|&choice| choice == current),
                 hint: tr!(
                     "Which listings count by corruption. It starts on this item's own state: \
                      corrupted ones can't be improved, and corruption changes their modifiers. \
@@ -316,8 +320,7 @@ pub(super) fn render_chips(
                 current: choice
                     .choices
                     .iter()
-                    .position(|&rarity| rarity == choice.current)
-                    .unwrap_or(0),
+                    .position(|&rarity| rarity == choice.current),
                 hint: tr!(
                     "Which rarity the search takes. It starts on this item's own: a magic item is \
                      compared with magic ones, a rare with rares. Picking one searches again at \
@@ -394,13 +397,14 @@ fn corruption_label(choice: Corruption) -> &'static str {
     }
 }
 
-/// A select of the chip row ([`select_chip`]): `label` before its current choice, `hint` on
-/// hover, and its menu `menu` of `choices`, a pick of which runs `choose` with its index.
+/// A select of the chip row ([`select_chip`]): `label` before its current choice (`?` while it has
+/// none), `hint` on hover, and its menu `menu` of `choices`, a pick of which runs `choose` with its
+/// index.
 struct SelectChip {
     menu: ChipMenu,
     label: Option<&'static str>,
     choices: Vec<SharedString>,
-    current: usize,
+    current: Option<usize>,
     hint: &'static str,
     choose: fn(&mut PriceCheckApp, usize, &mut Context<PriceCheckApp>),
 }
@@ -427,7 +431,9 @@ fn select_chip(
         hint,
         choose,
     } = chip;
-    let value = choices.get(current).cloned().unwrap_or_default();
+    let value = current
+        .and_then(|current| choices.get(current).cloned())
+        .unwrap_or_else(|| "?".into());
     div()
         .id(key)
         .flex()
@@ -453,7 +459,7 @@ fn select_chip(
             let rows = choices.into_iter().enumerate().map(|(at, choice)| {
                 menu_row(
                     at,
-                    at == current,
+                    Some(at) == current,
                     div().min_w_0().truncate().child(choice),
                     cx.listener(move |view, _event: &MouseDownEvent, _window, cx| {
                         choose(view, at, cx);

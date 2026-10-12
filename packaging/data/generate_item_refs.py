@@ -11,7 +11,9 @@ The two EE2 item files list the same items in the same order, one per line, so a
 Russian names are the same item. Rows without a reference name are skipped, repeats of an
 item already written (a gem listed once per variant) are dropped, and art the database doesn't
 have (`%NOT_FOUND%`) is left empty. Art URLs are stored without the CDN prefix every one of them
-shares; `crate::item_refs` puts it back.
+shares; `crate::item_refs` puts it back. The uniques in `unique-art.tsv` take their art from it
+(the trade site's, where the database has none or their base's), and those the database doesn't
+list at all are added after its rows.
 
 The fifth field lists, space-joined, every released base of the row's English name in the item
 classes Craft of Exile's item groups cover (`CRAFTED_CLASSES`; bases for sale nowhere and `[DNT]`
@@ -35,6 +37,9 @@ from generate_mod_tiers import ROLL, line_form, load_json, load_ndjson, printed_
 ICON_PREFIX = "https://web.poecdn.com/gen/image/"
 KINDS = {"GEM": "gem", "ITEM": "item", "UNIQUE": "unique"}
 OUT = Path(__file__).resolve().parents[2] / "crates/poe2-oracle/assets/data/item-refs.tsv"
+# Uniques whose art the database lacks or gets wrong, and the few it doesn't list: their names and
+# art as the trade site shows them (see the file's own comment).
+UNIQUE_ART = Path(__file__).with_name("unique-art.tsv")
 # RePoE's item classes (`base_items.json`'s `item_class`) of Craft of Exile's item groups: body
 # armours, boots, charms, flasks, gloves, helmets, jewels, jewellery, offhands, one- and two-handed
 # weapons, relics, tablets and waystones (its strongboxes are no items).
@@ -107,12 +112,24 @@ def crafted_bases(ee2_dir, repoe_dir):
     return {name: " ".join(sorted(entries)) for name, entries in bases.items()}
 
 
+def unique_art():
+    """`unique-art.tsv`: each unique's English name -> (Russian name, art path)."""
+    art = {}
+    for line in UNIQUE_ART.read_text(encoding="utf-8").splitlines():
+        if not line or line.startswith("#"):
+            continue
+        en, ru, icon = line.split("\t")
+        art[en] = (ru, icon)
+    return art
+
+
 def main(ee2_dir, repoe_dir):
     en = load_ndjson(Path(ee2_dir) / "en" / "items.ndjson")
     ru = load_ndjson(Path(ee2_dir) / "ru" / "items.ndjson")
     if len(en) != len(ru):
         sys.exit(f"{ee2_dir}: en has {len(en)} items, ru {len(ru)}: not the same database")
     bases = crafted_bases(ee2_dir, repoe_dir)
+    art = unique_art()
     rows, seen, crafted = [], set(), 0
     for e, r in zip(en, ru):
         if e.get("refName") != r.get("refName") or e.get("namespace") != r.get("namespace"):
@@ -130,14 +147,23 @@ def main(ee2_dir, repoe_dir):
             icon = ""
         elif icon.startswith(ICON_PREFIX):
             icon = icon[len(ICON_PREFIX):]
+        if kind == "unique" and ref_name in art:
+            icon = art[ref_name][1]
         base_ids = bases.get(ref_name, "") if kind == "item" else ""
         crafted += bool(base_ids)
-        fields = (kind, ref_name, ru_name, icon, base_ids)
+        rows.append((kind, ref_name, ru_name, icon, base_ids))
+    listed = {row[1] for row in rows if row[0] == "unique"}
+    rows += [
+        ("unique", name, russian, icon, "")
+        for name, (russian, icon) in art.items()
+        if name not in listed
+    ]
+    for fields in rows:
         if any("\t" in field or "\n" in field for field in fields):
-            sys.exit(f"a field of {ref_name!r} holds a tab or newline")
-        rows.append("\t".join(fields))
+            sys.exit(f"a field of {fields[1]!r} holds a tab or newline")
     OUT.parent.mkdir(parents=True, exist_ok=True)
-    OUT.write_text("\n".join(rows) + "\n", encoding="utf-8", newline="\n")
+    lines = ["\t".join(fields) for fields in rows]
+    OUT.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
     print(f"{len(rows)} items, {crafted} of them bases Craft of Exile crafts -> {OUT}")
 
 

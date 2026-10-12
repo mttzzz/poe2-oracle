@@ -1,0 +1,12 @@
+# Uniques whose art Exiled Exchange 2's item database lacks, gives as their base's, or which it
+# doesn't list at all: the art the trade site's listings of each show (their item's `icon`, fetched
+# 2026-10-12), which is the art the game draws -- what the price check recognizes an unidentified
+# unique by. The English name, the Russian one (the trade site's) and the art URL's path after
+# https://web.poecdn.com/gen/image/, a tab apart; generate_item_refs.py puts the art in place of
+# the database's, or adds the unique when the database has no such row.
+Byrnabas	Барнабас	WzI1LDE0LHsiZiI6IjJESXRlbXMvQmVsdHMvVW5pcXVlcy9CeXJuYWJhcyIsInciOjIsImgiOjEsInNjYWxlIjoxLCJyZWFsbSI6InBvZTIifV0/f4ee3256e9/Byrnabas.png
+Call of the Brotherhood	Зов братьев	WzI1LDE0LHsiZiI6IjJESXRlbXMvUmluZ3MvVW5pcXVlcy9DYWxsT2ZUaGVCcm90aGVyaG9vZCIsInciOjEsImgiOjEsInNjYWxlIjoxLCJyZWFsbSI6InBvZTIifV0/217e78da44/CallOfTheBrotherhood.png
+Eshtera's Path	Путь Эштеры	WzI1LDE0LHsiZiI6IjJESXRlbXMvUmluZ3MvVW5pcXVlcy9SaW1ldmVpbFNlYWwiLCJ3IjoxLCJoIjoxLCJzY2FsZSI6MSwicmVhbG0iOiJwb2UyIn1d/d80ec95524/RimeveilSeal.png
+Safrin's Resolve	Решимость Сафрина	WzI1LDE0LHsiZiI6IjJESXRlbXMvUmluZ3MvVW5pcXVlcy9FbWJlcmhlYXJ0U2VhbCIsInciOjEsImgiOjEsInNjYWxlIjoxLCJyZWFsbSI6InBvZTIifV0/4cc4a73cfb/EmberheartSeal.png
+Whisper of the Brotherhood	Шёпот братства	WzI1LDE0LHsiZiI6IjJESXRlbXMvUmluZ3MvVW5pcXVlcy9XaGlzcGVyT2ZUaGVCcm90aGVyaG9vZCIsInciOjEsImgiOjEsInNjYWxlIjoxLCJyZWFsbSI6InBvZTIifV0/4f026422fc/WhisperOfTheBrotherhood.png
+Zaida's Longevity	Долгожительство Заиды	WzI1LDE0LHsiZiI6IjJESXRlbXMvUmluZ3MvVW5pcXVlcy9TdG9ybWZvcmdlZFNlYWwiLCJ3IjoxLCJoIjoxLCJzY2FsZSI6MSwicmVhbG0iOiJwb2UyIn1d/6141e5df38/StormforgedSeal.png

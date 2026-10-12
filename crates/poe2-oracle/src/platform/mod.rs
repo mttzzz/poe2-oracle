@@ -29,6 +29,8 @@ pub mod game_window;
 pub mod gpu_memory;
 #[cfg(target_os = "windows")]
 pub mod instance;
+#[cfg(target_os = "windows")]
+pub mod item_art;
 pub mod lip_schedule;
 #[cfg(target_os = "windows")]
 pub mod lip_watch;
@@ -41,6 +43,8 @@ pub mod paint_census;
 pub mod paint_gate;
 #[cfg(target_os = "windows")]
 pub mod redraw_filter;
+#[cfg(target_os = "windows")]
+pub mod screen;
 #[cfg(target_os = "windows")]
 pub mod synth_input;
 #[cfg(target_os = "windows")]

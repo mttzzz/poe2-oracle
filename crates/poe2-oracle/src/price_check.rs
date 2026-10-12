@@ -55,7 +55,8 @@ use crate::overlay_layout::{self, PanelSide, PhysicalRect};
 use crate::paths;
 use crate::platform::game_window::{Foreground, GameScreen};
 use crate::platform::{
-    check_clock, clipboard_poll, elevation, esc_hook, game_config, game_window, synth_input,
+    check_clock, clipboard_poll, elevation, esc_hook, game_config, game_window, item_art,
+    synth_input,
 };
 use crate::report;
 use crate::roll_slider::{self, Handle, Slider};
@@ -63,6 +64,7 @@ use crate::session::SessionStatus;
 use crate::settings::{self, Hotkey, LeagueChoice, QuickAction, Settings, WaystoneMark};
 use crate::tr;
 use crate::ui::tour;
+use crate::unique_art;
 
 /// How long after a burst of foreground changes the hotkey re-checks where the foreground settled.
 const FOREGROUND_SETTLE: Duration = Duration::from_millis(250);
@@ -563,13 +565,16 @@ impl Corruption {
 /// doesn't say -- its art does -- while the trade site knows it of every unidentified listing and
 /// finds them by name. Report #10 (2026-10-11): an unidentified corrupted Diamond was priced
 /// among all seven unique Diamonds, from 1 exalted (Megalomaniac), where an unidentified The
-/// Adorned started at 1000 divine.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Adorned started at 1000 divine. The price check tells it by the art under the cursor
+/// (`unique_art`), and asks the player when the art doesn't tell: nothing is searched for the
+/// base's uniques together, whose cheapest says nothing of this one.
+#[derive(Debug, Clone, PartialEq)]
 pub struct UniqueChoice {
     /// The base's uniques, named in the trade site's language (`catalog::uniques_of_base`).
     pub names: Vec<String>,
-    /// The one the player picked; `None` searches every unique of the base.
+    /// The one searched for: told by its art or picked by the player. `None` until then.
     pub picked: Option<usize>,
+    pub recognition: Recognition,
 }
 
 impl UniqueChoice {
@@ -579,6 +584,19 @@ impl UniqueChoice {
             .and_then(|at| self.names.get(at))
             .map(String::as_str)
     }
+}
+
+/// How telling an unidentified unique by its art goes.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Recognition {
+    /// Its art is being matched with the base's uniques'.
+    Looking,
+    /// The art told which one it is (`UniqueChoice::picked`).
+    Told,
+    /// The art didn't tell: the player is asked, the base's uniques best match first.
+    Asking(Vec<usize>),
+    /// The player picked it.
+    Picked,
 }
 
 /// A select of the panel's chip row, whose menu can be open (`ui::panel::nameplate`).
@@ -1605,16 +1623,32 @@ impl PriceCheckApp {
         cx.notify();
     }
 
-    /// Searches at once among the unidentified listings of the unique the player picked from the
-    /// unique select -- its first choice, «any», is every unique of the base
-    /// (`UniqueChoice::picked`).
+    /// Searches at once among the unidentified listings of the unique the player picked: from the
+    /// unique select, or from the question the art left open (`Recognition::Asking`).
     pub fn choose_unique(&mut self, at: usize, cx: &mut Context<Self>) {
         self.chip_menu = None;
-        if let Some(choice) = &mut self.unique {
-            choice.picked = at.checked_sub(1).filter(|&name| name < choice.names.len());
+        let picked = self.unique.as_mut().and_then(|choice| {
+            let name = choice.names.get(at)?.clone();
+            choice.picked = Some(at);
+            choice.recognition = Recognition::Picked;
+            Some(name)
+        });
+        if let Some(name) = picked {
+            log::info!("unique art: the player picked {name}");
             self.spawn_search(cx);
         }
         cx.notify();
+    }
+
+    /// The player's yes to the question the art left open: the likeliest unique it named.
+    pub fn confirm_unique(&mut self, cx: &mut Context<Self>) {
+        let likeliest = match self.unique.as_ref().map(|choice| &choice.recognition) {
+            Some(Recognition::Asking(order)) => order.first().copied(),
+            _ => None,
+        };
+        if let Some(at) = likeliest {
+            self.choose_unique(at, cx);
+        }
     }
 
     /// Sets the item's search up the way `profile` does and searches it, once: the player's pick
@@ -2299,6 +2333,137 @@ async fn current_scout(
     Ok(())
 }
 
+/// Tells which of its base's uniques an unidentified unique is, by `look`, the screen around the
+/// cursor at the moment of the check (`unique_art`), then searches for it -- or, when the art
+/// doesn't tell, asks the player (`Recognition::Asking`) and searches nothing. Each candidate's
+/// art comes from the trade site's CDN once and from the disk cache after
+/// ([`unique_art_of`]). The verdict and every score go to the log.
+async fn recognize_unique(
+    view: &Entity<PriceCheckApp>,
+    cx: &mut AsyncApp,
+    look: Option<unique_art::Look>,
+    text: String,
+) {
+    let Some((client, names, base)) = view.read_with(cx, |state, _| {
+        let names = state.unique.as_ref()?.names.clone();
+        let base = state.item.as_ref()?.name.clone();
+        Some((state.http_client.clone(), names, base))
+    }) else {
+        return;
+    };
+    let started = Instant::now();
+    let scores: Vec<Option<f32>> = match look {
+        Some(look) => {
+            let names = names.clone();
+            cx.background_executor()
+                .spawn(async move {
+                    let mut scores = Vec::with_capacity(names.len());
+                    for name in &names {
+                        let art = unique_art_of(&client, name).await.unwrap_or_else(|err| {
+                            log::warn!("unique art: {name}: {err:#}");
+                            None
+                        });
+                        scores.push(
+                            art.as_ref()
+                                .and_then(unique_art::Reference::new)
+                                .map(|reference| unique_art::score(&look, &reference)),
+                        );
+                    }
+                    scores
+                })
+                .await
+        }
+        None => {
+            log::warn!("unique art: no look at the game around the cursor");
+            vec![None; names.len()]
+        }
+    };
+    let verdict = unique_art::verdict(&scores);
+    let order = unique_art::ranking(&scores);
+    let listed: Vec<String> = order
+        .iter()
+        .map(|&at| match scores[at] {
+            Some(score) => format!("{} {score:.2}", names[at]),
+            None => format!("{} (no art)", names[at]),
+        })
+        .collect();
+    log::info!(
+        "unique art: {base} in {} ms: {} -> {}",
+        started.elapsed().as_millis(),
+        listed.join(", "),
+        match verdict {
+            unique_art::Verdict::Sure(at) => format!("{}, sure", names[at]),
+            unique_art::Verdict::Unsure => "not sure, asking".to_owned(),
+        }
+    );
+    view.update(cx, |state, cx| {
+        // A newer check took the panel over, or the player picked one already.
+        if state.item_text.as_deref() != Some(text.as_str()) {
+            return;
+        }
+        let search = match state.unique.as_mut() {
+            Some(choice) if choice.recognition == Recognition::Looking => match verdict {
+                unique_art::Verdict::Sure(at) => {
+                    choice.picked = Some(at);
+                    choice.recognition = Recognition::Told;
+                    true
+                }
+                unique_art::Verdict::Unsure => {
+                    choice.recognition = Recognition::Asking(order);
+                    false
+                }
+            },
+            _ => return,
+        };
+        if search {
+            state.spawn_search(cx);
+        }
+        cx.notify();
+    });
+}
+
+/// A unique's art as the trade site serves it, from `paths::cache_dir()/unique-art`, or fetched
+/// once and kept there. `None` when the item reference table has no art for it.
+async fn unique_art_of(
+    client: &Arc<dyn HttpClient>,
+    name: &str,
+) -> Result<Option<image::RgbaImage>> {
+    let Some(url) = item_refs::lookup(RefKind::Unique, name).and_then(|found| found.icon_url())
+    else {
+        return Ok(None);
+    };
+    // The URL's last two parts -- the art's hash and its file name -- name it in the cache.
+    let mut parts = url.rsplit('/');
+    let (Some(file), Some(hash)) = (parts.next(), parts.next()) else {
+        return Ok(None);
+    };
+    let dir = paths::cache_dir().join("unique-art");
+    let path = dir.join(format!("{hash}-{file}"));
+    let bytes = match fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            let mut response = client
+                .get(&url, http_client::AsyncBody::default(), true)
+                .await
+                .with_context(|| format!("GET {url}"))?;
+            ensure!(
+                response.status().is_success(),
+                "GET {url}: {}",
+                response.status()
+            );
+            let mut bytes = Vec::new();
+            futures::AsyncReadExt::read_to_end(response.body_mut(), &mut bytes).await?;
+            if let Err(err) = fs::create_dir_all(&dir).and_then(|()| fs::write(&path, &bytes)) {
+                log::warn!("keeping {} failed: {err}", path.display());
+            }
+            bytes
+        }
+    };
+    let art = image::load_from_memory_with_format(&bytes, image::ImageFormat::Png)
+        .with_context(|| format!("{url} is no PNG"))?;
+    Ok(Some(art.into_rgba8()))
+}
+
 /// Whether there's no session to look the account's private leagues up with: none stored, or the
 /// site refused it (`SessionStatus::signed_in`).
 fn signed_out(cx: &App) -> bool {
@@ -2581,6 +2746,8 @@ async fn run_price_check(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
     // Where the check happened, recorded before anything is synthesized -- EE2 reads the cursor
     // (`screen.getCursorScreenPoint()`) ahead of `pressKeysToCopyItemText` for the same reason.
     let placement = game_window::panel_at_cursor(ui_scale, &positions);
+    // ...and where the cursor itself was: an unidentified unique is told by the art under it.
+    let cursor = game_window::cursor_pos();
 
     // After the player clicked into the open panel, the panel -- not the game -- has keyboard
     // focus, and the copy combo would land in the panel. Hand focus back first.
@@ -2698,6 +2865,7 @@ async fn run_price_check(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
                         (names.len() > 1).then(|| UniqueChoice {
                             names: names.into_iter().map(str::to_owned).collect(),
                             picked: None,
+                            recognition: Recognition::Looking,
                         })
                     }
                     _ => None,
@@ -2744,6 +2912,19 @@ async fn run_price_check(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
         (has_item, diagnosis)
     });
     check_clock::with(|check| check.parsed(parse_start, check_clock::now_thread()));
+    // An unidentified unique of a base with several: its art, read off the screen now -- before
+    // the panel this check shows is drawn -- tells which one it is, before anything is searched.
+    let looking = view.read_with(cx, |state, _| {
+        state
+            .unique
+            .as_ref()
+            .is_some_and(|choice| choice.recognition == Recognition::Looking)
+    });
+    let look = if looking {
+        cursor.and_then(item_art::look_around)
+    } else {
+        None
+    };
 
     // With `KEEP_ITEM_TEXTS_ENV` set every checked text is kept, not only the troubled ones.
     let diagnosis =
@@ -2765,7 +2946,12 @@ async fn run_price_check(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
     // Detached: the next press -- another check, a quick action -- must not wait on the network
     // (a rate-limit wait alone can take `MAX_RATE_LIMIT_WAIT`). A newer search supersedes this
     // one through `search_generation`.
-    if has_item {
+    if looking {
+        let view = view.clone();
+        let text = text.clone();
+        cx.spawn(async move |cx| recognize_unique(&view, cx, look, text).await)
+            .detach();
+    } else if has_item {
         let view = view.clone();
         cx.spawn(async move |cx| run_search(&view, cx).await)
             .detach();
@@ -2876,6 +3062,15 @@ pub async fn run_search(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
             && state.build_without_sums(cx)
         {
             log::info!("no weighted sums without an accepted sign-in: the rows are built again");
+        }
+        // An unidentified unique of a base with several is searched only once its art told which
+        // one it is, or the player did: the base's uniques together say nothing of this one.
+        if state
+            .unique
+            .as_ref()
+            .is_some_and(|choice| choice.picked.is_none())
+        {
+            return None;
         }
         let item = state.item.as_ref()?;
         let catalog = state.catalog(state.site);

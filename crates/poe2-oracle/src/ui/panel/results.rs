@@ -8,7 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use gpui::{
     AnyElement, AnyView, App, AppContext as _, Context, FontWeight, IntoElement, MouseButton,
-    MouseDownEvent, Render, SharedString, Window, div, prelude::*, rgb,
+    MouseDownEvent, Render, SharedString, Window, div, img, prelude::*, rgb,
 };
 
 use poe2_domain::ParsedItem;
@@ -18,9 +18,12 @@ use trade_client::whisper::{Action, Outcome};
 use trade_client::{AccountStatus, ListedItem, ListedMod, ListingStatus, PriceCurrency};
 
 use crate::i18n;
+use crate::item_refs::{self, RefKind};
 use crate::league_chip;
 use crate::listing_match::{self, Asked, WantedStat};
-use crate::price_check::{ActionState, ListingRow, PriceCheckApp, SearchFailure, SearchState};
+use crate::price_check::{
+    ActionState, ListingRow, PriceCheckApp, Recognition, SearchFailure, SearchState, UniqueChoice,
+};
 use crate::relative_time;
 use crate::session::SessionStatus;
 use crate::tour::Stop;
@@ -464,6 +467,105 @@ fn render_listings_button(cx: &Context<PriceCheckApp>) -> impl IntoElement {
     .mt(rems_from_px(10.))
 }
 
+/// The edge of the likeliest unique's art in the question the art left open, and of the others'.
+const QUESTION_ART: f32 = 72.;
+const OTHER_ART: f32 = 40.;
+
+/// The question an unidentified unique's art left open (`Recognition::Asking`): the likeliest of
+/// its base's uniques big, with a yes, and the others small after it, the likelier first -- a
+/// click on any searches for that one's unidentified listings.
+fn render_unique_question(
+    choice: &UniqueChoice,
+    order: &[usize],
+    cx: &Context<PriceCheckApp>,
+) -> AnyElement {
+    let art = |name: &str, size: f32| {
+        let url = item_refs::lookup(RefKind::Unique, name).and_then(|found| found.icon_url());
+        match url {
+            Some(url) => img(url)
+                .flex_none()
+                .size(rems_from_px(size))
+                .into_any_element(),
+            None => div()
+                .flex_none()
+                .size(rems_from_px(size))
+                .border_1()
+                .border_color(rgb(BORDER_ROW))
+                .into_any_element(),
+        }
+    };
+    let Some((&likeliest, others)) = order.split_first() else {
+        return div().into_any_element();
+    };
+    let name = &choice.names[likeliest];
+    div()
+        .mt(rems_from_px(12.))
+        .flex()
+        .flex_col()
+        .gap(rems_from_px(8.))
+        .child(
+            div()
+                .text_color(rgb(TEXT_WARNING))
+                .child(tr!("Not sure which unique this is.")),
+        )
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap(rems_from_px(12.))
+                .child(art(name, QUESTION_ART))
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .items_start()
+                        .gap(rems_from_px(6.))
+                        .child(tr!("Is it {name}?", name = name))
+                        .child(action_button(
+                            "unique-yes",
+                            tr!("Yes"),
+                            tr!("Search for this unique's unidentified listings."),
+                            PriceCheckApp::confirm_unique,
+                            cx,
+                        )),
+                ),
+        )
+        .when(!others.is_empty(), |this| {
+            this.child(
+                div()
+                    .text_color(rgb(TEXT_DIM))
+                    .child(tr!("Or one of these:")),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .gap(rems_from_px(6.))
+                    .children(others.iter().map(|&at| {
+                        let name = choice.names[at].clone();
+                        div()
+                            .id(("unique-other", at))
+                            .flex_none()
+                            .p(rems_from_px(2.))
+                            .border_1()
+                            .border_color(rgb(BORDER_ROW))
+                            .rounded(rems_from_px(CONTROL_RADIUS))
+                            .hover(|style| style.border_color(rgb(BORDER_GOLD)))
+                            .cursor_pointer()
+                            .tooltip(hints::hint(name.clone()))
+                            .child(art(&name, OTHER_ART))
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(move |view, _event: &MouseDownEvent, _, cx| {
+                                    view.choose_unique(at, cx);
+                                }),
+                            )
+                    })),
+            )
+        })
+        .into_any_element()
+}
+
 /// What the search found, or how it's going -- for listings, down to the table's header: each row
 /// is a part of the panel of its own (`render_listing`).
 fn render_search_outcome(
@@ -478,6 +580,23 @@ fn render_search_outcome(
             .child(text)
             .into_any_element()
     };
+    // An unidentified unique's search waits for which one it is: its art, or the player's pick.
+    if let Some(choice) = state
+        .unique
+        .as_ref()
+        .filter(|choice| choice.picked.is_none())
+    {
+        match &choice.recognition {
+            Recognition::Looking => {
+                return status(
+                    tr!("Telling which unique it is by its art…").into(),
+                    TEXT_DIM,
+                );
+            }
+            Recognition::Asking(order) => return render_unique_question(choice, order, cx),
+            Recognition::Told | Recognition::Picked => {}
+        }
+    }
     match &state.search {
         SearchState::NotSearched => div().into_any_element(),
         SearchState::Searching if state.priced_by_market => {

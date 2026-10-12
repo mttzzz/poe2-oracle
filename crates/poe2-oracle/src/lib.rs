@@ -25,6 +25,8 @@ pub mod session;
 pub mod settings;
 pub mod text_area;
 pub mod tour;
+// Which unique an unidentified unique is, by its art: pure, so its tests run everywhere.
+pub mod unique_art;
 pub mod update_rules;
 pub mod xp_tracker;
 // The windows' look: its palette and the ornaments' pixels build everywhere, for their tests and

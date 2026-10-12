@@ -35,17 +35,13 @@ use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
 use windows::Win32::Foundation::{HWND, POINT};
-use windows::Win32::Graphics::Gdi::{
-    BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BitBlt, CreateCompatibleDC, CreateDIBSection,
-    DIB_RGB_COLORS, DeleteDC, DeleteObject, GdiFlush, GetDC, ReleaseDC, SRCCOPY, SelectObject,
-};
 use windows::Win32::System::SystemInformation::GetSystemTime;
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::WindowsAndMessaging::{GA_ROOT, GetAncestor, IsIconic, WindowFromPoint};
 
 use crate::overlay_layout::{PhysicalRect, hud_rails, rail_lip, rail_seen};
 use crate::paths;
-use crate::platform::game_window;
+use crate::platform::{game_window, screen};
 use crate::xp_tracker::{BarLook, Suspect, XpBarGeometry, read_fill};
 
 /// One look at the game.
@@ -95,7 +91,7 @@ pub fn sample(read_pixels: bool, bar: impl FnOnce(bool) -> bool) -> Option<BarSa
                 !bar_hovered(geometry, Instant::now()) && shows_the_game(hwnd, geometry.capture)
             })
             .and_then(|geometry| {
-                read_screen(geometry.capture, |bgra| {
+                screen::read(geometry.capture, |bgra| {
                     let fill = read_fill(&geometry, bgra);
                     keep_rows(&geometry, bgra, fill);
                     fill
@@ -112,7 +108,7 @@ pub fn sample(read_pixels: bool, bar: impl FnOnce(bool) -> bool) -> Option<BarSa
         let lip = rail_lip(plate, client.height);
         let width = usize::try_from(lip.width).unwrap_or(0);
         shows_the_game(hwnd, lip)
-            && read_screen(lip, |bgra| Some(rail_seen(bgra, width))).unwrap_or(false)
+            && screen::read(lip, |bgra| Some(rail_seen(bgra, width))).unwrap_or(false)
     };
     Some(BarSample {
         client,
@@ -286,70 +282,5 @@ fn prune(dir: &Path) {
         if let Err(err) = fs::remove_file(path) {
             log::warn!("deleting {} failed: {err}", path.display());
         }
-    }
-}
-
-/// Copies `rect` of the screen into a 32-bit top-down DIB section and hands its BGRA bytes to
-/// `read` before the section is freed.
-fn read_screen<R>(rect: PhysicalRect, read: impl FnOnce(&[u8]) -> Option<R>) -> Option<R> {
-    let info = BITMAPINFO {
-        bmiHeader: BITMAPINFOHEADER {
-            biSize: size_of::<BITMAPINFOHEADER>() as u32,
-            biWidth: rect.width,
-            // Negative: rows top to bottom, as on screen.
-            biHeight: -rect.height,
-            biPlanes: 1,
-            biBitCount: 32,
-            biCompression: BI_RGB.0,
-            ..Default::default()
-        },
-        ..Default::default()
-    };
-    unsafe {
-        let screen = GetDC(None);
-        if screen.is_invalid() {
-            return None;
-        }
-        let memory = CreateCompatibleDC(Some(screen));
-        let mut bits = std::ptr::null_mut();
-        let result = if memory.is_invalid() {
-            None
-        } else {
-            match CreateDIBSection(Some(memory), &info, DIB_RGB_COLORS, &mut bits, None, 0) {
-                Ok(bitmap) => {
-                    let previous = SelectObject(memory, bitmap.into());
-                    let copied = BitBlt(
-                        memory,
-                        0,
-                        0,
-                        rect.width,
-                        rect.height,
-                        Some(screen),
-                        rect.x,
-                        rect.y,
-                        SRCCOPY,
-                    )
-                    .is_ok();
-                    // GDI may still have the blit queued; the section's bits are only current
-                    // after a flush.
-                    let _ = GdiFlush();
-                    let len = rect.width as usize * rect.height as usize * 4;
-                    let result = if copied {
-                        read(std::slice::from_raw_parts(bits.cast::<u8>(), len))
-                    } else {
-                        None
-                    };
-                    SelectObject(memory, previous);
-                    let _ = DeleteObject(bitmap.into());
-                    result
-                }
-                Err(_) => None,
-            }
-        };
-        if !memory.is_invalid() {
-            let _ = DeleteDC(memory);
-        }
-        ReleaseDC(None, screen);
-        result
     }
 }
