@@ -1,0 +1,373 @@
+{
+  "realm": "poe2",
+  "verified": true,
+  "w": 2,
+  "h": 3,
+  "icon": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvV2VhcG9ucy9PbmVIYW5kV2VhcG9ucy9TY2VwdGVycy9CYXNldHlwZXMvU2NlcHRyZTA0IiwidyI6MiwiaCI6Mywic2NhbGUiOjEsInJlYWxtIjoicG9lMiJ9XQ/d2cc9f0ac1/Sceptre04.png",
+  "league": "Forbidden Rites",
+  "id": "2a5f0d9b505d2fe99c17e1007af726c35789fa9a10d7d6de869d9936c6bb18f3",
+  "frameTypeId": "Rare",
+  "extended": {
+    "hashes": {
+      "explicit": [
+        [
+          "explicit.stat_1050105434",
+          [
+            2
+          ]
+        ],
+        [
+          "explicit.stat_1998951374",
+          [
+            0
+          ]
+        ],
+        [
+          "explicit.stat_4080418644",
+          [
+            1
+          ]
+        ],
+        [
+          "explicit.stat_328541901",
+          [
+            3
+          ]
+        ]
+      ],
+      "skill": [
+        [
+          "skill.malice",
+          null
+        ]
+      ]
+    }
+  },
+  "note": null,
+  "iconTierText": null,
+  "gemBackground": null,
+  "gemSkill": null,
+  "name": "Dusk Spell",
+  "typeLine": "Omen Sceptre",
+  "baseType": "Omen Sceptre",
+  "rarity": "Rare",
+  "frameType": 2,
+  "ilvl": 78,
+  "identified": true,
+  "unidentifiedTier": null,
+  "corrupted": false,
+  "doubleCorrupted": false,
+  "duplicated": false,
+  "sanctified": true,
+  "fractured": false,
+  "desecrated": false,
+  "mutated": false,
+  "stackSize": null,
+  "maxStackSize": null,
+  "support": null,
+  "properties": [
+    {
+      "name": "[Sceptre]",
+      "values": [],
+      "displayMode": 0,
+      "type": 109,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "[Spirit]",
+      "values": [
+        [
+          "100",
+          0
+        ]
+      ],
+      "displayMode": 0,
+      "type": 25,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    }
+  ],
+  "requirements": [
+    {
+      "name": "Level",
+      "values": [
+        [
+          "35",
+          0
+        ]
+      ],
+      "displayMode": 0,
+      "type": 62,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "[Strength|Str]",
+      "values": [
+        [
+          "12",
+          0
+        ]
+      ],
+      "displayMode": 1,
+      "type": 63,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "[Intelligence|Int]",
+      "values": [
+        [
+          "25",
+          0
+        ]
+      ],
+      "displayMode": 1,
+      "type": 65,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    }
+  ],
+  "weaponRequirements": [],
+  "supportGemRequirements": [],
+  "grantedSkills": [
+    {
+      "name": "Grants Skill",
+      "values": [
+        [
+          "Level 17 Malice",
+          25
+        ]
+      ],
+      "displayMode": 0,
+      "type": null,
+      "progress": null,
+      "suffix": null,
+      "icon": "https://web.poecdn.com/gen/image/WzIxLDE0LHsiayI6IjJEQXJ0L1NraWxsSWNvbnMvTWFsaWNlV2VhcG9uU2tpbGwiLCJyZWFsbSI6InBvZTIifV0/9dc35130e9/MaliceWeaponSkill.png",
+      "domain": "skill",
+      "hash": "stat.skill.malice"
+    }
+  ],
+  "sockets": [],
+  "notableProperties": [],
+  "gemSockets": [],
+  "socketedItems": [
+    {
+      "realm": "poe2",
+      "verified": true,
+      "w": 1,
+      "h": 1,
+      "icon": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvR2Vtcy9OZXcvQmxhbmtHZW0iLCJ3IjoxLCJoIjoxLCJzY2FsZSI6MSwicmVhbG0iOiJwb2UyIn1d/250ec3ed08/BlankGem.png",
+      "support": false,
+      "league": "Forbidden Rites",
+      "gemSockets": [
+        "W",
+        "W",
+        "W",
+        "W"
+      ],
+      "sockets": [
+        {
+          "group": 0,
+          "type": "gem"
+        },
+        {
+          "group": 1,
+          "type": "gem"
+        },
+        {
+          "group": 2,
+          "type": "gem"
+        },
+        {
+          "group": 3,
+          "type": "gem"
+        }
+      ],
+      "name": "",
+      "typeLine": "Malice",
+      "baseType": "Malice",
+      "ilvl": 0,
+      "identified": true,
+      "properties": [
+        {
+          "name": "[Buff], [Persistent], [Aura], [DurationSkill|Duration]",
+          "values": [],
+          "displayMode": 0
+        },
+        {
+          "name": "Level",
+          "values": [
+            [
+              "17",
+              0
+            ]
+          ],
+          "displayMode": 0,
+          "type": 5
+        }
+      ],
+      "requirements": [
+        {
+          "name": "Level",
+          "values": [
+            [
+              "72",
+              0
+            ]
+          ],
+          "displayMode": 0,
+          "type": 62
+        },
+        {
+          "name": "[Strength|Str]",
+          "values": [
+            [
+              "39",
+              0
+            ]
+          ],
+          "displayMode": 1,
+          "type": 63
+        },
+        {
+          "name": "[Intelligence|Int]",
+          "values": [
+            [
+              "98",
+              0
+            ]
+          ],
+          "displayMode": 1,
+          "type": 65
+        }
+      ],
+      "secDescrText": "While active, emits an [Aura] that continuously inflicts [CriticalWeakness|Critical Weakness] on enemies in your [Presence].",
+      "gemTabs": [
+        {
+          "name": "Malice",
+          "pages": [
+            {
+              "stats": [
+                "[CriticalWeakness|Critical Weakness] duration is 4 seconds",
+                "Applies [CriticalWeakness|Critical Weakness] to enemies every 0.54 seconds"
+              ],
+              "skillName": "Malice"
+            }
+          ]
+        }
+      ],
+      "gemSkill": "https://web.poecdn.com/gen/image/WzIxLDE0LHsiayI6IjJEQXJ0L1NraWxsSWNvbnMvTWFsaWNlV2VhcG9uU2tpbGwiLCJyZWFsbSI6InBvZTIifV0/9dc35130e9/MaliceWeaponSkill.png",
+      "descrText": "Skills can be managed in the Skills Panel.",
+      "frameType": 4,
+      "frameTypeId": "Gem",
+      "socketedItems": []
+    }
+  ],
+  "enchantMods": [],
+  "runeMods": [],
+  "bondedMods": [],
+  "implicitMods": [],
+  "explicitMods": [
+    {
+      "description": "+15 to maximum Mana",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_1050105434",
+      "mods": [
+        {
+          "name": "Beryl",
+          "tier": "P11",
+          "level": null,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "10",
+              "max": "14"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    },
+    {
+      "description": "[Allies|Allies] in your [Presence|Presence] have 6% increased [Attack|Attack] Speed",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_1998951374",
+      "mods": [
+        {
+          "name": "of Skill",
+          "tier": "S4",
+          "level": 5,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "5",
+              "max": "7"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    },
+    {
+      "description": "+25 to [Strength|Strength]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_4080418644",
+      "mods": [
+        {
+          "name": "of the Gorilla",
+          "tier": "S4",
+          "level": 44,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "21",
+              "max": "24"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    },
+    {
+      "description": "+24 to [Intelligence|Intelligence]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_328541901",
+      "mods": [
+        {
+          "name": "of the Philosopher",
+          "tier": "S4",
+          "level": 44,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "21",
+              "max": "24"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    }
+  ],
+  "gemTabs": [],
+  "flavourText": [],
+  "descrText": null,
+  "secDescrText": null
+}

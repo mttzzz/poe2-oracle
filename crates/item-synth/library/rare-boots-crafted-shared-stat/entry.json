@@ -1,0 +1,43 @@
+{
+  "order": "rare boots with a crafted mod and a stat two mods add to",
+  "query": {
+    "status": {
+      "option": "any"
+    },
+    "filters": {
+      "type_filters": {
+        "filters": {
+          "category": {
+            "option": "armour.boots"
+          },
+          "rarity": {
+            "option": "rare"
+          }
+        }
+      },
+      "misc_filters": {
+        "filters": {
+          "crafted": {
+            "option": "true"
+          }
+        }
+      }
+    }
+  },
+  "league": "Forbidden Rites",
+  "fetched": "2026-10-12T09:21:09Z",
+  "class": "Boots",
+  "note": false,
+  "guesses": {
+    "en": [
+      "\"+46 to Stun Threshold\" is split among 2 mods within their ranges"
+    ],
+    "ru": [
+      "\"+46 к порогу оглушения\" is split among 2 mods within their ranges"
+    ]
+  },
+  "finds_itself": {
+    "en": "found",
+    "ru": "found"
+  }
+}

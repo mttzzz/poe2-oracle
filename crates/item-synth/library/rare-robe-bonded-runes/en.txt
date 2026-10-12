@@ -1,0 +1,31 @@
+Item Class: Body Armours
+Rarity: Rare
+Brimstone Carapace
+Vile Robe
+--------
+Quality: +20% (augmented)
+Energy Shield: 355 (augmented)
+--------
+Requires: Level 65, 121 Int
+--------
+Sockets: S S 
+--------
+Item Level: 80
+--------
+36% increased Armour, Evasion and Energy Shield (rune)
+Bonded: +40 to maximum Life (rune)
+Bonded: +40 to maximum Mana (rune)
+--------
+{ Prefix Modifier "Jagged" (Tier: 1) }
+137(101-151) to 156(152-220) Physical Thorns damage
+{ Prefix Modifier "Athlete's" (Tier: 5) }
++146(120-149) to maximum Life
+{ Desecrated Prefix Modifier "Priest's" (Tier: 4) }
++15(14-16) to maximum Energy Shield
+23(21-26)% increased Energy Shield
+{ Suffix Modifier "of Ardour" (Tier: 2) }
+21(20-23)% increased Energy Shield Recharge Rate
+{ Suffix Modifier "of the Penguin" (Tier: 7) }
++12(11-15)% to Cold Resistance
+{ Suffix Modifier "of the Whelpling" (Tier: 8) }
++7(6-10)% to Fire Resistance

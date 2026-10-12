@@ -1,0 +1,29 @@
+{
+  "order": "a magic relic",
+  "query": {
+    "status": {
+      "option": "any"
+    },
+    "filters": {
+      "type_filters": {
+        "filters": {
+          "category": {
+            "option": "sanctum.relic"
+          }
+        }
+      }
+    }
+  },
+  "league": "Forbidden Rites",
+  "fetched": "2026-10-12T09:41:48Z",
+  "class": "Relics",
+  "note": false,
+  "guesses": {
+    "en": [],
+    "ru": []
+  },
+  "finds_itself": {
+    "en": "found",
+    "ru": "found"
+  }
+}

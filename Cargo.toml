@@ -14,6 +14,7 @@ members = [
     "crates/oracle-data",
     "crates/oracle-web",
     "crates/release-sign",
+    "crates/item-synth",
 ]
 
 [workspace.package]

@@ -1,0 +1,24 @@
+Item Class: Foci
+Rarity: Unique
+The Eternal Spark
+Crystal Focus
+--------
+Energy Shield: 45 (augmented)
+--------
+Requires: Level 26, 38 Int
+--------
+Item Level: 53
+--------
+{ Unique Modifier }
+54(50-70)% increased Energy Shield
+{ Unique Modifier }
+40% increased Mana Regeneration Rate while stationary
+{ Unique Modifier }
++21(20-30)% to Lightning Resistance
+{ Unique Modifier }
++5% to Maximum Lightning Resistance
+{ Unique Modifier }
+40% increased Mana Regeneration Rate
+--------
+A flash of blue, a stormcloud's kiss,
+her motionless dance the pulse of bliss

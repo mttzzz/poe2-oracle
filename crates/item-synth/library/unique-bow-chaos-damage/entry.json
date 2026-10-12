@@ -1,0 +1,29 @@
+{
+  "order": "Widowhail, a Runeforged twice corrupted unique bow with chaos damage",
+  "query": {
+    "status": {
+      "option": "any"
+    },
+    "filters": {
+      "misc_filters": {
+        "filters": {
+          "twice_corrupted": {
+            "option": "true"
+          }
+        }
+      }
+    }
+  },
+  "league": "Forbidden Rites",
+  "fetched": "2026-10-12T09:52:26Z",
+  "class": "Bows",
+  "note": false,
+  "guesses": {
+    "en": [],
+    "ru": []
+  },
+  "finds_itself": {
+    "en": "found",
+    "ru": "found"
+  }
+}

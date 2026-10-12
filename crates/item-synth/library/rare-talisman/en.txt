@@ -1,0 +1,21 @@
+Item Class: Talismans
+Rarity: Rare
+Vortex Rend
+Cruel Talisman
+--------
+Physical Damage: 82-147 (augmented)
+Critical Hit Chance: 8.00%
+Attacks per Second: 1.41 (augmented)
+--------
+Requires: Level 63, 72 Str, 51 Int
+--------
+Item Level: 71
+--------
+{ Prefix Modifier "Annealed" (Tier: 4) }
+Adds 20(19-29) to 44(33-49) Physical Damage
+{ Suffix Modifier "of Mastery" (Tier: 6) }
+13(11-13)% increased Attack Speed
+{ Suffix Modifier "of the Gorilla" (Tier: 4) }
++22(21-24) to Strength
+{ Suffix Modifier "of Regrowth" (Tier: 2) }
+Grants 4 Life per Enemy Hit

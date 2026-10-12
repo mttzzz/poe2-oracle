@@ -1,0 +1,280 @@
+{
+  "realm": "poe2",
+  "verified": true,
+  "w": 2,
+  "h": 2,
+  "icon": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvT2ZmaGFuZC9UYWxpc21hbnMvVmljaW91c1RhbGlzbWFuIiwidyI6MiwiaCI6Miwic2NhbGUiOjEsInJlYWxtIjoicG9lMiJ9XQ/10e044a5b7/ViciousTalisman.png",
+  "league": "Forbidden Rites",
+  "id": "957a9357091c5b9a82fa84a874ddf421fc1f291e2ee6d32d2cd12dce22e02c8e",
+  "frameTypeId": "Rare",
+  "extended": {
+    "hashes": {
+      "explicit": [
+        [
+          "explicit.stat_1940865751",
+          [
+            2
+          ]
+        ],
+        [
+          "explicit.stat_210067635",
+          [
+            0
+          ]
+        ],
+        [
+          "explicit.stat_4080418644",
+          [
+            1
+          ]
+        ],
+        [
+          "explicit.stat_821021828",
+          [
+            3
+          ]
+        ]
+      ]
+    },
+    "dps": 193.17,
+    "dps_aug": true,
+    "edps": 0,
+    "pdps": 193.17,
+    "pdps_aug": true
+  },
+  "note": "~b/o 1 aug",
+  "iconTierText": null,
+  "gemBackground": null,
+  "gemSkill": null,
+  "name": "Vortex Rend",
+  "typeLine": "Cruel Talisman",
+  "baseType": "Cruel Talisman",
+  "rarity": "Rare",
+  "frameType": 2,
+  "ilvl": 71,
+  "identified": true,
+  "unidentifiedTier": null,
+  "corrupted": false,
+  "doubleCorrupted": false,
+  "duplicated": false,
+  "sanctified": false,
+  "fractured": false,
+  "desecrated": false,
+  "mutated": false,
+  "stackSize": null,
+  "maxStackSize": null,
+  "support": null,
+  "properties": [
+    {
+      "name": "[Talisman]",
+      "values": [],
+      "displayMode": 0,
+      "type": 109,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "[Physical] Damage",
+      "values": [
+        [
+          "82-147",
+          1
+        ]
+      ],
+      "displayMode": 0,
+      "type": 9,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "[Critical|Critical Hit] Chance",
+      "values": [
+        [
+          "8.00%",
+          0
+        ]
+      ],
+      "displayMode": 0,
+      "type": 12,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "Attacks per Second",
+      "values": [
+        [
+          "1.41",
+          1
+        ]
+      ],
+      "displayMode": 0,
+      "type": 13,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    }
+  ],
+  "requirements": [
+    {
+      "name": "Level",
+      "values": [
+        [
+          "63",
+          0
+        ]
+      ],
+      "displayMode": 0,
+      "type": 62,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "[Strength|Str]",
+      "values": [
+        [
+          "72",
+          0
+        ]
+      ],
+      "displayMode": 1,
+      "type": 63,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "[Intelligence|Int]",
+      "values": [
+        [
+          "51",
+          0
+        ]
+      ],
+      "displayMode": 1,
+      "type": 65,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    }
+  ],
+  "weaponRequirements": [],
+  "supportGemRequirements": [],
+  "grantedSkills": [],
+  "sockets": [],
+  "notableProperties": [],
+  "gemSockets": [],
+  "socketedItems": [],
+  "enchantMods": [],
+  "runeMods": [],
+  "bondedMods": [],
+  "implicitMods": [],
+  "explicitMods": [
+    {
+      "description": "Adds 20 to 44 [Physical|Physical] Damage",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_1940865751",
+      "mods": [
+        {
+          "name": "Annealed",
+          "tier": "P4",
+          "level": 54,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "19",
+              "max": "29"
+            },
+            {
+              "hash": null,
+              "min": "33",
+              "max": "49"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    },
+    {
+      "description": "13% increased [Attack] Speed",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_210067635",
+      "mods": [
+        {
+          "name": "of Mastery",
+          "tier": "S6",
+          "level": 22,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "11",
+              "max": "13"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    },
+    {
+      "description": "+22 to [Strength|Strength]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_4080418644",
+      "mods": [
+        {
+          "name": "of the Gorilla",
+          "tier": "S4",
+          "level": 44,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "21",
+              "max": "24"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    },
+    {
+      "description": "Grants 4 Life per Enemy [Hit]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_821021828",
+      "mods": [
+        {
+          "name": "of Regrowth",
+          "tier": "S2",
+          "level": 30,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "4",
+              "max": "4"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    }
+  ],
+  "gemTabs": [],
+  "flavourText": [],
+  "descrText": null,
+  "secDescrText": null
+}

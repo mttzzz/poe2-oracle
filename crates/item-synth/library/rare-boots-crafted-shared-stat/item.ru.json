@@ -1,0 +1,293 @@
+{
+  "realm": "poe2",
+  "verified": true,
+  "w": 2,
+  "h": 2,
+  "icon": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvQXJtb3Vycy9Cb290cy9CYXNldHlwZXMvQm9vdHNEZXgwNSIsInciOjIsImgiOjIsInNjYWxlIjoxLCJyZWFsbSI6InBvZTIifV0/316987efab/BootsDex05.png",
+  "league": "Forbidden Rites",
+  "id": "5ada465f53f65a47b9b72f1cb167a147afa15742ef2ee25629dfde2d04466ad8",
+  "frameTypeId": "Rare",
+  "extended": {
+    "hashes": {
+      "crafted": [
+        [
+          "crafted.stat_3299347043",
+          [
+            0
+          ]
+        ]
+      ],
+      "explicit": [
+        [
+          "explicit.stat_2250533757",
+          [
+            1
+          ]
+        ],
+        [
+          "explicit.stat_124859000",
+          [
+            3
+          ]
+        ],
+        [
+          "explicit.stat_3917489142",
+          [
+            0
+          ]
+        ],
+        [
+          "explicit.stat_915769802",
+          [
+            2,
+            3
+          ]
+        ],
+        [
+          "explicit.stat_1874553720",
+          [
+            4
+          ]
+        ]
+      ]
+    },
+    "ev": 164,
+    "ev_aug": true
+  },
+  "note": "~b/o 1 exalted",
+  "iconTierText": null,
+  "gemBackground": null,
+  "gemSkill": null,
+  "name": "Расколотая колея",
+  "typeLine": "Сапоги из кожи ящера",
+  "baseType": "Сапоги из кожи ящера",
+  "rarity": "Rare",
+  "frameType": 2,
+  "ilvl": 35,
+  "identified": true,
+  "unidentifiedTier": null,
+  "corrupted": false,
+  "doubleCorrupted": false,
+  "duplicated": false,
+  "sanctified": false,
+  "fractured": false,
+  "desecrated": false,
+  "mutated": false,
+  "stackSize": null,
+  "maxStackSize": null,
+  "support": null,
+  "properties": [
+    {
+      "name": "Сапоги",
+      "values": [],
+      "displayMode": 0,
+      "type": 109,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "[Evasion|Уклонение]",
+      "values": [
+        [
+          "137",
+          1
+        ]
+      ],
+      "displayMode": 0,
+      "type": 17,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    }
+  ],
+  "requirements": [
+    {
+      "name": "Уровень",
+      "values": [
+        [
+          "33",
+          0
+        ]
+      ],
+      "displayMode": 0,
+      "type": 62,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "[Dexterity|Ловк]",
+      "values": [
+        [
+          "45",
+          0
+        ]
+      ],
+      "displayMode": 1,
+      "type": 64,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    }
+  ],
+  "weaponRequirements": [],
+  "supportGemRequirements": [],
+  "grantedSkills": [],
+  "sockets": [],
+  "notableProperties": [],
+  "gemSockets": [],
+  "socketedItems": [],
+  "enchantMods": [],
+  "runeMods": [],
+  "bondedMods": [],
+  "implicitMods": [],
+  "explicitMods": [
+    {
+      "description": "15% повышение скорости передвижения",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_2250533757",
+      "mods": [
+        {
+          "name": "Резкий",
+          "tier": "P5",
+          "level": 16,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "15",
+              "max": "15"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    },
+    {
+      "description": "16% увеличение [Evasion|уклонения]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_124859000",
+      "mods": [
+        {
+          "name": "Воздушный",
+          "tier": "P5",
+          "level": 19,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "14",
+              "max": "20"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    },
+    {
+      "description": "13% повышение [ItemRarity|редкости] найденных предметов",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_3917489142",
+      "mods": [
+        {
+          "name": "захвата",
+          "tier": "S2",
+          "level": 24,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "11",
+              "max": "14"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    },
+    {
+      "description": "+46 к [StunThreshold|порогу оглушения]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_915769802",
+      "mods": [
+        {
+          "name": "крепкой кожи",
+          "tier": "S10",
+          "level": 8,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "12",
+              "max": "29"
+            }
+          ]
+        },
+        {
+          "name": "Воздушный",
+          "tier": "P5",
+          "level": 19,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "14",
+              "max": "24"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    },
+    {
+      "description": "38% уменьшение длительности [Chill|охлаждения] на вас",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_1874553720",
+      "mods": [
+        {
+          "name": "конвекции",
+          "tier": "S5",
+          "level": 20,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "36",
+              "max": "40"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    },
+    {
+      "description": "+33 к максимуму здоровья",
+      "domain": "crafted",
+      "hash": "stat.crafted.stat_3299347043",
+      "mods": [
+        {
+          "name": "Здравый",
+          "tier": "P7",
+          "level": 16,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "30",
+              "max": "39"
+            }
+          ]
+        }
+      ],
+      "flags": {
+        "crafted": true
+      }
+    }
+  ],
+  "gemTabs": [],
+  "flavourText": [],
+  "descrText": null,
+  "secDescrText": null
+}

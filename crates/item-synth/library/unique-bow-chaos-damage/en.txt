@@ -1,0 +1,26 @@
+Item Class: Bows
+Rarity: Unique
+Widowhail
+Runeforged Crude Bow
+--------
+Quality: +20% (augmented)
+Fire Damage: 13-20 (fire)
+Chaos Damage: 42-62 (chaos)
+Critical Hit Chance: 5.00%
+Attacks per Second: 1.20
+--------
+Requires: Level 55, 97 Dex
+--------
+Item Level: 65
+--------
+{ Corruption Enhancement }
+Adds 13(9-14) to 20(15-22) Fire Damage
+--------
+{ Unique Modifier }
+196(150-250)% increased bonuses gained from Equipped Quiver
+--------
+"I loosed a volley of arrows into the heart of the man
+who slew my beloved. There was no satisfaction, no
+healing, no revenge. There was only... emptiness."
+--------
+Twice Corrupted

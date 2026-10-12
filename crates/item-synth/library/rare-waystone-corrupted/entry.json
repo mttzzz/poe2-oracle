@@ -1,0 +1,39 @@
+{
+  "order": "a corrupted rare waystone, tier 15",
+  "query": {
+    "status": {
+      "option": "any"
+    },
+    "filters": {
+      "type_filters": {
+        "filters": {
+          "category": {
+            "option": "map.waystone"
+          },
+          "rarity": {
+            "option": "rare"
+          }
+        }
+      },
+      "map_filters": {
+        "filters": {
+          "map_tier": {
+            "min": 15
+          }
+        }
+      }
+    }
+  },
+  "league": "Forbidden Rites",
+  "fetched": "2026-10-12T09:31:45Z",
+  "class": "Waystones",
+  "note": false,
+  "guesses": {
+    "en": [],
+    "ru": []
+  },
+  "finds_itself": {
+    "en": "found",
+    "ru": "found"
+  }
+}

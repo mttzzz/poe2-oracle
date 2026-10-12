@@ -1,0 +1,22 @@
+{
+  "order": "a stack of Exalted Orbs",
+  "query": {
+    "status": {
+      "option": "any"
+    },
+    "filters": {},
+    "type": "Exalted Orb"
+  },
+  "league": "Forbidden Rites",
+  "fetched": "2026-10-12T09:42:01Z",
+  "class": "Stackable Currency",
+  "note": false,
+  "guesses": {
+    "en": [],
+    "ru": []
+  },
+  "finds_itself": {
+    "en": "priced from the exchange market (exalted), no search to run",
+    "ru": "priced from the exchange market (exalted), no search to run"
+  }
+}

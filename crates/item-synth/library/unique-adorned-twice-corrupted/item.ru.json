@@ -1,0 +1,200 @@
+{
+  "realm": "poe2",
+  "verified": true,
+  "w": 1,
+  "h": 1,
+  "icon": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvSmV3ZWxzL1RyaWFsbWFzdGVySmV3ZWwiLCJ3IjoxLCJoIjoxLCJzY2FsZSI6MSwicmVhbG0iOiJwb2UyIn1d/fa6b8d5683/TrialmasterJewel.png",
+  "league": "Forbidden Rites",
+  "id": "b83f290847e5437936eef7cf6f459f00e3847c88673bd7c6289ecc1ab8e97293",
+  "frameTypeId": "Unique",
+  "extended": {
+    "hashes": {
+      "enchant": [
+        [
+          "enchant.stat_328541901",
+          [
+            0
+          ]
+        ]
+      ],
+      "explicit": [
+        [
+          "explicit.stat_461663422",
+          [
+            0
+          ]
+        ],
+        [
+          "explicit.stat_2231156303",
+          [
+            1
+          ]
+        ],
+        [
+          "explicit.stat_2106365538",
+          [
+            2
+          ]
+        ]
+      ]
+    }
+  },
+  "note": "~b/o 6 divine",
+  "iconTierText": null,
+  "gemBackground": null,
+  "gemSkill": null,
+  "name": "Былой блеск",
+  "typeLine": "Алмаз",
+  "baseType": "Алмаз",
+  "rarity": "Unique",
+  "frameType": 3,
+  "ilvl": 82,
+  "identified": true,
+  "unidentifiedTier": null,
+  "corrupted": true,
+  "doubleCorrupted": true,
+  "duplicated": false,
+  "sanctified": false,
+  "fractured": false,
+  "desecrated": false,
+  "mutated": true,
+  "stackSize": null,
+  "maxStackSize": null,
+  "support": null,
+  "properties": [
+    {
+      "name": "[Jewel|Самоцвет] ваал",
+      "values": [],
+      "displayMode": 0,
+      "type": 109,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "Максимум",
+      "values": [
+        [
+          "1",
+          0
+        ]
+      ],
+      "displayMode": 0,
+      "type": null,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    }
+  ],
+  "requirements": [],
+  "weaponRequirements": [],
+  "supportGemRequirements": [],
+  "grantedSkills": [],
+  "sockets": [],
+  "notableProperties": [],
+  "gemSockets": [],
+  "socketedItems": [],
+  "enchantMods": [
+    {
+      "description": "+6 к [Intelligence|интеллекту]",
+      "domain": "enchant",
+      "hash": "stat.enchant.stat_328541901",
+      "mods": [
+        {
+          "name": null,
+          "tier": null,
+          "level": null,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "4",
+              "max": "6"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    }
+  ],
+  "runeMods": [],
+  "bondedMods": [],
+  "implicitMods": [],
+  "explicitMods": [
+    {
+      "description": "44% усиление эффекта гнёзд [Jewel|самоцветов] в древе пассивных умений, содержащих [Corrupted|оскверненные] [ItemRarity|волшебные] [Jewel|самоцветы]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_461663422",
+      "mods": [
+        {
+          "name": null,
+          "tier": null,
+          "level": null,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "0",
+              "max": "150"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    },
+    {
+      "description": "28% уменьшение урона от [Lightning|молнии]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_2231156303",
+      "mods": [
+        {
+          "name": null,
+          "tier": null,
+          "level": null,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "-30",
+              "max": "30"
+            }
+          ]
+        }
+      ],
+      "flags": {
+        "mutated": true
+      }
+    },
+    {
+      "description": "19% уменьшение [Evasion|уклонения]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_2106365538",
+      "mods": [
+        {
+          "name": null,
+          "tier": null,
+          "level": null,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "-30",
+              "max": "30"
+            }
+          ]
+        }
+      ],
+      "flags": {
+        "mutated": true
+      }
+    }
+  ],
+  "gemTabs": [],
+  "flavourText": [
+    "На пике своего величия ваал сверкали под солнцем.\r",
+    "Декада, век, эпоха процветания...\r",
+    "теперь всего лишь былое чудо."
+  ],
+  "descrText": "Поместите в доступное гнездо для самоцветов на дереве пассивных умений. Чтобы вынуть из гнезда, щёлкните по нему правой кнопкой мыши.",
+  "secDescrText": null
+}

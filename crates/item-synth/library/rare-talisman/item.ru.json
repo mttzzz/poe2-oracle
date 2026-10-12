@@ -1,0 +1,280 @@
+{
+  "realm": "poe2",
+  "verified": true,
+  "w": 2,
+  "h": 2,
+  "icon": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvT2ZmaGFuZC9UYWxpc21hbnMvVmljaW91c1RhbGlzbWFuIiwidyI6MiwiaCI6Miwic2NhbGUiOjEsInJlYWxtIjoicG9lMiJ9XQ/10e044a5b7/ViciousTalisman.png",
+  "league": "Forbidden Rites",
+  "id": "957a9357091c5b9a82fa84a874ddf421fc1f291e2ee6d32d2cd12dce22e02c8e",
+  "frameTypeId": "Rare",
+  "extended": {
+    "hashes": {
+      "explicit": [
+        [
+          "explicit.stat_1940865751",
+          [
+            2
+          ]
+        ],
+        [
+          "explicit.stat_210067635",
+          [
+            0
+          ]
+        ],
+        [
+          "explicit.stat_4080418644",
+          [
+            1
+          ]
+        ],
+        [
+          "explicit.stat_821021828",
+          [
+            3
+          ]
+        ]
+      ]
+    },
+    "dps": 193.17,
+    "dps_aug": true,
+    "edps": 0,
+    "pdps": 193.17,
+    "pdps_aug": true
+  },
+  "note": "~b/o 1 aug",
+  "iconTierText": null,
+  "gemBackground": null,
+  "gemSkill": null,
+  "name": "Вихревое рассечение",
+  "typeLine": "Жестокий талисман",
+  "baseType": "Жестокий талисман",
+  "rarity": "Rare",
+  "frameType": 2,
+  "ilvl": 71,
+  "identified": true,
+  "unidentifiedTier": null,
+  "corrupted": false,
+  "doubleCorrupted": false,
+  "duplicated": false,
+  "sanctified": false,
+  "fractured": false,
+  "desecrated": false,
+  "mutated": false,
+  "stackSize": null,
+  "maxStackSize": null,
+  "support": null,
+  "properties": [
+    {
+      "name": "[Talisman|Талисман]",
+      "values": [],
+      "displayMode": 0,
+      "type": 109,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "[Physical|Физический] урон",
+      "values": [
+        [
+          "82-147",
+          1
+        ]
+      ],
+      "displayMode": 0,
+      "type": 9,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "Шанс [Critical|крит. попадания]",
+      "values": [
+        [
+          "8.00%",
+          0
+        ]
+      ],
+      "displayMode": 0,
+      "type": 12,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "Атак в секунду",
+      "values": [
+        [
+          "1.41",
+          1
+        ]
+      ],
+      "displayMode": 0,
+      "type": 13,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    }
+  ],
+  "requirements": [
+    {
+      "name": "Уровень",
+      "values": [
+        [
+          "63",
+          0
+        ]
+      ],
+      "displayMode": 0,
+      "type": 62,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "[Strength|Сила]",
+      "values": [
+        [
+          "72",
+          0
+        ]
+      ],
+      "displayMode": 1,
+      "type": 63,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "[Intelligence|Инт]",
+      "values": [
+        [
+          "51",
+          0
+        ]
+      ],
+      "displayMode": 1,
+      "type": 65,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    }
+  ],
+  "weaponRequirements": [],
+  "supportGemRequirements": [],
+  "grantedSkills": [],
+  "sockets": [],
+  "notableProperties": [],
+  "gemSockets": [],
+  "socketedItems": [],
+  "enchantMods": [],
+  "runeMods": [],
+  "bondedMods": [],
+  "implicitMods": [],
+  "explicitMods": [
+    {
+      "description": "Добавляет от 20 до 44 [Physical|физического] урона",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_1940865751",
+      "mods": [
+        {
+          "name": "Убийственный",
+          "tier": "P4",
+          "level": 54,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "19",
+              "max": "29"
+            },
+            {
+              "hash": null,
+              "min": "33",
+              "max": "49"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    },
+    {
+      "description": "13% повышение скорости [Attack|атаки]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_210067635",
+      "mods": [
+        {
+          "name": "мастерства",
+          "tier": "S6",
+          "level": 22,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "11",
+              "max": "13"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    },
+    {
+      "description": "+22 к [Strength|силе]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_4080418644",
+      "mods": [
+        {
+          "name": "гориллы",
+          "tier": "S4",
+          "level": 44,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "21",
+              "max": "24"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    },
+    {
+      "description": "Дарует 4 здоровья за каждый [Hit|удар] по врагу",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_821021828",
+      "mods": [
+        {
+          "name": "обновления",
+          "tier": "S2",
+          "level": 30,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "4",
+              "max": "4"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    }
+  ],
+  "gemTabs": [],
+  "flavourText": [],
+  "descrText": null,
+  "secDescrText": null
+}

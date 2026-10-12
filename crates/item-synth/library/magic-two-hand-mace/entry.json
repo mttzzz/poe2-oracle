@@ -1,0 +1,32 @@
+{
+  "order": "a magic two hand mace",
+  "query": {
+    "status": {
+      "option": "any"
+    },
+    "filters": {
+      "type_filters": {
+        "filters": {
+          "category": {
+            "option": "weapon.twomace"
+          },
+          "rarity": {
+            "option": "magic"
+          }
+        }
+      }
+    }
+  },
+  "league": "Forbidden Rites",
+  "fetched": "2026-10-12T09:31:33Z",
+  "class": "Two Hand Maces",
+  "note": false,
+  "guesses": {
+    "en": [],
+    "ru": []
+  },
+  "finds_itself": {
+    "en": "found",
+    "ru": "found"
+  }
+}

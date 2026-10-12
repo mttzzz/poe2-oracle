@@ -1,0 +1,516 @@
+{
+  "realm": "poe2",
+  "verified": true,
+  "w": 2,
+  "h": 3,
+  "icon": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvQXJtb3Vycy9Cb2R5QXJtb3Vycy9CYXNldHlwZXMvQm9keUludDAzIiwidyI6MiwiaCI6Mywic2NhbGUiOjEsInJlYWxtIjoicG9lMiJ9XQ/72f888e8c2/BodyInt03.png",
+  "league": "Forbidden Rites",
+  "id": "a192cd828d1a2d668b6a661aabf4544f44be25705256697338afc617502b30f0",
+  "frameTypeId": "Rare",
+  "extended": {
+    "hashes": {
+      "desecrated": [
+        [
+          "desecrated.stat_4052037485",
+          [
+            0
+          ]
+        ],
+        [
+          "desecrated.stat_4015621042",
+          [
+            0
+          ]
+        ]
+      ],
+      "explicit": [
+        [
+          "explicit.stat_3299347043",
+          [
+            2
+          ]
+        ],
+        [
+          "explicit.stat_3372524247",
+          [
+            4
+          ]
+        ],
+        [
+          "explicit.stat_4220027924",
+          [
+            3
+          ]
+        ],
+        [
+          "explicit.stat_2339757871",
+          [
+            0
+          ]
+        ],
+        [
+          "explicit.stat_2881298780",
+          [
+            1
+          ]
+        ]
+      ],
+      "rune": [
+        [
+          "rune.stat_3523867985",
+          null
+        ],
+        [
+          "rune.stat_2280525771",
+          null
+        ],
+        [
+          "rune.stat_2926029365",
+          null
+        ]
+      ]
+    },
+    "es": 355
+  },
+  "note": "~b/o 1 exalted",
+  "iconTierText": null,
+  "gemBackground": null,
+  "gemSkill": null,
+  "name": "Серный панцирь",
+  "typeLine": "Нечестивое облачение",
+  "baseType": "Нечестивое облачение",
+  "rarity": "Rare",
+  "frameType": 2,
+  "ilvl": 80,
+  "identified": true,
+  "unidentifiedTier": null,
+  "corrupted": false,
+  "doubleCorrupted": false,
+  "duplicated": false,
+  "sanctified": false,
+  "fractured": false,
+  "desecrated": true,
+  "mutated": false,
+  "stackSize": null,
+  "maxStackSize": null,
+  "support": null,
+  "properties": [
+    {
+      "name": "Нательный доспех",
+      "values": [],
+      "displayMode": 0,
+      "type": 109,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "[Quality|Качество]",
+      "values": [
+        [
+          "+20%",
+          1
+        ]
+      ],
+      "displayMode": 0,
+      "type": 6,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "[EnergyShield|Энергетический щит]",
+      "values": [
+        [
+          "355",
+          1
+        ]
+      ],
+      "displayMode": 0,
+      "type": 18,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    }
+  ],
+  "requirements": [
+    {
+      "name": "Уровень",
+      "values": [
+        [
+          "65",
+          0
+        ]
+      ],
+      "displayMode": 0,
+      "type": 62,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "[Intelligence|Инт]",
+      "values": [
+        [
+          "121",
+          0
+        ]
+      ],
+      "displayMode": 1,
+      "type": 65,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    }
+  ],
+  "weaponRequirements": [],
+  "supportGemRequirements": [],
+  "grantedSkills": [],
+  "sockets": [
+    {
+      "group": 0,
+      "type": "rune"
+    },
+    {
+      "group": 1,
+      "type": "rune"
+    }
+  ],
+  "notableProperties": [],
+  "gemSockets": [],
+  "socketedItems": [
+    {
+      "realm": "poe2",
+      "verified": true,
+      "w": 1,
+      "h": 1,
+      "icon": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvQ3VycmVuY3kvUnVuZXMvRW5oYW5jZVJ1bmVUaWVyMiIsInciOjEsImgiOjEsInNjYWxlIjoxLCJyZWFsbSI6InBvZTIifV0/6b729ab5a0/EnhanceRuneTier2.png",
+      "stackSize": 1,
+      "maxStackSize": 10,
+      "league": "Forbidden Rites",
+      "id": "508d21dec497a2ea4352c62de7fcf08a4ff8656f4b620b2de1446a0728e0b112",
+      "name": "",
+      "typeLine": "Большая руна железа",
+      "baseType": "Большая руна железа",
+      "ilvl": 0,
+      "identified": true,
+      "properties": [
+        {
+          "name": "Размер стопки",
+          "values": [
+            [
+              "1/10",
+              0
+            ]
+          ],
+          "displayMode": 0,
+          "type": 32
+        },
+        {
+          "name": "[Rune|Руна]",
+          "values": [],
+          "displayMode": 0
+        }
+      ],
+      "requirements": [
+        {
+          "name": "Уровень",
+          "values": [
+            [
+              "30",
+              0
+            ]
+          ],
+          "displayMode": 0,
+          "type": 62
+        }
+      ],
+      "explicitMods": [
+        {
+          "description": "[MartialWeapon|Боевое оружие]: 18% увеличение [Physical|физического] урона"
+        },
+        {
+          "description": "Жезл или посох: 30% увеличение урона от [Spell|чар]"
+        },
+        {
+          "description": "Доспехи: 18% повышение [Armour|брони], [Evasion|уклонения] и [EnergyShield|энергетического щита]"
+        }
+      ],
+      "bondedMods": [
+        "[ShamanOnlyMods|Связаны]:",
+        "[MartialWeapon|Боевое оружие]: 20% усиление эффекта [ArmourBreak|полностью разрушенной брони]",
+        "Жезл или посох: [ArmourBreak|Разрушает] [Armour|броню] при нанесении [Critical|критического удара] [Spell|чарами] в размере 12% от нанесенного [Physical|физического] урона",
+        "Доспехи:",
+        "+20 к максимуму здоровья",
+        "+20 к максимуму маны"
+      ],
+      "descrText": "Вставьте в пустое гнездо для [Augment|усилителей] на оружии или доспехах, чтобы применить эффект к ним. После вставки нельзя извлечь, но можно заменить другим [Augment|усилителем].",
+      "frameType": 5,
+      "frameTypeId": "Currency",
+      "socket": 0,
+      "socketedIcon": "https://web.poecdn.com/gen/image/WzIxLDE0LHsiayI6IjJEQXJ0L1VJSW1hZ2VzL0luR2FtZS9SdW5lU29ja2V0RmlsbGVkIiwicmVhbG0iOiJwb2UyIn1d/d02d26cbf0/RuneSocketFilled.png"
+    },
+    {
+      "realm": "poe2",
+      "verified": true,
+      "w": 1,
+      "h": 1,
+      "icon": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvQ3VycmVuY3kvUnVuZXMvRW5oYW5jZVJ1bmVUaWVyMiIsInciOjEsImgiOjEsInNjYWxlIjoxLCJyZWFsbSI6InBvZTIifV0/6b729ab5a0/EnhanceRuneTier2.png",
+      "stackSize": 1,
+      "maxStackSize": 10,
+      "league": "Forbidden Rites",
+      "id": "5158e1109a10c6feba26363c4efab9fd4e7c1c6138d7d8f9ae2be13f6ad2a8b0",
+      "name": "",
+      "typeLine": "Большая руна железа",
+      "baseType": "Большая руна железа",
+      "ilvl": 0,
+      "identified": true,
+      "properties": [
+        {
+          "name": "Размер стопки",
+          "values": [
+            [
+              "1/10",
+              0
+            ]
+          ],
+          "displayMode": 0,
+          "type": 32
+        },
+        {
+          "name": "[Rune|Руна]",
+          "values": [],
+          "displayMode": 0
+        }
+      ],
+      "requirements": [
+        {
+          "name": "Уровень",
+          "values": [
+            [
+              "30",
+              0
+            ]
+          ],
+          "displayMode": 0,
+          "type": 62
+        }
+      ],
+      "explicitMods": [
+        {
+          "description": "[MartialWeapon|Боевое оружие]: 18% увеличение [Physical|физического] урона"
+        },
+        {
+          "description": "Жезл или посох: 30% увеличение урона от [Spell|чар]"
+        },
+        {
+          "description": "Доспехи: 18% повышение [Armour|брони], [Evasion|уклонения] и [EnergyShield|энергетического щита]"
+        }
+      ],
+      "bondedMods": [
+        "[ShamanOnlyMods|Связаны]:",
+        "[MartialWeapon|Боевое оружие]: 20% усиление эффекта [ArmourBreak|полностью разрушенной брони]",
+        "Жезл или посох: [ArmourBreak|Разрушает] [Armour|броню] при нанесении [Critical|критического удара] [Spell|чарами] в размере 12% от нанесенного [Physical|физического] урона",
+        "Доспехи:",
+        "+20 к максимуму здоровья",
+        "+20 к максимуму маны"
+      ],
+      "descrText": "Вставьте в пустое гнездо для [Augment|усилителей] на оружии или доспехах, чтобы применить эффект к ним. После вставки нельзя извлечь, но можно заменить другим [Augment|усилителем].",
+      "frameType": 5,
+      "frameTypeId": "Currency",
+      "socket": 1,
+      "socketedIcon": "https://web.poecdn.com/gen/image/WzIxLDE0LHsiayI6IjJEQXJ0L1VJSW1hZ2VzL0luR2FtZS9SdW5lU29ja2V0RmlsbGVkIiwicmVhbG0iOiJwb2UyIn1d/d02d26cbf0/RuneSocketFilled.png"
+    }
+  ],
+  "enchantMods": [],
+  "runeMods": [
+    {
+      "description": "36% повышение [Armour|брони], [Evasion|уклонения] и [EnergyShield|энергетического щита]",
+      "domain": "rune",
+      "hash": "stat.rune.stat_3523867985",
+      "mods": [],
+      "flags": {}
+    },
+    {
+      "description": "[ShamanOnlyMods|Связаны]: +40 к максимуму здоровья",
+      "domain": "rune",
+      "hash": "stat.rune.stat_2280525771",
+      "mods": [],
+      "flags": {}
+    },
+    {
+      "description": "[ShamanOnlyMods|Связаны]: +40 к максимуму маны",
+      "domain": "rune",
+      "hash": "stat.rune.stat_2926029365",
+      "mods": [],
+      "flags": {}
+    }
+  ],
+  "bondedMods": [],
+  "implicitMods": [],
+  "explicitMods": [
+    {
+      "description": "+146 к максимуму здоровья",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_3299347043",
+      "mods": [
+        {
+          "name": "Выносливый",
+          "tier": "P5",
+          "level": 60,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "120",
+              "max": "149"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    },
+    {
+      "description": "+7% к сопротивлению [Resistances|огню]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_3372524247",
+      "mods": [
+        {
+          "name": "углей",
+          "tier": "S8",
+          "level": null,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "6",
+              "max": "10"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    },
+    {
+      "description": "+12% к сопротивлению [Resistances|холоду]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_4220027924",
+      "mods": [
+        {
+          "name": "пингвина",
+          "tier": "S7",
+          "level": 14,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "11",
+              "max": "15"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    },
+    {
+      "description": "21% повышение скорости перезарядки [EnergyShield|энергетического щита]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_2339757871",
+      "mods": [
+        {
+          "name": "запала",
+          "tier": "S2",
+          "level": 66,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "20",
+              "max": "23"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    },
+    {
+      "description": "От 137 до 156 [Physical|физического] урона [Thorns|шипами]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_2881298780",
+      "mods": [
+        {
+          "name": "Зазубренный",
+          "tier": "P1",
+          "level": 74,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "101",
+              "max": "151"
+            },
+            {
+              "hash": null,
+              "min": "152",
+              "max": "220"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    },
+    {
+      "description": "+15 к максимуму [EnergyShield|энергетического щита]",
+      "domain": "desecrated",
+      "hash": "stat.desecrated.stat_4052037485",
+      "mods": [
+        {
+          "name": "Жреческий",
+          "tier": "P4",
+          "level": 33,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "14",
+              "max": "16"
+            }
+          ]
+        }
+      ],
+      "flags": {
+        "desecrated": true
+      }
+    },
+    {
+      "description": "23% увеличение [EnergyShield|энергетического щита]",
+      "domain": "desecrated",
+      "hash": "stat.desecrated.stat_4015621042",
+      "mods": [
+        {
+          "name": "Жреческий",
+          "tier": "P4",
+          "level": 33,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "21",
+              "max": "26"
+            }
+          ]
+        }
+      ],
+      "flags": {
+        "desecrated": true
+      }
+    }
+  ],
+  "gemTabs": [],
+  "flavourText": [],
+  "descrText": null,
+  "secDescrText": null
+}

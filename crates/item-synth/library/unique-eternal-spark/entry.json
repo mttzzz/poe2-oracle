@@ -1,0 +1,23 @@
+{
+  "order": "The Eternal Spark, a unique focus",
+  "query": {
+    "status": {
+      "option": "any"
+    },
+    "filters": {},
+    "name": "The Eternal Spark",
+    "type": "Crystal Focus"
+  },
+  "league": "Forbidden Rites",
+  "fetched": "2026-10-12T09:21:20Z",
+  "class": "Foci",
+  "note": false,
+  "guesses": {
+    "en": [],
+    "ru": []
+  },
+  "finds_itself": {
+    "en": "found",
+    "ru": "found"
+  }
+}

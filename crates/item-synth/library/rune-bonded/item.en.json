@@ -1,0 +1,110 @@
+{
+  "realm": "poe2",
+  "verified": true,
+  "w": 1,
+  "h": 1,
+  "icon": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvQ3VycmVuY3kvUnVuZXMvTGlmZVJlY292ZXJ5UnVuZVRpZXIxIiwidyI6MSwiaCI6MSwic2NhbGUiOjEsInJlYWxtIjoicG9lMiJ9XQ/77f9393734/LifeRecoveryRuneTier1.png",
+  "league": "Forbidden Rites",
+  "id": "e9c2286742210bc5c8f6765af2139ac5eab38f3ae8c0edc93e346cdbfa9d934f",
+  "frameTypeId": "Currency",
+  "extended": {
+    "hashes": {}
+  },
+  "note": "~price 1 aug",
+  "iconTierText": null,
+  "gemBackground": null,
+  "gemSkill": null,
+  "name": "",
+  "typeLine": "Lesser Rebirth Rune",
+  "baseType": "Lesser Rebirth Rune",
+  "rarity": null,
+  "frameType": 5,
+  "ilvl": 0,
+  "identified": true,
+  "unidentifiedTier": null,
+  "corrupted": false,
+  "doubleCorrupted": false,
+  "duplicated": false,
+  "sanctified": false,
+  "fractured": false,
+  "desecrated": false,
+  "mutated": false,
+  "stackSize": 1,
+  "maxStackSize": 10,
+  "support": null,
+  "properties": [
+    {
+      "name": "Stack Size",
+      "values": [
+        [
+          "1/10",
+          0
+        ]
+      ],
+      "displayMode": 0,
+      "type": 32,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "[Rune|Rune]",
+      "values": [],
+      "displayMode": 0,
+      "type": null,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    }
+  ],
+  "requirements": [],
+  "weaponRequirements": [],
+  "supportGemRequirements": [],
+  "grantedSkills": [],
+  "sockets": [],
+  "notableProperties": [],
+  "gemSockets": [],
+  "socketedItems": [],
+  "enchantMods": [],
+  "runeMods": [],
+  "bondedMods": [
+    "[ShamanOnlyMods|Bonded]:",
+    "[MartialWeapon|Martial Weapon]: Regenerate 0.4% of maximum Life per second",
+    "Wand or Staff: 8% of Damage taken [Recoup|Recouped] as Life",
+    "Armour:",
+    "+20 to maximum Life",
+    "+20 to maximum Mana"
+  ],
+  "implicitMods": [],
+  "explicitMods": [
+    {
+      "description": "[MartialWeapon|Martial Weapon]: Gain 15 Life per enemy killed",
+      "domain": null,
+      "hash": null,
+      "mods": [],
+      "flags": {}
+    },
+    {
+      "description": "Wand or Staff: 6% increased [ESRechargeRate|Energy Shield Recharge Rate]",
+      "domain": null,
+      "hash": null,
+      "mods": [],
+      "flags": {}
+    },
+    {
+      "description": "Armour: Regenerate 0.35% of maximum Life per second",
+      "domain": null,
+      "hash": null,
+      "mods": [],
+      "flags": {}
+    }
+  ],
+  "gemTabs": [],
+  "flavourText": [],
+  "descrText": "Place into an empty [Augment] Socket in a Weapon or Armour to apply its effect to that item. Once socketed it cannot be retrieved but can be replaced by other [Augment] items.",
+  "secDescrText": null
+}

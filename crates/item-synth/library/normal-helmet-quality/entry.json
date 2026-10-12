@@ -1,0 +1,35 @@
+{
+  "order": "a normal helmet with quality",
+  "query": {
+    "status": {
+      "option": "any"
+    },
+    "filters": {
+      "type_filters": {
+        "filters": {
+          "quality": {
+            "min": 10
+          },
+          "category": {
+            "option": "armour.helmet"
+          },
+          "rarity": {
+            "option": "normal"
+          }
+        }
+      }
+    }
+  },
+  "league": "Forbidden Rites",
+  "fetched": "2026-10-12T09:31:34Z",
+  "class": "Helmets",
+  "note": false,
+  "guesses": {
+    "en": [],
+    "ru": []
+  },
+  "finds_itself": {
+    "en": "found",
+    "ru": "found"
+  }
+}

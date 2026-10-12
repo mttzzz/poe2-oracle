@@ -1,0 +1,24 @@
+Item Class: Boots
+Rarity: Rare
+Rift Tread
+Lizardscale Boots
+--------
+Evasion Rating: 137 (augmented)
+--------
+Requires: Level 33, 45 Dex
+--------
+Item Level: 35
+--------
+{ Prefix Modifier "Sprinter's" (Tier: 5) }
+15% increased Movement Speed
+{ Prefix Modifier "Moth's" (Tier: 5) }
+16(14-20)% increased Evasion Rating
++21(14-24) to Stun Threshold
+{ Crafted Prefix Modifier "Sanguine" (Tier: 7) }
++33(30-39) to maximum Life
+{ Suffix Modifier "of Raiding" (Tier: 2) }
+13(11-14)% increased Rarity of Items found
+{ Suffix Modifier "of Reinforced Skin" (Tier: 10) }
++25(12-29) to Stun Threshold
+{ Suffix Modifier "of Convection" (Tier: 5) }
+38(36-40)% reduced Chill Duration on you

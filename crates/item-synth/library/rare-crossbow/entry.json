@@ -1,0 +1,36 @@
+{
+  "order": "a rare crossbow with added lightning damage",
+  "query": {
+    "status": {
+      "option": "any"
+    },
+    "filters": {
+      "type_filters": {
+        "filters": {
+          "category": {
+            "option": "weapon.crossbow"
+          },
+          "rarity": {
+            "option": "rare"
+          }
+        }
+      }
+    }
+  },
+  "league": "Forbidden Rites",
+  "fetched": "2026-10-12T09:31:35Z",
+  "class": "Crossbows",
+  "note": false,
+  "guesses": {
+    "en": [
+      "\"69% increased Physical Damage\" is split among 2 mods within their ranges"
+    ],
+    "ru": [
+      "\"69% увеличение физического урона\" is split among 2 mods within their ranges"
+    ]
+  },
+  "finds_itself": {
+    "en": "found",
+    "ru": "found"
+  }
+}

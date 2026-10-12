@@ -1,0 +1,15 @@
+Item Class: Jewels
+Rarity: Rare
+Viper Hope
+Emerald
+--------
+Item Level: 22
+--------
+{ Prefix Modifier "Humming" (Tier: 1) }
+11(5-15)% increased Lightning Damage
+{ Prefix Modifier "Kindred" (Tier: 1) }
+Companions have 11(10-20)% increased maximum Life
+{ Suffix Modifier "of Alacrity" (Tier: 1) }
+4(2-4)% increased Attack Speed
+--------
+Place into an allocated Jewel Socket on the Passive Skill Tree. Right click to remove from the Socket.

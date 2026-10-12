@@ -1,0 +1,27 @@
+Item Class: Rings
+Rarity: Rare
+Ghoul Nail
+Dusk Ring
+--------
+Requires: Level 60
+--------
+Item Level: 79
+--------
+{ Implicit Modifier }
++1 Prefix Modifier allowed
+-1 Suffix Modifier allowed
+--------
+{ Fractured Prefix Modifier "Smiting" (Tier: 1) }
+28(27-30)% increased Lightning Damage
+{ Prefix Modifier "Entombing" (Tier: 1) }
+Adds 23(21-24) to 36(32-37) Cold damage to Attacks
+{ Prefix Modifier "Agile" (Tier: 9) }
++17(8-17) to Evasion Rating
+{ Prefix Modifier "Magmatic" (Tier: 1) }
+29(27-30)% increased Fire Damage
+{ Suffix Modifier "of the Tempest" (Tier: 4) }
++27(26-30)% to Lightning Resistance
+{ Desecrated Suffix Modifier "of the Bear" (Tier: 6) }
++16(13-16) to Strength
+--------
+Fractured Item

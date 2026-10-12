@@ -459,11 +459,22 @@ fn physical_damage(item: &ParsedItem) -> f64 {
 }
 
 /// The fire, cold and lightning damage lines, each at its average, summed: EE2's
-/// `weaponELEMENTAL`. Chaos damage is no elemental damage and EE2 reads no chaos line.
+/// `weaponELEMENTAL`. Chaos damage is no elemental damage ([`chaos_damage`]).
 fn elemental_damage(item: &ParsedItem) -> f64 {
+    damage_of(item, |kind| kind != ElementKind::Chaos)
+}
+
+/// The chaos damage line at its average. The trade site's total DPS counts it (live 2026-10-12:
+/// Widowhail's 13-20 fire and 42-62 chaos at 1.2 attacks a second are its `dps` 82.2, `edps`
+/// 19.8), where EE2, which reads no chaos line, left it out.
+fn chaos_damage(item: &ParsedItem) -> f64 {
+    damage_of(item, |kind| kind == ElementKind::Chaos)
+}
+
+fn damage_of(item: &ParsedItem, kinds: impl Fn(ElementKind) -> bool) -> f64 {
     item.weapon_elemental
         .iter()
-        .filter(|&&(kind, ..)| kind != ElementKind::Chaos)
+        .filter(|&&(kind, ..)| kinds(kind))
         .map(|&(_, lo, hi)| (f64::from(lo) + f64::from(hi)) / 2.0)
         .sum()
 }
@@ -484,6 +495,7 @@ fn has_weapon_properties(item: &ParsedItem) -> bool {
     present_f64(item.weapon_aps).is_some()
         || present_f64(item.weapon_crit).is_some()
         || elemental_damage(item) != 0.0
+        || chaos_damage(item) != 0.0
         || physical_damage(item) != 0.0
         || present(item.spirit).is_some()
 }
@@ -680,28 +692,32 @@ fn armour_rows(item: &ParsedItem, rows: &mut Vec<SearchFilter>) {
 
 /// `weaponProps` (`item-property.ts:189-447`). Physical DPS is the physical damage at 20% quality
 /// times attacks per second, elemental DPS the fire, cold and lightning damage times attacks per
-/// second, total DPS their sum. Total and elemental DPS only exist on a weapon with elemental
-/// damage. A DPS row hides under 15% of the total: EE2 hides the physical one under 67%, which
-/// left a hybrid weapon's physical DPS (66% of a lightning spear's) behind the hidden rows' toggle.
-/// Reload time is better lower.
+/// second, total DPS those and the chaos damage's ([`chaos_damage`]). Total DPS exists on a weapon
+/// with elemental or chaos damage, elemental DPS on one with elemental damage. A DPS row hides
+/// under 15% of the total: EE2 hides the physical one under 67%, which left a hybrid weapon's
+/// physical DPS (66% of a lightning spear's) behind the hidden rows' toggle. Reload time is better
+/// lower.
 fn weapon_rows(item: &ParsedItem, rows: &mut Vec<SearchFilter>) {
     let attacks_per_second = item.weapon_aps.unwrap_or(0.0);
     let physical = physical_damage(item);
     let elemental = elemental_damage(item);
+    let chaos = chaos_damage(item);
     let physical_dps = at_20_quality(item, physical, &PHYSICAL_DAMAGE) * attacks_per_second;
     let elemental_dps = elemental * attacks_per_second;
-    let total_dps = physical_dps + elemental_dps;
+    let total_dps = physical_dps + elemental_dps + chaos * attacks_per_second;
     let row = |label, trade_id, value, dp| {
         property_row(label, trade_id, value, dp, false, RollBound::Higher)
     };
 
-    if elemental != 0.0 {
+    if elemental != 0.0 || chaos != 0.0 {
         rows.push(row(
             "Total DPS: #",
             "equipment_filters.dps",
             total_dps,
             false,
         ));
+    }
+    if elemental != 0.0 {
         rows.push(SearchFilter {
             hidden: elemental_dps / total_dps < 0.15,
             ..row(
@@ -842,6 +858,37 @@ mod tests {
         // 84% physical, 15.5% elemental: neither share is minor. A scored row starts unchecked,
         // for the search profile to pick.
         assert!(rows.iter().all(|row| !row.hidden && !row.enabled));
+    }
+
+    #[test]
+    fn total_dps_counts_chaos_damage_as_the_trade_site_does() {
+        // Widowhail as listed on 2026-10-12: 13-20 fire and 42-62 chaos damage at 1.2 attacks a
+        // second, which the site sums to `dps` 82.2 and `edps` 19.8.
+        let bow = ParsedItem {
+            rarity: Some(ItemRarity::Unique),
+            category: category("weapon.bow"),
+            quality: Some(20),
+            weapon_elemental: vec![(ElementKind::Fire, 13, 20), (ElementKind::Chaos, 42, 62)],
+            weapon_aps: Some(1.2),
+            ..Default::default()
+        };
+        let rows = property_filters(&bow);
+        let value = |trade_id| row(&rows, trade_id).roll.as_ref().expect("roll").value;
+        assert_eq!(value("equipment_filters.dps"), 82.0);
+        assert_eq!(value("equipment_filters.edps"), 19.0);
+
+        // Physical and chaos damage alone still make a total of both.
+        let mut no_elements = bow;
+        no_elements.weapon_elemental = vec![(ElementKind::Chaos, 42, 62)];
+        no_elements.weapon_physical = Some((50, 100));
+        let rows = property_filters(&no_elements);
+        let value = |trade_id| row(&rows, trade_id).roll.as_ref().expect("roll").value;
+        // 75 physical * 1.2 = 90, 52 chaos * 1.2 = 62.4: 152.4, shown 152.
+        assert_eq!(value("equipment_filters.dps"), 152.0);
+        assert!(
+            rows.iter()
+                .all(|row| row.trade_ids != ["equipment_filters.edps"])
+        );
     }
 
     #[test]

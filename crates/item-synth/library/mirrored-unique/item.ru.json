@@ -1,0 +1,97 @@
+{
+  "realm": "poe2",
+  "verified": true,
+  "w": 1,
+  "h": 1,
+  "icon": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvUmluZ3MvTWlycm9yUmluZyIsInciOjEsImgiOjEsInNjYWxlIjoxLCJyZWFsbSI6InBvZTIiLCJkdXBsaWNhdGVkIjp0cnVlfV0/ec1c789fca/MirrorRing.png",
+  "league": "Forbidden Rites",
+  "id": "5ba6156ed49c61f9ef74e491d32f51597b1195e11cbe6cfa7adea21a8006e1b5",
+  "frameTypeId": "Unique",
+  "extended": {
+    "hashes": {
+      "explicit": [
+        [
+          "explicit.stat_746505085",
+          [
+            0
+          ]
+        ]
+      ]
+    }
+  },
+  "note": null,
+  "iconTierText": null,
+  "gemBackground": null,
+  "gemSkill": null,
+  "name": "Касание Каландры",
+  "typeLine": "Кольцо",
+  "baseType": "Кольцо",
+  "rarity": "Unique",
+  "frameType": 3,
+  "ilvl": 81,
+  "identified": true,
+  "unidentifiedTier": null,
+  "corrupted": false,
+  "doubleCorrupted": false,
+  "duplicated": true,
+  "sanctified": false,
+  "fractured": false,
+  "desecrated": false,
+  "mutated": false,
+  "stackSize": null,
+  "maxStackSize": null,
+  "support": null,
+  "properties": [
+    {
+      "name": "Кольцо",
+      "values": [],
+      "displayMode": 0,
+      "type": 109,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    }
+  ],
+  "requirements": [],
+  "weaponRequirements": [],
+  "supportGemRequirements": [],
+  "grantedSkills": [],
+  "sockets": [],
+  "notableProperties": [],
+  "gemSockets": [],
+  "socketedItems": [],
+  "enchantMods": [],
+  "runeMods": [],
+  "bondedMods": [],
+  "implicitMods": [],
+  "explicitMods": [
+    {
+      "description": "Отражает противоположное кольцо",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_746505085",
+      "mods": [
+        {
+          "name": null,
+          "tier": null,
+          "level": null,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "1",
+              "max": "1"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    }
+  ],
+  "gemTabs": [],
+  "flavourText": [
+    "Власть — вопрос точки зрения."
+  ],
+  "descrText": null,
+  "secDescrText": null
+}

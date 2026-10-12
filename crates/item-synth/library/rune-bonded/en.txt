@@ -1,0 +1,19 @@
+Item Class: Augment
+Rarity: Currency
+Lesser Rebirth Rune
+--------
+Stack Size: 1/10
+Rune
+--------
+Martial Weapon: Gain 15 Life per enemy killed
+Wand or Staff: 6% increased Energy Shield Recharge Rate
+Armour: Regenerate 0.35% of maximum Life per second
+--------
+Bonded:
+Martial Weapon: Regenerate 0.4% of maximum Life per second
+Wand or Staff: 8% of Damage taken Recouped as Life
+Armour:
++20 to maximum Life
++20 to maximum Mana
+--------
+Place into an empty Augment Socket in a Weapon or Armour to apply its effect to that item. Once socketed it cannot be retrieved but can be replaced by other Augment items.

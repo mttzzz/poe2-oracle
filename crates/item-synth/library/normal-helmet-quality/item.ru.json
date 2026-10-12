@@ -1,0 +1,166 @@
+{
+  "realm": "poe2",
+  "verified": true,
+  "w": 2,
+  "h": 2,
+  "icon": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvQXJtb3Vycy9IZWxtZXRzL0Jhc2V0eXBlcy9IZWxtZXRTdHJEZXgwNCIsInciOjIsImgiOjIsInNjYWxlIjoxLCJyZWFsbSI6InBvZTIifV0/df04613939/HelmetStrDex04.png",
+  "league": "Forbidden Rites",
+  "id": "3dda60c03a89d5fa9d8691d581f2bedda2ee7276482d20200e7caa98974741a3",
+  "frameTypeId": "Normal",
+  "extended": {
+    "hashes": {},
+    "ar": 181,
+    "ar_aug": true,
+    "ev": 164,
+    "ev_aug": true
+  },
+  "note": null,
+  "iconTierText": null,
+  "gemBackground": null,
+  "gemSkill": null,
+  "name": "",
+  "typeLine": "Шлем каббалиста высокого качества",
+  "baseType": "Шлем каббалиста",
+  "rarity": "Normal",
+  "frameType": 0,
+  "ilvl": 59,
+  "identified": true,
+  "unidentifiedTier": null,
+  "corrupted": false,
+  "doubleCorrupted": false,
+  "duplicated": false,
+  "sanctified": false,
+  "fractured": false,
+  "desecrated": false,
+  "mutated": false,
+  "stackSize": null,
+  "maxStackSize": null,
+  "support": null,
+  "properties": [
+    {
+      "name": "Шлем",
+      "values": [],
+      "displayMode": 0,
+      "type": 109,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "[Quality|Качество]",
+      "values": [
+        [
+          "+15%",
+          1
+        ]
+      ],
+      "displayMode": 0,
+      "type": 6,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "[Armour|Броня]",
+      "values": [
+        [
+          "174",
+          1
+        ]
+      ],
+      "displayMode": 0,
+      "type": 16,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "[Evasion|Уклонение]",
+      "values": [
+        [
+          "158",
+          1
+        ]
+      ],
+      "displayMode": 0,
+      "type": 17,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    }
+  ],
+  "requirements": [
+    {
+      "name": "Уровень",
+      "values": [
+        [
+          "54",
+          0
+        ]
+      ],
+      "displayMode": 0,
+      "type": 62,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "[Strength|Сила]",
+      "values": [
+        [
+          "42",
+          0
+        ]
+      ],
+      "displayMode": 1,
+      "type": 63,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "[Dexterity|Ловк]",
+      "values": [
+        [
+          "42",
+          0
+        ]
+      ],
+      "displayMode": 1,
+      "type": 64,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    }
+  ],
+  "weaponRequirements": [],
+  "supportGemRequirements": [],
+  "grantedSkills": [],
+  "sockets": [],
+  "notableProperties": [],
+  "gemSockets": [],
+  "socketedItems": [],
+  "enchantMods": [],
+  "runeMods": [],
+  "bondedMods": [],
+  "implicitMods": [],
+  "explicitMods": [],
+  "gemTabs": [],
+  "flavourText": [],
+  "descrText": null,
+  "secDescrText": null
+}

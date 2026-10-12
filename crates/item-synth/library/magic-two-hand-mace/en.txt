@@ -1,0 +1,12 @@
+Item Class: Two Hand Maces
+Rarity: Magic
+Felled Greatclub of Skill
+--------
+Physical Damage: 13-18
+Critical Hit Chance: 5.00%
+Attacks per Second: 1.18 (augmented)
+--------
+Item Level: 2
+--------
+{ Suffix Modifier "of Skill" (Tier: 8) }
+7(5-7)% increased Attack Speed

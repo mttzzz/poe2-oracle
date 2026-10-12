@@ -1,0 +1,46 @@
+{
+  "order": "a rare body armour with Bonded runes and a desecrated hybrid mod",
+  "query": {
+    "status": {
+      "option": "any"
+    },
+    "filters": {
+      "type_filters": {
+        "filters": {
+          "category": {
+            "option": "armour.chest"
+          },
+          "rarity": {
+            "option": "rare"
+          }
+        }
+      },
+      "misc_filters": {
+        "filters": {
+          "desecrated": {
+            "option": "true"
+          }
+        }
+      },
+      "equipment_filters": {
+        "filters": {
+          "rune_sockets": {
+            "min": 2
+          }
+        }
+      }
+    }
+  },
+  "league": "Forbidden Rites",
+  "fetched": "2026-10-12T09:21:08Z",
+  "class": "Body Armours",
+  "note": false,
+  "guesses": {
+    "en": [],
+    "ru": []
+  },
+  "finds_itself": {
+    "en": "found",
+    "ru": "found"
+  }
+}

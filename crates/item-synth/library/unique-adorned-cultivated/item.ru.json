@@ -1,0 +1,145 @@
+{
+  "realm": "poe2",
+  "verified": true,
+  "w": 1,
+  "h": 1,
+  "icon": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvSmV3ZWxzL1RyaWFsbWFzdGVySmV3ZWwiLCJ3IjoxLCJoIjoxLCJzY2FsZSI6MSwicmVhbG0iOiJwb2UyIn1d/fa6b8d5683/TrialmasterJewel.png",
+  "league": "Forbidden Rites",
+  "id": "87c09270b3aebc31ad01f9dcaf6c9eab708f12ab00d45171dd98f940771576da",
+  "frameTypeId": "Unique",
+  "extended": {
+    "hashes": {
+      "explicit": [
+        [
+          "explicit.stat_3291658075",
+          [
+            1
+          ]
+        ],
+        [
+          "explicit.stat_3128077011",
+          [
+            0
+          ]
+        ]
+      ]
+    }
+  },
+  "note": null,
+  "iconTierText": null,
+  "gemBackground": null,
+  "gemSkill": null,
+  "name": "Былой блеск",
+  "typeLine": "Алмаз",
+  "baseType": "Алмаз",
+  "rarity": "Unique",
+  "frameType": 3,
+  "ilvl": 82,
+  "identified": true,
+  "unidentifiedTier": null,
+  "corrupted": true,
+  "doubleCorrupted": false,
+  "duplicated": false,
+  "sanctified": false,
+  "fractured": false,
+  "desecrated": false,
+  "mutated": true,
+  "stackSize": null,
+  "maxStackSize": null,
+  "support": null,
+  "properties": [
+    {
+      "name": "[Jewel|Самоцвет] ваал",
+      "values": [],
+      "displayMode": 0,
+      "type": 109,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "Максимум",
+      "values": [
+        [
+          "1",
+          0
+        ]
+      ],
+      "displayMode": 0,
+      "type": null,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    }
+  ],
+  "requirements": [],
+  "weaponRequirements": [],
+  "supportGemRequirements": [],
+  "grantedSkills": [],
+  "sockets": [],
+  "notableProperties": [],
+  "gemSockets": [],
+  "socketedItems": [],
+  "enchantMods": [],
+  "runeMods": [],
+  "bondedMods": [],
+  "implicitMods": [],
+  "explicitMods": [
+    {
+      "description": "19% уменьшение урона от [Cold|холода]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_3291658075",
+      "mods": [
+        {
+          "name": null,
+          "tier": null,
+          "level": null,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "-30",
+              "max": "30"
+            }
+          ]
+        }
+      ],
+      "flags": {
+        "mutated": true
+      }
+    },
+    {
+      "description": "10% усиление эффекта пассивных умений-гнезд [Jewel|самоцветов]\nсодержащих [Corrupted|оскверненные] [ItemRarity|редкие] [Jewel|самоцветы]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_3128077011",
+      "mods": [
+        {
+          "name": null,
+          "tier": null,
+          "level": null,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "0",
+              "max": "75"
+            }
+          ]
+        }
+      ],
+      "flags": {
+        "mutated": true
+      }
+    }
+  ],
+  "gemTabs": [],
+  "flavourText": [
+    "На пике своего величия ваал сверкали под солнцем.\r",
+    "Декада, век, эпоха процветания...\r",
+    "теперь всего лишь былое чудо."
+  ],
+  "descrText": "Поместите в доступное гнездо для самоцветов на дереве пассивных умений. Чтобы вынуть из гнезда, щёлкните по нему правой кнопкой мыши.",
+  "secDescrText": null
+}

@@ -1,0 +1,20 @@
+Item Class: Tablet
+Rarity: Unique
+Clear Skies
+Delirium Tablet
+--------
+Item Level: 79
+--------
+{ Implicit Modifier }
+Adds a Mirror of Delirium to a Map 
+5 uses remaining
+--------
+{ Unique Modifier }
+Delirium Fog in your Maps never dissipates
+{ Unique Modifier }
+Delirium Fog in Map applies 7(-10-+10)% increased Deliriousness to Players
+--------
+A simple instruction that will purify an entire region,
+making it safe and kind for weary travellers.
+--------
+Can be used in a personal Map Device to add modifiers to a Map.

@@ -1,0 +1,147 @@
+{
+  "realm": "poe2",
+  "verified": true,
+  "w": 1,
+  "h": 1,
+  "icon": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvSmV3ZWxzL0VtZXJhbGRKZXdlbCIsInciOjEsImgiOjEsInNjYWxlIjoxLCJyZWFsbSI6InBvZTIifV0/0df7b1d23b/EmeraldJewel.png",
+  "league": "Forbidden Rites",
+  "id": "1bae84c70214f72471f4e8a049ddb77de74481b98fbe0eae373b717bf6fb76c8",
+  "frameTypeId": "Rare",
+  "extended": {
+    "hashes": {
+      "explicit": [
+        [
+          "explicit.stat_2231156303",
+          [
+            1
+          ]
+        ],
+        [
+          "explicit.stat_681332047",
+          [
+            0
+          ]
+        ],
+        [
+          "explicit.stat_1805182458",
+          [
+            2
+          ]
+        ]
+      ]
+    }
+  },
+  "note": "~price 1 transmute",
+  "iconTierText": null,
+  "gemBackground": null,
+  "gemSkill": null,
+  "name": "Змеиная надежда",
+  "typeLine": "Изумруд",
+  "baseType": "Изумруд",
+  "rarity": "Rare",
+  "frameType": 2,
+  "ilvl": 22,
+  "identified": true,
+  "unidentifiedTier": null,
+  "corrupted": false,
+  "doubleCorrupted": false,
+  "duplicated": false,
+  "sanctified": false,
+  "fractured": false,
+  "desecrated": false,
+  "mutated": false,
+  "stackSize": null,
+  "maxStackSize": null,
+  "support": null,
+  "properties": [
+    {
+      "name": "[Jewel|Самоцвет]",
+      "values": [],
+      "displayMode": 0,
+      "type": 109,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    }
+  ],
+  "requirements": [],
+  "weaponRequirements": [],
+  "supportGemRequirements": [],
+  "grantedSkills": [],
+  "sockets": [],
+  "notableProperties": [],
+  "gemSockets": [],
+  "socketedItems": [],
+  "enchantMods": [],
+  "runeMods": [],
+  "bondedMods": [],
+  "implicitMods": [],
+  "explicitMods": [
+    {
+      "description": "11% увеличение урона от [Lightning|молнии]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_2231156303",
+      "mods": [
+        {
+          "name": "Покалывающий",
+          "tier": "P1",
+          "level": null,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "5",
+              "max": "15"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    },
+    {
+      "description": "4% повышение скорости [Attack|атаки]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_681332047",
+      "mods": [
+        {
+          "name": "живости",
+          "tier": "S1",
+          "level": null,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "2",
+              "max": "4"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    },
+    {
+      "description": "11% увеличение максимума здоровья [Companion|компаньонов]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_1805182458",
+      "mods": [
+        {
+          "name": "Родственный",
+          "tier": "P1",
+          "level": null,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "10",
+              "max": "20"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    }
+  ],
+  "gemTabs": [],
+  "flavourText": [],
+  "descrText": "Поместите в доступное гнездо для самоцветов на дереве пассивных умений. Чтобы вынуть из гнезда, щёлкните по нему правой кнопкой мыши.",
+  "secDescrText": null
+}

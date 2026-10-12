@@ -1,0 +1,310 @@
+{
+  "realm": "poe2",
+  "verified": true,
+  "w": 1,
+  "h": 1,
+  "icon": "https://web.poecdn.com/gen/image/WzI4LDE0LHsiZiI6IjJESXRlbXMvTWFwcy9FbmRnYW1lTWFwcy9FbmRnYW1lTWFwMTUiLCJ3IjoxLCJoIjoxLCJzY2FsZSI6MSwicmVhbG0iOiJwb2UyIn1d/17149586aa/EndgameMap15.png",
+  "league": "Forbidden Rites",
+  "id": "d8f747a37c5e355fdc5f6835e35646aff7b86a14cbb3a9d8cfe6fd1c1b4152e7",
+  "frameTypeId": "Rare",
+  "extended": {
+    "hashes": {
+      "explicit": [
+        [
+          "explicit.stat_349586058",
+          [
+            0
+          ]
+        ],
+        [
+          "explicit.stat_3376488707",
+          [
+            5
+          ]
+        ],
+        [
+          "explicit.stat_95249895",
+          [
+            4
+          ]
+        ],
+        [
+          "explicit.stat_1588049749",
+          [
+            3
+          ]
+        ],
+        [
+          "explicit.stat_115425161",
+          [
+            1
+          ]
+        ],
+        [
+          "explicit.stat_2887760183",
+          [
+            2
+          ]
+        ]
+      ]
+    }
+  },
+  "note": null,
+  "iconTierText": "XV",
+  "gemBackground": null,
+  "gemSkill": null,
+  "name": "Уединённый тракт",
+  "typeLine": "Путевой камень (Ур. 15)",
+  "baseType": "Путевой камень (Ур. 15)",
+  "rarity": "Rare",
+  "frameType": 2,
+  "ilvl": 82,
+  "identified": true,
+  "unidentifiedTier": null,
+  "corrupted": true,
+  "doubleCorrupted": false,
+  "duplicated": false,
+  "sanctified": false,
+  "fractured": false,
+  "desecrated": false,
+  "mutated": false,
+  "stackSize": null,
+  "maxStackSize": null,
+  "support": null,
+  "properties": [
+    {
+      "name": "[LimitedRespawn|Доступно возрождений]",
+      "values": [
+        [
+          "0",
+          1
+        ]
+      ],
+      "displayMode": 0,
+      "type": 98,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "[ItemRarity|Редкость предметов]",
+      "values": [
+        [
+          "+25%",
+          1
+        ]
+      ],
+      "displayMode": 0,
+      "type": 3,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "[Pack|Размер групп монстров]",
+      "values": [
+        [
+          "+17%",
+          1
+        ]
+      ],
+      "displayMode": 0,
+      "type": 4,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "[MonsterRarity|Редкость монстров]",
+      "values": [
+        [
+          "+23%",
+          1
+        ]
+      ],
+      "displayMode": 0,
+      "type": 103,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "[MonsterEffectiveness|Эффективность монстров]",
+      "values": [
+        [
+          "+13%",
+          1
+        ]
+      ],
+      "displayMode": 0,
+      "type": 102,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "Шанс выпадения путевого камня",
+      "values": [
+        [
+          "+95%",
+          1
+        ]
+      ],
+      "displayMode": 0,
+      "type": 66,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    }
+  ],
+  "requirements": [],
+  "weaponRequirements": [],
+  "supportGemRequirements": [],
+  "grantedSkills": [],
+  "sockets": [],
+  "notableProperties": [],
+  "gemSockets": [],
+  "socketedItems": [],
+  "enchantMods": [],
+  "runeMods": [],
+  "bondedMods": [],
+  "implicitMods": [],
+  "explicitMods": [
+    {
+      "description": "Область имеет участки [ChilledGround|замерзшей земли]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_349586058",
+      "mods": [
+        {
+          "name": "Льдистый",
+          "tier": "S1",
+          "level": null,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "30",
+              "max": "30"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    },
+    {
+      "description": "-7% максимум сопротивлений игроков",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_3376488707",
+      "mods": [
+        {
+          "name": "восприимчивости",
+          "tier": "S1",
+          "level": null,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "-8",
+              "max": "-6"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    },
+    {
+      "description": "На 20% больше здоровья монстров",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_95249895",
+      "mods": [
+        {
+          "name": "Стойкий",
+          "tier": "P1",
+          "level": null,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "20",
+              "max": "25"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    },
+    {
+      "description": "Меткость монстров повышена на 37%",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_1588049749",
+      "mods": [
+        {
+          "name": "Точный",
+          "tier": "P1",
+          "level": null,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "30",
+              "max": "40"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    },
+    {
+      "description": "Монстры имеют 97% увеличение накопления шкалы оглушения",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_115425161",
+      "mods": [
+        {
+          "name": "Ударяющий",
+          "tier": "P1",
+          "level": null,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "90",
+              "max": "100"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    },
+    {
+      "description": "Монстры получают 22% от максимума здоровья в виде дополнительного [EnergyShield|энергетического щита]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_2887760183",
+      "mods": [
+        {
+          "name": "барьера",
+          "tier": "S1",
+          "level": null,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "12",
+              "max": "25"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    }
+  ],
+  "gemTabs": [],
+  "flavourText": [],
+  "descrText": "Можно использовать в Машине картоходца, чтобы войти на карту. Путевые камни одноразовые.",
+  "secDescrText": null
+}

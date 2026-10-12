@@ -1,0 +1,33 @@
+{
+  "order": "a rune with Bonded effects",
+  "query": {
+    "status": {
+      "option": "any"
+    },
+    "filters": {
+      "type_filters": {
+        "filters": {
+          "category": {
+            "option": "currency.rune"
+          }
+        }
+      }
+    }
+  },
+  "league": "Forbidden Rites",
+  "fetched": "2026-10-12T09:42:12Z",
+  "class": "Augment",
+  "note": false,
+  "guesses": {
+    "en": [
+      "a Bonded rune's effects are written as their own section after the item's own"
+    ],
+    "ru": [
+      "a Bonded rune's effects are written as their own section after the item's own"
+    ]
+  },
+  "finds_itself": {
+    "en": "priced from the exchange market (lesser-rebirth-rune), no search to run",
+    "ru": "priced from the exchange market (lesser-rebirth-rune), no search to run"
+  }
+}

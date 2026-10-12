@@ -1,0 +1,310 @@
+{
+  "realm": "poe2",
+  "verified": true,
+  "w": 1,
+  "h": 1,
+  "icon": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvUmluZ3MvTGFrZVJpbmcxIiwidyI6MSwiaCI6MSwic2NhbGUiOjEsInJlYWxtIjoicG9lMiJ9XQ/40b81baee3/LakeRing1.png",
+  "league": "Forbidden Rites",
+  "id": "2d94e894bb8637005960725d10ce0d3af15e67b9ff286bd58a88a786a1893d04",
+  "frameTypeId": "Rare",
+  "extended": {
+    "hashes": {
+      "desecrated": [
+        [
+          "desecrated.stat_4080418644",
+          [
+            0
+          ]
+        ]
+      ],
+      "explicit": [
+        [
+          "explicit.stat_4067062424",
+          [
+            0
+          ]
+        ],
+        [
+          "explicit.stat_3962278098",
+          [
+            2
+          ]
+        ],
+        [
+          "explicit.stat_2144192055",
+          [
+            1
+          ]
+        ],
+        [
+          "explicit.stat_1671376347",
+          [
+            3
+          ]
+        ]
+      ],
+      "fractured": [
+        [
+          "fractured.stat_2231156303",
+          [
+            0
+          ]
+        ]
+      ],
+      "implicit": [
+        [
+          "implicit.stat_3182714256",
+          [
+            0
+          ]
+        ],
+        [
+          "implicit.stat_718638445",
+          [
+            0
+          ]
+        ]
+      ]
+    }
+  },
+  "note": "~b/o 1 chaos",
+  "iconTierText": null,
+  "gemBackground": null,
+  "gemSkill": null,
+  "name": "Вампирский зубец",
+  "typeLine": "Сумеречное кольцо",
+  "baseType": "Сумеречное кольцо",
+  "rarity": "Rare",
+  "frameType": 2,
+  "ilvl": 79,
+  "identified": true,
+  "unidentifiedTier": null,
+  "corrupted": false,
+  "doubleCorrupted": false,
+  "duplicated": false,
+  "sanctified": false,
+  "fractured": true,
+  "desecrated": true,
+  "mutated": false,
+  "stackSize": null,
+  "maxStackSize": null,
+  "support": null,
+  "properties": [
+    {
+      "name": "Кольцо",
+      "values": [],
+      "displayMode": 0,
+      "type": 109,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    }
+  ],
+  "requirements": [
+    {
+      "name": "Уровень",
+      "values": [
+        [
+          "60",
+          0
+        ]
+      ],
+      "displayMode": 0,
+      "type": 62,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    }
+  ],
+  "weaponRequirements": [],
+  "supportGemRequirements": [],
+  "grantedSkills": [],
+  "sockets": [],
+  "notableProperties": [],
+  "gemSockets": [],
+  "socketedItems": [],
+  "enchantMods": [],
+  "runeMods": [],
+  "bondedMods": [],
+  "implicitMods": [
+    {
+      "description": "+1 допустимых свойств-префиксов",
+      "domain": "implicit",
+      "hash": "stat.implicit.stat_3182714256",
+      "mods": [
+        {
+          "name": null,
+          "tier": null,
+          "level": null,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "1",
+              "max": "1"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    },
+    {
+      "description": "-1 допустимых свойств-суффиксов",
+      "domain": "implicit",
+      "hash": "stat.implicit.stat_718638445",
+      "mods": [
+        {
+          "name": null,
+          "tier": null,
+          "level": null,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "-1",
+              "max": "-1"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    }
+  ],
+  "explicitMods": [
+    {
+      "description": "28% увеличение урона от [Lightning|молнии]",
+      "domain": "fractured",
+      "hash": "stat.fractured.stat_2231156303",
+      "mods": [
+        {
+          "name": "Поражающий",
+          "tier": "P1",
+          "level": 75,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "27",
+              "max": "30"
+            }
+          ]
+        }
+      ],
+      "flags": {
+        "fractured": true
+      }
+    },
+    {
+      "description": "Добавляет от 23 до 36 урона от [Cold|холода] к [Attack|атакам]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_4067062424",
+      "mods": [
+        {
+          "name": "Леденящий",
+          "tier": "P1",
+          "level": 75,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "21",
+              "max": "24"
+            },
+            {
+              "hash": null,
+              "min": "32",
+              "max": "37"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    },
+    {
+      "description": "29% увеличение урона от [Fire|огня]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_3962278098",
+      "mods": [
+        {
+          "name": "Магматический",
+          "tier": "P1",
+          "level": 75,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "27",
+              "max": "30"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    },
+    {
+      "description": "+17 к [Evasion|уклонению]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_2144192055",
+      "mods": [
+        {
+          "name": "Ловкий",
+          "tier": "P9",
+          "level": null,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "8",
+              "max": "17"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    },
+    {
+      "description": "+27% к сопротивлению [Resistances|молнии]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_1671376347",
+      "mods": [
+        {
+          "name": "бури",
+          "tier": "S4",
+          "level": 49,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "26",
+              "max": "30"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    },
+    {
+      "description": "+16 к [Strength|силе]",
+      "domain": "desecrated",
+      "hash": "stat.desecrated.stat_4080418644",
+      "mods": [
+        {
+          "name": "медведя",
+          "tier": "S6",
+          "level": 22,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "13",
+              "max": "16"
+            }
+          ]
+        }
+      ],
+      "flags": {
+        "desecrated": true
+      }
+    }
+  ],
+  "gemTabs": [],
+  "flavourText": [],
+  "descrText": null,
+  "secDescrText": null
+}

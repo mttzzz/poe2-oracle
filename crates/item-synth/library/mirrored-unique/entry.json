@@ -1,0 +1,29 @@
+{
+  "order": "a mirrored item",
+  "query": {
+    "status": {
+      "option": "any"
+    },
+    "filters": {
+      "misc_filters": {
+        "filters": {
+          "mirrored": {
+            "option": "true"
+          }
+        }
+      }
+    }
+  },
+  "league": "Forbidden Rites",
+  "fetched": "2026-10-12T09:52:25Z",
+  "class": "Rings",
+  "note": false,
+  "guesses": {
+    "en": [],
+    "ru": []
+  },
+  "finds_itself": {
+    "en": "found",
+    "ru": "found"
+  }
+}

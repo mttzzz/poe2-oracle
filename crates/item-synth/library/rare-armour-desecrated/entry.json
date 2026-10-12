@@ -1,0 +1,50 @@
+{
+  "order": "a rare body armour with a desecrated mod and two rune sockets",
+  "query": {
+    "status": {
+      "option": "any"
+    },
+    "filters": {
+      "type_filters": {
+        "filters": {
+          "category": {
+            "option": "armour.chest"
+          },
+          "rarity": {
+            "option": "rare"
+          }
+        }
+      },
+      "misc_filters": {
+        "filters": {
+          "desecrated": {
+            "option": "true"
+          }
+        }
+      },
+      "equipment_filters": {
+        "filters": {
+          "rune_sockets": {
+            "min": 2
+          }
+        }
+      }
+    }
+  },
+  "league": "Forbidden Rites",
+  "fetched": "2026-10-12T09:21:08Z",
+  "class": "Body Armours",
+  "note": false,
+  "guesses": {
+    "en": [
+      "\"57% increased Armour\" is split among 2 mods within their ranges"
+    ],
+    "ru": [
+      "\"57% повышение брони\" is split among 2 mods within their ranges"
+    ]
+  },
+  "finds_itself": {
+    "en": "found",
+    "ru": "found"
+  }
+}

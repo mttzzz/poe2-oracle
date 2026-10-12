@@ -628,6 +628,72 @@ fn filtered_search_body<'a>(
     }
 }
 
+/// The body [`search_with_filters`] sends, as JSON: for a tool that runs the app's own search with
+/// something added (the item synthesizer narrows it to one seller, [`search_body`]).
+pub fn filtered_search_request(
+    scope: &SearchScope,
+    filters: &[stat_filters::SearchFilter],
+    status: ListingStatus,
+) -> serde_json::Value {
+    serde_json::to_value(filtered_search_body(scope, filters, status))
+        .expect("a search body is plain JSON")
+}
+
+/// The body [`search_exact`] sends, as JSON (see [`filtered_search_request`]).
+pub fn exact_search_request(exact_type: &str, status: ListingStatus) -> serde_json::Value {
+    serde_json::to_value(exact_search_body(exact_type, status))
+        .expect("a search body is plain JSON")
+}
+
+/// `POST /api/trade2/search/{league}` with a body the caller built: [`filtered_search_request`]'s
+/// or [`exact_search_request`]'s with something added, or one of its own.
+pub async fn search_body(
+    client: &Arc<dyn HttpClient>,
+    site: TradeSite,
+    league: &str,
+    body: &serde_json::Value,
+    limiter: &mut RateLimiter,
+) -> Result<SearchOutcome> {
+    let url = format!("{}/search/{}", site.api_base(), encode_league(league));
+    let request = client.post_json(&url, AsyncBody::from(Json(body)));
+    let response_body = checked_body(request, "POST", &url, Some(limiter), "search").await?;
+    let parsed: SearchResponse =
+        serde_json::from_str(&response_body).context("parsing search response JSON")?;
+    Ok(SearchOutcome {
+        query_id: parsed.id,
+        total: parsed.total,
+        listing_ids: parsed.result,
+    })
+}
+
+/// [`fetch`]'s results as the site sends them, `null` (delisted) included: for a tool that needs
+/// every field of a listing, which [`FetchedItem`] reads only part of. `query_id` may be left out:
+/// the site fetches listings by id alone.
+pub async fn fetch_json(
+    client: &Arc<dyn HttpClient>,
+    site: TradeSite,
+    listing_ids: &[String],
+    query_id: Option<&str>,
+    limiter: &mut RateLimiter,
+) -> Result<Vec<Option<serde_json::Value>>> {
+    if listing_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut url = format!("{}/fetch/{}", site.api_base(), listing_ids.join(","));
+    if let Some(query_id) = query_id {
+        url.push_str("?query=");
+        url.push_str(query_id);
+    }
+    let request = client.get(&url, AsyncBody::default(), true);
+    let body = checked_body(request, "GET", &url, Some(limiter), "fetch").await?;
+    #[derive(Deserialize)]
+    struct Results {
+        result: Vec<Option<serde_json::Value>>,
+    }
+    let parsed: Results = serde_json::from_str(&body).context("parsing fetch response JSON")?;
+    Ok(parsed.result)
+}
+
 /// `query.stats` for the stat rows, as EE2's `createTradeRequest` builds it
 /// (`pathofexile-trade.ts:1215-1224`): a row with one trade id goes into the `"and"` group, and a
 /// row whose text several trade ids share (`# to all Attributes` is both
@@ -807,7 +873,21 @@ pub async fn search_exact(
     status: ListingStatus,
     limiter: &mut RateLimiter,
 ) -> Result<SearchOutcome> {
-    let body = ExactSearchRequestBody {
+    let body = exact_search_body(exact_type, status);
+    let url = format!("{}/search/{}", site.api_base(), encode_league(league));
+    let request = client.post_json(&url, AsyncBody::from(Json(body)));
+    let response_body = checked_body(request, "POST", &url, Some(limiter), "exact-search").await?;
+    let parsed: SearchResponse =
+        serde_json::from_str(&response_body).context("parsing exact-search response JSON")?;
+    Ok(SearchOutcome {
+        query_id: parsed.id,
+        total: parsed.total,
+        listing_ids: parsed.result,
+    })
+}
+
+fn exact_search_body(exact_type: &str, status: ListingStatus) -> ExactSearchRequestBody<'_> {
+    ExactSearchRequestBody {
         query: ExactSearchQuery {
             status: OptionField {
                 option: status.option(),
@@ -821,17 +901,7 @@ pub async fn search_exact(
             )]),
         },
         sort: SearchSort { price: "asc" },
-    };
-    let url = format!("{}/search/{}", site.api_base(), encode_league(league));
-    let request = client.post_json(&url, AsyncBody::from(Json(body)));
-    let response_body = checked_body(request, "POST", &url, Some(limiter), "exact-search").await?;
-    let parsed: SearchResponse =
-        serde_json::from_str(&response_body).context("parsing exact-search response JSON")?;
-    Ok(SearchOutcome {
-        query_id: parsed.id,
-        total: parsed.total,
-        listing_ids: parsed.result,
-    })
+    }
 }
 
 /// How a parsed item is priced.

@@ -1,0 +1,78 @@
+{
+  "realm": "poe2",
+  "verified": true,
+  "w": 1,
+  "h": 1,
+  "icon": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvQ3VycmVuY3kvQ3VycmVuY3lBZGRNb2RUb1JhcmUiLCJ3IjoxLCJoIjoxLCJzY2FsZSI6MSwicmVhbG0iOiJwb2UyIn1d/4ef5836606/CurrencyAddModToRare.png",
+  "league": "Forbidden Rites",
+  "id": "3385d123acef04de9fccd80a7a03f57bac418131f52bfe402bb3abbce7435d6e",
+  "frameTypeId": "Currency",
+  "extended": {
+    "hashes": {}
+  },
+  "note": null,
+  "iconTierText": null,
+  "gemBackground": null,
+  "gemSkill": null,
+  "name": "",
+  "typeLine": "Сфера возвышения",
+  "baseType": "Сфера возвышения",
+  "rarity": null,
+  "frameType": 5,
+  "ilvl": 0,
+  "identified": true,
+  "unidentifiedTier": null,
+  "corrupted": false,
+  "doubleCorrupted": false,
+  "duplicated": false,
+  "sanctified": false,
+  "fractured": false,
+  "desecrated": false,
+  "mutated": false,
+  "stackSize": 20,
+  "maxStackSize": 20,
+  "support": null,
+  "properties": [
+    {
+      "name": "Размер стопки",
+      "values": [
+        [
+          "20/20",
+          0
+        ]
+      ],
+      "displayMode": 0,
+      "type": 32,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    }
+  ],
+  "requirements": [],
+  "weaponRequirements": [],
+  "supportGemRequirements": [],
+  "grantedSkills": [],
+  "sockets": [],
+  "notableProperties": [],
+  "gemSockets": [],
+  "socketedItems": [],
+  "enchantMods": [],
+  "runeMods": [],
+  "bondedMods": [],
+  "implicitMods": [],
+  "explicitMods": [
+    {
+      "description": "Усиливает [ItemRarity|редкий] предмет, наделяя его новым случайным свойством",
+      "domain": null,
+      "hash": null,
+      "mods": [],
+      "flags": {}
+    }
+  ],
+  "gemTabs": [],
+  "flavourText": [],
+  "descrText": "Щёлкните правой кнопкой мыши по этому объекту, а затем левой по редкому предмету, чтобы использовать. Редкие предметы могут иметь до шести случайных свойств.",
+  "secDescrText": null
+}

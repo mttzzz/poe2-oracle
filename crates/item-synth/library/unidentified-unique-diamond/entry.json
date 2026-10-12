@@ -1,0 +1,40 @@
+{
+  "order": "an unidentified corrupted unique Diamond",
+  "query": {
+    "status": {
+      "option": "any"
+    },
+    "filters": {
+      "type_filters": {
+        "filters": {
+          "category": {
+            "option": "jewel"
+          },
+          "rarity": {
+            "option": "unique"
+          }
+        }
+      },
+      "misc_filters": {
+        "filters": {
+          "identified": {
+            "option": "false"
+          }
+        }
+      }
+    },
+    "type": "Diamond"
+  },
+  "league": "Forbidden Rites",
+  "fetched": "2026-10-12T09:21:22Z",
+  "class": "Jewels",
+  "note": false,
+  "guesses": {
+    "en": [],
+    "ru": []
+  },
+  "finds_itself": {
+    "en": "found",
+    "ru": "found"
+  }
+}

@@ -1,0 +1,310 @@
+{
+  "realm": "poe2",
+  "verified": true,
+  "w": 1,
+  "h": 1,
+  "icon": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvUmluZ3MvTGFrZVJpbmcxIiwidyI6MSwiaCI6MSwic2NhbGUiOjEsInJlYWxtIjoicG9lMiJ9XQ/40b81baee3/LakeRing1.png",
+  "league": "Forbidden Rites",
+  "id": "2d94e894bb8637005960725d10ce0d3af15e67b9ff286bd58a88a786a1893d04",
+  "frameTypeId": "Rare",
+  "extended": {
+    "hashes": {
+      "desecrated": [
+        [
+          "desecrated.stat_4080418644",
+          [
+            0
+          ]
+        ]
+      ],
+      "explicit": [
+        [
+          "explicit.stat_4067062424",
+          [
+            0
+          ]
+        ],
+        [
+          "explicit.stat_3962278098",
+          [
+            2
+          ]
+        ],
+        [
+          "explicit.stat_2144192055",
+          [
+            1
+          ]
+        ],
+        [
+          "explicit.stat_1671376347",
+          [
+            3
+          ]
+        ]
+      ],
+      "fractured": [
+        [
+          "fractured.stat_2231156303",
+          [
+            0
+          ]
+        ]
+      ],
+      "implicit": [
+        [
+          "implicit.stat_3182714256",
+          [
+            0
+          ]
+        ],
+        [
+          "implicit.stat_718638445",
+          [
+            0
+          ]
+        ]
+      ]
+    }
+  },
+  "note": "~b/o 1 chaos",
+  "iconTierText": null,
+  "gemBackground": null,
+  "gemSkill": null,
+  "name": "Ghoul Nail",
+  "typeLine": "Dusk Ring",
+  "baseType": "Dusk Ring",
+  "rarity": "Rare",
+  "frameType": 2,
+  "ilvl": 79,
+  "identified": true,
+  "unidentifiedTier": null,
+  "corrupted": false,
+  "doubleCorrupted": false,
+  "duplicated": false,
+  "sanctified": false,
+  "fractured": true,
+  "desecrated": true,
+  "mutated": false,
+  "stackSize": null,
+  "maxStackSize": null,
+  "support": null,
+  "properties": [
+    {
+      "name": "Ring",
+      "values": [],
+      "displayMode": 0,
+      "type": 109,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    }
+  ],
+  "requirements": [
+    {
+      "name": "Level",
+      "values": [
+        [
+          "60",
+          0
+        ]
+      ],
+      "displayMode": 0,
+      "type": 62,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    }
+  ],
+  "weaponRequirements": [],
+  "supportGemRequirements": [],
+  "grantedSkills": [],
+  "sockets": [],
+  "notableProperties": [],
+  "gemSockets": [],
+  "socketedItems": [],
+  "enchantMods": [],
+  "runeMods": [],
+  "bondedMods": [],
+  "implicitMods": [
+    {
+      "description": "+1 Prefix Modifier allowed",
+      "domain": "implicit",
+      "hash": "stat.implicit.stat_3182714256",
+      "mods": [
+        {
+          "name": null,
+          "tier": null,
+          "level": null,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "1",
+              "max": "1"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    },
+    {
+      "description": "-1 Suffix Modifier allowed",
+      "domain": "implicit",
+      "hash": "stat.implicit.stat_718638445",
+      "mods": [
+        {
+          "name": null,
+          "tier": null,
+          "level": null,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "-1",
+              "max": "-1"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    }
+  ],
+  "explicitMods": [
+    {
+      "description": "28% increased [Lightning] Damage",
+      "domain": "fractured",
+      "hash": "stat.fractured.stat_2231156303",
+      "mods": [
+        {
+          "name": "Smiting",
+          "tier": "P1",
+          "level": 75,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "27",
+              "max": "30"
+            }
+          ]
+        }
+      ],
+      "flags": {
+        "fractured": true
+      }
+    },
+    {
+      "description": "Adds 23 to 36 [Cold] damage to [Attack|Attacks]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_4067062424",
+      "mods": [
+        {
+          "name": "Entombing",
+          "tier": "P1",
+          "level": 75,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "21",
+              "max": "24"
+            },
+            {
+              "hash": null,
+              "min": "32",
+              "max": "37"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    },
+    {
+      "description": "29% increased [Fire] Damage",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_3962278098",
+      "mods": [
+        {
+          "name": "Magmatic",
+          "tier": "P1",
+          "level": 75,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "27",
+              "max": "30"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    },
+    {
+      "description": "+17 to [Evasion] Rating",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_2144192055",
+      "mods": [
+        {
+          "name": "Agile",
+          "tier": "P9",
+          "level": null,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "8",
+              "max": "17"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    },
+    {
+      "description": "+27% to [Resistances|Lightning Resistance]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_1671376347",
+      "mods": [
+        {
+          "name": "of the Tempest",
+          "tier": "S4",
+          "level": 49,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "26",
+              "max": "30"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    },
+    {
+      "description": "+16 to [Strength|Strength]",
+      "domain": "desecrated",
+      "hash": "stat.desecrated.stat_4080418644",
+      "mods": [
+        {
+          "name": "of the Bear",
+          "tier": "S6",
+          "level": 22,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "13",
+              "max": "16"
+            }
+          ]
+        }
+      ],
+      "flags": {
+        "desecrated": true
+      }
+    }
+  ],
+  "gemTabs": [],
+  "flavourText": [],
+  "descrText": null,
+  "secDescrText": null
+}

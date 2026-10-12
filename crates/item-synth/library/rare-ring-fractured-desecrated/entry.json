@@ -1,0 +1,39 @@
+{
+  "order": "a rare Dusk Ring with a fractured and a desecrated mod",
+  "query": {
+    "status": {
+      "option": "any"
+    },
+    "filters": {
+      "type_filters": {
+        "filters": {
+          "category": {
+            "option": "accessory.ring"
+          },
+          "rarity": {
+            "option": "rare"
+          }
+        }
+      },
+      "misc_filters": {
+        "filters": {
+          "fractured_item": {
+            "option": "true"
+          }
+        }
+      }
+    }
+  },
+  "league": "Forbidden Rites",
+  "fetched": "2026-10-12T09:21:10Z",
+  "class": "Rings",
+  "note": false,
+  "guesses": {
+    "en": [],
+    "ru": []
+  },
+  "finds_itself": {
+    "en": "found",
+    "ru": "found"
+  }
+}

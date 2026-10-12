@@ -1,0 +1,291 @@
+crafted.stat_1011760251	crafted	#% к максимальному сопротивлению молнии
+crafted.stat_1050105434	crafted	# к максимуму маны
+crafted.stat_1062208444	crafted	#% повышение брони (На предмете)
+crafted.stat_124859000	crafted	#% увеличение уклонения (На предмете)
+crafted.stat_1509134228	crafted	#% увеличение физического урона
+crafted.stat_1671376347	crafted	#% к сопротивлению молнии
+crafted.stat_1940865751	crafted	Добавляет от # до # физического урона
+crafted.stat_210067635	crafted	#% повышение скорости атаки (На предмете)
+crafted.stat_2106365538	crafted	#% увеличение уклонения
+crafted.stat_2231156303	crafted	#% увеличение урона от молнии
+crafted.stat_2250533757	crafted	#% повышение скорости передвижения
+crafted.stat_2339757871	crafted	#% повышение скорости перезарядки энергетического щита
+crafted.stat_2866361420	crafted	#% повышение брони
+crafted.stat_2881298780	crafted	От # до # физического урона шипами
+crafted.stat_3182714256	crafted	# допустимых свойств-префиксов
+crafted.stat_328541901	crafted	# к интеллекту
+crafted.stat_3291658075	crafted	#% увеличение урона от холода
+crafted.stat_3299347043	crafted	# к максимуму здоровья
+crafted.stat_3336890334	crafted	Добавляет от # до # урона от молнии
+crafted.stat_3372524247	crafted	#% к сопротивлению огню
+crafted.stat_3917489142	crafted	#% повышение редкости найденных предметов
+crafted.stat_3962278098	crafted	#% увеличение урона от огня
+crafted.stat_4015621042	crafted	#% увеличение энергетического щита
+crafted.stat_4080418644	crafted	# к силе
+crafted.stat_4220027924	crafted	#% к сопротивлению холоду
+crafted.stat_681332047	crafted	#% повышение скорости атаки
+crafted.stat_691932474	crafted	# к меткости (На предмете)
+crafted.stat_709508406	crafted	Добавляет от # до # урона от огня
+crafted.stat_718638445	crafted	# допустимых свойств-суффиксов
+crafted.stat_736967255	crafted	#% увеличение урона хаосом
+crafted.stat_789117908	crafted	#% повышение скорости регенерации маны
+crafted.stat_803737631	crafted	# к меткости
+crafted.stat_915769802	crafted	# к порогу оглушения
+desecrated.stat_1011760251	desecrated	#% к максимальному сопротивлению молнии
+desecrated.stat_1050105434	desecrated	# к максимуму маны
+desecrated.stat_1062208444	desecrated	#% повышение брони (На предмете)
+desecrated.stat_115425161	desecrated	Монстры имеют #% увеличение накопления шкалы оглушения
+desecrated.stat_1200678966	desecrated	#% увеличение бонусов, полученных от надетого колчана
+desecrated.stat_124859000	desecrated	#% увеличение уклонения (На предмете)
+desecrated.stat_1416406066	desecrated	#% увеличение духа
+desecrated.stat_1509134228	desecrated	#% увеличение физического урона
+desecrated.stat_1588049749	desecrated	Меткость монстров повышена на #%
+desecrated.stat_1671376347	desecrated	#% к сопротивлению молнии
+desecrated.stat_1805182458	desecrated	#% увеличение максимума здоровья компаньонов
+desecrated.stat_1874553720	desecrated	#% уменьшение длительности охлаждения на вас
+desecrated.stat_1940865751	desecrated	Добавляет от # до # физического урона
+desecrated.stat_1998951374	desecrated	Союзники в вашем присутствии имеют #% повышение скорости атаки
+desecrated.stat_210067635	desecrated	#% повышение скорости атаки (На предмете)
+desecrated.stat_2106365538	desecrated	#% увеличение уклонения
+desecrated.stat_2144192055	desecrated	# к уклонению
+desecrated.stat_2231156303	desecrated	#% увеличение урона от молнии
+desecrated.stat_2250533757	desecrated	#% повышение скорости передвижения
+desecrated.stat_2339757871	desecrated	#% повышение скорости перезарядки энергетического щита
+desecrated.stat_2866361420	desecrated	#% повышение брони
+desecrated.stat_2881298780	desecrated	От # до # физического урона шипами
+desecrated.stat_2887760183	desecrated	Монстры получают #% от максимума здоровья в виде дополнительного энергетического щита
+desecrated.stat_328541901	desecrated	# к интеллекту
+desecrated.stat_3291658075	desecrated	#% увеличение урона от холода
+desecrated.stat_3299347043	desecrated	# к максимуму здоровья
+desecrated.stat_3308030688	desecrated	#% повышение скорости регенерации маны при нахождении на одном месте
+desecrated.stat_3336890334	desecrated	Добавляет от # до # урона от молнии
+desecrated.stat_3372524247	desecrated	#% к сопротивлению огню
+desecrated.stat_3376488707	desecrated	#% максимум сопротивлений игроков
+desecrated.stat_3484657501	desecrated	# к броне (На предмете)
+desecrated.stat_3489782002	desecrated	# к максимуму энергетического щита
+desecrated.stat_349586058	desecrated	Область имеет участки замерзшей земли
+desecrated.stat_3523867985	desecrated	#% повышение брони, уклонения и энергетического щита
+desecrated.stat_3917489142	desecrated	#% повышение редкости найденных предметов
+desecrated.stat_3962278098	desecrated	#% увеличение урона от огня
+desecrated.stat_3984865854	desecrated	#% увеличение духа
+desecrated.stat_4015621042	desecrated	#% увеличение энергетического щита
+desecrated.stat_4052037485	desecrated	# к максимуму энергетического щита (На предмете)
+desecrated.stat_4067062424	desecrated	Добавляет от # до # урона от холода к атакам
+desecrated.stat_4080418644	desecrated	# к силе
+desecrated.stat_4220027924	desecrated	#% к сопротивлению холоду
+desecrated.stat_53045048	desecrated	# к уклонению (На предмете)
+desecrated.stat_681332047	desecrated	#% повышение скорости атаки
+desecrated.stat_691932474	desecrated	# к меткости (На предмете)
+desecrated.stat_709508406	desecrated	Добавляет от # до # урона от огня
+desecrated.stat_710476746	desecrated	#% повышение скорости перезарядки
+desecrated.stat_736967255	desecrated	#% увеличение урона хаосом
+desecrated.stat_789117908	desecrated	#% повышение скорости регенерации маны
+desecrated.stat_803737631	desecrated	# к меткости
+desecrated.stat_809229260	desecrated	# к броне
+desecrated.stat_821021828	desecrated	Дарует # здоровья за каждый удар по врагу
+desecrated.stat_915769802	desecrated	# к порогу оглушения
+desecrated.stat_95249895	desecrated	На #% больше здоровья монстров
+desecrated.stat_986397080	desecrated	#% уменьшение длительности поджога на вас
+enchant.stat_1011760251	enchant	#% к максимальному сопротивлению молнии
+enchant.stat_1050105434	enchant	# к максимуму маны
+enchant.stat_1062208444	enchant	#% повышение брони (На предмете)
+enchant.stat_124859000	enchant	#% увеличение уклонения (На предмете)
+enchant.stat_1509134228	enchant	#% увеличение физического урона
+enchant.stat_1671376347	enchant	#% к сопротивлению молнии
+enchant.stat_1998951374	enchant	Союзники в вашем присутствии имеют #% повышение скорости атаки
+enchant.stat_210067635	enchant	#% повышение скорости атаки (На предмете)
+enchant.stat_2106365538	enchant	#% увеличение уклонения
+enchant.stat_2250533757	enchant	#% повышение скорости передвижения
+enchant.stat_2866361420	enchant	#% повышение брони
+enchant.stat_328541901	enchant	# к интеллекту
+enchant.stat_3299347043	enchant	# к максимуму здоровья
+enchant.stat_3336890334	enchant	Добавляет от # до # урона от молнии
+enchant.stat_3372524247	enchant	#% к сопротивлению огню
+enchant.stat_3917489142	enchant	#% повышение редкости найденных предметов
+enchant.stat_3984865854	enchant	#% увеличение духа
+enchant.stat_4015621042	enchant	#% увеличение энергетического щита
+enchant.stat_4080418644	enchant	# к силе
+enchant.stat_4220027924	enchant	#% к сопротивлению холоду
+enchant.stat_709508406	enchant	Добавляет от # до # урона от огня
+enchant.stat_789117908	enchant	#% повышение скорости регенерации маны
+enchant.stat_803737631	enchant	# к меткости
+explicit.stat_1011760251	explicit	#% к максимальному сопротивлению молнии
+explicit.stat_1050105434	explicit	# к максимуму маны
+explicit.stat_1062208444	explicit	#% повышение брони (На предмете)
+explicit.stat_1084853859	explicit	Туман Делириума на ваших картах никогда не рассеивается
+explicit.stat_115425161	explicit	Монстры имеют #% увеличение накопления шкалы оглушения
+explicit.stat_1200678966	explicit	#% увеличение бонусов, полученных от надетого колчана
+explicit.stat_124859000	explicit	#% увеличение уклонения (На предмете)
+explicit.stat_1416406066	explicit	#% увеличение духа
+explicit.stat_1509134228	explicit	#% увеличение физического урона
+explicit.stat_1588049749	explicit	Меткость монстров повышена на #%
+explicit.stat_1671376347	explicit	#% к сопротивлению молнии
+explicit.stat_1769611692	explicit	Туман Делириума на карте накладывает #% увеличение бредовости на игроков
+explicit.stat_1805182458	explicit	#% увеличение максимума здоровья компаньонов
+explicit.stat_1874553720	explicit	#% уменьшение длительности охлаждения на вас
+explicit.stat_1940865751	explicit	Добавляет от # до # физического урона
+explicit.stat_1998951374	explicit	Союзники в вашем присутствии имеют #% повышение скорости атаки
+explicit.stat_2065500219	explicit	#% увеличение эффективности монстров
+explicit.stat_210067635	explicit	#% повышение скорости атаки (На предмете)
+explicit.stat_2106365538	explicit	#% увеличение уклонения
+explicit.stat_2144192055	explicit	# к уклонению
+explicit.stat_2231156303	explicit	#% увеличение урона от молнии
+explicit.stat_2250533757	explicit	#% повышение скорости передвижения
+explicit.stat_2339757871	explicit	#% повышение скорости перезарядки энергетического щита
+explicit.stat_2866361420	explicit	#% повышение брони
+explicit.stat_2881298780	explicit	От # до # физического урона шипами
+explicit.stat_2887760183	explicit	Монстры получают #% от максимума здоровья в виде дополнительного энергетического щита
+explicit.stat_3128077011	explicit	#% усиление эффекта пассивных умений-гнезд самоцветов\nсодержащих оскверненные редкие самоцветы
+explicit.stat_3182714256	explicit	# допустимых свойств-префиксов
+explicit.stat_328541901	explicit	# к интеллекту
+explicit.stat_3291658075	explicit	#% увеличение урона от холода
+explicit.stat_3299347043	explicit	# к максимуму здоровья
+explicit.stat_3308030688	explicit	#% повышение скорости регенерации маны при нахождении на одном месте
+explicit.stat_3336890334	explicit	Добавляет от # до # урона от молнии
+explicit.stat_3372524247	explicit	#% к сопротивлению огню
+explicit.stat_3376488707	explicit	#% максимум сопротивлений игроков
+explicit.stat_3484657501	explicit	# к броне (На предмете)
+explicit.stat_3489782002	explicit	# к максимуму энергетического щита
+explicit.stat_349586058	explicit	Область имеет участки замерзшей земли
+explicit.stat_3523867985	explicit	#% повышение брони, уклонения и энергетического щита
+explicit.stat_3917489142	explicit	#% повышение редкости найденных предметов
+explicit.stat_3962278098	explicit	#% увеличение урона от огня
+explicit.stat_3984865854	explicit	#% увеличение духа
+explicit.stat_4015621042	explicit	#% увеличение энергетического щита
+explicit.stat_4052037485	explicit	# к максимуму энергетического щита (На предмете)
+explicit.stat_4067062424	explicit	Добавляет от # до # урона от холода к атакам
+explicit.stat_4080418644	explicit	# к силе
+explicit.stat_4220027924	explicit	#% к сопротивлению холоду
+explicit.stat_461663422	explicit	#% усиление эффекта гнёзд самоцветов в древе пассивных умений, содержащих оскверненные волшебные самоцветы
+explicit.stat_53045048	explicit	# к уклонению (На предмете)
+explicit.stat_681332047	explicit	#% повышение скорости атаки
+explicit.stat_691932474	explicit	# к меткости (На предмете)
+explicit.stat_709508406	explicit	Добавляет от # до # урона от огня
+explicit.stat_710476746	explicit	#% повышение скорости перезарядки
+explicit.stat_718638445	explicit	# допустимых свойств-суффиксов
+explicit.stat_736967255	explicit	#% увеличение урона хаосом
+explicit.stat_746505085	explicit	Отражает противоположное кольцо
+explicit.stat_789117908	explicit	#% повышение скорости регенерации маны
+explicit.stat_803737631	explicit	# к меткости
+explicit.stat_809229260	explicit	# к броне
+explicit.stat_821021828	explicit	Дарует # здоровья за каждый удар по врагу
+explicit.stat_915769802	explicit	# к порогу оглушения
+explicit.stat_95249895	explicit	На #% больше здоровья монстров
+explicit.stat_986397080	explicit	#% уменьшение длительности поджога на вас
+fractured.stat_1011760251	fractured	#% к максимальному сопротивлению молнии
+fractured.stat_1050105434	fractured	# к максимуму маны
+fractured.stat_1062208444	fractured	#% повышение брони (На предмете)
+fractured.stat_115425161	fractured	Монстры имеют #% увеличение накопления шкалы оглушения
+fractured.stat_1200678966	fractured	#% увеличение бонусов, полученных от надетого колчана
+fractured.stat_124859000	fractured	#% увеличение уклонения (На предмете)
+fractured.stat_1416406066	fractured	#% увеличение духа
+fractured.stat_1509134228	fractured	#% увеличение физического урона
+fractured.stat_1588049749	fractured	Меткость монстров повышена на #%
+fractured.stat_1671376347	fractured	#% к сопротивлению молнии
+fractured.stat_1805182458	fractured	#% увеличение максимума здоровья компаньонов
+fractured.stat_1874553720	fractured	#% уменьшение длительности охлаждения на вас
+fractured.stat_1940865751	fractured	Добавляет от # до # физического урона
+fractured.stat_1998951374	fractured	Союзники в вашем присутствии имеют #% повышение скорости атаки
+fractured.stat_210067635	fractured	#% повышение скорости атаки (На предмете)
+fractured.stat_2106365538	fractured	#% увеличение уклонения
+fractured.stat_2144192055	fractured	# к уклонению
+fractured.stat_2231156303	fractured	#% увеличение урона от молнии
+fractured.stat_2250533757	fractured	#% повышение скорости передвижения
+fractured.stat_2339757871	fractured	#% повышение скорости перезарядки энергетического щита
+fractured.stat_2866361420	fractured	#% повышение брони
+fractured.stat_2881298780	fractured	От # до # физического урона шипами
+fractured.stat_2887760183	fractured	Монстры получают #% от максимума здоровья в виде дополнительного энергетического щита
+fractured.stat_3182714256	fractured	# допустимых свойств-префиксов
+fractured.stat_328541901	fractured	# к интеллекту
+fractured.stat_3291658075	fractured	#% увеличение урона от холода
+fractured.stat_3299347043	fractured	# к максимуму здоровья
+fractured.stat_3336890334	fractured	Добавляет от # до # урона от молнии
+fractured.stat_3372524247	fractured	#% к сопротивлению огню
+fractured.stat_3376488707	fractured	#% максимум сопротивлений игроков
+fractured.stat_3484657501	fractured	# к броне (На предмете)
+fractured.stat_3489782002	fractured	# к максимуму энергетического щита
+fractured.stat_349586058	fractured	Область имеет участки замерзшей земли
+fractured.stat_3523867985	fractured	#% повышение брони, уклонения и энергетического щита
+fractured.stat_3917489142	fractured	#% повышение редкости найденных предметов
+fractured.stat_3962278098	fractured	#% увеличение урона от огня
+fractured.stat_3984865854	fractured	#% увеличение духа
+fractured.stat_4015621042	fractured	#% увеличение энергетического щита
+fractured.stat_4052037485	fractured	# к максимуму энергетического щита (На предмете)
+fractured.stat_4067062424	fractured	Добавляет от # до # урона от холода к атакам
+fractured.stat_4080418644	fractured	# к силе
+fractured.stat_4220027924	fractured	#% к сопротивлению холоду
+fractured.stat_53045048	fractured	# к уклонению (На предмете)
+fractured.stat_681332047	fractured	#% повышение скорости атаки
+fractured.stat_691932474	fractured	# к меткости (На предмете)
+fractured.stat_709508406	fractured	Добавляет от # до # урона от огня
+fractured.stat_718638445	fractured	# допустимых свойств-суффиксов
+fractured.stat_736967255	fractured	#% увеличение урона хаосом
+fractured.stat_789117908	fractured	#% повышение скорости регенерации маны
+fractured.stat_803737631	fractured	# к меткости
+fractured.stat_809229260	fractured	# к броне
+fractured.stat_821021828	fractured	Дарует # здоровья за каждый удар по врагу
+fractured.stat_915769802	fractured	# к порогу оглушения
+fractured.stat_95249895	fractured	На #% больше здоровья монстров
+fractured.stat_986397080	fractured	#% уменьшение длительности поджога на вас
+implicit.stat_1050105434	implicit	# к максимуму маны
+implicit.stat_1671376347	implicit	#% к сопротивлению молнии
+implicit.stat_2231156303	implicit	#% увеличение урона от молнии
+implicit.stat_2250533757	implicit	#% повышение скорости передвижения
+implicit.stat_2339757871	implicit	#% повышение скорости перезарядки энергетического щита
+implicit.stat_3182714256	implicit	# допустимых свойств-префиксов
+implicit.stat_328541901	implicit	# к интеллекту
+implicit.stat_3299347043	implicit	# к максимуму здоровья
+implicit.stat_3372524247	implicit	#% к сопротивлению огню
+implicit.stat_3489782002	implicit	# к максимуму энергетического щита
+implicit.stat_3879011313	implicit	Добавляет Зеркало Делириума на карту\nОсталось зарядов - #
+implicit.stat_3917489142	implicit	#% повышение редкости найденных предметов
+implicit.stat_4080418644	implicit	# к силе
+implicit.stat_4220027924	implicit	#% к сопротивлению холоду
+implicit.stat_681332047	implicit	#% повышение скорости атаки
+implicit.stat_718638445	implicit	# допустимых свойств-суффиксов
+implicit.stat_736967255	implicit	#% увеличение урона хаосом
+implicit.stat_789117908	implicit	#% повышение скорости регенерации маны
+implicit.stat_803737631	implicit	# к меткости
+implicit.stat_809229260	implicit	# к броне
+pseudo.pseudo_increased_movement_speed	pseudo	#% увеличение скорости передвижения
+rune.stat_1011760251	augment	#% к максимальному сопротивлению молнии
+rune.stat_1050105434	augment	# к максимуму маны
+rune.stat_1416406066	augment	#% увеличение духа
+rune.stat_1509134228	augment	#% увеличение физического урона
+rune.stat_1671376347	augment	#% к сопротивлению молнии
+rune.stat_1805182458	augment	#% увеличение максимума здоровья компаньонов
+rune.stat_1940865751	augment	Добавляет от # до # физического урона
+rune.stat_1998951374	augment	Союзники в вашем присутствии имеют #% повышение скорости атаки
+rune.stat_210067635	augment	#% повышение скорости атаки (На предмете)
+rune.stat_2250533757	augment	#% повышение скорости передвижения
+rune.stat_2280525771	augment	Связаны: # к максимуму здоровья
+rune.stat_2339757871	augment	#% повышение скорости перезарядки энергетического щита
+rune.stat_2926029365	augment	Связаны: # к максимуму маны
+rune.stat_328541901	augment	# к интеллекту
+rune.stat_3299347043	augment	# к максимуму здоровья
+rune.stat_3336890334	augment	Добавляет от # до # урона от молнии
+rune.stat_3372524247	augment	#% к сопротивлению огню
+rune.stat_3484657501	augment	# к броне (На предмете)
+rune.stat_3489782002	augment	# к максимуму энергетического щита
+rune.stat_3523867985	augment	#% повышение брони, уклонения и энергетического щита
+rune.stat_3917489142	augment	#% повышение редкости найденных предметов
+rune.stat_3962278098	augment	#% увеличение урона от огня
+rune.stat_3984865854	augment	#% увеличение духа
+rune.stat_4052037485	augment	# к максимуму энергетического щита (На предмете)
+rune.stat_4080418644	augment	# к силе
+rune.stat_4220027924	augment	#% к сопротивлению холоду
+rune.stat_53045048	augment	# к уклонению (На предмете)
+rune.stat_681332047	augment	#% повышение скорости атаки
+rune.stat_691932474	augment	# к меткости (На предмете)
+rune.stat_709508406	augment	Добавляет от # до # урона от огня
+rune.stat_718638445	augment	# допустимых свойств-суффиксов
+rune.stat_789117908	augment	#% повышение скорости регенерации маны
+rune.stat_803737631	augment	# к меткости
+rune.stat_915769802	augment	# к порогу оглушения
+sanctum.stat_1016362888	sanctum	#% увеличение брони, уклонения и энергетического щита
+sanctum.stat_1416455556	sanctum	#% повышение скорости передвижения
+sanctum.stat_1737465970	sanctum	#% повышение брони
+sanctum.stat_1890519597	sanctum	Монстры наносят увеличенный на #% урон
+sanctum.stat_3882471944	sanctum	#% увеличение уклонения
+sanctum.stat_521869848	sanctum	Восстанавливает # чести при поднятии ключа
+skill.malice	skill	Дарует умение: Злость # уровня

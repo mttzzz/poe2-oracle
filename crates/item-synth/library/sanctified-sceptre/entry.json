@@ -1,0 +1,29 @@
+{
+  "order": "a sanctified rare sceptre that grants a skill",
+  "query": {
+    "status": {
+      "option": "any"
+    },
+    "filters": {
+      "misc_filters": {
+        "filters": {
+          "sanctified": {
+            "option": "true"
+          }
+        }
+      }
+    }
+  },
+  "league": "Forbidden Rites",
+  "fetched": "2026-10-12T09:52:15Z",
+  "class": "Sceptres",
+  "note": false,
+  "guesses": {
+    "en": [],
+    "ru": []
+  },
+  "finds_itself": {
+    "en": "found",
+    "ru": "found"
+  }
+}

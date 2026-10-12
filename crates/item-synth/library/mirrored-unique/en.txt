@@ -1,0 +1,13 @@
+Item Class: Rings
+Rarity: Unique
+Kalandra's Touch
+Ring
+--------
+Item Level: 81
+--------
+{ Unique Modifier }
+Reflects opposite Ring
+--------
+Power is a matter of perspective.
+--------
+Mirrored

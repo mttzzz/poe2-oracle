@@ -193,6 +193,7 @@ fn parse_properties_block(
             || line.starts_with(cs.fire_damage)
             || line.starts_with(cs.cold_damage)
             || line.starts_with(cs.lightning_damage)
+            || line.starts_with(cs.chaos_damage)
             || line.starts_with(cs.crit_chance)
             || line.starts_with(cs.attack_speed)
             || line.starts_with(cs.reload_speed)
@@ -231,6 +232,8 @@ fn parse_properties_block(
             push_damage(item, rest, Some(ElementKind::Cold));
         } else if let Some(rest) = line.strip_prefix(cs.lightning_damage) {
             push_damage(item, rest, Some(ElementKind::Lightning));
+        } else if let Some(rest) = line.strip_prefix(cs.chaos_damage) {
+            push_damage(item, rest, Some(ElementKind::Chaos));
         } else if let Some(v) = f64_after(line, cs.crit_chance) {
             item.weapon_crit = Some(v);
         } else if let Some(v) = f64_after(line, cs.attack_speed) {

@@ -1,0 +1,110 @@
+{
+  "realm": "poe2",
+  "verified": true,
+  "w": 1,
+  "h": 1,
+  "icon": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvQ3VycmVuY3kvUnVuZXMvTGlmZVJlY292ZXJ5UnVuZVRpZXIxIiwidyI6MSwiaCI6MSwic2NhbGUiOjEsInJlYWxtIjoicG9lMiJ9XQ/77f9393734/LifeRecoveryRuneTier1.png",
+  "league": "Forbidden Rites",
+  "id": "e9c2286742210bc5c8f6765af2139ac5eab38f3ae8c0edc93e346cdbfa9d934f",
+  "frameTypeId": "Currency",
+  "extended": {
+    "hashes": {}
+  },
+  "note": "~price 1 aug",
+  "iconTierText": null,
+  "gemBackground": null,
+  "gemSkill": null,
+  "name": "",
+  "typeLine": "Малая руна перерождения",
+  "baseType": "Малая руна перерождения",
+  "rarity": null,
+  "frameType": 5,
+  "ilvl": 0,
+  "identified": true,
+  "unidentifiedTier": null,
+  "corrupted": false,
+  "doubleCorrupted": false,
+  "duplicated": false,
+  "sanctified": false,
+  "fractured": false,
+  "desecrated": false,
+  "mutated": false,
+  "stackSize": 1,
+  "maxStackSize": 10,
+  "support": null,
+  "properties": [
+    {
+      "name": "Размер стопки",
+      "values": [
+        [
+          "1/10",
+          0
+        ]
+      ],
+      "displayMode": 0,
+      "type": 32,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "[Rune|Руна]",
+      "values": [],
+      "displayMode": 0,
+      "type": null,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    }
+  ],
+  "requirements": [],
+  "weaponRequirements": [],
+  "supportGemRequirements": [],
+  "grantedSkills": [],
+  "sockets": [],
+  "notableProperties": [],
+  "gemSockets": [],
+  "socketedItems": [],
+  "enchantMods": [],
+  "runeMods": [],
+  "bondedMods": [
+    "[ShamanOnlyMods|Связаны]:",
+    "[MartialWeapon|Боевое оружие]: Регенерация 0.4% здоровья в секунду",
+    "Жезл или посох: 8% полученного урона [Recoup|восполняется] в виде здоровья",
+    "Доспехи:",
+    "+20 к максимуму здоровья",
+    "+20 к максимуму маны"
+  ],
+  "implicitMods": [],
+  "explicitMods": [
+    {
+      "description": "[MartialWeapon|Боевое оружие]: Дарует 15 здоровья за каждого убитого врага",
+      "domain": null,
+      "hash": null,
+      "mods": [],
+      "flags": {}
+    },
+    {
+      "description": "Жезл или посох: 6% повышение скорости перезарядки [EnergyShield|энергетического щита]",
+      "domain": null,
+      "hash": null,
+      "mods": [],
+      "flags": {}
+    },
+    {
+      "description": "Доспехи: Регенерация 0.35% здоровья в секунду",
+      "domain": null,
+      "hash": null,
+      "mods": [],
+      "flags": {}
+    }
+  ],
+  "gemTabs": [],
+  "flavourText": [],
+  "descrText": "Вставьте в пустое гнездо для [Augment|усилителей] на оружии или доспехах, чтобы применить эффект к ним. После вставки нельзя извлечь, но можно заменить другим [Augment|усилителем].",
+  "secDescrText": null
+}

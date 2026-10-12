@@ -3239,6 +3239,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "item-synth"
+version = "0.1.13"
+dependencies = [
+ "anyhow",
+ "futures",
+ "http_client",
+ "item-parser",
+ "poe2-domain",
+ "reqwest_client",
+ "serde",
+ "serde_json",
+ "stat-filters",
+ "trade-client",
+]
+
+[[package]]
 name = "itertools"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

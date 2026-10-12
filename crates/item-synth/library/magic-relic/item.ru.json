@@ -1,0 +1,121 @@
+{
+  "realm": "poe2",
+  "verified": true,
+  "w": 2,
+  "h": 2,
+  "icon": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvUmVsaWNzL1JlbGljQmFzZTJ4MiIsInciOjIsImgiOjIsInNjYWxlIjoxLCJyZWFsbSI6InBvZTIifV0/06d3d1e6ce/RelicBase2x2.png",
+  "league": "Forbidden Rites",
+  "id": "6d4fa4bcd35558c7c574c8b6a7f7bd5123b786d6b57e534845843c6b26ad26bf",
+  "frameTypeId": "Magic",
+  "extended": {
+    "hashes": {
+      "sanctum": [
+        [
+          "sanctum.stat_1890519597",
+          [
+            1
+          ]
+        ],
+        [
+          "sanctum.stat_521869848",
+          [
+            0
+          ]
+        ]
+      ]
+    }
+  },
+  "note": "~b/o 1 aug",
+  "iconTierText": null,
+  "gemBackground": null,
+  "gemSkill": null,
+  "name": "",
+  "typeLine": "Устойчивый Ларец подношения",
+  "baseType": "Ларец",
+  "rarity": "Magic",
+  "frameType": 1,
+  "ilvl": 81,
+  "identified": true,
+  "unidentifiedTier": null,
+  "corrupted": false,
+  "doubleCorrupted": false,
+  "duplicated": false,
+  "sanctified": false,
+  "fractured": false,
+  "desecrated": false,
+  "mutated": false,
+  "stackSize": null,
+  "maxStackSize": null,
+  "support": null,
+  "properties": [
+    {
+      "name": "Реликвия",
+      "values": [],
+      "displayMode": 0,
+      "type": 109,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    }
+  ],
+  "requirements": [],
+  "weaponRequirements": [],
+  "supportGemRequirements": [],
+  "grantedSkills": [],
+  "sockets": [],
+  "notableProperties": [],
+  "gemSockets": [],
+  "socketedItems": [],
+  "enchantMods": [],
+  "runeMods": [],
+  "bondedMods": [],
+  "implicitMods": [],
+  "explicitMods": [
+    {
+      "description": "Монстры наносят уменьшенный на 6% урон",
+      "domain": "sanctum",
+      "hash": "stat.sanctum.stat_1890519597",
+      "mods": [
+        {
+          "name": "Устойчивый",
+          "tier": "P3",
+          "level": null,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "-6",
+              "max": "-6"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    },
+    {
+      "description": "Восстанавливает 30 [Honour|чести] при поднятии ключа",
+      "domain": "sanctum",
+      "hash": "stat.sanctum.stat_521869848",
+      "mods": [
+        {
+          "name": "подношения",
+          "tier": "S4",
+          "level": 45,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "30",
+              "max": "39"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    }
+  ],
+  "gemTabs": [],
+  "flavourText": [],
+  "descrText": "Разместите этот предмет на алтаре реликвий перед началом Испытания Сехем",
+  "secDescrText": null
+}

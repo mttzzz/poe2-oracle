@@ -1,0 +1,153 @@
+{
+  "realm": "poe2",
+  "verified": true,
+  "w": 1,
+  "h": 1,
+  "icon": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvQ3VycmVuY3kvUHJlY3Vyc29yVGFibGV0cy9QcmVjdXJzb3JUYWJsZXREZWxpcml1bVVuaXF1ZTEiLCJ3IjoxLCJoIjoxLCJzY2FsZSI6MSwicmVhbG0iOiJwb2UyIn1d/ac86ee3f7c/PrecursorTabletDeliriumUnique1.png",
+  "league": "Forbidden Rites",
+  "id": "2116ecf81da29160c9332cfef7423f2ba043553d53d970bf95d1a5c5aa0b68be",
+  "frameTypeId": "Unique",
+  "extended": {
+    "hashes": {
+      "explicit": [
+        [
+          "explicit.stat_1084853859",
+          [
+            0
+          ]
+        ],
+        [
+          "explicit.stat_1769611692",
+          [
+            1
+          ]
+        ]
+      ],
+      "implicit": [
+        [
+          "implicit.stat_3879011313",
+          [
+            0
+          ]
+        ]
+      ]
+    }
+  },
+  "note": "~b/o 1 exalted",
+  "iconTierText": null,
+  "gemBackground": null,
+  "gemSkill": null,
+  "name": "Clear Skies",
+  "typeLine": "Delirium Tablet",
+  "baseType": "Delirium Tablet",
+  "rarity": "Unique",
+  "frameType": 3,
+  "ilvl": 79,
+  "identified": true,
+  "unidentifiedTier": null,
+  "corrupted": false,
+  "doubleCorrupted": false,
+  "duplicated": false,
+  "sanctified": false,
+  "fractured": false,
+  "desecrated": false,
+  "mutated": false,
+  "stackSize": null,
+  "maxStackSize": null,
+  "support": null,
+  "properties": [
+    {
+      "name": "Tablet",
+      "values": [],
+      "displayMode": 0,
+      "type": 109,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    }
+  ],
+  "requirements": [],
+  "weaponRequirements": [],
+  "supportGemRequirements": [],
+  "grantedSkills": [],
+  "sockets": [],
+  "notableProperties": [],
+  "gemSockets": [],
+  "socketedItems": [],
+  "enchantMods": [],
+  "runeMods": [],
+  "bondedMods": [],
+  "implicitMods": [
+    {
+      "description": "Adds a [ContainsDelirium|Mirror of Delirium] to a Map \n5 uses remaining",
+      "domain": "implicit",
+      "hash": "stat.implicit.stat_3879011313",
+      "mods": [
+        {
+          "name": null,
+          "tier": null,
+          "level": null,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "5",
+              "max": "5"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    }
+  ],
+  "explicitMods": [
+    {
+      "description": "[ContainsDelirium|Delirium] Fog in your Maps never dissipates",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_1084853859",
+      "mods": [
+        {
+          "name": null,
+          "tier": null,
+          "level": null,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "1",
+              "max": "1"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    },
+    {
+      "description": "[ContainsDelirium|Delirium] Fog in Map applies 7% increased [Delirious|Deliriousness] to Players",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_1769611692",
+      "mods": [
+        {
+          "name": null,
+          "tier": null,
+          "level": null,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "-10",
+              "max": "10"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    }
+  ],
+  "gemTabs": [],
+  "flavourText": [
+    "A simple instruction that will purify an entire region,\r",
+    "making it safe and kind for weary travellers."
+  ],
+  "descrText": "Can be used in a personal Map Device to add modifiers to a Map.",
+  "secDescrText": null
+}

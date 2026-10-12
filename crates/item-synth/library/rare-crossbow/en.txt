@@ -1,0 +1,24 @@
+Item Class: Crossbows
+Rarity: Rare
+Entropy Core
+Stout Crossbow
+--------
+Physical Damage: 51-201 (augmented)
+Lightning Damage: 4-60 (lightning)
+Critical Hit Chance: 5.00%
+Attacks per Second: 1.55
+Reload Time: 0.75
+--------
+Requires: Level 67, 74 Str, 74 Dex
+--------
+Item Level: 71
+--------
+{ Prefix Modifier "Journeyman's" (Tier: 7) }
+23(20-24)% increased Physical Damage
++39(21-46) to Accuracy Rating
+{ Prefix Modifier "Crackling" (Tier: 7) }
+Adds 4(1-4) to 60(53-76) Lightning Damage
+{ Prefix Modifier "Heavy" (Tier: 8) }
+46(40-49)% increased Physical Damage
+{ Suffix Modifier "of Rejuvenation" (Tier: 4) }
+Grants 2 Life per Enemy Hit

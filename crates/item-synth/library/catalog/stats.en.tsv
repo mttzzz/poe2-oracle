@@ -1,0 +1,297 @@
+crafted.stat_1011760251	crafted	#% to Maximum Lightning Resistance
+crafted.stat_1050105434	crafted	# to maximum Mana
+crafted.stat_1062208444	crafted	#% increased Armour (Local)
+crafted.stat_124859000	crafted	#% increased Evasion Rating (Local)
+crafted.stat_1509134228	crafted	#% increased Physical Damage
+crafted.stat_1671376347	crafted	#% to Lightning Resistance
+crafted.stat_1940865751	crafted	Adds # to # Physical Damage
+crafted.stat_210067635	crafted	#% increased Attack Speed (Local)
+crafted.stat_2106365538	crafted	#% increased Evasion Rating
+crafted.stat_2231156303	crafted	#% increased Lightning Damage
+crafted.stat_2250533757	crafted	#% increased Movement Speed
+crafted.stat_2339757871	crafted	#% increased Energy Shield Recharge Rate
+crafted.stat_2866361420	crafted	#% increased Armour
+crafted.stat_2881298780	crafted	# to # Physical Thorns damage
+crafted.stat_3182714256	crafted	# Prefix Modifier allowed
+crafted.stat_328541901	crafted	# to Intelligence
+crafted.stat_3291658075	crafted	#% increased Cold Damage
+crafted.stat_3299347043	crafted	# to maximum Life
+crafted.stat_3336890334	crafted	Adds # to # Lightning Damage
+crafted.stat_3372524247	crafted	#% to Fire Resistance
+crafted.stat_3917489142	crafted	#% increased Rarity of Items found
+crafted.stat_3962278098	crafted	#% increased Fire Damage
+crafted.stat_4015621042	crafted	#% increased Energy Shield
+crafted.stat_4080418644	crafted	# to Strength
+crafted.stat_4220027924	crafted	#% to Cold Resistance
+crafted.stat_681332047	crafted	#% increased Attack Speed
+crafted.stat_691932474	crafted	# to Accuracy Rating (Local)
+crafted.stat_709508406	crafted	Adds # to # Fire Damage
+crafted.stat_718638445	crafted	# Suffix Modifier allowed
+crafted.stat_736967255	crafted	#% increased Chaos Damage
+crafted.stat_789117908	crafted	#% increased Mana Regeneration Rate
+crafted.stat_803737631	crafted	# to Accuracy Rating
+crafted.stat_915769802	crafted	# to Stun Threshold
+desecrated.stat_1011760251	desecrated	#% to Maximum Lightning Resistance
+desecrated.stat_1050105434	desecrated	# to maximum Mana
+desecrated.stat_1062208444	desecrated	#% increased Armour (Local)
+desecrated.stat_115425161	desecrated	Monsters have #% increased Stun Buildup
+desecrated.stat_1200678966	desecrated	#% increased bonuses gained from Equipped Quiver
+desecrated.stat_124859000	desecrated	#% increased Evasion Rating (Local)
+desecrated.stat_1416406066	desecrated	#% increased Spirit
+desecrated.stat_1509134228	desecrated	#% increased Physical Damage
+desecrated.stat_1588049749	desecrated	Monsters have #% increased Accuracy Rating
+desecrated.stat_1671376347	desecrated	#% to Lightning Resistance
+desecrated.stat_1805182458	desecrated	Companions have #% increased maximum Life
+desecrated.stat_1874553720	desecrated	#% reduced Chill Duration on you
+desecrated.stat_1940865751	desecrated	Adds # to # Physical Damage
+desecrated.stat_1998951374	desecrated	Allies in your Presence have #% increased Attack Speed
+desecrated.stat_210067635	desecrated	#% increased Attack Speed (Local)
+desecrated.stat_2106365538	desecrated	#% increased Evasion Rating
+desecrated.stat_2144192055	desecrated	# to Evasion Rating
+desecrated.stat_2231156303	desecrated	#% increased Lightning Damage
+desecrated.stat_2250533757	desecrated	#% increased Movement Speed
+desecrated.stat_2339757871	desecrated	#% increased Energy Shield Recharge Rate
+desecrated.stat_2866361420	desecrated	#% increased Armour
+desecrated.stat_2881298780	desecrated	# to # Physical Thorns damage
+desecrated.stat_2887760183	desecrated	Monsters gain #% of maximum Life as Extra maximum Energy Shield
+desecrated.stat_328541901	desecrated	# to Intelligence
+desecrated.stat_3291658075	desecrated	#% increased Cold Damage
+desecrated.stat_3299347043	desecrated	# to maximum Life
+desecrated.stat_3308030688	desecrated	#% increased Mana Regeneration Rate while stationary
+desecrated.stat_3336890334	desecrated	Adds # to # Lightning Damage
+desecrated.stat_3372524247	desecrated	#% to Fire Resistance
+desecrated.stat_3376488707	desecrated	#% maximum Player Resistances
+desecrated.stat_3484657501	desecrated	# to Armour (Local)
+desecrated.stat_3489782002	desecrated	# to maximum Energy Shield
+desecrated.stat_349586058	desecrated	Area has patches of Chilled Ground
+desecrated.stat_3523867985	desecrated	#% increased Armour, Evasion and Energy Shield
+desecrated.stat_3917489142	desecrated	#% increased Rarity of Items found
+desecrated.stat_3962278098	desecrated	#% increased Fire Damage
+desecrated.stat_3984865854	desecrated	#% increased Spirit
+desecrated.stat_4015621042	desecrated	#% increased Energy Shield
+desecrated.stat_4052037485	desecrated	# to maximum Energy Shield (Local)
+desecrated.stat_4067062424	desecrated	Adds # to # Cold damage to Attacks
+desecrated.stat_4080418644	desecrated	# to Strength
+desecrated.stat_4220027924	desecrated	#% to Cold Resistance
+desecrated.stat_53045048	desecrated	# to Evasion Rating (Local)
+desecrated.stat_587431675	desecrated	#% increased Critical Hit Chance
+desecrated.stat_681332047	desecrated	#% increased Attack Speed
+desecrated.stat_691932474	desecrated	# to Accuracy Rating (Local)
+desecrated.stat_709508406	desecrated	Adds # to # Fire Damage
+desecrated.stat_736967255	desecrated	#% increased Chaos Damage
+desecrated.stat_789117908	desecrated	#% increased Mana Regeneration Rate
+desecrated.stat_803737631	desecrated	# to Accuracy Rating
+desecrated.stat_809229260	desecrated	# to Armour
+desecrated.stat_821021828	desecrated	Grants # Life per Enemy Hit
+desecrated.stat_915769802	desecrated	# to Stun Threshold
+desecrated.stat_95249895	desecrated	#% more Monster Life
+desecrated.stat_986397080	desecrated	#% reduced Ignite Duration on you
+enchant.stat_1011760251	enchant	#% to Maximum Lightning Resistance
+enchant.stat_1050105434	enchant	# to maximum Mana
+enchant.stat_1062208444	enchant	#% increased Armour (Local)
+enchant.stat_124859000	enchant	#% increased Evasion Rating (Local)
+enchant.stat_1509134228	enchant	#% increased Physical Damage
+enchant.stat_1671376347	enchant	#% to Lightning Resistance
+enchant.stat_1998951374	enchant	Allies in your Presence have #% increased Attack Speed
+enchant.stat_210067635	enchant	#% increased Attack Speed (Local)
+enchant.stat_2106365538	enchant	#% increased Evasion Rating
+enchant.stat_2250533757	enchant	#% increased Movement Speed
+enchant.stat_2866361420	enchant	#% increased Armour
+enchant.stat_328541901	enchant	# to Intelligence
+enchant.stat_3299347043	enchant	# to maximum Life
+enchant.stat_3336890334	enchant	Adds # to # Lightning Damage
+enchant.stat_3372524247	enchant	#% to Fire Resistance
+enchant.stat_3917489142	enchant	#% increased Rarity of Items found
+enchant.stat_3984865854	enchant	#% increased Spirit
+enchant.stat_4015621042	enchant	#% increased Energy Shield
+enchant.stat_4080418644	enchant	# to Strength
+enchant.stat_4220027924	enchant	#% to Cold Resistance
+enchant.stat_709508406	enchant	Adds # to # Fire Damage
+enchant.stat_789117908	enchant	#% increased Mana Regeneration Rate
+enchant.stat_803737631	enchant	# to Accuracy Rating
+explicit.stat_1011760251	explicit	#% to Maximum Lightning Resistance
+explicit.stat_1050105434	explicit	# to maximum Mana
+explicit.stat_1062208444	explicit	#% increased Armour (Local)
+explicit.stat_1084853859	explicit	Delirium Fog in your Maps never dissipates
+explicit.stat_115425161	explicit	Monsters have #% increased Stun Buildup
+explicit.stat_1200678966	explicit	#% increased bonuses gained from Equipped Quiver
+explicit.stat_124859000	explicit	#% increased Evasion Rating (Local)
+explicit.stat_1416406066	explicit	#% increased Spirit
+explicit.stat_1509134228	explicit	#% increased Physical Damage
+explicit.stat_1588049749	explicit	Monsters have #% increased Accuracy Rating
+explicit.stat_1671376347	explicit	#% to Lightning Resistance
+explicit.stat_1769611692	explicit	Delirium Fog in Map applies #% increased Deliriousness to Players
+explicit.stat_1803659985	explicit	#% less Armour, Evasion and Energy Shield
+explicit.stat_1805182458	explicit	Companions have #% increased maximum Life
+explicit.stat_1874553720	explicit	#% reduced Chill Duration on you
+explicit.stat_1940865751	explicit	Adds # to # Physical Damage
+explicit.stat_1998951374	explicit	Allies in your Presence have #% increased Attack Speed
+explicit.stat_210067635	explicit	#% increased Attack Speed (Local)
+explicit.stat_2106365538	explicit	#% increased Evasion Rating
+explicit.stat_2144192055	explicit	# to Evasion Rating
+explicit.stat_2146799605	explicit	#% less Movement Speed
+explicit.stat_2231156303	explicit	#% increased Lightning Damage
+explicit.stat_2250533757	explicit	#% increased Movement Speed
+explicit.stat_2339757871	explicit	#% increased Energy Shield Recharge Rate
+explicit.stat_2866361420	explicit	#% increased Armour
+explicit.stat_2881298780	explicit	# to # Physical Thorns damage
+explicit.stat_2887760183	explicit	Monsters gain #% of maximum Life as Extra maximum Energy Shield
+explicit.stat_3128077011	explicit	#% increased Effect of Jewel Socket Passive Skills\ncontaining Corrupted Rare Jewels
+explicit.stat_3182714256	explicit	# Prefix Modifier allowed
+explicit.stat_328541901	explicit	# to Intelligence
+explicit.stat_3291658075	explicit	#% increased Cold Damage
+explicit.stat_3299347043	explicit	# to maximum Life
+explicit.stat_3308030688	explicit	#% increased Mana Regeneration Rate while stationary
+explicit.stat_3336890334	explicit	Adds # to # Lightning Damage
+explicit.stat_3372524247	explicit	#% to Fire Resistance
+explicit.stat_3376488707	explicit	#% maximum Player Resistances
+explicit.stat_3484657501	explicit	# to Armour (Local)
+explicit.stat_3489782002	explicit	# to maximum Energy Shield
+explicit.stat_349586058	explicit	Area has patches of Chilled Ground
+explicit.stat_3523867985	explicit	#% increased Armour, Evasion and Energy Shield
+explicit.stat_3917489142	explicit	#% increased Rarity of Items found
+explicit.stat_3962278098	explicit	#% increased Fire Damage
+explicit.stat_3984865854	explicit	#% increased Spirit
+explicit.stat_4015621042	explicit	#% increased Energy Shield
+explicit.stat_4052037485	explicit	# to maximum Energy Shield (Local)
+explicit.stat_4067062424	explicit	Adds # to # Cold damage to Attacks
+explicit.stat_4080418644	explicit	# to Strength
+explicit.stat_4220027924	explicit	#% to Cold Resistance
+explicit.stat_461663422	explicit	#% increased Effect of Jewel Socket Passive Skills\ncontaining Corrupted Magic Jewels
+explicit.stat_53045048	explicit	# to Evasion Rating (Local)
+explicit.stat_537850431	explicit	#% less Spirit
+explicit.stat_587431675	explicit	#% increased Critical Hit Chance
+explicit.stat_681332047	explicit	#% increased Attack Speed
+explicit.stat_691932474	explicit	# to Accuracy Rating (Local)
+explicit.stat_709508406	explicit	Adds # to # Fire Damage
+explicit.stat_718638445	explicit	# Suffix Modifier allowed
+explicit.stat_736967255	explicit	#% increased Chaos Damage
+explicit.stat_746505085	explicit	Reflects opposite Ring
+explicit.stat_789117908	explicit	#% increased Mana Regeneration Rate
+explicit.stat_803737631	explicit	# to Accuracy Rating
+explicit.stat_809229260	explicit	# to Armour
+explicit.stat_821021828	explicit	Grants # Life per Enemy Hit
+explicit.stat_915769802	explicit	# to Stun Threshold
+explicit.stat_95249895	explicit	#% more Monster Life
+explicit.stat_986397080	explicit	#% reduced Ignite Duration on you
+explicit.stat_988575597	explicit	#% increased Energy Shield Recovery rate
+fractured.stat_1011760251	fractured	#% to Maximum Lightning Resistance
+fractured.stat_1050105434	fractured	# to maximum Mana
+fractured.stat_1062208444	fractured	#% increased Armour (Local)
+fractured.stat_115425161	fractured	Monsters have #% increased Stun Buildup
+fractured.stat_1200678966	fractured	#% increased bonuses gained from Equipped Quiver
+fractured.stat_124859000	fractured	#% increased Evasion Rating (Local)
+fractured.stat_1416406066	fractured	#% increased Spirit
+fractured.stat_1509134228	fractured	#% increased Physical Damage
+fractured.stat_1588049749	fractured	Monsters have #% increased Accuracy Rating
+fractured.stat_1671376347	fractured	#% to Lightning Resistance
+fractured.stat_1805182458	fractured	Companions have #% increased maximum Life
+fractured.stat_1874553720	fractured	#% reduced Chill Duration on you
+fractured.stat_1940865751	fractured	Adds # to # Physical Damage
+fractured.stat_1998951374	fractured	Allies in your Presence have #% increased Attack Speed
+fractured.stat_210067635	fractured	#% increased Attack Speed (Local)
+fractured.stat_2106365538	fractured	#% increased Evasion Rating
+fractured.stat_2144192055	fractured	# to Evasion Rating
+fractured.stat_2231156303	fractured	#% increased Lightning Damage
+fractured.stat_2250533757	fractured	#% increased Movement Speed
+fractured.stat_2339757871	fractured	#% increased Energy Shield Recharge Rate
+fractured.stat_2866361420	fractured	#% increased Armour
+fractured.stat_2881298780	fractured	# to # Physical Thorns damage
+fractured.stat_2887760183	fractured	Monsters gain #% of maximum Life as Extra maximum Energy Shield
+fractured.stat_3182714256	fractured	# Prefix Modifier allowed
+fractured.stat_328541901	fractured	# to Intelligence
+fractured.stat_3291658075	fractured	#% increased Cold Damage
+fractured.stat_3299347043	fractured	# to maximum Life
+fractured.stat_3336890334	fractured	Adds # to # Lightning Damage
+fractured.stat_3372524247	fractured	#% to Fire Resistance
+fractured.stat_3376488707	fractured	#% maximum Player Resistances
+fractured.stat_3484657501	fractured	# to Armour (Local)
+fractured.stat_3489782002	fractured	# to maximum Energy Shield
+fractured.stat_349586058	fractured	Area has patches of Chilled Ground
+fractured.stat_3523867985	fractured	#% increased Armour, Evasion and Energy Shield
+fractured.stat_3917489142	fractured	#% increased Rarity of Items found
+fractured.stat_3962278098	fractured	#% increased Fire Damage
+fractured.stat_3984865854	fractured	#% increased Spirit
+fractured.stat_4015621042	fractured	#% increased Energy Shield
+fractured.stat_4052037485	fractured	# to maximum Energy Shield (Local)
+fractured.stat_4067062424	fractured	Adds # to # Cold damage to Attacks
+fractured.stat_4080418644	fractured	# to Strength
+fractured.stat_4220027924	fractured	#% to Cold Resistance
+fractured.stat_53045048	fractured	# to Evasion Rating (Local)
+fractured.stat_587431675	fractured	#% increased Critical Hit Chance
+fractured.stat_681332047	fractured	#% increased Attack Speed
+fractured.stat_691932474	fractured	# to Accuracy Rating (Local)
+fractured.stat_709508406	fractured	Adds # to # Fire Damage
+fractured.stat_718638445	fractured	# Suffix Modifier allowed
+fractured.stat_736967255	fractured	#% increased Chaos Damage
+fractured.stat_789117908	fractured	#% increased Mana Regeneration Rate
+fractured.stat_803737631	fractured	# to Accuracy Rating
+fractured.stat_809229260	fractured	# to Armour
+fractured.stat_821021828	fractured	Grants # Life per Enemy Hit
+fractured.stat_915769802	fractured	# to Stun Threshold
+fractured.stat_95249895	fractured	#% more Monster Life
+fractured.stat_986397080	fractured	#% reduced Ignite Duration on you
+implicit.stat_1050105434	implicit	# to maximum Mana
+implicit.stat_1671376347	implicit	#% to Lightning Resistance
+implicit.stat_2231156303	implicit	#% increased Lightning Damage
+implicit.stat_2250533757	implicit	#% increased Movement Speed
+implicit.stat_2339757871	implicit	#% increased Energy Shield Recharge Rate
+implicit.stat_3182714256	implicit	# Prefix Modifier allowed
+implicit.stat_328541901	implicit	# to Intelligence
+implicit.stat_3299347043	implicit	# to maximum Life
+implicit.stat_3372524247	implicit	#% to Fire Resistance
+implicit.stat_3489782002	implicit	# to maximum Energy Shield
+implicit.stat_3879011313	implicit	Adds a Mirror of Delirium to a Map \n# use remaining
+implicit.stat_3917489142	implicit	#% increased Rarity of Items found
+implicit.stat_4080418644	implicit	# to Strength
+implicit.stat_4220027924	implicit	#% to Cold Resistance
+implicit.stat_681332047	implicit	#% increased Attack Speed
+implicit.stat_718638445	implicit	# Suffix Modifier allowed
+implicit.stat_736967255	implicit	#% increased Chaos Damage
+implicit.stat_789117908	implicit	#% increased Mana Regeneration Rate
+implicit.stat_803737631	implicit	# to Accuracy Rating
+implicit.stat_809229260	implicit	# to Armour
+pseudo.pseudo_increased_movement_speed	pseudo	#% increased Movement Speed
+rune.stat_1011760251	augment	#% to Maximum Lightning Resistance
+rune.stat_1050105434	augment	# to maximum Mana
+rune.stat_1416406066	augment	#% increased Spirit
+rune.stat_1509134228	augment	#% increased Physical Damage
+rune.stat_1671376347	augment	#% to Lightning Resistance
+rune.stat_1805182458	augment	Companions have #% increased maximum Life
+rune.stat_1940865751	augment	Adds # to # Physical Damage
+rune.stat_1998951374	augment	Allies in your Presence have #% increased Attack Speed
+rune.stat_210067635	augment	#% increased Attack Speed (Local)
+rune.stat_2250533757	augment	#% increased Movement Speed
+rune.stat_2280525771	augment	Bonded: # to maximum Life
+rune.stat_2339757871	augment	#% increased Energy Shield Recharge Rate
+rune.stat_2926029365	augment	Bonded: # to maximum Mana
+rune.stat_328541901	augment	# to Intelligence
+rune.stat_3299347043	augment	# to maximum Life
+rune.stat_3336890334	augment	Adds # to # Lightning Damage
+rune.stat_3372524247	augment	#% to Fire Resistance
+rune.stat_3484657501	augment	# to Armour (Local)
+rune.stat_3489782002	augment	# to maximum Energy Shield
+rune.stat_3523867985	augment	#% increased Armour, Evasion and Energy Shield
+rune.stat_3917489142	augment	#% increased Rarity of Items found
+rune.stat_3962278098	augment	#% increased Fire Damage
+rune.stat_3984865854	augment	#% increased Spirit
+rune.stat_4052037485	augment	# to maximum Energy Shield (Local)
+rune.stat_4080418644	augment	# to Strength
+rune.stat_4220027924	augment	#% to Cold Resistance
+rune.stat_53045048	augment	# to Evasion Rating (Local)
+rune.stat_587431675	augment	#% increased Critical Hit Chance
+rune.stat_681332047	augment	#% increased Attack Speed
+rune.stat_691932474	augment	# to Accuracy Rating (Local)
+rune.stat_709508406	augment	Adds # to # Fire Damage
+rune.stat_718638445	augment	# Suffix Modifier allowed
+rune.stat_762761075	augment	#% less Mana Regeneration Rate
+rune.stat_789117908	augment	#% increased Mana Regeneration Rate
+rune.stat_803737631	augment	# to Accuracy Rating
+rune.stat_915769802	augment	# to Stun Threshold
+sanctum.stat_1016362888	sanctum	#% increased Armour, Evasion and Energy Shield
+sanctum.stat_1416455556	sanctum	#% increased Movement Speed
+sanctum.stat_1737465970	sanctum	#% increased Armour
+sanctum.stat_1890519597	sanctum	Monsters deal #% increased Damage
+sanctum.stat_3882471944	sanctum	#% increased Evasion Rating
+sanctum.stat_521869848	sanctum	Restore # Honour on picking up a Key
+skill.malice	skill	Grants Skill: Level # Malice

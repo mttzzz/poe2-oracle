@@ -43,6 +43,9 @@ pub struct ClientStrings {
     pub fire_damage: &'static str,
     pub cold_damage: &'static str,
     pub lightning_damage: &'static str,
+    /// The client's `ItemDisplayWeaponChaosDamage` (EE2's dictionary has none): a weapon's chaos
+    /// damage line, `Chaos Damage: 42-62 (chaos)`.
+    pub chaos_damage: &'static str,
     pub crit_chance: &'static str,
     pub attack_speed: &'static str,
     pub reload_speed: &'static str,
@@ -173,6 +176,7 @@ pub static EN: LazyLock<ClientStrings> = LazyLock::new(|| {
     fire_damage: "Fire Damage: ",
     cold_damage: "Cold Damage: ",
     lightning_damage: "Lightning Damage: ",
+    chaos_damage: "Chaos Damage: ",
     crit_chance: "Critical Hit Chance: ",
     attack_speed: "Attacks per Second: ",
     reload_speed: "Reload Time: ",
@@ -265,6 +269,7 @@ pub static RU: LazyLock<ClientStrings> = LazyLock::new(|| {
     fire_damage: "Урон от огня: ",
     cold_damage: "Урон от холода: ",
     lightning_damage: "Урон от молнии: ",
+    chaos_damage: "Урон хаосом: ",
     crit_chance: "Шанс крит. попадания: ",
     attack_speed: "Атак в секунду: ",
     reload_speed: "Время перезарядки: ",

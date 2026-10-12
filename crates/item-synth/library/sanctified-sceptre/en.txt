@@ -1,0 +1,23 @@
+Item Class: Sceptres
+Rarity: Rare
+Dusk Spell
+Omen Sceptre
+--------
+Spirit: 100
+--------
+Requires: Level 35, 12 Str, 25 Int
+--------
+Item Level: 78
+--------
+Grants Skill: Level 17 Malice
+--------
+{ Prefix Modifier "Beryl" (Tier: 11) }
++15(10-14) to maximum Mana
+{ Suffix Modifier "of Skill" (Tier: 4) }
+Allies in your Presence have 6(5-7)% increased Attack Speed
+{ Suffix Modifier "of the Gorilla" (Tier: 4) }
++25(21-24) to Strength
+{ Suffix Modifier "of the Philosopher" (Tier: 4) }
++24(21-24) to Intelligence
+--------
+Sanctified

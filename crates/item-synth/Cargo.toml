@@ -1,0 +1,30 @@
+[package]
+name = "item-synth"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+# A developer's tool, never shipped: it writes the text the game copies for a real trade listing,
+# keeps it in `library/` and checks that the app reads it back as the listing. See CONTRIBUTING.md,
+# "Items made from trade listings".
+
+[dependencies]
+# The trade site's item JSON and the library's files.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+# `ItemLanguage`, the game's item classes and the parser the round trip runs the text through.
+item-parser = { path = "../item-parser" }
+poe2-domain = { path = "../poe2-domain" }
+# The app's own search for an item -- the router, the profile's filters and the request -- which
+# the "finds itself" check runs, and the search and fetch an order makes.
+trade-client = { path = "../trade-client" }
+stat-filters = { path = "../stat-filters" }
+# The command line tool's HTTP client, the one the app uses.
+http_client = { git = "https://github.com/zed-industries/zed", rev = "b54cc1d0acc8fe3f7581721ee1195516e7581f9d" }
+reqwest_client = { git = "https://github.com/zed-industries/zed", rev = "b54cc1d0acc8fe3f7581721ee1195516e7581f9d" }
+futures = "0.3"

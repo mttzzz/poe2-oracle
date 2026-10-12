@@ -1,0 +1,249 @@
+{
+  "realm": "poe2",
+  "verified": true,
+  "w": 2,
+  "h": 4,
+  "icon": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvV2VhcG9ucy9Ud29IYW5kV2VhcG9ucy9Cb3dzL1VuaXF1ZXMvV2lkb3doYWlsIiwidyI6MiwiaCI6NCwic2NhbGUiOjEsInJlYWxtIjoicG9lMiJ9XQ/2003f478c3/Widowhail.png",
+  "league": "Forbidden Rites",
+  "id": "e0aef63da652ffb2f55e70c8a785afb82a3e170cd5c32b4d2ac8247215a05f13",
+  "frameTypeId": "RunicUnique",
+  "extended": {
+    "hashes": {
+      "enchant": [
+        [
+          "enchant.stat_709508406",
+          [
+            0
+          ]
+        ]
+      ],
+      "explicit": [
+        [
+          "explicit.stat_1200678966",
+          [
+            0
+          ]
+        ]
+      ]
+    },
+    "dps": 82.2,
+    "edps": 19.8,
+    "pdps": 0
+  },
+  "note": "~b/o 10 exalted",
+  "iconTierText": null,
+  "gemBackground": null,
+  "gemSkill": null,
+  "name": "Widowhail",
+  "typeLine": "Runeforged Crude Bow",
+  "baseType": "Runeforged Crude Bow",
+  "rarity": "Unique",
+  "frameType": 14,
+  "ilvl": 65,
+  "identified": true,
+  "unidentifiedTier": null,
+  "corrupted": true,
+  "doubleCorrupted": true,
+  "duplicated": false,
+  "sanctified": false,
+  "fractured": false,
+  "desecrated": false,
+  "mutated": false,
+  "stackSize": null,
+  "maxStackSize": null,
+  "support": null,
+  "properties": [
+    {
+      "name": "[Bow]",
+      "values": [],
+      "displayMode": 0,
+      "type": 109,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "[Quality]",
+      "values": [
+        [
+          "+20%",
+          1
+        ]
+      ],
+      "displayMode": 0,
+      "type": 6,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "Fire Damage",
+      "values": [
+        [
+          "13-20",
+          4
+        ]
+      ],
+      "displayMode": 0,
+      "type": 10,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "[Chaos] Damage",
+      "values": [
+        [
+          "42-62",
+          7
+        ]
+      ],
+      "displayMode": 0,
+      "type": 11,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "[Critical|Critical Hit] Chance",
+      "values": [
+        [
+          "5.00%",
+          0
+        ]
+      ],
+      "displayMode": 0,
+      "type": 12,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "Attacks per Second",
+      "values": [
+        [
+          "1.20",
+          0
+        ]
+      ],
+      "displayMode": 0,
+      "type": 13,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    }
+  ],
+  "requirements": [
+    {
+      "name": "Level",
+      "values": [
+        [
+          "55",
+          0
+        ]
+      ],
+      "displayMode": 0,
+      "type": 62,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "[Dexterity|Dex]",
+      "values": [
+        [
+          "97",
+          0
+        ]
+      ],
+      "displayMode": 1,
+      "type": 64,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    }
+  ],
+  "weaponRequirements": [],
+  "supportGemRequirements": [],
+  "grantedSkills": [],
+  "sockets": [],
+  "notableProperties": [],
+  "gemSockets": [],
+  "socketedItems": [],
+  "enchantMods": [
+    {
+      "description": "Adds 13 to 20 [Fire|Fire] Damage",
+      "domain": "enchant",
+      "hash": "stat.enchant.stat_709508406",
+      "mods": [
+        {
+          "name": null,
+          "tier": null,
+          "level": null,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "9",
+              "max": "14"
+            },
+            {
+              "hash": null,
+              "min": "15",
+              "max": "22"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    }
+  ],
+  "runeMods": [],
+  "bondedMods": [],
+  "implicitMods": [],
+  "explicitMods": [
+    {
+      "description": "196% increased bonuses gained from Equipped [Quiver]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_1200678966",
+      "mods": [
+        {
+          "name": null,
+          "tier": null,
+          "level": null,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "150",
+              "max": "250"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    }
+  ],
+  "gemTabs": [],
+  "flavourText": [
+    "\"I loosed a volley of arrows into the heart of the man\r",
+    "who slew my beloved. There was no satisfaction, no\r",
+    "healing, no revenge. There was only... emptiness.\""
+  ],
+  "descrText": null,
+  "secDescrText": null
+}

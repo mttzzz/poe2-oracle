@@ -1,0 +1,121 @@
+{
+  "realm": "poe2",
+  "verified": true,
+  "w": 2,
+  "h": 2,
+  "icon": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvUmVsaWNzL1JlbGljQmFzZTJ4MiIsInciOjIsImgiOjIsInNjYWxlIjoxLCJyZWFsbSI6InBvZTIifV0/06d3d1e6ce/RelicBase2x2.png",
+  "league": "Forbidden Rites",
+  "id": "6d4fa4bcd35558c7c574c8b6a7f7bd5123b786d6b57e534845843c6b26ad26bf",
+  "frameTypeId": "Magic",
+  "extended": {
+    "hashes": {
+      "sanctum": [
+        [
+          "sanctum.stat_1890519597",
+          [
+            1
+          ]
+        ],
+        [
+          "sanctum.stat_521869848",
+          [
+            0
+          ]
+        ]
+      ]
+    }
+  },
+  "note": "~b/o 1 aug",
+  "iconTierText": null,
+  "gemBackground": null,
+  "gemSkill": null,
+  "name": "",
+  "typeLine": "Resilient Coffer Relic of Offering",
+  "baseType": "Coffer Relic",
+  "rarity": "Magic",
+  "frameType": 1,
+  "ilvl": 81,
+  "identified": true,
+  "unidentifiedTier": null,
+  "corrupted": false,
+  "doubleCorrupted": false,
+  "duplicated": false,
+  "sanctified": false,
+  "fractured": false,
+  "desecrated": false,
+  "mutated": false,
+  "stackSize": null,
+  "maxStackSize": null,
+  "support": null,
+  "properties": [
+    {
+      "name": "Relic",
+      "values": [],
+      "displayMode": 0,
+      "type": 109,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    }
+  ],
+  "requirements": [],
+  "weaponRequirements": [],
+  "supportGemRequirements": [],
+  "grantedSkills": [],
+  "sockets": [],
+  "notableProperties": [],
+  "gemSockets": [],
+  "socketedItems": [],
+  "enchantMods": [],
+  "runeMods": [],
+  "bondedMods": [],
+  "implicitMods": [],
+  "explicitMods": [
+    {
+      "description": "Monsters deal 6% reduced Damage",
+      "domain": "sanctum",
+      "hash": "stat.sanctum.stat_1890519597",
+      "mods": [
+        {
+          "name": "Resilient",
+          "tier": "P3",
+          "level": null,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "-6",
+              "max": "-6"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    },
+    {
+      "description": "Restore 30 [Honour] on picking up a [SekhemaKeys|Key]",
+      "domain": "sanctum",
+      "hash": "stat.sanctum.stat_521869848",
+      "mods": [
+        {
+          "name": "of Offering",
+          "tier": "S4",
+          "level": 45,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "30",
+              "max": "39"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    }
+  ],
+  "gemTabs": [],
+  "flavourText": [],
+  "descrText": "Place this item on the Relic Altar at the start of the Trial of the Sekhemas",
+  "secDescrText": null
+}

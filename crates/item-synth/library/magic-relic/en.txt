@@ -1,0 +1,12 @@
+Item Class: Relics
+Rarity: Magic
+Resilient Coffer Relic of Offering
+--------
+Item Level: 81
+--------
+{ Prefix Modifier "Resilient" (Tier: 3) }
+Monsters deal 6% reduced Damage
+{ Suffix Modifier "of Offering" (Tier: 4) }
+Restore 30(30-39) Honour on picking up a Key
+--------
+Place this item on the Relic Altar at the start of the Trial of the Sekhemas

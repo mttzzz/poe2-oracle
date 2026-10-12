@@ -1,0 +1,325 @@
+{
+  "realm": "poe2",
+  "verified": true,
+  "w": 2,
+  "h": 4,
+  "icon": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvV2VhcG9ucy9Ud29IYW5kV2VhcG9ucy9Dcm9zc2Jvd3MvMkhDcm9zc2JvdzAzIiwidyI6MiwiaCI6NCwic2NhbGUiOjEsInJlYWxtIjoicG9lMiJ9XQ/0b27058920/2HCrossbow03.png",
+  "league": "Forbidden Rites",
+  "id": "0581e2430321d54d1802c579534e8a9256c60524744c7bcf2e2f4c2b16e7281d",
+  "frameTypeId": "Rare",
+  "extended": {
+    "hashes": {
+      "explicit": [
+        [
+          "explicit.stat_1509134228",
+          [
+            0,
+            2
+          ]
+        ],
+        [
+          "explicit.stat_3336890334",
+          [
+            1
+          ]
+        ],
+        [
+          "explicit.stat_691932474",
+          [
+            0
+          ]
+        ],
+        [
+          "explicit.stat_821021828",
+          [
+            3
+          ]
+        ]
+      ]
+    },
+    "dps": 283.65,
+    "dps_aug": true,
+    "edps": 49.6,
+    "pdps": 234.05,
+    "pdps_aug": true
+  },
+  "note": "~b/o 1 aug",
+  "iconTierText": null,
+  "gemBackground": null,
+  "gemSkill": null,
+  "name": "Энтропическое чистилище",
+  "typeLine": "Добротный самострел",
+  "baseType": "Добротный самострел",
+  "rarity": "Rare",
+  "frameType": 2,
+  "ilvl": 71,
+  "identified": true,
+  "unidentifiedTier": null,
+  "corrupted": false,
+  "doubleCorrupted": false,
+  "duplicated": false,
+  "sanctified": false,
+  "fractured": false,
+  "desecrated": false,
+  "mutated": false,
+  "stackSize": null,
+  "maxStackSize": null,
+  "support": null,
+  "properties": [
+    {
+      "name": "[Crossbow|Самострел]",
+      "values": [],
+      "displayMode": 0,
+      "type": 109,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "[Physical|Физический] урон",
+      "values": [
+        [
+          "51-201",
+          1
+        ]
+      ],
+      "displayMode": 0,
+      "type": 9,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "Урон от молнии",
+      "values": [
+        [
+          "4-60",
+          6
+        ]
+      ],
+      "displayMode": 0,
+      "type": 10,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "Шанс [Critical|крит. попадания]",
+      "values": [
+        [
+          "5.00%",
+          0
+        ]
+      ],
+      "displayMode": 0,
+      "type": 12,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "Атак в секунду",
+      "values": [
+        [
+          "1.55",
+          0
+        ]
+      ],
+      "displayMode": 0,
+      "type": 13,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "Время перезарядки",
+      "values": [
+        [
+          "0.75",
+          0
+        ]
+      ],
+      "displayMode": 0,
+      "type": 97,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    }
+  ],
+  "requirements": [
+    {
+      "name": "Уровень",
+      "values": [
+        [
+          "67",
+          0
+        ]
+      ],
+      "displayMode": 0,
+      "type": 62,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "[Strength|Сила]",
+      "values": [
+        [
+          "74",
+          0
+        ]
+      ],
+      "displayMode": 1,
+      "type": 63,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "[Dexterity|Ловк]",
+      "values": [
+        [
+          "74",
+          0
+        ]
+      ],
+      "displayMode": 1,
+      "type": 64,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    }
+  ],
+  "weaponRequirements": [],
+  "supportGemRequirements": [],
+  "grantedSkills": [],
+  "sockets": [],
+  "notableProperties": [],
+  "gemSockets": [],
+  "socketedItems": [],
+  "enchantMods": [],
+  "runeMods": [],
+  "bondedMods": [],
+  "implicitMods": [],
+  "explicitMods": [
+    {
+      "description": "69% увеличение [Physical|физического] урона",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_1509134228",
+      "mods": [
+        {
+          "name": "Триарский",
+          "tier": "P7",
+          "level": 14,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "20",
+              "max": "24"
+            }
+          ]
+        },
+        {
+          "name": "Увесистый",
+          "tier": "P8",
+          "level": null,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "40",
+              "max": "49"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    },
+    {
+      "description": "Добавляет от 4 до 60 урона от [Lightning|молнии]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_3336890334",
+      "mods": [
+        {
+          "name": "Пульсирующий",
+          "tier": "P7",
+          "level": 33,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "1",
+              "max": "4"
+            },
+            {
+              "hash": null,
+              "min": "53",
+              "max": "76"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    },
+    {
+      "description": "+39 к [Accuracy|меткости]",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_691932474",
+      "mods": [
+        {
+          "name": "Триарский",
+          "tier": "P7",
+          "level": 14,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "21",
+              "max": "46"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    },
+    {
+      "description": "Дарует 2 здоровья за каждый [Hit|удар] по врагу",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_821021828",
+      "mods": [
+        {
+          "name": "омоложения",
+          "tier": "S4",
+          "level": 8,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "2",
+              "max": "2"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    }
+  ],
+  "gemTabs": [],
+  "flavourText": [],
+  "descrText": null,
+  "secDescrText": null
+}

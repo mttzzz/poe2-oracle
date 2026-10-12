@@ -1,0 +1,148 @@
+{
+  "realm": "poe2",
+  "verified": true,
+  "w": 2,
+  "h": 4,
+  "icon": "https://web.poecdn.com/gen/image/WzI1LDE0LHsiZiI6IjJESXRlbXMvV2VhcG9ucy9Ud29IYW5kV2VhcG9ucy9Ud29IYW5kTWFjZXMvQmFzZXR5cGVzLzJITWFjZTAxIiwidyI6MiwiaCI6NCwic2NhbGUiOjEsInJlYWxtIjoicG9lMiJ9XQ/8e05ea9abc/2HMace01.png",
+  "league": "Forbidden Rites",
+  "id": "541dbd94930a2d6c04a2c788d4e0073cd7094a3535b72e609420d7c8bde441fd",
+  "frameTypeId": "Magic",
+  "extended": {
+    "hashes": {
+      "explicit": [
+        [
+          "explicit.stat_210067635",
+          [
+            0
+          ]
+        ]
+      ]
+    },
+    "dps": 22.42,
+    "dps_aug": true,
+    "edps": 0,
+    "pdps": 22.42,
+    "pdps_aug": true
+  },
+  "note": "~price 1 aug",
+  "iconTierText": null,
+  "gemBackground": null,
+  "gemSkill": null,
+  "name": "",
+  "typeLine": "Felled Greatclub of Skill",
+  "baseType": "Felled Greatclub",
+  "rarity": "Magic",
+  "frameType": 1,
+  "ilvl": 2,
+  "identified": true,
+  "unidentifiedTier": null,
+  "corrupted": false,
+  "doubleCorrupted": false,
+  "duplicated": false,
+  "sanctified": false,
+  "fractured": false,
+  "desecrated": false,
+  "mutated": false,
+  "stackSize": null,
+  "maxStackSize": null,
+  "support": null,
+  "properties": [
+    {
+      "name": "[Mace|Two Hand Mace]",
+      "values": [],
+      "displayMode": 0,
+      "type": 109,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "[Physical] Damage",
+      "values": [
+        [
+          "13-18",
+          0
+        ]
+      ],
+      "displayMode": 0,
+      "type": 9,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "[Critical|Critical Hit] Chance",
+      "values": [
+        [
+          "5.00%",
+          0
+        ]
+      ],
+      "displayMode": 0,
+      "type": 12,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    },
+    {
+      "name": "Attacks per Second",
+      "values": [
+        [
+          "1.18",
+          1
+        ]
+      ],
+      "displayMode": 0,
+      "type": 13,
+      "progress": null,
+      "suffix": null,
+      "icon": null,
+      "domain": null,
+      "hash": null
+    }
+  ],
+  "requirements": [],
+  "weaponRequirements": [],
+  "supportGemRequirements": [],
+  "grantedSkills": [],
+  "sockets": [],
+  "notableProperties": [],
+  "gemSockets": [],
+  "socketedItems": [],
+  "enchantMods": [],
+  "runeMods": [],
+  "bondedMods": [],
+  "implicitMods": [],
+  "explicitMods": [
+    {
+      "description": "7% increased [Attack] Speed",
+      "domain": "explicit",
+      "hash": "stat.explicit.stat_210067635",
+      "mods": [
+        {
+          "name": "of Skill",
+          "tier": "S8",
+          "level": null,
+          "magnitudes": [
+            {
+              "hash": null,
+              "min": "5",
+              "max": "7"
+            }
+          ]
+        }
+      ],
+      "flags": {}
+    }
+  ],
+  "gemTabs": [],
+  "flavourText": [],
+  "descrText": null,
+  "secDescrText": null
+}

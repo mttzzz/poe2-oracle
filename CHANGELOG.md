@@ -8,6 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- ANCHOR: releases. The guide's "What's new" page shows every section below, up to ANCHOR_END. -->
 
+## [Unreleased]
+
+### Fixed
+
+- **Weapons with chaos damage.** A weapon's chaos damage line went unread, so its total DPS
+  counted only its physical and elemental damage, and the search for it went among far weaker
+  weapons: Widowhail's 82 DPS was searched from 19. Total DPS now counts chaos damage, as the trade
+  site does.
+
 ## [0.1.13] - 2026-10-12
 
 ### Changed

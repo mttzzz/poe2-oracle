@@ -1,0 +1,27 @@
+{
+  "order": "The Adorned with Vaal Cultivation's mods, corrupted",
+  "query": {
+    "status": {
+      "option": "any"
+    },
+    "filters": {},
+    "name": "The Adorned",
+    "type": "Diamond"
+  },
+  "league": "Forbidden Rites",
+  "fetched": "2026-10-12T09:21:21Z",
+  "class": "Jewels",
+  "note": false,
+  "guesses": {
+    "en": [
+      "a range across zero, -30 to 30, is written (-30-+30)"
+    ],
+    "ru": [
+      "a range across zero, -30 to 30, is written (-30-+30)"
+    ]
+  },
+  "finds_itself": {
+    "en": "found",
+    "ru": "found"
+  }
+}

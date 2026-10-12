@@ -1,0 +1,26 @@
+Item Class: Body Armours
+Rarity: Rare
+Golem Skin
+Heavy Plate
+--------
+Armour: 793 (augmented)
+--------
+Requires: Level 59, 94 Str
+--------
+Sockets: S S 
+--------
+Item Level: 70
+--------
+{ Prefix Modifier "Pangolin's" (Tier: 3) }
++52(42-57) to Armour
+28(27-32)% increased Armour
+{ Prefix Modifier "Layered" (Tier: 7) }
+29(27-42)% increased Armour
+{ Desecrated Prefix Modifier "Healthy" (Tier: 12) }
++24(20-29) to maximum Life
+{ Suffix Modifier "of Steel Skin" (Tier: 6) }
++85(73-97) to Stun Threshold
+{ Suffix Modifier "of the Bear" (Tier: 6) }
++13(13-16) to Strength
+{ Suffix Modifier "of Quashing" (Tier: 4) }
+42(41-45)% reduced Ignite Duration on you

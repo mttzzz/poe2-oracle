@@ -1,0 +1,33 @@
+{
+  "order": "a unique tablet",
+  "query": {
+    "status": {
+      "option": "any"
+    },
+    "filters": {
+      "type_filters": {
+        "filters": {
+          "category": {
+            "option": "map.tablet"
+          }
+        }
+      }
+    }
+  },
+  "league": "Forbidden Rites",
+  "fetched": "2026-10-12T09:52:13Z",
+  "class": "Tablet",
+  "note": false,
+  "guesses": {
+    "en": [
+      "a range across zero, -10 to 10, is written (-10-+10)"
+    ],
+    "ru": [
+      "a range across zero, -10 to 10, is written (-10-+10)"
+    ]
+  },
+  "finds_itself": {
+    "en": "found",
+    "ru": "found"
+  }
+}
