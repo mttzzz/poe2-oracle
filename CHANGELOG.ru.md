@@ -8,7 +8,7 @@
 [семантическому версионированию](https://semver.org/lang/ru/).
 <!-- ANCHOR: releases. Страница руководства «Что нового» показывает все разделы ниже, до ANCHOR_END. -->
 
-## [Unreleased]
+## [0.1.16] - 2026-10-13
 
 ### Исправлено
 
@@ -292,6 +292,7 @@
   сохраняются, если не отметить «Настройки и кэш».
 
 <!-- ANCHOR_END: releases. Ссылки на версии остаются ниже, вне той страницы: заголовок-ссылку mdBook нарисовать не может. -->
+[0.1.16]: https://github.com/mttzzz/poe2-oracle/releases/tag/v0.1.16
 [0.1.15]: https://github.com/mttzzz/poe2-oracle/releases/tag/v0.1.15
 [0.1.14]: https://github.com/mttzzz/poe2-oracle/releases/tag/v0.1.14
 [0.1.13]: https://github.com/mttzzz/poe2-oracle/releases/tag/v0.1.13
