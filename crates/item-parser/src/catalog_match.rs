@@ -26,7 +26,11 @@
 //!   templated line never keeps (`roll.rs` templates `+1` to `#`): texts are indexed unsigned;
 //! - past all of these, EE2's own printed forms (`stat_forms`, from its `stats.ndjson`): a
 //!   negative roll in words no pair covers, a 100% chance printed as a plain effect, a count of
-//!   one as a word.
+//!   one as a word;
+//! - an option stat -- the catalog lists each of its options as a stat of its own, `id|option`
+//!   -- prints after its option the range of the options it can have, as a roll prints its range:
+//!   a Mageblood's `Legacy of Diamond(Amethyst-Topaz)` is the catalog's `Legacy of Diamond`
+//!   (`explicit.stat_264262054|4`).
 //!
 //! A catalog entry's mod type is its id's prefix -- the namespace `ModifierType::trade_key()`
 //! names -- not its `type` field: rune stats are `rune.stat_*` ids typed `"augment"`.
@@ -485,16 +489,39 @@ fn resolve_span(
     // The client prints `()` where a stat lacks an advanced description (a Megalomaniac's
     // `Allocates Incendiary()`); EE2's `_statPlaceholderGenerator` drops it before matching.
     let joined = lines.join("\n").replace("()", "");
-    let (text, unscalable) = match joined.strip_suffix(cs.unscalable_value) {
-        Some(rest) => (rest, true),
-        None => (joined.as_str(), false),
+    let resolve = |joined: &str| {
+        let (text, unscalable) = match joined.strip_suffix(cs.unscalable_value) {
+            Some(rest) => (rest, true),
+            None => (joined, false),
+        };
+        let runs = find_numeric_runs(text);
+        let mod_type = modifier_type.trade_key();
+        let resolved = template_candidates(text, &runs)
+            .iter()
+            .find_map(|candidate| resolve_text(candidate, mod_type, cs, index))?;
+        Some(stat_from(&resolved, category, &runs, unscalable, index))
     };
-    let runs = find_numeric_runs(text);
-    let mod_type = modifier_type.trade_key();
-    let resolved = template_candidates(text, &runs)
-        .iter()
-        .find_map(|candidate| resolve_text(candidate, mod_type, cs, index))?;
-    Some(stat_from(&resolved, category, &runs, unscalable, index))
+    // An option stat's advanced description is the range of its options, after the option the
+    // item has: a Mageblood's `Legacy of Diamond(Amethyst-Topaz)`, the catalog's `Legacy of
+    // Diamond` (player report #12, 2026-10-13). Dropped only from a line that matches nothing as
+    // printed: a Russian catalog text can hold a letter's bracket of its own (`секунд(-ы)`).
+    resolve(&joined).or_else(
+        || match option_range_regex().replace_all(&joined, "$option") {
+            Cow::Owned(bare) => resolve(&bare),
+            Cow::Borrowed(_) => None,
+        },
+    )
+}
+
+/// An option's range of options, right after the option's last letter: `(Amethyst-Topaz)`, two
+/// names without a digit or a bracket, the first one not opening with the hyphen of a Russian
+/// plural's ending (`(-ы)`).
+fn option_range_regex() -> &'static regex::Regex {
+    static RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"(?P<option>\p{L})\([^()\d\-][^()\d]*-[^()\d]+\)")
+            .expect("option range regex")
+    });
+    &RE
 }
 
 /// An unresolved line's stat.

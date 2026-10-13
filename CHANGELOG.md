@@ -8,6 +8,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- ANCHOR: releases. The guide's "What's new" page shows every section below, up to ANCHOR_END. -->
 
+## [Unreleased]
+
+### Fixed
+
+- **Mageblood's legacies.** The four legacies of a Mageblood (**Legacy of Diamond** and the like)
+  were unread lines: they couldn't be checked, and the search took every Mageblood, 5130 listings
+  where one with the same four legacies has 2. They are now read as the trade site lists them and
+  checked like the other rows. The game copies them with the range of their options after them,
+  `(Amethyst-Topaz)`; any modifier it copies that way is read the same.
+
 ## [0.1.15] - 2026-10-12
 
 ### Added

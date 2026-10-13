@@ -1896,6 +1896,64 @@ fn printed_forms_the_catalog_lacks_resolve_to_their_stats() {
     found(&item, "explicit.stat_2801937280");
 }
 
+/// An option stat prints the range of its options after the option the item has (player report
+/// #12, 2026-10-13: a live EN copy of a Mageblood, whose four legacies were unread lines). Each is
+/// the catalog's own option, `id|option`, as the trade site lists them.
+#[test]
+fn an_option_printed_with_its_range_of_options_is_the_catalogs_option() {
+    let legacy = |option: u32, name: &str| {
+        stat(
+            "explicit",
+            &format!("Legacy of {name}"),
+            &format!("stat_264262054|{option}"),
+        )
+    };
+    let catalog = IndexedCatalog::new(StatCatalog {
+        stats: vec![
+            stat(
+                "implicit",
+                "#% of Flask Recovery applied Instantly",
+                "stat_462041840",
+            ),
+            stat("implicit", "Has # Charm Slot", "stat_1416292992"),
+            legacy(1, "Amethyst"),
+            legacy(4, "Diamond"),
+            legacy(5, "Gold"),
+            legacy(11, "Silver"),
+            legacy(14, "Topaz"),
+            stat(
+                "explicit",
+                "All Mage's Legacies have #% increased effect per duplicate Mage's Legacy you have",
+                "stat_3874491706",
+            ),
+        ],
+    });
+    let text = std::fs::read_to_string(format!(
+        "{}/tests/fixtures/mageblood_legacies_en.txt",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .expect("the fixture");
+    let item = parse_clipboard(&text, ItemLanguage::English, &catalog).expect("parses");
+    assert!(item.unknown_mods.is_empty(), "{:?}", item.unknown_mods);
+    let explicit: Vec<(Option<&str>, f64)> = item
+        .mods
+        .iter()
+        .filter(|modifier| modifier.info.modifier_type == ModifierType::Explicit)
+        .flat_map(|modifier| &modifier.stats)
+        .map(|stat| (stat.stat_id.as_deref(), stat.value))
+        .collect();
+    assert_eq!(
+        explicit,
+        [
+            (Some("explicit.stat_264262054|4"), 0.0),
+            (Some("explicit.stat_264262054|11"), 0.0),
+            (Some("explicit.stat_264262054|1"), 0.0),
+            (Some("explicit.stat_264262054|5"), 0.0),
+            (Some("explicit.stat_3874491706"), 37.0),
+        ]
+    );
+}
+
 /// A gambler's offer (live RU vendor, 2026-09-23): "Random Helmet" is revealed only once bought,
 /// so it is reported as such rather than searched by its name, which no listing carries.
 #[test]
