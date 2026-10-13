@@ -12,3 +12,7 @@
 - [Reporting a problem](report.md)
 - [Privacy](privacy.md)
 - [Performance](performance.md)
+
+# For developers
+
+- [How the XP bar is read](reading-the-xp-bar.md)
