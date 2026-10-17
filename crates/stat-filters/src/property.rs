@@ -364,7 +364,8 @@ const WEAPON_STATS: [&[&str]; 6] = [
     SPIRIT.incr,
 ];
 
-/// The item's summed flat and increased rolls of `scaling`'s stats -- EE2's `calcPropBase`.
+/// The item's summed flat and increased rolls of `scaling`'s stats -- EE2's `calcPropBase` --
+/// as the item has them (`ParsedStat::item_value`).
 fn scaling_rolls(item: &ParsedItem, scaling: &Scaling) -> (f64, f64) {
     let mut flat = 0.0;
     let mut incr = 0.0;
@@ -373,9 +374,9 @@ fn scaling_rolls(item: &ParsedItem, scaling: &Scaling) -> (f64, f64) {
             continue;
         };
         if scaling.flat.contains(&hash) {
-            flat += stat.value;
+            flat += stat.item_value();
         } else if scaling.incr.contains(&hash) {
-            incr += stat.value;
+            incr += stat.item_value();
         }
     }
     (flat, incr)
@@ -797,6 +798,7 @@ mod tests {
                 tier: None,
                 rank: None,
                 tags: Vec::new(),
+                increased: None,
             },
             stats: vec![ParsedStat {
                 stat_id: Some(stat_id.to_owned()),
@@ -808,6 +810,7 @@ mod tests {
                 unscalable: false,
                 negated_text: None,
                 printed_text: None,
+                raised: None,
             }],
         }
     }

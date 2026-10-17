@@ -519,6 +519,7 @@ fn parse_grants_skill(
             let stats = catalog_match::resolve_stat_lines(
                 &[line.as_str()],
                 ModifierType::Skill,
+                None,
                 category,
                 cs,
                 index,
@@ -536,6 +537,7 @@ fn parse_grants_skill(
                 tier: None,
                 rank: None,
                 tags: Vec::new(),
+                increased: None,
             },
             stats,
         });

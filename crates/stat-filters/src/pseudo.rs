@@ -472,8 +472,9 @@ fn sources(item: &ParsedItem) -> Vec<Source> {
                     stat: classify(stat_id)?,
                     modifier_type: modifier.info.modifier_type,
                     modifier: index,
+                    // As the item has it, as the trade site sums it (`ParsedStat::item_value`).
                     roll: Total {
-                        value: stat.value,
+                        value: stat.item_value(),
                         min: stat.min,
                         max: stat.max,
                     },
@@ -645,6 +646,7 @@ mod tests {
             unscalable: false,
             negated_text: None,
             printed_text: None,
+            raised: None,
         }
     }
 
@@ -657,6 +659,7 @@ mod tests {
                 tier: None,
                 rank: None,
                 tags: Vec::new(),
+                increased: None,
             },
             stats: vec![stat],
         }

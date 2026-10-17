@@ -506,6 +506,7 @@ mod tests {
                 tier: Some(3),
                 rank: None,
                 tags: Vec::new(),
+                increased: None,
             },
             stats: vec![ParsedStat {
                 stat_id: Some(stat_id.to_owned()),
@@ -517,6 +518,7 @@ mod tests {
                 unscalable: false,
                 negated_text: None,
                 printed_text: None,
+                raised: None,
             }],
         }
     }

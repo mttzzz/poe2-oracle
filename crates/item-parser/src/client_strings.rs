@@ -136,6 +136,11 @@ pub struct ClientStrings {
     /// `MODIFIER_LINE` -- the bracket `{ <type> ["<name>"] (Tier: N) (Rank: N) }` grammar, named
     /// groups `type`/`name`/`tier`/`rank`, all but `type` optional.
     pub modifier_line: Regex,
+    /// Not a client_strings key (EE2 drops it): the part a bracket line ends with when the game
+    /// raises the modifier's values, `— 53% Increased` (`— 62% увеличение`), after its tags.
+    /// Named group `percent`. Seen live: player reports #13 (EN, 2026-10-17) and the Russian
+    /// weapon reports among the fixtures; Sidekick's Gloom Lash fixture.
+    pub modifier_increased: Regex,
     /// `WAYSTONE_TIER_NAME` -- not a real client_strings key; the `"Waystone (Tier N)"` base type
     /// `item-parser` itself must recognize since this project ships no local item database to
     /// resolve a Waystone's tier the way the reference does (`info.map.tier`). Unanchored: a magic
@@ -235,6 +240,8 @@ pub static EN: LazyLock<ClientStrings> = LazyLock::new(|| {
         r#"^(?P<type>[^"]+)(?:\s+"(?P<name>[^"]*)")?(?:\s*\(Tier: (?P<tier>\d+)\))?(?:\s*\(Rank: (?P<rank>\d+)\))?$"#,
     )
     .expect("EN modifier_line regex"),
+    modifier_increased: Regex::new(r"^(?P<percent>\d+)% Increased$")
+        .expect("EN modifier_increased regex"),
     waystone_tier_name: Regex::new(r"Waystone \(Tier (?P<tier>\d+)\)")
         .expect("EN waystone_tier_name regex"),
     map_blighted: Regex::new(r"^Blighted (?P<rest>.*)$").expect("EN map_blighted regex"),
@@ -340,6 +347,8 @@ pub static RU: LazyLock<ClientStrings> = LazyLock::new(|| {
         r#"^(?P<type>[^"]+)(?:\s+"(?P<name>[^"]*)")?(?:\s*\(Уровень: (?P<tier>\d+)\))?(?:\s*\(Ранг: (?P<rank>\d+)\))?$"#,
     )
     .expect("RU modifier_line regex"),
+    modifier_increased: Regex::new(r"^(?P<percent>\d+)% увеличение$")
+        .expect("RU modifier_increased regex"),
     waystone_tier_name: Regex::new(r"Путевой камень \(Ур\. (?P<tier>\d+)\)")
         .expect("RU waystone_tier_name regex"),
     map_blighted: Regex::new(r"^Заражённая (?P<rest>.*)$").expect("RU map_blighted regex"),

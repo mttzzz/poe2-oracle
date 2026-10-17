@@ -24,6 +24,7 @@ mod weighted;
 
 use poe2_domain::{
     ItemRarity, ModGeneration, ModifierInfo, ModifierType, ParsedItem, ParsedStat, StatCatalog,
+    raise,
 };
 pub use profile::{SearchProfile, apply_profile};
 use property::property_filters;
@@ -101,6 +102,24 @@ pub struct TierInfo {
     pub tier_floor: Option<f64>,
     /// The lowest to the highest roll of every tier, in the row's terms; `None` for a flag.
     pub range: Option<(f64, f64)>,
+}
+
+impl TierInfo {
+    /// The tier's rolls as an item whose modifier the game raises by `increased` percent has
+    /// them (`poe2_domain::raise`), as the row's roll is (`ParsedStat::raised`): its slider and
+    /// tier minimum then bound the numbers the trade site lists.
+    fn raised(self, increased: Option<u32>) -> TierInfo {
+        let Some(percent) = increased.filter(|&percent| percent > 0) else {
+            return self;
+        };
+        TierInfo {
+            tier_floor: self.tier_floor.map(|floor| raise(floor, percent)),
+            range: self
+                .range
+                .map(|(low, high)| (raise(low, percent), raise(high, percent))),
+            ..self
+        }
+    }
 }
 
 /// One row of a Price Check filter panel: a stat aggregated from every contributing mod on the
@@ -337,10 +356,12 @@ impl Rows {
                 && let (Some(family), Some(tier)) =
                     (families[modifier], item.mods[modifier].info.tier)
             {
+                let increased = item.mods[modifier].info.increased;
                 filter.tier_info = filter
                     .trade_ids
                     .first()
-                    .and_then(|id| family.tier_info(tier, item.item_level, tiers::stat_hash(id)));
+                    .and_then(|id| family.tier_info(tier, item.item_level, tiers::stat_hash(id)))
+                    .map(|info| info.raised(increased));
             }
         }
     }
@@ -742,11 +763,16 @@ impl ModStatGroup {
         if !self.sources.contains(&modifier) {
             self.sources.push(modifier);
         }
-        self.value += stat.value;
+        // The value the item has and the trade site searches, raised where its header says the
+        // game raises it (`ParsedStat::raised`, player report #13); `min` and `max` only tell a
+        // fixed roll from a rolled one.
+        self.value += stat.item_value();
         self.min += stat.min;
         self.max += stat.max;
         self.dp |= stat.dp;
-        self.any_scalable |= !stat.unscalable;
+        // An unscalable line is a flag, searched as present -- unless it prints a range it
+        // rolled in: `53(40-60)% increased Effect of Suffixes — Unscalable Value` (report #13).
+        self.any_scalable |= !stat.unscalable || stat.min < stat.max;
         if !self.modifier_types.contains(&info.modifier_type) {
             self.modifier_types.push(info.modifier_type);
         }
@@ -1006,6 +1032,7 @@ mod tests {
             unscalable: false,
             negated_text: None,
             printed_text: None,
+            raised: None,
         }
     }
 
@@ -1031,6 +1058,7 @@ mod tests {
                 tier,
                 rank: None,
                 tags: Vec::new(),
+                increased: None,
             },
             stats,
         }
@@ -1825,6 +1853,7 @@ mod tests {
             unscalable: true,
             negated_text: None,
             printed_text: None,
+            raised: None,
         };
         let item = ParsedItem {
             mods: vec![modifier(ModifierType::Explicit, None, vec![unscalable])],

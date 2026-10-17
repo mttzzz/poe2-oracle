@@ -102,8 +102,8 @@ pub enum ModGeneration {
 /// Parsed from a bracketed `{ Prefix Modifier "Name" (Tier: N) — tag, tag }` line
 /// (`advanced-mod-desc.ts:parseModInfoLine`) or inferred from a flat line's trailing
 /// `" (rune)"`/`" (enchant)"`/etc. suffix (`advanced-mod-desc.ts:parseModType`) when no bracket
-/// is present. `generation`/`name`/`tier`/`rank`/`tags` are only ever populated by the bracket
-/// form.
+/// is present. `generation`/`name`/`tier`/`rank`/`tags`/`increased` are only ever populated by
+/// the bracket form.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ModifierInfo {
     pub modifier_type: ModifierType,
@@ -114,6 +114,31 @@ pub struct ModifierInfo {
     pub tier: Option<u32>,
     pub rank: Option<u32>,
     pub tags: Vec<String>,
+    /// How much the game raises this modifier's values, in percent: the `— 53% Increased` its
+    /// header ends with (`— 62% увеличение` on the Russian client), from an increased Effect of
+    /// Suffixes, a catalyst's quality or the like. The copy prints the modifier's own roll; the
+    /// item has the raised one, and so does the trade site (`ParsedStat::raised`).
+    #[serde(default)]
+    pub increased: Option<u32>,
+}
+
+/// One number of a modifier the game raises by `percent`, as the item has it and the trade site
+/// lists it: raised and cut to the number's own precision -- the game truncates (live 2026-10-17:
+/// with 49% increased Effect of Suffixes a `2` is listed at 2 and a `17` at 25; with 40% Caster
+/// quality a `34` at 47, with 40% Attack quality `18` to `32` at 25 to 44). A number without
+/// decimals stays whole; one with decimals keeps one, or two where it prints two.
+pub fn raise(roll: f64, percent: u32) -> f64 {
+    let scale = if roll.fract() == 0.0 {
+        1.0
+    } else if (roll * 10.0).fract().abs() < 1e-6 {
+        10.0
+    } else {
+        100.0
+    };
+    // Whole units of the number's precision, raised and truncated in integers: `100 * 1.15` in
+    // floating point is 114.99999999999999.
+    let units = (roll * scale).round() as i64;
+    (units * (100 + i64::from(percent)) / 100) as f64 / scale
 }
 
 /// One numeric stat line, after roll-placeholder resolution against a `StatCatalog` (step 4).
@@ -141,6 +166,21 @@ pub struct ParsedStat {
     /// roll is in the catalog's terms already, and this is how the item says it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub printed_text: Option<String>,
+    /// The roll as the item has it, where its modifier's header raises it
+    /// (`ModifierInfo::increased`): each printed number raised as the game raises it ([`raise`])
+    /// and averaged as `value` averages them, in the catalog's terms as `value` is. `None` where
+    /// nothing raises it, or nothing can (an `Unscalable Value` line): `value` is the item's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raised: Option<f64>,
+}
+
+impl ParsedStat {
+    /// The roll as the item has it, which is what the trade site lists and searches: `raised`
+    /// where the modifier's header raises it, else `value`. Tiers and roll ranges go by the
+    /// printed `value`, `min` and `max`.
+    pub fn item_value(&self) -> f64 {
+        self.raised.unwrap_or(self.value)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -332,4 +372,31 @@ pub struct TradeStat {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct StatCatalog {
     pub stats: Vec<TradeStat>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_raised_number_is_cut_as_the_trade_site_lists_it() {
+        // Live listings, 2026-10-17: jewels with 49% and 50% increased Effect of Suffixes, and
+        // rings with 40% Caster and Attack quality, whose rounding up would read higher.
+        assert_eq!(raise(2.0, 49), 2.0, "2.98 listed at 2");
+        assert_eq!(raise(17.0, 49), 25.0, "25.33 listed at 25");
+        assert_eq!(raise(1.0, 50), 1.0, "1.5 listed at 1");
+        assert_eq!(raise(34.0, 40), 47.0, "47.6 listed at 47");
+        assert_eq!((raise(18.0, 40), raise(32.0, 40)), (25.0, 44.0));
+        // Player report #13's jewel, 53%.
+        let jewel = [19.0, 20.0, 15.0].map(|roll| raise(roll, 53));
+        assert_eq!(jewel, [29.0, 30.0, 22.0]);
+        // Exact in integers, where floating point is not: 100 * 1.15 = 114.99999999999999.
+        assert_eq!(raise(100.0, 15), 115.0);
+        // A decimal number keeps its precision.
+        assert_eq!(raise(9.71, 53), 14.85);
+        assert_eq!(raise(2.5, 53), 3.8);
+        // A negative one is cut toward zero, as a positive one.
+        assert_eq!(raise(-19.0, 53), -29.0);
+        assert_eq!(raise(2.5, 0), 2.5);
+    }
 }

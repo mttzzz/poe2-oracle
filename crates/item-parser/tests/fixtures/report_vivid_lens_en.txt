@@ -1,0 +1,19 @@
+Item Class: Jewels
+Rarity: Rare
+Vivid Lens
+Sapphire
+--------
+Item Level: 82
+--------
+{ Prefix Modifier "Prismatic" (Tier: 1) — Damage, Elemental, Fire, Cold, Lightning }
+5(5-15)% increased Elemental Damage
+{ Crafted Prefix Modifier "" }
+53(40-60)% increased Effect of Suffixes — Unscalable Value
+{ Suffix Modifier "of Unmaking" (Tier: 1) — Damage, Caster, Critical — 53% Increased }
+19(10-20)% increased Critical Spell Damage Bonus
+{ Suffix Modifier "of Potency" (Tier: 1) — Damage, Critical — 53% Increased }
+20(10-20)% increased Critical Damage Bonus
+{ Desecrated Suffix Modifier "of Annihilating" (Tier: 1) — Caster, Critical — 53% Increased }
+15(5-15)% increased Critical Hit Chance for Spells
+--------
+Place into an allocated Jewel Socket on the Passive Skill Tree. Right click to remove from the Socket.

@@ -254,9 +254,16 @@ The button **Tier minimum**, on the right of the profile's row, shows while a ti
 has a known tier. It sets the **min** of every such ticked row to the bottom of its current tier,
 so the search finds the same tier and better. Rows where a lower number is better are left alone.
 
-Ticking or unticking rows, moving a slider, **Tier minimum** and switching the class, rarity,
-corruption or identification chips take effect with the next search: press <kbd>Enter</kbd> in a
-box or click **Search**.
+Some modifiers are raised: a jewel's increased Effect of Suffixes or Prefixes, or a catalyst's
+quality on a ring or amulet, raises the values of the modifiers it covers. The game's copy prints
+such a modifier's roll as it rolled and ends its header with the raise (`53% Increased`), while the
+item has the raised value, and that is the value the trade site lists. The row shows and searches
+the raised value (19% raised by 53% is 29%), and its slider, its tier badge's rolls and **Tier
+minimum** are raised the same way.
+
+Ticking or unticking rows, moving a slider, **Tier minimum** and switching the class or
+identification chip take effect with the next search: press <kbd>Enter</kbd> in a box or click
+**Search**.
 
 ## Search options
 

@@ -116,7 +116,14 @@ fn resolve_and_push(
     }
     let lines: Vec<&str> = stat_lines.iter().map(String::as_str).collect();
     let category = item.category.as_ref().map(|category| category.id.as_str());
-    let stats = catalog_match::resolve_stat_lines(&lines, info.modifier_type, category, cs, index);
+    let stats = catalog_match::resolve_stat_lines(
+        &lines,
+        info.modifier_type,
+        info.increased,
+        category,
+        cs,
+        index,
+    );
     if !stats.is_empty() && stats.iter().all(|s| s.stat_id.is_none()) {
         item.unknown_mods
             .push((stat_lines.join(" / "), info.modifier_type));
@@ -157,7 +164,16 @@ fn parse_bracket_form(
         let inner = mod_line[1..mod_line.len() - 1].trim();
         let mut parts = inner.split('\u{2014}').map(str::trim);
         let mod_text = parts.next().unwrap_or("");
-        let tags_text = parts.next();
+        // After the type, name and tier: the tags, and `53% Increased` when the game raises the
+        // modifier's values -- either may be missing.
+        let mut tags_text = None;
+        let mut increased = None;
+        for part in parts {
+            match cs.modifier_increased.captures(part) {
+                Some(caps) => increased = caps["percent"].parse().ok(),
+                None => tags_text = tags_text.or(Some(part)),
+            }
+        }
 
         let (info, resolved_lines) = match cs.modifier_line.captures(mod_text) {
             Some(caps) => {
@@ -232,6 +248,7 @@ fn parse_bracket_form(
                         tier,
                         rank,
                         tags,
+                        increased,
                     },
                     stripped_lines,
                 )
@@ -248,6 +265,7 @@ fn parse_bracket_form(
                     tier: None,
                     rank: None,
                     tags: Vec::new(),
+                    increased: None,
                 },
                 stripped_lines,
             ),
@@ -276,6 +294,7 @@ fn parse_flat_form(
         tier: None,
         rank: None,
         tags: Vec::new(),
+        increased: None,
     };
     resolve_and_push(item, info, &stripped_lines, cs, index);
 }

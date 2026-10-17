@@ -8,6 +8,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- ANCHOR: releases. The guide's "What's new" page shows every section below, up to ANCHOR_END. -->
 
+## [Unreleased]
+
+### Fixed
+
+- **Raised modifiers.** A jewel's increased Effect of Suffixes or Prefixes, or a catalyst's quality
+  on a ring or amulet, raises the values of the modifiers it covers, and the trade site lists the
+  raised values. The price check searched the rolls the game's copy prints before the raise: a
+  jewel with 53% increased Effect of Suffixes was searched from 19% Critical Spell Damage Bonus
+  where it has 29%, among 33 listings rather than 7. Raised modifiers are now searched at the values
+  the item has, and their sliders, tier hints and **Tier minimum** are raised too. The crafted
+  Effect of Suffixes row itself, which rolls in a range, now has a minimum as well, rather than only
+  asking for the modifier.
+
 ## [0.1.16] - 2026-10-13
 
 ### Fixed

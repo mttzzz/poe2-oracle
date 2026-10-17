@@ -598,6 +598,79 @@ fn hash_row<'a>(
 }
 
 #[test]
+fn a_raised_modifier_is_searched_at_the_value_the_item_has() {
+    // Report #13, 2026-10-17 (0.1.16, EN client): a jewel's crafted 53% increased Effect of
+    // Suffixes raises its suffixes, which the copy prints as rolled (`19(10-20)%` under `— 53%
+    // Increased`) and the trade site lists raised (29%). The search went from 19, among jewels
+    // whose suffixes are that weak, and the 53% row had no number. Ids and texts as the live
+    // catalog has them.
+    let en = stat_catalog(&[
+        ("explicit.stat_3141070085", "#% increased Elemental Damage"),
+        (
+            "explicit.stat_2475221757",
+            "#% increased Effect of Suffixes",
+        ),
+        ("crafted.stat_2475221757", "#% increased Effect of Suffixes"),
+        (
+            "explicit.stat_274716455",
+            "#% increased Critical Spell Damage Bonus",
+        ),
+        (
+            "explicit.stat_3556824919",
+            "#% increased Critical Damage Bonus",
+        ),
+        (
+            "explicit.stat_737908626",
+            "#% increased Critical Hit Chance for Spells",
+        ),
+        (
+            "desecrated.stat_737908626",
+            "#% increased Critical Hit Chance for Spells",
+        ),
+    ]);
+    let (item, jewel) = reported("report_vivid_lens_en.txt", &en, None);
+    let value = |hash| hash_row(&jewel, hash).roll.as_ref().map(|roll| roll.value);
+    // 19, 20 and 15 raised by 53% and truncated, as the site lists them: 29.07, 30.6, 22.95.
+    assert_eq!(value("stat_274716455"), Some(29.0));
+    assert_eq!(value("stat_3556824919"), Some(30.0));
+    assert_eq!(value("stat_737908626"), Some(22.0));
+    // The prefix is not raised, and the 53% is searched with its number.
+    assert_eq!(value("stat_3141070085"), Some(5.0));
+    assert_eq!(value("stat_2475221757"), Some(53.0));
+    // The suffix's tier still goes by its printed roll; its rolls, for the slider and the tier
+    // minimum, are raised as the row's is: T1 rolls 10-20 on jewels, all tiers 10-20, 15-30 at
+    // 53%.
+    let spell = hash_row(&jewel, "stat_274716455");
+    assert_eq!(spell.tier, Some(1));
+    let tier = spell.tier_info.expect("tier info");
+    assert_eq!(
+        (tier.current, tier.tier_floor, tier.range),
+        (1, Some(15.0), Some((15.0, 30.0)))
+    );
+    let suffix = item
+        .mods
+        .iter()
+        .find(|modifier| modifier.info.name.as_deref() == Some("of Unmaking"))
+        .expect("the suffix");
+    assert_eq!(suffix.info.increased, Some(53));
+    assert_eq!(suffix.info.tags, ["Damage", "Caster", "Critical"]);
+    assert_eq!(suffix.stats[0].value, 19.0);
+
+    // A ring's 62% Attack quality from a catalyst (RU client, 2026-10-06), `— 62% увеличение`:
+    // its fractured added fire damage `29(25-29)` to `43(37-45)` is listed 46 to 69, each number
+    // raised and truncated, averaging 57.5 -- not 36 raised, 58, which would leave the very same
+    // ring out.
+    let fire = "Добавляет от # до # урона от огня к атакам";
+    let ru = stat_catalog(&[
+        ("explicit.stat_1573130764", fire),
+        ("fractured.stat_1573130764", fire),
+    ]);
+    let (_, ring) = reported("ru_report_yarostnyy_zavitok.txt", &ru, None);
+    let fire = hash_row(&ring, "stat_1573130764").roll.as_ref();
+    assert_eq!(fire.map(|roll| roll.value), Some(57.5));
+}
+
+#[test]
 fn reported_desecrated_and_fractured_rows_search_the_stat_of_any_kind() {
     // Reports #7 (0.1.7, EN client) and #5 (0.1.8, RU client), 2026-10-11: a desecrated mana
     // row found only desecrated mana, and a fractured row only fractured mods. The trade site's

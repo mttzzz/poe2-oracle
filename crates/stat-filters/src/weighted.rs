@@ -237,7 +237,9 @@ pub(crate) fn weighted_sums(
                         .as_deref()
                         .is_some_and(|id| summed(stat_hash(id)))
                     {
-                        (value, min, max) = (value + stat.value, min + stat.min, max + stat.max);
+                        // As the item has it (`ParsedStat::item_value`).
+                        (value, min, max) =
+                            (value + stat.item_value(), min + stat.min, max + stat.max);
                         dp |= stat.dp;
                         sums_it = true;
                     }

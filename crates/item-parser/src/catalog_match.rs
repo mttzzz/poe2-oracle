@@ -40,7 +40,7 @@ use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::OnceLock;
 
-use poe2_domain::{ModifierType, ParsedStat, StatCatalog, TradeStat};
+use poe2_domain::{ModifierType, ParsedStat, StatCatalog, TradeStat, raise};
 
 use crate::client_strings::ClientStrings;
 use crate::roll::{NumericRun, find_numeric_runs, template_candidates};
@@ -429,11 +429,14 @@ fn closes_reminder(line: &str) -> bool {
 /// Resolves one mod's suffix-stripped stat `lines` (e.g. `["173(170-179)% increased Physical
 /// Damage"]`) against the catalog for `modifier_type`, into one `ParsedStat` per stat: a stat
 /// printed over several lines becomes one, parenthesised reminder text none. A line nothing in
-/// the catalog matches still becomes a stat, with `stat_id: None`. `category` is the item's trade
-/// category, which picks the form of a stat the trade site files by kind of item (`ITEM_FORMS`).
+/// the catalog matches still becomes a stat, with `stat_id: None`. `increased` is how much the
+/// modifier's header says the game raises its values (`ParsedStat::raised`). `category` is the
+/// item's trade category, which picks the form of a stat the trade site files by kind of item
+/// (`ITEM_FORMS`).
 pub fn resolve_stat_lines(
     lines: &[&str],
     modifier_type: ModifierType,
+    increased: Option<u32>,
     category: Option<&str>,
     cs: &ClientStrings,
     index: &IndexedCatalog,
@@ -458,6 +461,7 @@ pub fn resolve_stat_lines(
             resolve_span(
                 &lines[start..start + span],
                 modifier_type,
+                increased,
                 category,
                 cs,
                 index,
@@ -482,6 +486,7 @@ pub fn resolve_stat_lines(
 fn resolve_span(
     lines: &[&str],
     modifier_type: ModifierType,
+    increased: Option<u32>,
     category: Option<&str>,
     cs: &ClientStrings,
     index: &IndexedCatalog,
@@ -499,7 +504,9 @@ fn resolve_span(
         let resolved = template_candidates(text, &runs)
             .iter()
             .find_map(|candidate| resolve_text(candidate, mod_type, cs, index))?;
-        Some(stat_from(&resolved, category, &runs, unscalable, index))
+        Some(stat_from(
+            &resolved, category, &runs, unscalable, increased, index,
+        ))
     };
     // An option stat's advanced description is the range of its options, after the option the
     // item has: a Mageblood's `Legacy of Diamond(Amethyst-Topaz)`, the catalog's `Legacy of
@@ -542,6 +549,7 @@ fn stat_from<'a>(
     category: Option<&str>,
     runs: &[NumericRun],
     unscalable: bool,
+    increased: Option<u32>,
     index: &'a IndexedCatalog,
 ) -> ParsedStat {
     let stat = item_form(resolved.stat, category, index);
@@ -557,7 +565,40 @@ fn stat_from<'a>(
     }
     parsed.printed_text = resolved.printed.clone();
     parsed.unscalable = unscalable || (runs.is_empty() && resolved.implied.is_none());
+    // As the item has it, where the header raises the modifier: each printed number raised as the
+    // trade site lists it, then averaged as `value` is -- not the average raised, which overshoots
+    // a stat of two numbers (`18` to `32` at 40% is listed 25 to 44, 34.5, not 35).
+    parsed.raised = increased
+        .filter(|&percent| percent > 0 && !parsed.unscalable)
+        .map(|percent| {
+            let numbers = rolled_runs(runs);
+            let raised = if numbers.is_empty() {
+                // An implied number (`an additional Arrow`), the only one there is.
+                raise(resolved.implied.unwrap_or(0.0), percent)
+            } else {
+                numbers
+                    .iter()
+                    .map(|run| raise(run.value, percent))
+                    .sum::<f64>()
+                    / numbers.len() as f64
+            };
+            if resolved.negated.is_some() {
+                -raised
+            } else {
+                raised
+            }
+        });
     parsed
+}
+
+/// The numbers a stat rolls at, as [`rolled`] averages them: two or four at their mean, anything
+/// else at the first.
+fn rolled_runs(runs: &[NumericRun]) -> &[NumericRun] {
+    match runs.len() {
+        0 => &[],
+        2 | 4 => runs,
+        _ => &runs[..1],
+    }
 }
 
 /// A stat rolled from `runs`: several numbers on one stat are still one stat ("Adds 12(10-15) to
@@ -567,11 +608,7 @@ fn stat_from<'a>(
 /// number, grouped downstream) doubled every such filter's bounds and emptied its searches. No
 /// runs at all is a flag stat (an `" — Unscalable Value"` line, a named allocation), rolled at 0.
 fn rolled(stat_id: Option<String>, text: String, runs: &[NumericRun]) -> ParsedStat {
-    let rolled = match runs.len() {
-        0 => &[][..],
-        2 | 4 => runs,
-        _ => &runs[..1],
-    };
+    let rolled = rolled_runs(runs);
     // `sum` of no `f64`s is -0.0; a flag stat rolls at a plain 0.
     let mean = |field: fn(&NumericRun) -> f64| {
         rolled.iter().map(field).fold(0.0, |sum, value| sum + value) / rolled.len().max(1) as f64
@@ -586,5 +623,6 @@ fn rolled(stat_id: Option<String>, text: String, runs: &[NumericRun]) -> ParsedS
         unscalable: false,
         negated_text: None,
         printed_text: None,
+        raised: None,
     }
 }
