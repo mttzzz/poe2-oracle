@@ -27,7 +27,8 @@ app:
     # can be 12 MiB (three at once), and each open event stream takes about 23 KiB (the service
     # holds at most 4000: crates/oracle-web/src/events.rs).
     memory: 256Mi
-    cpu: 250m
+    # No CPU limit: the start-up burst was throttled at 250m (up to 8.5 % of periods on the cluster
+    # dashboard, 2026-10-17), the server needs about 1m afterwards, and the nodes are 85-90 % idle.
 env:
   PUBLIC_URL: https://oracle.pushka.biz
   # The releases and their downloads come from the app's repository. The reports go as issues to a
