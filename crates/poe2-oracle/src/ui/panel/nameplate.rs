@@ -153,10 +153,10 @@ fn name_color(item: &ParsedItem) -> u32 {
 }
 
 /// Item class (or the base type the search goes by), which unique an unidentified one is, level,
-/// requirement, sockets, quality, corruption, sanctification, and how many of the listed
-/// searchable stats are selected -- EE2's chip row. The level, sockets and quality stay out where
-/// a property row or chip below shows the same value (`filters::shows_property`). A click on the
-/// count checks them all, or all off (`PriceCheckApp::toggle_all_filters`).
+/// requirement, sockets, quality, corruption, sanctification, fracture, and how many of the
+/// listed searchable stats are selected -- EE2's chip row. The level, sockets and quality stay out
+/// where a property row or chip below shows the same value (`filters::shows_property`). A click on
+/// the count checks them all, or all off (`PriceCheckApp::toggle_all_filters`).
 pub(super) fn render_chips(
     state: &PriceCheckApp,
     item: &ParsedItem,
@@ -256,9 +256,9 @@ pub(super) fn render_chips(
             cx,
         )
     });
-    // Which listings the search takes by corruption, and a sanctified item's by sanctification:
-    // those in the item's own state by default (`PriceCheckApp::corruption`,
-    // `PriceCheckApp::sanctification`).
+    // Which listings the search takes by corruption, and a sanctified or fractured item's by
+    // sanctification or fracture: those in the item's own state by default
+    // (`PriceCheckApp::corruption`, `sanctification`, `fracture`).
     let corruption = state.corruption.map(|current| {
         select_chip(
             state_chip(
@@ -290,6 +290,24 @@ pub(super) fn render_chips(
                      at once."
                 ),
                 PriceCheckApp::choose_sanctification,
+            ),
+            state,
+            window,
+            cx,
+        )
+    });
+    let fracture = state.fracture.map(|current| {
+        select_chip(
+            state_chip(
+                ChipMenu::Fracture,
+                current,
+                fracture_label,
+                tr!(
+                    "Which listings count by fracture. It starts on this item's own state: a \
+                     fractured modifier can't be changed, so fractured items sell at other \
+                     prices. Picking one searches again at once."
+                ),
+                PriceCheckApp::choose_fracture,
             ),
             state,
             window,
@@ -377,6 +395,7 @@ pub(super) fn render_chips(
         .children(identification)
         .children(corruption)
         .children(sanctification)
+        .children(fracture)
         .children((searchable > 0).then(|| {
             toggle_chip(
                 "stats",
@@ -421,6 +440,15 @@ fn sanctification_label(choice: StateFilter) -> &'static str {
     }
 }
 
+/// A fracture choice as the fracture select says it.
+fn fracture_label(choice: StateFilter) -> &'static str {
+    match choice {
+        StateFilter::Without => tr!("Unfractured only"),
+        StateFilter::With => tr!("Fractured only"),
+        StateFilter::Either => tr!("Fractured or not"),
+    }
+}
+
 /// A select of the listings the search takes by a state an item has or not, at `current`: its
 /// choices (`StateFilter::CHOICES`) as `label` says them.
 fn state_chip(
@@ -458,8 +486,9 @@ struct SelectChip {
 }
 
 /// A chip-row select -- which unique an unidentified one is, the rarity, the corruption, the
-/// sanctification: its label and current choice in a compact select with a gold ▾, which opens its
-/// menu below it, every choice listed and the current one marked (`menu::render_menu`).
+/// sanctification, the fracture: its label and current choice in a compact select with a gold ▾,
+/// which opens its menu below it, every choice listed and the current one marked
+/// (`menu::render_menu`).
 fn select_chip(
     chip: SelectChip,
     state: &PriceCheckApp,
@@ -471,6 +500,7 @@ fn select_chip(
         ChipMenu::Rarity => ("rarity", "rarity-menu"),
         ChipMenu::Corruption => ("corruption", "corruption-menu"),
         ChipMenu::Sanctification => ("sanctification", "sanctification-menu"),
+        ChipMenu::Fracture => ("fracture", "fracture-menu"),
     };
     let SelectChip {
         menu,

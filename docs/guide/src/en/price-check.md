@@ -109,13 +109,14 @@ Chips with a gold **▾** open a list of every option; picking one searches agai
 | **Rarity: …** ▾ | **Normal**, **Magic**, **Rare** or **Any Non-Unique**. It starts on the item's own rarity: a magic item is compared with magic items, a rare with rare items. |
 | **Uncorrupted only**, **Corrupted only** or **Corrupted or not** ▾ | Which listings count by corruption. It starts on the item's own state: corrupted listings can't be improved, and corruption changed their modifiers. |
 | **Unsanctified only**, **Sanctified only** or **Sanctified or not** ▾ | Only for a sanctified item: which listings count by sanctification. It starts on **Sanctified only**: sanctified listings can't be modified, and sanctifying moved their modifiers' values up or down, past their usual ranges too. |
+| **Unfractured only**, **Fractured only** or **Fractured or not** ▾ | Only for a fractured item: which listings count by fracture. It starts on **Fractured only**: a fractured modifier can't be changed, so fractured items sell at other prices. |
 
 A unique item has no rarity chip: its name already pins the search down. A unique that a Vaal
 Cultivation Orb changed (it has a **Vaal Unique Modifier**; the trade site's filter is **Cultivated
 Vaal Unique**) is searched among cultivated ones, and one it didn't change among those it didn't:
-their modifiers differ, and so do their prices. Mirrored and sanctified listings are left out of the
-search for ordinary gear unless your item is one; a sanctified item can switch that with the
-sanctification list above, and mirrored listings have no chip.
+their modifiers differ, and so do their prices. Mirrored, sanctified and fractured listings are
+left out of the search for ordinary gear unless your item is one; a sanctified or fractured item
+can switch that with its list above, and mirrored listings have no chip.
 
 An unidentified unique names only its base: its text doesn't say which unique it is, though its art
 shows it. Where the base has several uniques, the app tells which one it is by its art: as you press

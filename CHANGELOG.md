@@ -8,6 +8,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- ANCHOR: releases. The guide's "What's new" page shows every section below, up to ANCHOR_END. -->
 
+## [Unreleased]
+
+### Fixed
+
+- **Fractured listings.** The search of an unfractured item took fractured listings too, and on
+  the trade site they are no rarity: for an unfractured Absent Amulet with +3 to Level of all Spell
+  Skills and open affixes, 522 of the 562 listings it found were fractured, listed from 1 divine,
+  while unfractured ones like it were listed from 175. A fractured modifier can't be changed, so
+  fractured items sell at other prices. Now an unfractured item is searched among unfractured
+  listings and a fractured one among fractured ones, and a fractured item's chip row has a list
+  like corruption's: **Fractured only**, where it starts, **Unfractured only** or **Fractured or
+  not**.
+
 ## [0.1.17] - 2026-10-17
 
 ### Fixed

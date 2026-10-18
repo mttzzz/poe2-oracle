@@ -359,9 +359,15 @@ impl PriceCurrency {
 /// `Some(true)` asks for them, `None` takes either. An uncorrupted item goes among uncorrupted
 /// listings -- items that can still be modified, which a buyer of a base or of a waystone to roll
 /// is after -- and a corrupted one among corrupted ones, whose implicits and sockets it shares;
-/// the same for mirrored and sanctified items. An unidentified item goes among unidentified
-/// listings, which are what it sells as: an identified one shows its mods. The panel lets the
-/// player change the corruption choice and a sanctified item's sanctification one, and drop the
+/// the same for mirrored, sanctified and fractured items. Fractured is ours, not PoE Overlay II's,
+/// which takes either: a fractured modifier is fixed for good, which makes a fractured item a base
+/// of another worth, and fractured listings are no fringe. Player report #14 (2026-10-17): an
+/// unfractured Absent Amulet with +3 to Level of all Spell Skills and open affixes, like the
+/// unfractured ones listed from 175 divine, was searched among 562 listings, 522 of them
+/// fractured, from 1 divine up; 6798 of the over 10000 uncorrupted rare amulets with that stat
+/// were fractured. An unidentified item goes among unidentified listings, which are what it sells
+/// as: an identified one shows its mods. The panel lets the player change the corruption choice,
+/// a sanctified item's sanctification one and a fractured item's fracture one, and drop the
 /// identification one, for the next search.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct MiscChoices {
@@ -380,9 +386,8 @@ pub struct MiscChoices {
 }
 
 impl MiscChoices {
-    /// The choices for `item`, whose trade category is `category_id`; `exact` is EE2's exact
-    /// preset (`stat_filters::uses_exact_preset`), which also leaves fractured items out.
-    fn for_item(item: &ParsedItem, category_id: Option<&str>, exact: bool) -> MiscChoices {
+    /// The choices for `item`, whose trade category is `category_id`.
+    fn for_item(item: &ParsedItem, category_id: Option<&str>) -> MiscChoices {
         let gem = category_id.is_some_and(|id| id.starts_with("gem"));
         // An unmodifiable item's corruption changes nothing a buyer could do with it.
         let has_state = (gem || item.rarity.is_some()) && !item.is_unmodifiable;
@@ -395,7 +400,7 @@ impl MiscChoices {
             corrupted: has_state.then_some(item.is_corrupted),
             mirrored: gear.then_some(item.is_mirrored),
             sanctified: gear.then_some(item.is_sanctified),
-            fractured: (exact && !item.is_fractured).then_some(false),
+            fractured: gear.then_some(item.is_fractured),
             identified: item.is_unidentified.then_some(false),
             mutated: item
                 .mutated
@@ -965,7 +970,7 @@ pub fn route_search(
         return SearchRoute::Filtered {
             scope: SearchScope {
                 base_type: Some(item.name.clone()),
-                misc: MiscChoices::for_item(item, category_id, false),
+                misc: MiscChoices::for_item(item, category_id),
                 ..SearchScope::default()
             },
         };
@@ -990,12 +995,13 @@ pub fn route_search(
 /// anything else by its trade category (EE2's `searchRelaxed`), unless EE2 prices it with its
 /// exact preset (`stat_filters::uses_exact_preset`) or knows no category for it -- then by its
 /// base type (`searchExact`). Waystones and charms go by category either way. A base type this
-/// crate can't resolve falls back to the category. The rarity filter and the misc choices are
-/// EE2's (`create-item-filters.ts:303-366`), but for the unidentified unique's `unique`.
+/// crate can't resolve falls back to the category. The rarity filter is EE2's
+/// (`create-item-filters.ts:303-366`), but for the unidentified unique's `unique`; the misc
+/// choices are `MiscChoices`'.
 fn filtered_scope(item: &ParsedItem, item_types: &[ItemTypeEntry]) -> SearchScope {
     let category_id = item.category.as_ref().map(|category| category.id.as_str());
     let exact = stat_filters::uses_exact_preset(item);
-    let misc = MiscChoices::for_item(item, category_id, exact);
+    let misc = MiscChoices::for_item(item, category_id);
     if item.rarity == Some(ItemRarity::Unique) {
         return if item.is_unidentified {
             SearchScope {
@@ -2843,18 +2849,20 @@ mod route_search_tests {
         );
     }
 
-    /// What an uncorrupted, unmirrored, unsanctified gear item leaves out of its search.
+    /// What an uncorrupted, unmirrored, unsanctified, unfractured gear item leaves out of its
+    /// search.
     fn clean_gear() -> MiscChoices {
         MiscChoices {
             corrupted: Some(false),
             mirrored: Some(false),
             sanctified: Some(false),
+            fractured: Some(false),
             ..MiscChoices::default()
         }
     }
 
     #[test]
-    fn corruption_mirroring_and_sanctification_match_the_items_own_state() {
+    fn corruption_mirroring_sanctification_and_fracture_match_the_items_own_state() {
         let rare = |edit: fn(&mut ParsedItem)| {
             let mut item = ParsedItem {
                 name: "Dragon Core".to_string(),
@@ -2877,6 +2885,12 @@ mod route_search_tests {
         );
         // A mirrored item among its mirrored copies.
         assert_eq!(rare(|item| item.is_mirrored = true).mirrored, Some(true));
+        // A fractured item among fractured ones: its fractured modifier is fixed for good, which
+        // makes it a base of another worth. Player report #14: an unfractured amulet's search
+        // found 522 fractured listings among 562, from 1 divine up, where unfractured ones like
+        // it were listed from 175.
+        assert_eq!(rare(|item| item.is_fractured = true).fractured, Some(true));
+        assert_eq!(rare(|_| {}).fractured, Some(false));
         // An unmodifiable item's corruption changes nothing for a buyer.
         assert_eq!(rare(|item| item.is_unmodifiable = true).corrupted, None);
         // An uncorrupted waystone can still be modified, which is what its buyer rolls it for
@@ -2919,6 +2933,7 @@ mod route_search_tests {
                 "corrupted": { "option": "false" },
                 "mirrored": { "option": "false" },
                 "sanctified": { "option": "false" },
+                "fractured_item": { "option": "false" },
             })
         );
     }
@@ -2968,11 +2983,7 @@ mod route_search_tests {
             SearchScope {
                 base_type: Some("Тяжёлый ремень".to_owned()),
                 rarity: Some(RarityFilter::Normal),
-                // EE2's exact preset also leaves fractured items out.
-                misc: MiscChoices {
-                    fractured: Some(false),
-                    ..clean_gear()
-                },
+                misc: clean_gear(),
                 ..SearchScope::default()
             }
         );

@@ -523,11 +523,11 @@ impl StateChoice {
     }
 }
 
-/// Which listings the search takes by a state an item has or not -- corruption, sanctification
-/// (`trade_client::MiscChoices::corrupted`, `sanctified`) -- picked from the panel's select for it:
-/// those in the item's own state by default, as PoE Overlay II matches them -- an uncorrupted item
-/// among uncorrupted listings, which can still be improved, a corrupted one among corrupted ones --
-/// or those in the other state, or either.
+/// Which listings the search takes by a state an item has or not -- corruption, sanctification,
+/// fracture (`trade_client::MiscChoices::corrupted`, `sanctified`, `fractured`) -- picked from the
+/// panel's select for it: those in the item's own state by default, as PoE Overlay II matches
+/// them -- an uncorrupted item among uncorrupted listings, which can still be improved, a
+/// corrupted one among corrupted ones -- or those in the other state, or either.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StateFilter {
     Without,
@@ -604,6 +604,7 @@ pub enum ChipMenu {
     Rarity,
     Corruption,
     Sanctification,
+    Fracture,
 }
 
 pub struct PriceCheckApp {
@@ -704,6 +705,11 @@ pub struct PriceCheckApp {
     /// chip row stays short. Player report #11 (2026-10-12): a sanctified amulet was searched
     /// among sanctified listings only, with nothing to change it. Reset for every new item.
     pub sanctification: Option<StateFilter>,
+    /// Which listings a fractured item's search takes by fracture: fractured ones by default
+    /// (`StateFilter`). Fractured listings stay out of other items' searches with no select, as
+    /// sanctified ones do (`trade_client::MiscChoices`, player report #14). Reset for every new
+    /// item.
+    pub fracture: Option<StateFilter>,
     /// An unidentified item's search among unidentified listings
     /// (`trade_client::MiscChoices::identified`), or, dropped by the player, identified ones too.
     pub identification: Option<StateChoice>,
@@ -797,6 +803,7 @@ impl PriceCheckApp {
             scope: None,
             corruption: None,
             sanctification: None,
+            fracture: None,
             identification: None,
             unique: None,
             rarity: None,
@@ -1460,6 +1467,12 @@ impl PriceCheckApp {
     /// (`StateFilter::CHOICES`, by index).
     pub fn choose_sanctification(&mut self, at: usize, cx: &mut Context<Self>) {
         self.choose_state(|app| &mut app.sanctification, at, cx);
+    }
+
+    /// Searches at once among the listings the player picked from the fracture select
+    /// (`StateFilter::CHOICES`, by index).
+    pub fn choose_fracture(&mut self, at: usize, cx: &mut Context<Self>) {
+        self.choose_state(|app| &mut app.fracture, at, cx);
     }
 
     /// Sets the choice of the state select whose field `select` gives to `StateFilter::CHOICES`'s
@@ -2919,6 +2932,10 @@ async fn run_price_check(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
                     .and_then(|misc| misc.sanctified)
                     .filter(|&sanctified| sanctified)
                     .map(StateFilter::matching);
+                state.fracture = misc
+                    .and_then(|misc| misc.fractured)
+                    .filter(|&fractured| fractured)
+                    .map(StateFilter::matching);
                 state.identification =
                     misc.and_then(|misc| misc.identified.map(StateChoice::matched));
                 state.rarity = match &route {
@@ -3136,6 +3153,9 @@ pub async fn run_search(view: &Entity<PriceCheckApp>, cx: &mut AsyncApp) {
             }
             if let Some(choice) = state.sanctification {
                 scope.misc.sanctified = choice.filter();
+            }
+            if let Some(choice) = state.fracture {
+                scope.misc.fractured = choice.filter();
             }
             if state.identification.is_some_and(|choice| !choice.on) {
                 scope.misc.identified = None;
