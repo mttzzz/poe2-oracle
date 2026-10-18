@@ -138,6 +138,7 @@ mod tests {
                 range: Some(range),
             }),
             weighted_sum: false,
+            none_of: false,
         }
     }
 

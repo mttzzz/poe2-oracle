@@ -431,6 +431,7 @@ pub(crate) fn pseudo_filters(
                 score: None,
                 tier_info: None,
                 weighted_sum: false,
+                none_of: false,
             };
             (filter, row.sources)
         })

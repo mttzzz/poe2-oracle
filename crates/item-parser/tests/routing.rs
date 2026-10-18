@@ -598,6 +598,111 @@ fn hash_row<'a>(
 }
 
 #[test]
+fn a_mageblood_is_searched_with_its_own_legacies_and_none_other() {
+    // Report #15, 2026-10-18 (0.1.18, EN client): a Mageblood with Legacy of Quicksilver three
+    // times and Legacy of Gold, searched among belts with those two among any others, and the
+    // player asked for the others to be left out. The trade site counts a legacy's copies; the
+    // fourteen legacies are the options of one stat in the live EN catalog.
+    let legacies: Vec<(String, String)> = [
+        "Amethyst",
+        "Basalt",
+        "Bismuth",
+        "Diamond",
+        "Gold",
+        "Granite",
+        "Jade",
+        "Quicksilver",
+        "Ruby",
+        "Sapphire",
+        "Silver",
+        "Stibnite",
+        "Sulphur",
+        "Topaz",
+    ]
+    .iter()
+    .enumerate()
+    .map(|(index, name)| {
+        (
+            format!("explicit.stat_264262054|{}", index + 1),
+            format!("Legacy of {name}"),
+        )
+    })
+    .collect();
+    let mut entries: Vec<(&str, &str)> = legacies
+        .iter()
+        .map(|(id, text)| (id.as_str(), text.as_str()))
+        .collect();
+    entries.extend([
+        (
+            "implicit.stat_462041840",
+            "#% of Flask Recovery applied Instantly",
+        ),
+        ("implicit.stat_1416292992", "Has # Charm Slot"),
+        (
+            "explicit.stat_3874491706",
+            "All Mage's Legacies have #% increased effect per duplicate Mage's Legacy you have",
+        ),
+    ]);
+    let catalog = stat_catalog(&entries);
+    let (item, filters) = reported("report_mageblood_duplicates_en.txt", &catalog, None);
+
+    // Each legacy row searches the belt's copies of it at least.
+    let copies = |hash: &str| {
+        let row = hash_row(&filters, hash);
+        let roll = row.roll.as_ref().map(|roll| (roll.value, roll.min));
+        (row.enabled, row.display_text.as_str(), roll)
+    };
+    assert_eq!(
+        copies("stat_264262054|8"),
+        (true, "Legacy of Quicksilver ×#", Some((3.0, Some(3.0))))
+    );
+    assert_eq!(
+        copies("stat_264262054|5"),
+        (true, "Legacy of Gold ×#", Some((1.0, Some(1.0))))
+    );
+    // Right after them, checked, the row leaving out the twelve legacies the belt lacks.
+    let gold = filters
+        .iter()
+        .position(|row| row.trade_ids == ["explicit.stat_264262054|5"])
+        .expect("the Gold row");
+    let others = &filters[gold + 1];
+    assert!(others.none_of && others.enabled);
+    let lacked: Vec<&str> = legacies
+        .iter()
+        .map(|(id, _)| id.as_str())
+        .filter(|id| !id.ends_with("|5") && !id.ends_with("|8"))
+        .collect();
+    assert_eq!(others.trade_ids, lacked);
+
+    // The search: the copies as minimums, the lacked legacies in a "not" group.
+    let SearchRoute::Filtered { scope } = route_search(&item, &exchange_catalog(), &[]) else {
+        panic!("a Mageblood is searched by its filters");
+    };
+    let body =
+        trade_client::filtered_search_request(&scope, &filters, trade_client::ListingStatus::Any);
+    let groups = body["query"]["stats"].as_array().expect("stat groups");
+    let every = groups[0]["filters"].as_array().expect("the and group");
+    for (id, min) in [
+        ("explicit.stat_264262054|8", 3.0),
+        ("explicit.stat_264262054|5", 1.0),
+    ] {
+        let entry = every.iter().find(|entry| entry["id"] == id).expect(id);
+        assert_eq!(entry["value"], serde_json::json!({ "min": min }));
+    }
+    let not = groups
+        .iter()
+        .find(|group| group["type"] == "not")
+        .expect("a not group");
+    let not_ids: Vec<&str> = not["filters"]
+        .as_array()
+        .expect("its filters")
+        .iter()
+        .filter_map(|entry| entry["id"].as_str())
+        .collect();
+    assert_eq!(not_ids, lacked);
+}
+
+#[test]
 fn a_raised_modifier_is_searched_at_the_value_the_item_has() {
     // Report #13, 2026-10-17 (0.1.16, EN client): a jewel's crafted 53% increased Effect of
     // Suffixes raises its suffixes, which the copy prints as rolled (`19(10-20)%` under `— 53%

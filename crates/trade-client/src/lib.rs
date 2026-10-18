@@ -707,7 +707,9 @@ pub async fn fetch_json(
 /// that any one of them satisfies -- sending only the first would lose every listing whose mod
 /// the site files under another. A relaxed search (`StatMatch::AtLeast`) puts every row's ids
 /// into its one `"count"` group instead, where a listing matches a row through any of them. A
-/// weighted sum is its own `"weight2"` group in either (`weighted_sum_group`).
+/// weighted sum is its own `"weight2"` group in either (`weighted_sum_group`), and so is a row
+/// of stats a listing must have none of, a `"not"` group that a relaxed search keeps
+/// (`none_of_group`).
 fn stat_groups(
     filters: &[stat_filters::SearchFilter],
     stat_match: StatMatch,
@@ -715,7 +717,10 @@ fn stat_groups(
     let rows = filters
         .iter()
         .filter_map(|filter| Some((filter, stat_filter_entries(filter)?)));
-    let weighted_sums = filters.iter().filter_map(weighted_sum_group);
+    let own_groups = filters
+        .iter()
+        .filter_map(weighted_sum_group)
+        .chain(filters.iter().filter_map(none_of_group));
     if let StatMatch::AtLeast(count) = stat_match {
         let relaxed = StatGroup {
             kind: "count",
@@ -727,7 +732,7 @@ fn stat_groups(
             disabled: false,
             filters: rows.flat_map(|(_, entries)| entries).collect(),
         };
-        return std::iter::once(relaxed).chain(weighted_sums).collect();
+        return std::iter::once(relaxed).chain(own_groups).collect();
     }
     let mut every = StatGroup {
         kind: "and",
@@ -754,7 +759,7 @@ fn stat_groups(
     }
     std::iter::once(every)
         .chain(any_of)
-        .chain(weighted_sums)
+        .chain(own_groups)
         .collect()
 }
 
@@ -789,15 +794,44 @@ fn weighted_sum_group(filter: &stat_filters::SearchFilter) -> Option<StatGroup<'
     })
 }
 
+/// A `SearchFilter::none_of` row's `"not"` group: a listing with any of its trade ids is left
+/// out (live 2026-10-18: a Mageblood's two legacies with the other twelve in one found 60 belts,
+/// each with only those two), unchecked with the row. `None` for any other row.
+fn none_of_group(filter: &stat_filters::SearchFilter) -> Option<StatGroup<'_>> {
+    if !filter.none_of {
+        return None;
+    }
+    Some(StatGroup {
+        kind: "not",
+        value: None,
+        disabled: !filter.enabled,
+        filters: filter
+            .trade_ids
+            .iter()
+            .map(|id| StatFilterEntry {
+                id,
+                value: StatFilterValue {
+                    min: None,
+                    max: None,
+                    weight: None,
+                },
+                disabled: !filter.enabled,
+            })
+            .collect(),
+    })
+}
+
 /// A stat row's `query.stats` entries, one per trade id, carrying the row's bounds -- none for a
 /// row without a roll: a flag stat (`Enemies in your Presence are Blinded`), which a listing
 /// matches by having it, sent with an empty `value` as EE2's `tradeIdToQuery` sends one. A row
 /// in the item's own words (`SearchFilter::inverted`) has its bounds negated and swapped back
 /// into the catalog's terms. `None` for a row without a trade id, for a property row, which
-/// `property_filter` places instead, and for a weighted sum (`weighted_sum_group`).
+/// `property_filter` places instead, for a weighted sum (`weighted_sum_group`) and for a row of
+/// stats a listing must have none of (`none_of_group`).
 fn stat_filter_entries(filter: &stat_filters::SearchFilter) -> Option<Vec<StatFilterEntry<'_>>> {
     if filter.tag == stat_filters::FilterTag::Property
         || filter.weighted_sum
+        || filter.none_of
         || filter.trade_ids.is_empty()
     {
         return None;
@@ -3201,6 +3235,7 @@ mod search_request_tests {
             score: None,
             tier_info: None,
             weighted_sum: false,
+            none_of: false,
         }
     }
 
@@ -3262,6 +3297,7 @@ mod search_request_tests {
             score: None,
             tier_info: None,
             weighted_sum: false,
+            none_of: false,
         }
     }
 
@@ -3370,6 +3406,54 @@ mod search_request_tests {
         let unchecked = [SearchFilter {
             enabled: false,
             ..rarity
+        }];
+        assert_eq!(
+            stats(&SearchScope::default(), &unchecked)[1]["disabled"],
+            true
+        );
+    }
+
+    #[test]
+    fn a_none_of_row_is_a_not_group_kept_out_of_a_relaxed_count() {
+        // A Mageblood's legacies it lacks (player report #15): a listing with any one is left out.
+        let others = SearchFilter {
+            trade_ids: vec![
+                "explicit.stat_264262054|4".to_owned(),
+                "explicit.stat_264262054|11".to_owned(),
+            ],
+            roll: None,
+            none_of: true,
+            ..strength_filter(None, None)
+        };
+        let filters = [strength_filter(Some(22.0), None), others.clone()];
+        let not = serde_json::json!({
+            "type": "not",
+            "filters": [
+                { "id": "explicit.stat_264262054|4", "value": {}, "disabled": false },
+                { "id": "explicit.stat_264262054|11", "value": {}, "disabled": false },
+            ],
+        });
+        let stats = |scope: &SearchScope, filters: &[SearchFilter]| {
+            let body = filtered_search_body(scope, filters, ListingStatus::Online);
+            serde_json::to_value(body).expect("the body serializes")["query"]["stats"].clone()
+        };
+
+        let every = stats(&SearchScope::default(), &filters);
+        assert_eq!(every[0]["filters"].as_array().map(Vec::len), Some(1));
+        assert_eq!(every[1], not);
+        // Not a row a listing has to match: one stat row beside it leaves nothing to relax, and
+        // a relaxed search keeps it whole.
+        assert_eq!(enabled_stat_rows(&filters), 1);
+        assert_eq!(one_fewer_match(&filters), None);
+        let relaxed = SearchScope {
+            stat_match: StatMatch::AtLeast(1),
+            ..SearchScope::default()
+        };
+        assert_eq!(stats(&relaxed, &filters)[1], not);
+        // Unchecked, the group is off.
+        let unchecked = [SearchFilter {
+            enabled: false,
+            ..others
         }];
         assert_eq!(
             stats(&SearchScope::default(), &unchecked)[1]["disabled"],

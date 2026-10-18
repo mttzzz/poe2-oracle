@@ -20,12 +20,14 @@ pub struct WantedStat {
 
 impl WantedStat {
     /// The rows of `filters` a listed mod can show: the enabled ones with a trade id, but not
-    /// properties, pseudo totals and free slots -- a listing lists none of those among its mods.
+    /// properties, pseudo totals, free slots and the stats a listing must have none of -- a
+    /// listing lists none of those among its mods.
     pub fn from_filters(filters: &[SearchFilter]) -> Vec<WantedStat> {
         filters
             .iter()
             .filter(|filter| {
                 filter.enabled
+                    && !filter.none_of
                     && !filter.trade_ids.is_empty()
                     && !matches!(
                         filter.tag,
@@ -154,6 +156,7 @@ mod tests {
             score: None,
             tier_info: None,
             weighted_sum: false,
+            none_of: false,
         }
     }
 

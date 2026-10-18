@@ -280,6 +280,7 @@ pub(crate) fn weighted_sums(
                 score: None,
                 tier_info: None,
                 weighted_sum: true,
+                none_of: false,
             };
             Some((row, sources))
         })

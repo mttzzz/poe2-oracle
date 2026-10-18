@@ -15,6 +15,7 @@
 //! filter as `<group>.<key>`.
 
 mod better;
+mod legacy;
 mod profile;
 mod property;
 mod pseudo;
@@ -168,6 +169,9 @@ pub struct SearchFilter {
     /// A weighted sum: a total the trade site has no pseudo stat for, searched as a `weight2`
     /// stat group adding up `trade_ids` at weight 1 each (see the `weighted` module).
     pub weighted_sum: bool,
+    /// The row asks for listings with none of `trade_ids`: the trade site's `"not"` stat group,
+    /// checked to search without them -- the legacies a Mageblood lacks (`legacy`).
+    pub none_of: bool,
 }
 
 impl SearchFilter {
@@ -290,7 +294,8 @@ impl Rows {
             .iter()
             .map(|row| property::merged_mods(item, &row.trade_ids[0]))
             .collect();
-        let (mut mod_rows, mod_sources) = per_mod_filters(item, catalog);
+        let (mut mod_rows, mut mod_sources) = per_mod_filters(item, catalog);
+        legacy::settle(item, catalog, &mut mod_rows, &mut mod_sources);
         let weighted_sums = match session {
             Session::SignedIn => weighted::weighted_sums(item, catalog),
             Session::Anonymous => Vec::new(),
@@ -635,6 +640,7 @@ fn settle_exact_kinds(
                     score: None,
                     tier_info: None,
                     weighted_sum: false,
+                    none_of: false,
                 },
             );
         }
@@ -826,6 +832,7 @@ impl ModStatGroup {
             score: None,
             tier_info: None,
             weighted_sum: false,
+            none_of: false,
         };
         (filter, self.sources)
     }
@@ -969,6 +976,7 @@ fn empty_affix_filters(item: &ParsedItem, catalog: &StatCatalog) -> Vec<SearchFi
                 score: None,
                 tier_info: None,
                 weighted_sum: false,
+                none_of: false,
             })
         })
         .collect()

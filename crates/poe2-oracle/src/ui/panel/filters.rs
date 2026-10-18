@@ -311,10 +311,16 @@ fn render_filter_row(
             .child(free_slot_text(filter))
             .into_any_element()
     } else {
+        // The row the app makes for the legacies a Mageblood lacks reads in the app's words.
+        let line = if filter.none_of {
+            StyledText::new(tr!("No other Mage's Legacies"))
+        } else {
+            stat_line(filter, site)
+        };
         ease_state(
             "text",
             filter.enabled,
-            div().flex_1().min_w_0().child(stat_line(filter, site)),
+            div().flex_1().min_w_0().child(line),
             move |line, on| {
                 line.text_color(rgb(match marked_color {
                     Some(color) => color,

@@ -554,6 +554,7 @@ fn property_row(
         score: None,
         tier_info: None,
         weighted_sum: false,
+        none_of: false,
     }
 }
 

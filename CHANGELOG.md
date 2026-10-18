@@ -8,6 +8,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- ANCHOR: releases. The guide's "What's new" page shows every section below, up to ANCHOR_END. -->
 
+## [Unreleased]
+
+### Fixed
+
+- **Mageblood's legacies.** A Mageblood was searched among belts with its legacies among any
+  others, and how many copies of a legacy it has didn't count: one with Legacy of Quicksilver three
+  times and Legacy of Gold took 343 listings, most with other legacies. Now each legacy's row
+  searches at least the belt's copies (**Legacy of Quicksilver ×3**), and a new checked row, **No
+  other Mage's Legacies**, leaves out belts with a legacy yours lacks: that belt finds the 11
+  listings with the same four legacies. Lower a row's copies or uncheck that row to compare more
+  widely.
+
 ## [0.1.18] - 2026-10-18
 
 ### Fixed

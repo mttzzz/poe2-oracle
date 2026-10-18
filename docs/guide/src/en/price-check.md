@@ -432,6 +432,11 @@ the line names ([In a private league](#in-a-private-league)).
 An unidentified unique is compared with unidentified listings of the same unique, told by its art
 ([The chip row](#the-chip-row)). It has no poe2scout line: its text doesn't name it.
 
+A Mageblood is compared with belts that have the same legacies. Each legacy's row says how many
+copies the belt has (**Legacy of Quicksilver ×3**) and searches at least that many, and the checked
+row **No other Mage's Legacies** leaves out belts with a legacy yours lacks. To compare more widely,
+lower a row's copies or uncheck that row.
+
 ## Waystones
 
 A waystone's modifiers start unselected: its tier and properties decide the price. You can mark
