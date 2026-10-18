@@ -32,6 +32,10 @@ const MAX_RETRY_AFTER: Duration = Duration::from_secs(60);
 const RETRY_PAUSE: Duration = Duration::from_secs(5);
 /// How much of a report's text the message shows; the issue has all of it.
 const TEXT_CHARS: usize = 1500;
+/// The longest text a message may have, and a file's caption, once Telegram has parsed its HTML:
+/// in the UTF-16 units Telegram counts them in.
+const MESSAGE_LIMIT: usize = 4096;
+const CAPTION_LIMIT: usize = 1024;
 
 pub struct Telegram {
     http: Client,
@@ -59,12 +63,14 @@ impl Method {
         }
     }
 
-    /// A message is small and a player may be waiting on it (with GitHub's issue before it); a
-    /// file is at most the 8 MiB diagnostics zip, sent after the player has the answer.
-    fn timeout(self) -> Duration {
-        match self {
-            Method::SendMessage => Duration::from_secs(8),
-            Method::SendDocument => Duration::from_secs(60),
+    /// How long one try may take. A message is small. A file is at most a report's 8 MiB of
+    /// diagnostics: 60 s once nobody waits on it, 40 s while a sender does -- with the body's
+    /// upload and GitHub's wait before it, still within the 180 s the app waits.
+    fn timeout(self, waited: bool) -> Duration {
+        match (self, waited) {
+            (Method::SendMessage, _) => Duration::from_secs(8),
+            (Method::SendDocument, true) => Duration::from_secs(40),
+            (Method::SendDocument, false) => Duration::from_secs(60),
         }
     }
 }
@@ -90,13 +96,20 @@ enum Payload {
     Form(Form),
 }
 
-/// A file to send with a report, as a reply to its message.
-pub struct Document {
+/// What a report sends to the owner's chat: one post (owner 2026-10-18: not a message and then a
+/// file per part), a message or, when the report has files, a file with the message as its
+/// caption.
+pub struct Post {
+    /// Telegram HTML: the message's text, or the file's caption.
+    pub html: String,
+    pub file: Option<Attachment>,
+}
+
+/// The file of a [`Post`].
+pub struct Attachment {
     pub name: String,
     pub mime: &'static str,
     pub bytes: Bytes,
-    /// Telegram HTML.
-    pub caption: String,
 }
 
 impl Telegram {
@@ -109,73 +122,39 @@ impl Telegram {
         self.bot.is_some()
     }
 
-    /// Sends `html`, Telegram HTML with every outside string passed through [`escape`]. The
-    /// message's id, or `None` in a dry run. One try: someone waits on it, so a "too many
-    /// requests" isn't waited out here but left to [`Telegram::resend_message`].
-    pub async fn send_message(&self, html: &str) -> Result<Option<i64>, Failure> {
+    /// Sends `html`, Telegram HTML with every outside string passed through [`escape`], once.
+    pub async fn send_message(&self, html: &str) -> Result<(), Failure> {
         let Some(bot) = &self.bot else {
             info!(text = html, "dry run: would send a Telegram message");
-            return Ok(None);
-        };
-        let result = self
-            .call(bot, Method::SendMessage, message(bot, html))
-            .await?;
-        Ok(result.get("message_id").and_then(Value::as_i64))
-    }
-
-    /// Sends `html` again after [`Telegram::send_message`] failed with `failure`, once nobody
-    /// waits on it: up to [`RETRIES`] tries, each after the wait the last failure asked for.
-    pub async fn resend_message(
-        &self,
-        html: &str,
-        failure: Failure,
-    ) -> Result<Option<i64>, Failure> {
-        let Some(bot) = &self.bot else {
-            return Ok(None);
-        };
-        let result = self
-            .retry(bot, Method::SendMessage, || message(bot, html), failure)
-            .await?;
-        Ok(result.get("message_id").and_then(Value::as_i64))
-    }
-
-    /// Sends `document`, as a reply to the message `reply_to` when there is one. Nobody waits on
-    /// it: a failure gets up to [`RETRIES`] more tries, each after the wait it asked for.
-    pub async fn send_document(
-        &self,
-        document: &Document,
-        reply_to: Option<i64>,
-    ) -> Result<(), Failure> {
-        let Some(bot) = &self.bot else {
-            info!(
-                name = document.name,
-                bytes = document.bytes.len(),
-                "dry run: would send a file to Telegram"
-            );
             return Ok(());
         };
-        let payload = || {
-            let file =
-                Part::stream_with_length(document.bytes.clone(), document.bytes.len() as u64)
-                    .file_name(document.name.clone())
-                    .mime_str(document.mime)
-                    .expect("the documents' MIME types are valid");
-            let mut form = Form::new()
-                .text("chat_id", bot.chat.clone())
-                .text("caption", document.caption.clone())
-                .text("parse_mode", "HTML")
-                .part("document", file);
-            if let Some(message_id) = reply_to {
-                let reply =
-                    json!({ "message_id": message_id, "allow_sending_without_reply": true });
-                form = form.text("reply_parameters", reply.to_string());
-            }
-            Payload::Form(form)
+        self.call(bot, Method::SendMessage, message(bot, html), true)
+            .await
+            .map(drop)
+    }
+
+    /// Sends `post` once, for a sender waiting on it: a "too many requests" isn't waited out.
+    pub async fn send_post(&self, post: &Post) -> Result<(), Failure> {
+        let Some(bot) = &self.bot else {
+            dry_run(post);
+            return Ok(());
         };
-        match self.call(bot, Method::SendDocument, payload()).await {
+        let (method, payload) = post_payload(bot, post);
+        self.call(bot, method, payload, true).await.map(drop)
+    }
+
+    /// Sends `post` once nobody waits on it: a failure gets up to [`RETRIES`] more tries, each
+    /// after the wait it asked for.
+    pub async fn deliver_post(&self, post: &Post) -> Result<(), Failure> {
+        let Some(bot) = &self.bot else {
+            dry_run(post);
+            return Ok(());
+        };
+        let (method, payload) = post_payload(bot, post);
+        match self.call(bot, method, payload, false).await {
             Ok(_) => Ok(()),
             Err(failure) => self
-                .retry(bot, Method::SendDocument, payload, failure)
+                .retry(bot, method, || post_payload(bot, post).1, failure)
                 .await
                 .map(drop),
         }
@@ -202,7 +181,7 @@ impl Telegram {
                 "Telegram: trying again"
             );
             tokio::time::sleep(wait).await;
-            match self.call(bot, method, payload()).await {
+            match self.call(bot, method, payload(), false).await {
                 Ok(result) => return Ok(result),
                 Err(again) => failure = again,
             }
@@ -210,11 +189,17 @@ impl Telegram {
         Err(failure)
     }
 
-    /// Calls `method` with `payload`, once.
-    async fn call(&self, bot: &Bot, method: Method, payload: Payload) -> Result<Value, Failure> {
+    /// Calls `method` with `payload`, once; `waited` when a sender waits on its answer.
+    async fn call(
+        &self,
+        bot: &Bot,
+        method: Method,
+        payload: Payload,
+        waited: bool,
+    ) -> Result<Value, Failure> {
         // The token is in the path: this URL is never logged, and errors drop it (`describe`).
         let url = format!("{}/bot{}/{}", self.api, bot.token, method.name());
-        let request = self.http.post(&url).timeout(method.timeout());
+        let request = self.http.post(&url).timeout(method.timeout(waited));
         let request = match payload {
             Payload::Json(body) => request.json(&body),
             Payload::Form(form) => request.multipart(form),
@@ -257,6 +242,32 @@ fn message(bot: &Bot, html: &str) -> Payload {
     }))
 }
 
+/// How `post` goes: a message, or its file with the message as the caption.
+fn post_payload(bot: &Bot, post: &Post) -> (Method, Payload) {
+    let Some(file) = &post.file else {
+        return (Method::SendMessage, message(bot, &post.html));
+    };
+    let part = Part::stream_with_length(file.bytes.clone(), file.bytes.len() as u64)
+        .file_name(file.name.clone())
+        .mime_str(file.mime)
+        .expect("the attachments' MIME types are valid");
+    let form = Form::new()
+        .text("chat_id", bot.chat.clone())
+        .text("caption", post.html.clone())
+        .text("parse_mode", "HTML")
+        .part("document", part);
+    (Method::SendDocument, Payload::Form(form))
+}
+
+fn dry_run(post: &Post) {
+    info!(
+        text = post.html,
+        file = post.file.as_ref().map(|file| file.name.as_str()),
+        bytes = post.file.as_ref().map(|file| file.bytes.len()),
+        "dry run: would send a Telegram post"
+    );
+}
+
 #[derive(Deserialize)]
 struct Answer {
     ok: bool,
@@ -291,9 +302,42 @@ pub fn escape(text: &str) -> String {
     escaped
 }
 
+/// The most of each outside field a report's message shows, in characters; the issue has them
+/// whole. A file's caption has a quarter of a message's room, so its fields are shorter: even all
+/// at their longest, in characters of two UTF-16 units, they leave the text room in it.
+struct Caps {
+    version: usize,
+    language: usize,
+    item: usize,
+    panic: usize,
+    contact: usize,
+}
+
+const MESSAGE_CAPS: Caps = Caps {
+    version: 40,
+    language: 20,
+    item: 200,
+    panic: 300,
+    contact: 200,
+};
+const CAPTION_CAPS: Caps = Caps {
+    version: 20,
+    language: 10,
+    item: 60,
+    panic: 100,
+    contact: 80,
+};
+
 /// The message a report makes: its kind and origin, its issue and the app's version and languages,
-/// the start of its text, the item, the contact, and a link to the issue.
-pub fn report_message(report: &Report, filing: &Filing) -> String {
+/// the start of its text, the item, the contact, what its file holds (`attached`, plain text: the
+/// message is then the file's caption), and a link to the issue. At most [`MESSAGE_LIMIT`], or
+/// [`CAPTION_LIMIT`] as a caption, once Telegram has parsed it: the report's text gets what the
+/// rest leaves, up to [`TEXT_CHARS`].
+pub fn report_message(report: &Report, filing: &Filing, attached: Option<&str>) -> String {
+    let (limit, caps) = match attached {
+        Some(_) => (CAPTION_LIMIT, CAPTION_CAPS),
+        None => (MESSAGE_LIMIT, MESSAGE_CAPS),
+    };
     let emoji = match report.kind {
         ReportKind::Bug => "🐞",
         ReportKind::Idea => "💡",
@@ -304,34 +348,33 @@ pub fn report_message(report: &Report, filing: &Filing) -> String {
         ReportSource::App => "из программы",
         ReportSource::Site => "с сайта",
     };
-    let mut message = format!("{emoji} <b>{}</b> · {source}\n", kind_name(report.kind));
+    let mut head = format!("{emoji} <b>{}</b> · {source}\n", kind_name(report.kind));
 
     let mut facts = Vec::new();
     if let Filing::Opened(issue) = filing {
         facts.push(format!("#{}", issue.number));
     }
     if let Some(app) = &report.app {
-        facts.push(format!("v{}", escape(&short(&app.version, 40))));
-        let mut languages = format!("интерфейс {}", escape(&short(&app.interface_language, 20)));
+        facts.push(format!("v{}", escape(&short(&app.version, caps.version))));
+        let interface = short(&app.interface_language, caps.language);
+        let mut languages = format!("интерфейс {}", escape(&interface));
         if let Some(client) = &app.client_language {
-            let _ = write!(languages, ", клиент {}", escape(&short(client, 20)));
+            let client = short(client, caps.language);
+            let _ = write!(languages, ", клиент {}", escape(&client));
         }
         facts.push(languages);
     }
     if !facts.is_empty() {
-        message.push_str(&facts.join(" · "));
-        message.push('\n');
+        head.push_str(&facts.join(" · "));
+        head.push('\n');
     }
 
-    let text = report.text.trim();
-    if !text.is_empty() {
-        let _ = write!(message, "\n{}\n", escape(&short(text, TEXT_CHARS)));
-    }
+    let mut tail = String::new();
     if let Some(item) = &report.item {
         let _ = write!(
-            message,
+            tail,
             "\nПредмет: <b>{}</b>",
-            escape(&short(&item.name, 200))
+            escape(&short(&item.name, caps.item))
         );
     }
     if let Some(panic) = report
@@ -340,9 +383,9 @@ pub fn report_message(report: &Report, filing: &Filing) -> String {
         .and_then(|crash| crash.lines().find(|line| !line.trim().is_empty()))
     {
         let _ = write!(
-            message,
+            tail,
             "\nПаника: <code>{}</code>",
-            escape(&short(panic.trim(), 300))
+            escape(&short(panic.trim(), caps.panic))
         );
     }
     match report
@@ -352,23 +395,78 @@ pub fn report_message(report: &Report, filing: &Filing) -> String {
         .filter(|contact| !contact.is_empty())
     {
         Some(contact) => {
-            let _ = write!(message, "\nКонтакт: <code>{}</code>", escape(contact));
+            let contact = short(contact, caps.contact);
+            let _ = write!(tail, "\nКонтакт: <code>{}</code>", escape(&contact));
         }
-        None => message.push_str("\nКонтакт не оставлен"),
+        None => tail.push_str("\nКонтакт не оставлен"),
+    }
+    if let Some(attached) = attached {
+        let _ = write!(tail, "\n📎 {}", escape(attached));
     }
     match filing {
         Filing::Opened(issue) => {
             let _ = write!(
-                message,
+                tail,
                 "\n<a href=\"{}\">Issue #{} на GitHub</a>",
                 escape(&issue.html_url),
                 issue.number
             );
         }
-        Filing::Failed => message.push_str("\n⚠️ GitHub не принял отчёт: он целиком в файле ниже"),
+        Filing::Failed => tail.push_str("\n⚠️ GitHub не принял отчёт: он целиком в файле"),
         Filing::DryRun => {}
     }
-    message
+
+    let text = report.text.trim();
+    if text.is_empty() {
+        return head + &tail;
+    }
+    // The text between two line breaks, in what the head and the tail leave.
+    let room = limit.saturating_sub(parsed_len(&head) + parsed_len(&tail) + 2);
+    let text = fit(&short(text, TEXT_CHARS), room);
+    format!("{head}\n{}\n{tail}", escape(&text))
+}
+
+/// How long `html`, Telegram HTML as this module writes it, is once Telegram has parsed it, in
+/// UTF-16 units: a tag counts nothing and an entity one character. Every `<` and `&` in it is
+/// markup, since outside text goes through [`escape`].
+fn parsed_len(html: &str) -> usize {
+    let mut units = 0;
+    let mut chars = html.chars();
+    while let Some(char) = chars.next() {
+        match char {
+            '<' => chars
+                .by_ref()
+                .take_while(|&char| char != '>')
+                .for_each(drop),
+            '&' => {
+                chars
+                    .by_ref()
+                    .take_while(|&char| char != ';')
+                    .for_each(drop);
+                units += 1;
+            }
+            char => units += char.len_utf16(),
+        }
+    }
+    units
+}
+
+/// `text` in at most `units` UTF-16 units: whole when it fits, else its start, whole characters
+/// only, and `…`.
+fn fit(text: &str, units: usize) -> String {
+    if text.encode_utf16().count() <= units {
+        return text.to_owned();
+    }
+    let mut kept = String::new();
+    let mut used = 1; // the `…`
+    for char in text.chars() {
+        used += char.len_utf16();
+        if used > units {
+            break;
+        }
+        kept.push(char);
+    }
+    format!("{}…", kept.trim_end())
 }
 
 #[cfg(test)]
@@ -422,7 +520,7 @@ mod tests {
             name: "<i>Кольцо</i>".to_owned(),
             text: String::new(),
         });
-        let message = report_message(&report, &opened());
+        let message = report_message(&report, &opened(), Some("текст предмета"));
         assert_eq!(
             message,
             "🐞 <b>Ошибка</b> · из программы\n\
@@ -432,6 +530,7 @@ mod tests {
              \n\
              Предмет: <b>&lt;i&gt;Кольцо&lt;/i&gt;</b>\n\
              Контакт: <code>&lt;tg&gt; @player &amp; co</code>\n\
+             📎 текст предмета\n\
              <a href=\"https://github.com/mttzzz/poe2-oracle/issues/42\">Issue #42 на GitHub</a>"
         );
     }
@@ -439,10 +538,52 @@ mod tests {
     #[test]
     fn a_long_text_shows_its_start_whole_characters_only() {
         let text = format!("{}<>", "ё".repeat(TEXT_CHARS - 1));
-        let message = report_message(&bug(&text), &opened());
+        let message = report_message(&bug(&text), &opened(), None);
         // Cut after the 1500th character, before the second of `<>`: nothing half-escaped.
         assert!(
             message.contains(&format!("\n{}&lt;…\n", "ё".repeat(TEXT_CHARS - 1))),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn telegram_counts_a_tag_as_nothing_an_entity_as_one_and_an_emoji_as_two() {
+        assert_eq!(parsed_len("<b>a&amp;b</b>"), 3);
+        assert_eq!(
+            parsed_len("<a href=\"https://x/?a=1&amp;b=2\">#42</a> 💎"),
+            6
+        );
+    }
+
+    #[test]
+    fn a_caption_fits_telegrams_limit_whatever_the_report_holds() {
+        // Every field at its longest (`Report::check`), in characters that take the most room:
+        // emoji, two UTF-16 units each, and markup that becomes entities.
+        let mut report = bug(&"💥<".repeat(4000));
+        report.kind = ReportKind::Crash;
+        report.contact = Some("😀".repeat(200));
+        report.app = Some(AppContext {
+            version: "💥".repeat(100),
+            interface_language: "💥".repeat(100),
+            client_language: Some("💥".repeat(100)),
+            windows: None,
+            league: None,
+            ui_scale: None,
+        });
+        report.item = Some(ReportItem {
+            name: "💎".repeat(200),
+            text: String::new(),
+        });
+        report.crash = Some(format!("{}\nstack", "😱".repeat(1000)));
+        let attached = "отчёт целиком · диагностика, 8,0 МБ · текст предмета · текст вылета";
+        let message = report_message(&report, &opened(), Some(attached));
+        let length = parsed_len(&message);
+        assert!(length <= CAPTION_LIMIT, "{length}: {message}");
+        // The text took what the rest left, and the rest is whole: the file and the issue.
+        assert!(length > CAPTION_LIMIT - 3, "{length}: {message}");
+        assert!(message.contains("…\n"), "{message}");
+        assert!(
+            message.ends_with(&format!("📎 {attached}\n<a href=\"https://github.com/mttzzz/poe2-oracle/issues/42\">Issue #42 на GitHub</a>")),
             "{message}"
         );
     }
@@ -453,7 +594,8 @@ mod tests {
         crash.kind = ReportKind::Crash;
         crash.contact = None;
         crash.crash = Some("\nthread 'main' panicked at src/app.rs:1:1:\n<boom>".to_owned());
-        let message = report_message(&crash, &Filing::Failed);
+        let attached = "отчёт целиком · текст вылета";
+        let message = report_message(&crash, &Filing::Failed, Some(attached));
         assert_eq!(
             message,
             "💥 <b>Вылет</b> · из программы\n\
@@ -461,7 +603,8 @@ mod tests {
              \n\
              Паника: <code>thread 'main' panicked at src/app.rs:1:1:</code>\n\
              Контакт не оставлен\n\
-             ⚠️ GitHub не принял отчёт: он целиком в файле ниже"
+             📎 отчёт целиком · текст вылета\n\
+             ⚠️ GitHub не принял отчёт: он целиком в файле"
         );
     }
 }

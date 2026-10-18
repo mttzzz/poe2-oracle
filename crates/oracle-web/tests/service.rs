@@ -2,6 +2,7 @@
 //! by servers on 127.0.0.1 that record every request they get.
 
 use std::hash::{DefaultHasher, Hash as _, Hasher as _};
+use std::io::{Cursor, Read as _};
 use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
@@ -517,26 +518,45 @@ async fn listed(github: &StandIn, count: usize) {
     panic!("GitHub wasn't asked for the releases {count} times");
 }
 
-/// What `stand_in` has seen once it has seen `count` requests: a report's files still go to
-/// Telegram after the sender has its answer.
-async fn seen_at_least(stand_in: &StandIn, count: usize) -> Vec<Seen> {
-    for _ in 0..500 {
-        let seen = stand_in.seen();
-        if seen.len() >= count {
-            return seen;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-    stand_in.seen()
-}
-
 fn contains(haystack: &[u8], needle: &[u8]) -> bool {
     haystack
         .windows(needle.len())
         .any(|window| window == needle)
 }
 
-/// The files `telegram` was sent, once there are `count`: they go after the sender's answer.
+fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
+}
+
+/// What follows `head` in a multipart form `body`, up to its part's end.
+fn form_part<'a>(body: &'a [u8], head: &str) -> &'a [u8] {
+    let start = find(body, head.as_bytes()).unwrap_or_else(|| panic!("no {head:?} in the form"));
+    let start = start + find(&body[start..], b"\r\n\r\n").expect("a part's head ends") + 4;
+    let end = start + find(&body[start..], b"\r\n--").expect("a part ends");
+    &body[start..end]
+}
+
+/// The text field `name` of a multipart form `body`.
+fn form_text(body: &[u8], name: &str) -> String {
+    String::from_utf8(form_part(body, &format!("name=\"{name}\"\r\n")).to_vec()).unwrap()
+}
+
+/// The file `name` of a multipart form `body`.
+fn form_file<'a>(body: &'a [u8], name: &str) -> &'a [u8] {
+    form_part(body, &format!("filename=\"{name}\""))
+}
+
+/// The file `name` in `zip`.
+fn zipped(zip: &mut zip::ZipArchive<Cursor<&[u8]>>, name: &str) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    zip.by_name(name).unwrap().read_to_end(&mut bytes).unwrap();
+    bytes
+}
+
+/// The posts with a file `telegram` was sent, once there are `count`: with the issue open, they go
+/// after the sender's answer.
 async fn documents(telegram: &StandIn, count: usize) -> Vec<Seen> {
     let path = format!("/bot{BOT}/sendDocument");
     for _ in 0..500 {
@@ -572,7 +592,7 @@ async fn read_answer(stream: &mut TcpStream) -> String {
 }
 
 #[tokio::test]
-async fn a_report_reaches_github_and_telegram_with_its_files() {
+async fn a_report_reaches_github_and_telegram_in_one_post() {
     let service = start(false, false, false).await;
     let mut report = app_report(ReportKind::Item, "Цена странная\nвторая строка");
     report.item = Some(ReportItem {
@@ -615,43 +635,51 @@ async fn a_report_reaches_github_and_telegram_with_its_files() {
         "{body}"
     );
 
-    // Telegram: the message linking the issue, then the files as replies to it.
-    let telegram = seen_at_least(&service.telegram, 3).await;
-    let paths: Vec<&str> = telegram.iter().map(|seen| seen.path.as_str()).collect();
+    // Telegram: one post (owner 2026-10-18), the report's files in one zip with the message
+    // linking the issue as its caption.
+    let post = &documents(&service.telegram, 1).await[0];
     let bot = format!("/bot{BOT}");
+    let paths: Vec<String> = service
+        .telegram
+        .seen()
+        .into_iter()
+        .map(|seen| seen.path)
+        .collect();
     assert_eq!(
         paths,
-        [
-            format!("{bot}/sendMessage"),
-            format!("{bot}/sendDocument"),
-            format!("{bot}/sendDocument")
-        ],
-        "nothing but sending"
+        [format!("{bot}/sendDocument")],
+        "nothing but the post"
     );
-    let message: Value = serde_json::from_slice(&telegram[0].body).unwrap();
-    assert_eq!(message["chat_id"], "1001");
-    assert_eq!(message["parse_mode"], "HTML");
-    let text = message["text"].as_str().unwrap();
+    assert_eq!(form_text(&post.body, "chat_id"), "1001");
+    assert_eq!(form_text(&post.body, "parse_mode"), "HTML");
+    let caption = form_text(&post.body, "caption");
     assert!(
-        text.starts_with(
+        caption.starts_with(
             "💎 <b>Предмет</b> · из программы\n#42 · v0.1.0 · интерфейс ru, клиент en\n"
         ),
-        "{text}"
+        "{caption}"
     );
     assert!(
-        text.ends_with(
-            "<a href=\"https://github.com/mttzzz/poe2-oracle/issues/42\">Issue #42 на GitHub</a>"
+        caption.ends_with(
+            "📎 диагностика, 22 Б · текст предмета\n\
+             <a href=\"https://github.com/mttzzz/poe2-oracle/issues/42\">Issue #42 на GitHub</a>"
         ),
-        "{text}"
+        "{caption}"
     );
-    let zip = &telegram[1].body;
-    assert!(contains(zip, b"filename=\"report-42.zip\""));
-    assert!(contains(zip, b"PK\x03\x04 a diagnostics zip"));
-    assert!(contains(zip, b"\"message_id\":7"), "a reply to the message");
-    assert!(contains(zip, b"name=\"chat_id\"\r\n\r\n1001\r\n"));
-    let item = &telegram[2].body;
-    assert!(contains(item, b"filename=\"item-42.txt\""));
-    assert!(contains(item, b"Item Class: Helmets\r\nRarity: Rare"));
+    // The item's text whole, and the player's zip as it came.
+    let mut zip =
+        zip::ZipArchive::new(Cursor::new(form_file(&post.body, "report-42.zip"))).unwrap();
+    let mut names: Vec<&str> = zip.file_names().collect();
+    names.sort_unstable();
+    assert_eq!(names, ["diagnostics-42.zip", "item-42.txt"]);
+    assert_eq!(
+        zipped(&mut zip, "item-42.txt"),
+        b"Item Class: Helmets\r\nRarity: Rare"
+    );
+    assert_eq!(
+        zipped(&mut zip, "diagnostics-42.zip"),
+        b"PK\x03\x04 a diagnostics zip"
+    );
 }
 
 #[tokio::test]
@@ -714,19 +742,19 @@ async fn github_down_still_takes_the_report_with_id_0() {
         .await;
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(response.json::<Value>().await.unwrap(), json!({ "id": 0 }));
-    let telegram = seen_at_least(&service.telegram, 2).await;
-    let message: Value = serde_json::from_slice(&telegram[0].body).unwrap();
+    // One post, which the sender waited on: the issue's body is its file, so nothing of the
+    // report is lost.
+    let telegram = service.telegram.seen();
+    assert_eq!(telegram.len(), 1);
+    assert!(telegram[0].path.ends_with("/sendDocument"));
+    let caption = form_text(&telegram[0].body, "caption");
     assert!(
-        message["text"]
-            .as_str()
-            .unwrap()
-            .ends_with("GitHub не принял отчёт: он целиком в файле ниже")
+        caption.ends_with("📎 отчёт целиком\n⚠️ GitHub не принял отчёт: он целиком в файле"),
+        "{caption}"
     );
-    // The issue's body goes along as a file, so nothing of the report is lost.
-    assert_eq!(telegram.len(), 2);
-    assert!(contains(&telegram[1].body, b".md\""));
+    assert!(contains(&telegram[0].body, b".md\""));
     assert!(contains(
-        &telegram[1].body,
+        &telegram[0].body,
         "- Лига: `Forbidden Rites`".as_bytes()
     ));
 }
@@ -745,15 +773,15 @@ async fn both_down_is_503() {
 }
 
 #[tokio::test]
-async fn the_files_go_even_when_the_message_does_not() {
+async fn a_post_telegram_refuses_is_tried_again_after_the_answer() {
     let mut report = app_report(ReportKind::Bug, "Панель не открывается");
     report.diagnostics = Some(b"PK\x03\x04 a diagnostics zip".to_vec());
 
-    // Telegram refuses the first message: after the sender has its answer, another try gets it
-    // through, and the files reply to that one.
+    // Telegram floods the first post: the sender has its answer once the issue is open, and
+    // another try gets the post through.
     let refused = Arc::new(AtomicBool::new(false));
     let service = start_with(false, false, false, move |seen: &Seen| {
-        if seen.path.ends_with("/sendMessage") && !refused.swap(true, Ordering::SeqCst) {
+        if seen.path.ends_with("/sendDocument") && !refused.swap(true, Ordering::SeqCst) {
             return flooded(0);
         }
         telegram(seen)
@@ -762,35 +790,20 @@ async fn the_files_go_even_when_the_message_does_not() {
     let response = service.post(&report, "203.0.113.6").await;
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(response.json::<Value>().await.unwrap(), json!({ "id": 42 }));
-    let zip = &documents(&service.telegram, 1).await[0];
-    assert!(contains(&zip.body, b"filename=\"report-42.zip\""));
-    assert!(
-        contains(&zip.body, b"\"message_id\":7"),
-        "a reply to the message"
+    let posts = documents(&service.telegram, 2).await;
+    assert_eq!(posts.len(), 2, "tried again");
+    assert_eq!(
+        form_file(&posts[1].body, "report-42.zip"),
+        b"PK\x03\x04 a diagnostics zip"
     );
-
-    // Telegram refuses every message: the files still go, on their own.
-    let service = start_with(false, false, false, |seen: &Seen| {
-        if seen.path.ends_with("/sendMessage") {
-            return flooded(0);
-        }
-        telegram(seen)
-    })
-    .await;
-    let response = service.post(&report, "203.0.113.7").await;
-    assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(response.json::<Value>().await.unwrap(), json!({ "id": 42 }));
-    let zip = &documents(&service.telegram, 1).await[0];
-    assert!(contains(&zip.body, b"filename=\"report-42.zip\""));
-    assert!(contains(&zip.body, b"PK\x03\x04 a diagnostics zip"));
     assert!(
-        !contains(&zip.body, b"reply_parameters"),
-        "nothing to reply to"
+        form_text(&posts[1].body, "caption").starts_with("🐞 <b>Ошибка</b>"),
+        "the message goes with it"
     );
     let messages = service
         .telegram
         .requests_to(Method::POST, &format!("/bot{BOT}/sendMessage"));
-    assert!(messages.len() > 1, "the message was tried again");
+    assert!(messages.is_empty(), "the post is the only message");
 }
 
 #[tokio::test]

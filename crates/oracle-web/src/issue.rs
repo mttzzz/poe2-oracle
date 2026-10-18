@@ -155,7 +155,7 @@ pub fn body(report: &Report, telegram: bool) -> String {
 fn footer(report: &Report, telegram: bool) -> String {
     match (&report.diagnostics, telegram) {
         (Some(zip), true) => format!(
-            "📎 Диагностика (zip, {}) — в Telegram, ответом на сообщение об этом отчёте.\n",
+            "📎 Диагностика (zip, {}) — в Telegram, в сообщении об этом отчёте.\n",
             size(zip.len())
         ),
         (Some(zip), false) => format!(
@@ -407,7 +407,7 @@ mod tests {
             "- Лига: `Forbidden Rites`\n",
             "- Масштаб интерфейса: 1.25\n",
             "- Контакт: `tg @player`\n",
-            "📎 Диагностика (zip, 1,2 МБ) — в Telegram, ответом на сообщение об этом отчёте.\n",
+            "📎 Диагностика (zip, 1,2 МБ) — в Telegram, в сообщении об этом отчёте.\n",
         ] {
             assert!(body.contains(line), "no {line:?} in\n{body}");
         }

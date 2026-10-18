@@ -23,6 +23,9 @@ tower-http = { version = "0.7.1", features = ["compression-br", "compression-gzi
 # webpki roots: no OpenSSL, no CMake to build aws-lc, no CA bundle in the runtime image; 0.13 has no
 # webpki-roots feature left.
 reqwest = { version = "0.12.28", default-features = false, features = ["json", "multipart", "rustls-tls-webpki-roots", "stream"] }
+# A report's files bundled into the one file of its Telegram post, each stored as it is: no
+# compression feature. Already in the tree through the app.
+zip = { version = "8.6.0", default-features = false }
 # Reading a report's body frame by frame, up to its limit.
 http-body-util = "0.1.3"
 # The locks around the in-memory counters, the release files and the event streams' counts: no
