@@ -37,15 +37,14 @@
       <p class="intro">How PoE2 Oracle's releases are built, who approves them, and how you can check
         what you downloaded.</p>
 
-      <!-- PENDING: until SignPath Foundation accepts PoE2 Oracle. At acceptance, delete this note
-           and turn on the SIGNED block below. -->
-      <p class="note"><strong>Not signed yet.</strong> PoE2 Oracle's installer and app don't carry a
-        digital signature yet, so Windows may warn about them. PoE2 Oracle is seeking a signature
-        from SignPath Foundation, which signs open-source projects for free; this page will say if it
-        gets one. Until then, check your download against its checksums, as shown below.</p>
+      <!-- UNSIGNED: no code signing for now (owner 2026-10-18). Should a signature come (from
+           SignPath Foundation, say), replace this note with the SIGNED block below. -->
+      <p class="note"><strong>Not signed.</strong> PoE2 Oracle's installer and app don't carry a
+        digital signature for now, so Windows may warn about them. Check your download against its
+        checksums, as shown below.</p>
 
       <!-- SIGNED: SignPath Foundation's attribution, which its terms require on this page. Turn it
-           on at acceptance: remove this comment's first and last lines, and the PENDING note above.
+           on at acceptance: remove this comment's first and last lines, and the UNSIGNED note above.
       <p class="note">Free code signing provided by <a href="https://about.signpath.io">SignPath.io</a>,
         certificate by <a href="https://signpath.org">SignPath Foundation</a>.</p>
       <p>The installer, the app and its uninstaller are signed with SignPath Foundation's
@@ -77,9 +76,9 @@
         <li><strong>Committers</strong>, who change the source code without a review: mttzzz.</li>
         <li><strong>Reviewers</strong>, who review every change someone else proposes, such as a pull
           request, before it's merged: mttzzz.</li>
-        <li><strong>Approvers</strong>, who approve each release for signing: mttzzz.</li>
+        <li><strong>Approvers</strong>, who approve each release before it is published: mttzzz.</li>
       </ul>
-      <p>He uses multi-factor authentication for GitHub, and will for SignPath.</p>
+      <p>He uses multi-factor authentication for GitHub.</p>
 
       <h2>How to check a download</h2>
       <p>Every release comes with two more files: <code>SHA256SUMS</code>, the installer's SHA-256
