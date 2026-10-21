@@ -33,9 +33,9 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    Animation, AnimationExt as _, AnyElement, App, Context, ElementId, Entity, FocusHandle,
-    Focusable, FontWeight, HighlightStyle, InteractiveText, IntoElement, KeyDownEvent, Keystroke,
-    Modifiers, ModifiersChangedEvent, MouseButton, MouseDownEvent, Render, SharedString,
+    Animation, AnimationExt as _, AnyElement, App, ClipboardItem, Context, ElementId, Entity,
+    FocusHandle, Focusable, FontWeight, HighlightStyle, InteractiveText, IntoElement, KeyDownEvent,
+    Keystroke, Modifiers, ModifiersChangedEvent, MouseButton, MouseDownEvent, Render, SharedString,
     StyledText, UnderlineStyle, Window, WindowControlArea, div, linear_color_stop, linear_gradient,
     prelude::*, px, relative, rgb,
 };
@@ -246,6 +246,8 @@ struct RegexRow {
     name_field: Entity<TextField>,
     text_field: Entity<TextField>,
     recorder: FocusHandle,
+    /// Its text is in the clipboard, and the row says so until the note fades.
+    copied: bool,
 }
 
 pub struct SettingsView {
@@ -452,6 +454,7 @@ impl SettingsView {
             name_field,
             text_field,
             recorder: cx.focus_handle(),
+            copied: false,
         }
     }
 
@@ -668,6 +671,36 @@ impl SettingsView {
         let row = Self::regex_row(SavedRegex::default(), window, cx);
         window.focus(&row.text_field.focus_handle(cx), cx);
         self.regexes.push(row);
+        cx.notify();
+    }
+
+    /// Puts the regular expression in row `index` into the clipboard, so the player can paste it
+    /// into the game's search box himself. The row says so for a few seconds.
+    fn copy_regex(&mut self, index: usize, cx: &mut Context<Self>) {
+        let Some(row) = self.regexes.get_mut(index) else {
+            return;
+        };
+        let text = row.draft.text.clone();
+        if text.is_empty() {
+            return;
+        }
+        cx.write_to_clipboard(ClipboardItem::new_string(text));
+        for row in &mut self.regexes {
+            row.copied = false;
+        }
+        self.regexes[index].copied = true;
+        cx.spawn(async move |view, cx| {
+            cx.background_executor()
+                .timer(std::time::Duration::from_secs(4))
+                .await;
+            view.update(cx, |view, _| {
+                if let Some(row) = view.regexes.get_mut(index) {
+                    row.copied = false;
+                }
+            })
+            .ok();
+        })
+        .detach();
         cx.notify();
     }
 
@@ -1941,7 +1974,7 @@ impl SettingsView {
             self.regexes
                 .iter()
                 .enumerate()
-                .map(|(index, row)| self.render_regex(index, row, window, cx))
+                .map(|(index, row)| self.render_regex(index, row, face, window, cx))
                 .collect()
         };
         let can_add = self.regexes.len() < settings::MAX_REGEXES;
@@ -1958,8 +1991,8 @@ impl SettingsView {
                     .child(div().text_color(rgb(TEXT_DIM)).child(tr!(
                         "A regular expression goes into the game's stash search, the way a \
                          quick action of the kind Stash does: the game must be in front, and its \
-                         stash or a vendor's window open. Pick one from the price panel's title \
-                         bar, the button marked “.*”, or give it a key and press that."
+                         stash or a vendor's window open. Give it a key and press that key, or \
+                         copy its text and paste it into the game's search box yourself."
                     ))),
             )
             .child(card(rows))
@@ -1982,19 +2015,24 @@ impl SettingsView {
         &self,
         index: usize,
         row: &RegexRow,
+        face: &'static NameFont,
         window: &Window,
         cx: &Context<Self>,
     ) -> AnyElement {
         let capturing = row.recorder.is_focused(window);
-        let line = self.recorder_line(
-            Recorder::Regex(index),
-            capturing,
-            tr!(
-                "F1–F12, or Ctrl or Alt with a letter or digit · Backspace for no key · Esc keeps \
-                 the old one"
-            ),
-            None,
-        );
+        let line = if row.copied {
+            Some(note(tr!("Copied to the clipboard"), TEXT_DIM))
+        } else {
+            self.recorder_line(
+                Recorder::Regex(index),
+                capturing,
+                tr!(
+                    "F1–F12, or Ctrl or Alt with a letter or digit · Backspace for no key · Esc keeps \
+                     the old one"
+                ),
+                None,
+            )
+        };
         div()
             .id(("regex", index))
             .flex()
@@ -2029,6 +2067,15 @@ impl SettingsView {
                         tr!("no key"),
                         window,
                         cx,
+                    ))
+                    .child(button(
+                        "copy",
+                        tr!("Copy to clipboard"),
+                        ButtonKind::Secondary,
+                        face,
+                        cx.listener(move |view, _: &MouseDownEvent, _, cx| {
+                            view.copy_regex(index, cx);
+                        }),
                     ))
                     .child(icon_button(
                         "remove",

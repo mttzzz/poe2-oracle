@@ -680,8 +680,6 @@ pub struct PriceCheckApp {
     pub hotkey_busy: bool,
     /// The title bar's league menu is open (`ui::panel::title_bar`).
     pub league_menu: bool,
-    /// The title bar's regular expressions menu is open (`ui::panel::title_bar`).
-    pub regex_menu: bool,
     /// The profile select's menu is open (`ui::panel::results`).
     pub profile_menu: bool,
     /// The chip-row select whose menu is open (`ui::panel::nameplate`).
@@ -811,7 +809,6 @@ impl PriceCheckApp {
             visible: false,
             hotkey_busy: false,
             league_menu: false,
-            regex_menu: false,
             profile_menu: false,
             chip_menu: None,
             priced_by_market: false,
@@ -1038,27 +1035,6 @@ impl PriceCheckApp {
     pub fn set_league_menu(&mut self, open: bool, cx: &mut Context<Self>) {
         self.league_menu = open;
         cx.notify();
-    }
-
-    /// Opens or closes the title bar's regular expressions menu.
-    pub fn set_regex_menu(&mut self, open: bool, cx: &mut Context<Self>) {
-        self.regex_menu = open;
-        cx.notify();
-    }
-
-    /// Types a saved regular expression into the game's stash search: the same keys a quick
-    /// action of the kind StashSearch types (Ctrl+F, the text, Enter) -- the text goes through
-    /// the clipboard, which comes back to the player right after (`game_chat::type_action`).
-    /// Nothing is typed while another program is in front: the keys would be its own.
-    pub fn type_regex(&mut self, text: String, cx: &mut Context<Self>) {
-        self.regex_menu = false;
-        let action = crate::quick_action::stash_search(text);
-        log::info!("regular expression: typed into the game's search");
-        cx.spawn(async move |this, cx| {
-            game_chat::type_action(&action, &[], cx).await;
-            let _ = this.update(cx, |_app, cx| cx.notify());
-        })
-        .detach();
     }
 
     /// Looks up the signed-in account's private leagues on pathofexile.com
@@ -2032,12 +2008,10 @@ impl PriceCheckApp {
 
     /// What closes the panel from outside it, by Esc or -- with `Settings::close_on_click_outside`
     /// on -- by a click in the game outside it (`click_away`): an open menu, the league's, the
-    /// regular expressions' one, the profile's or a chip's, closes first, the panel with the next
-    /// press or click.
+    /// profile's or a chip's, closes first, the panel with the next press or click.
     fn dismiss(&mut self, cx: &mut Context<Self>) {
-        if self.league_menu || self.regex_menu || self.profile_menu || self.chip_menu.is_some() {
+        if self.league_menu || self.profile_menu || self.chip_menu.is_some() {
             self.league_menu = false;
-            self.regex_menu = false;
             self.profile_menu = false;
             self.chip_menu = None;
             cx.notify();

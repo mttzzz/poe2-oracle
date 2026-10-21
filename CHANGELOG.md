@@ -14,7 +14,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **A key for a regular expression.** A saved regular expression can have a key of its own now:
   press it and its text goes into the game's stash search, the way a quick action's key types its
-  text. The key works while the game is in front, like every other key of the app.
+  text. The key works while the game is in front, like every other key of the app. A regular
+  expression without a key can be copied to the clipboard from the settings, and pasted into the
+  game's search box by hand.
 
 ## [0.1.20] - 2026-10-21
 

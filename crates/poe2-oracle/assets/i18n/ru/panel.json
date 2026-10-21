@@ -25,8 +25,6 @@
   "The league the search runs in. Click to change it: the choice is saved to the settings, and the search runs again in the new league.": "Лига, в которой идёт поиск. Нажмите, чтобы сменить: выбор сохранится в настройках, а поиск повторится в новой лиге.",
   "Drag to move the panel sideways: the next checks on this side open it there too. Double-click to put it back in its usual place.": "Потяните, чтобы сдвинуть панель вбок: следующие проверки с этой стороны откроют её там же. Двойной щелчок вернёт панель на обычное место.",
   "Auto · {league}": "Авто · {league}",
-  "Regular expressions: the searches you saved in the settings. Picking one types it into the game's stash search.": "Регулярные выражения: поиски, которые вы сохранили в настройках. Выбранный вводится в поиск тайника в игре.",
-  "No regular expressions yet — add them in the settings, section “Regular expressions”.": "Регулярных выражений пока нет — добавьте их в настройках, раздел «Регулярные выражения».",
   "Private league · {league}": "Своя лига · {league}",
 
   "wiki ↗": "вики ↗",

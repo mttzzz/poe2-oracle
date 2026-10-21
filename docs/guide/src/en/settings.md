@@ -189,8 +189,8 @@ Section **Regular expressions**: the stash (or a vendor's) search strings you sa
 name (optional; without one the search string itself names it), the search string and a key, up
 to 64 of them; **+ Add regular expression** adds one and the **×** at the end of a row removes it. A
 row without a search string is not saved. A key types the expression into the game on its own; a
-key cannot be the price check's or another action's. Pick one in the price panel, with the button
-marked `.*` in its title bar. See [Quick actions](quick-actions.md).
+key cannot be the price check's or another action's. **Copy to clipboard** puts the search string
+into the clipboard instead. See [Quick actions](quick-actions.md).
 
 ## XP overlay
 
