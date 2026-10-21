@@ -160,9 +160,12 @@ fn area_level_row(item: &ParsedItem, category: &str) -> Option<SearchFilter> {
 
 /// A waystone's tier, searched exactly (`create-item-filters.ts:158-161` sets both bounds), and --
 /// in the default preset -- EE2's `mapProps` (`item-property.ts:449-633`): every other waystone
-/// property as a disabled minimum, the revives one hidden. EE2 files Monster Rarity under the
-/// trade site's rare-monsters filter and Monster Effectiveness under its magic-monsters one, which
-/// the live `/data/filters` labels exactly so (2026-09-22).
+/// property as a minimum, checked as PoE Overlay II checks them in every profile (`9505.bundle.js`
+/// ~69500: pack size, magic and rare monsters, item rarity and drop chance; player report #16,
+/// 2026-10-20, asked for them), revives (hidden) and gold unchecked. The live `/data/filters`
+/// labels the magic-monsters filter Monster Effectiveness and the rare-monsters one Monster
+/// Rarity (2026-10-21), the properties older waystones printed as Magic and Rare Monsters: a
+/// waystone printing both kinds gets the row of the filter's own label.
 fn waystone_rows(item: &ParsedItem, exact: bool, rows: &mut Vec<SearchFilter>) {
     let Some(waystone) = item.waystone else {
         return;
@@ -192,12 +195,16 @@ fn waystone_rows(item: &ParsedItem, exact: bool, rows: &mut Vec<SearchFilter>) {
             "map_filters.map_packsize",
         ),
         (
-            waystone.magic_monsters,
+            waystone
+                .magic_monsters
+                .filter(|_| waystone.effectiveness.is_none()),
             "Magic Monsters: #%",
             "map_filters.map_magic_monsters",
         ),
         (
-            waystone.rare_monsters,
+            waystone
+                .rare_monsters
+                .filter(|_| waystone.monster_rarity.is_none()),
             "Rare Monsters: #%",
             "map_filters.map_rare_monsters",
         ),
@@ -227,12 +234,13 @@ fn waystone_rows(item: &ParsedItem, exact: bool, rows: &mut Vec<SearchFilter>) {
         let Some(value) = value.filter(|&value| value != 0) else {
             continue;
         };
+        let unchecked = matches!(trade_id, "map_filters.map_revives" | "map_filters.map_gold");
         let mut row = property_row(
             label,
             trade_id,
             f64::from(value),
             false,
-            false,
+            !unchecked,
             RollBound::AtLeast,
         );
         row.hidden = trade_id == "map_filters.map_revives";

@@ -8,6 +8,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- ANCHOR: releases. The guide's "What's new" page shows every section below, up to ANCHOR_END. -->
 
+## [Unreleased]
+
+### Changed
+
+- **Waystones are searched by their properties.** A waystone was searched by its tier alone, its
+  properties offered unchecked: a corrupted tier-15 rare with +67% item rarity and +140% waystone
+  drop chance was compared with over 10,000 listings. Its item rarity, pack size, monster
+  effectiveness and rarity and waystone drop chance are now searched as minimums, and so is how
+  many modifiers it has (**8 Modifiers**): that waystone's search finds 28 listings.
+
 ## [0.1.19] - 2026-10-19
 
 ### Fixed

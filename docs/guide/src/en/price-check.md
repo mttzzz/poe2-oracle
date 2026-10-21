@@ -439,8 +439,10 @@ lower a row's copies or uncheck that row.
 
 ## Waystones
 
-A waystone's modifiers start unselected: its tier and properties decide the price. You can mark
-modifiers to spot them at a glance on every waystone you check:
+A waystone is searched by its tier, its properties (item rarity, pack size, monster effectiveness
+and rarity, waystone drop chance, each at least your waystone's) and how many modifiers it has
+(**8 Modifiers**: at least as many). Its modifiers themselves start unselected: they only make the
+map harder. You can mark modifiers to spot them at a glance on every waystone you check:
 
 - click the **◇** at the end of a modifier row. Each click moves the mark on: danger (red) →
   caution (orange) → wanted (green) → no mark. A marked row shows **◆** in the mark's colour; to

@@ -1,0 +1,34 @@
+Item Class: Waystones
+Rarity: Rare
+Torture Control
+Waystone (Tier 15)
+--------
+Revives Available: 0 (augmented)
+Item Rarity: +67% (augmented)
+Pack Size: +19% (augmented)
+Monster Effectiveness: +13% (augmented)
+Waystone Drop Chance: +140% (augmented)
+--------
+Item Level: 82
+--------
+{ Prefix Modifier "Profane" (Tier: 1) }
+Monsters deal 16(15-19)% of Damage as Extra Chaos
+{ Prefix Modifier "Penetrating" (Tier: 1) }
+Monster Damage Penetrates 13(12-14)% Elemental Resistances
+{ Prefix Modifier "Destructive" (Tier: 1) }
+Monsters have 238(200-240)% increased Critical Hit Chance
+Monsters have +23(21-25)% Critical Damage Bonus
+{ Prefix Modifier "Impacting" (Tier: 1) }
+Monsters have 91(90-100)% increased Stun Buildup
+{ Suffix Modifier "of Exposure" (Tier: 1) }
+-6(-8--6)% maximum Player Resistances
+{ Suffix Modifier "of Fatigue" (Tier: 1) }
+Players have 26(30-25)% less Cooldown Recovery Rate
+{ Suffix Modifier "of Erosion" (Tier: 1) }
+Players are periodically Cursed with Elemental Weakness — Unscalable Value
+{ Suffix Modifier "of Overpowering" (Tier: 1) }
+Monster have 110(100-119)% increased Elemental Ailment Application
+--------
+Can be used in a Map Device, allowing you to enter a Map. Waystones can only be used once.
+--------
+Corrupted

@@ -307,6 +307,10 @@ impl Rows {
             filters.push(row);
             sources.push(row_sources);
         }
+        if let Some(row) = waystone_modifier_count(item, catalog) {
+            filters.push(row);
+            sources.push(Vec::new());
+        }
         filters.extend(mod_rows);
         sources.extend(mod_sources);
         for row in empty_affix_filters(item, catalog) {
@@ -503,7 +507,58 @@ fn always_searched(item: &ParsedItem, filter: &SearchFilter, sources: &[usize]) 
         .trade_ids
         .first()
         .is_some_and(|id| ALWAYS_SEARCHED.contains(&id.as_str()))
+        || is_modifier_count(filter)
         || (skill && (amulet || filter.roll.as_ref().is_some_and(|roll| roll.value >= 19.0)))
+}
+
+/// The trade site's count of an item's prefixes and suffixes, and its English template.
+const MODIFIER_COUNT: (&str, &str) = ("pseudo.pseudo_number_of_affix_mods", "# Modifiers");
+
+/// Whether `filter` is a waystone's count of modifiers (`waystone_modifier_count`).
+fn is_modifier_count(filter: &SearchFilter) -> bool {
+    filter.trade_ids.first().map(String::as_str) == Some(MODIFIER_COUNT.0)
+}
+
+/// A waystone's count of modifiers, searched as at least as many as it has, in every profile as
+/// PoE Overlay II searches it (`9505.bundle.js` ~70550: the trade site's `# Modifiers` pseudo
+/// stat, checked for a waystone): more of them make a richer map. Player report #16
+/// (2026-10-20) asked for it. `None` on any other item, and when the copy names no prefix or
+/// suffix to count.
+fn waystone_modifier_count(item: &ParsedItem, catalog: &StatCatalog) -> Option<SearchFilter> {
+    if item.category.as_ref()?.id != "map.waystone" {
+        return None;
+    }
+    let count = item
+        .mods
+        .iter()
+        .filter(|modifier| {
+            group_bucket(modifier.info.modifier_type) == GroupBucket::ExplicitLike
+                && modifier.info.generation.is_some()
+        })
+        .count();
+    let (trade_id, english) = MODIFIER_COUNT;
+    (count > 0).then(|| SearchFilter {
+        trade_ids: vec![trade_id.to_owned()],
+        stat_ref: english.to_owned(),
+        display_text: catalog_text(catalog, trade_id, english).to_owned(),
+        tag: FilterTag::Pseudo,
+        tier: None,
+        roll: Some(SearchFilterRoll {
+            value: count as f64,
+            min: None,
+            max: None,
+            dp: false,
+            bound: RollBound::AtLeast,
+        }),
+        enabled: false,
+        hidden: false,
+        generation: None,
+        inverted: false,
+        score: None,
+        tier_info: None,
+        weighted_sum: false,
+        none_of: false,
+    })
 }
 
 /// Turns each mod row the item words the other way round from the catalog -- `15% reduced
@@ -568,10 +623,10 @@ const TABLET_USES: [&str; 8] = [
 /// pick. A tablet searches its `# uses remaining (Tablets)` pseudo total (at least as many uses,
 /// shown on uniques too) and every mod at exactly its roll, leaving its implicit out
 /// (`createExactStatFilters`, `create-stat-filters.ts:38-220`). A waystone priced quickly follows
-/// EE2's map rule (`finalFilterTweaks`, `create-stat-filters.ts:718-726`): its tier and
-/// properties set the price, its modifiers only make the map harder -- they start unselected, a
-/// desecrated one excepted. Unlike EE2 they stay listed: the player marks them there. Crafting
-/// Base leaves both to its own pick.
+/// EE2's map rule (`finalFilterTweaks`, `create-stat-filters.ts:718-726`): its tier, its
+/// properties and how many modifiers it has set the price, its modifiers only make the map
+/// harder -- they start unselected, a desecrated one excepted. Unlike EE2 they stay listed: the
+/// player marks them there. Crafting Base leaves both to its own pick.
 fn settle_exact_kinds(
     item: &ParsedItem,
     profile: SearchProfile,
@@ -646,7 +701,9 @@ fn settle_exact_kinds(
         }
     } else if category == "map.waystone" && profile == SearchProfile::QuickPrice {
         for filter in filters.iter_mut() {
-            if !matches!(filter.tag, FilterTag::Property | FilterTag::Desecrated) {
+            if !matches!(filter.tag, FilterTag::Property | FilterTag::Desecrated)
+                && !is_modifier_count(filter)
+            {
                 filter.enabled = false;
             }
         }

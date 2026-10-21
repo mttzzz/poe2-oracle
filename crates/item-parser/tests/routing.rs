@@ -450,7 +450,9 @@ fn gems_waystones_and_tablets_carry_ee2s_property_rows() {
     assert!(row(&gem, "type_filters.quality").enabled);
     assert!(row(&gem, "misc_filters.gem_sockets").enabled);
 
-    // A tier-16 rare waystone searches its tier exactly; its properties are offered, unchecked.
+    // A tier-16 rare waystone searches its tier exactly and its properties as minimums. It
+    // prints both Magic Monsters and Monster Effectiveness, which the trade site files under one
+    // filter labelled Monster Effectiveness: that filter's one row is the effectiveness line.
     let waystone = built("rare_map_all_props_en.txt", &stats);
     let tier = row(&waystone, "map_filters.map_tier");
     let roll = tier.roll.as_ref().expect("tier roll");
@@ -458,7 +460,18 @@ fn gems_waystones_and_tablets_carry_ee2s_property_rows() {
     assert!(tier.enabled);
     let pack_size = row(&waystone, "map_filters.map_packsize");
     assert_eq!(pack_size.roll.as_ref().and_then(|r| r.min), Some(20.0));
-    assert!(!pack_size.enabled);
+    assert!(pack_size.enabled);
+    let magic: Vec<_> = waystone
+        .iter()
+        .filter(|filter| filter.trade_ids == ["map_filters.map_magic_monsters"])
+        .map(|filter| {
+            (
+                filter.display_text.as_str(),
+                filter.roll.as_ref().map(|r| r.value),
+            )
+        })
+        .collect();
+    assert_eq!(magic, [("Monster Effectiveness: #%", Some(45.0))]);
 
     // The live RU magic waystone names its tier only in its name; the tier row is its search.
     let ru_waystone = built("ru_live_adskiy_putevoy_kamen_ur_13_ukloneniya.txt", &stats);
@@ -595,6 +608,59 @@ fn hash_row<'a>(
                 && filter.trade_ids.iter().any(|id| id.ends_with(hash))
         })
         .unwrap_or_else(|| panic!("no {hash} row"))
+}
+
+#[test]
+fn a_waystone_is_searched_by_its_properties_and_how_many_modifiers_it_has() {
+    // Report #16, 2026-10-20 (0.1.19, EN client): a corrupted tier-15 rare waystone, searched by
+    // its tier alone among more than 10,000 listings; the player asked for its properties and
+    // its count of modifiers. With them the live search found 28 (2026-10-21).
+    let stats = StatCatalog::default();
+    let item = parse_fixture("report_torture_control_en.txt");
+    let filters = built("report_torture_control_en.txt", &stats);
+    let minimum = |id: &str| {
+        let filter = row(&filters, id);
+        (
+            filter.enabled,
+            filter.roll.as_ref().and_then(|roll| roll.min),
+        )
+    };
+    assert_eq!(minimum("map_filters.map_packsize"), (true, Some(19.0)));
+    assert_eq!(minimum("map_filters.map_iir"), (true, Some(67.0)));
+    assert_eq!(
+        minimum("map_filters.map_magic_monsters"),
+        (true, Some(13.0))
+    );
+    assert_eq!(minimum("map_filters.map_bonus"), (true, Some(140.0)));
+    // Four prefixes and four suffixes, the two-line one counted once.
+    assert_eq!(
+        minimum("pseudo.pseudo_number_of_affix_mods"),
+        (true, Some(8.0))
+    );
+
+    let SearchRoute::Filtered { scope } = route_search(&item, &exchange_catalog(), &[]) else {
+        panic!("a waystone is searched by its filters");
+    };
+    let body =
+        trade_client::filtered_search_request(&scope, &filters, trade_client::ListingStatus::Any);
+    assert_eq!(
+        body["query"]["filters"]["map_filters"]["filters"],
+        serde_json::json!({
+            "map_tier": { "min": 15.0, "max": 15.0 },
+            "map_packsize": { "min": 19.0 },
+            "map_iir": { "min": 67.0 },
+            "map_magic_monsters": { "min": 13.0 },
+            "map_bonus": { "min": 140.0 },
+        })
+    );
+    let count = body["query"]["stats"][0]["filters"]
+        .as_array()
+        .expect("the and group")
+        .iter()
+        .find(|entry| entry["id"] == "pseudo.pseudo_number_of_affix_mods")
+        .expect("the count of modifiers");
+    assert_eq!(count["value"], serde_json::json!({ "min": 8.0 }));
+    assert_eq!(count["disabled"], false);
 }
 
 #[test]
