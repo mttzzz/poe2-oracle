@@ -80,6 +80,17 @@ pub fn typing(action: &QuickAction) -> Typing {
     }
 }
 
+/// The quick action a saved regular expression is typed as: a stash search with no hotkey of
+/// its own -- the keys are the ones a quick action of the kind Stash presses (Ctrl+F, the
+/// text, Enter).
+pub fn stash_search(text: impl Into<String>) -> QuickAction {
+    QuickAction {
+        kind: QuickActionKind::StashSearch,
+        text: text.into(),
+        hotkey: None,
+    }
+}
+
 fn chat_typing(text: &str) -> Typing {
     if text == LAST_WHISPER {
         // The whisper opens and waits for the player's own words.
@@ -402,6 +413,16 @@ mod tests {
                 vec![CtrlF, CtrlV, Enter]
             )
         );
+    }
+
+    #[test]
+    fn a_saved_regular_expression_is_typed_as_a_stash_search() {
+        let action = stash_search(r"r/\bRune\b/");
+        assert_eq!(action.kind, QuickActionKind::StashSearch);
+        assert_eq!(action.hotkey, None, "it has no hotkey of its own");
+        let typing = typing(&action);
+        assert_eq!(typing.clipboard, Some(r"r/\bRune\b/".to_owned()));
+        assert_eq!(typing.keys, vec![CtrlF, CtrlV, Enter]);
     }
 
     #[test]

@@ -16,8 +16,8 @@ If the settings window is already open, any of these brings it to the front.
 
 The window opens in the middle of the monitor the game is on and stays on top of the game. Drag it
 by its title bar; resize it by its edges. The sections are listed on the left: **General**,
-**Price check**, **Quick actions**, **XP overlay**, **Account**, **Help** and **What's new**. The
-chosen section's settings are on the right.
+**Price check**, **Quick actions**, **Regular expressions**, **XP overlay**, **Account**, **Help**
+and **What's new**. The chosen section's settings are on the right.
 
 Every change applies and is saved at once: there is no Save or Cancel button. Text in a box applies
 when you press <kbd>Enter</kbd> or <kbd>Tab</kbd>, click elsewhere or close the window;
@@ -182,6 +182,14 @@ the game. Each action has its kind (**Chat** or **Stash**), its text, its key an
 action** is below them. If another program holds a combination the actions press, such as
 <kbd>Ctrl</kbd>+<kbd>F</kbd>, a gold-framed box at the top of the section says so. See
 [Quick actions](quick-actions.md).
+
+## Regular expressions
+
+Section **Regular expressions**: the stash (or a vendor's) search strings you saved, each with a
+name (optional; without one the search string itself names it) and the search string, up to 64 of
+them; **+ Add regular expression** adds one and the **×** at the end of a row removes it. A row
+without a search string is not saved. Pick one in the price panel, with the button marked `.*` in
+its title bar. See [Quick actions](quick-actions.md).
 
 ## XP overlay
 

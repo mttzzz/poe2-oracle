@@ -1,10 +1,10 @@
-//! The strip above the nameplate: the league select and its menu, the divine rate, the settings
-//! gear and the ×. Its empty part drags the panel sideways; a double-click there sends it back to
-//! its own place.
+//! The strip above the nameplate: the league select and its menu, the divine rate, the regular
+//! expressions and their menu, the settings gear and the ×. Its empty part drags the panel
+//! sideways; a double-click there sends it back to its own place.
 
 use gpui::{
-    Context, CursorStyle, IntoElement, MouseButton, MouseDownEvent, SharedString, Window, div,
-    prelude::*, rgb,
+    AnyElement, Context, CursorStyle, IntoElement, MouseButton, MouseDownEvent, SharedString,
+    Window, div, prelude::*, px, rgb,
 };
 
 use crate::i18n;
@@ -26,6 +26,8 @@ const BUTTON_WIDTH: f32 = 34.;
 /// The league menu is at least this wide, so «Авто · <league>» (`Auto · <league>`) fits on one
 /// line.
 const LEAGUE_MENU_WIDTH: f32 = 250.;
+/// The regular expressions menu is at least this wide, so a search string fits on one line.
+const REGEX_MENU_WIDTH: f32 = 320.;
 /// The least of the drag area that stays when the panel is narrow.
 const DRAG_MIN_WIDTH: f32 = 24.;
 
@@ -46,6 +48,27 @@ pub(super) fn render_title_bar(
             render_league_select(state, window, cx),
         ))
         .child(render_drag_area(state, cx))
+        .child(
+            div()
+                .id("regex-button")
+                .flex()
+                .flex_none()
+                .tooltip(hints::hint(tr!(
+                    "Regular expressions: the searches you saved in the settings. Picking one \
+                     types it into the game's stash search."
+                )))
+                .child(title_button(
+                    "regex",
+                    ".*",
+                    BUTTON_WIDTH,
+                    cx.listener(|view, _event: &MouseDownEvent, _window, cx| {
+                        view.set_regex_menu(!view.regex_menu, cx);
+                    }),
+                ))
+                .when(state.regex_menu, |this| {
+                    this.child(render_regex_menu(state, window, cx))
+                }),
+        )
         .child(title_button(
             "settings",
             "⚙",
@@ -129,6 +152,86 @@ fn render_league_select(
                 cx,
             ))
         })
+}
+
+/// The regular expressions the player saved, in a menu under the title bar's `.*` button: the
+/// name the player gave each, the search string itself under it. Picking one types it into the
+/// game's stash search (`PriceCheckApp::type_regex`) -- the game must be in front, and its stash
+/// or a vendor's window open, or the search box has nowhere to go.
+fn render_regex_menu(
+    state: &PriceCheckApp,
+    window: &Window,
+    cx: &Context<PriceCheckApp>,
+) -> impl IntoElement {
+    let rows: Vec<AnyElement> = if state.settings.regexes.is_empty() {
+        vec![
+            div()
+                .px(rems_from_px(10.))
+                .py(rems_from_px(6.))
+                .text_size(rems_from_px(12.))
+                .text_color(rgb(TEXT_DIM))
+                .child(tr!(
+                    "No regular expressions yet — add them in the settings, section “Regular \
+                 expressions”."
+                ))
+                .into_any_element(),
+        ]
+    } else {
+        state
+            .settings
+            .regexes
+            .iter()
+            .enumerate()
+            .map(|(index, regex)| {
+                let text = regex.text.clone();
+                let named = !regex.name.is_empty();
+                let title = if named {
+                    regex.name.clone()
+                } else {
+                    regex.text.clone()
+                };
+                let content = div()
+                    .flex()
+                    .flex_col()
+                    .min_w_0()
+                    .gap(px(1.))
+                    .child(
+                        div()
+                            .min_w_0()
+                            .truncate()
+                            .text_size(rems_from_px(13.))
+                            .child(title),
+                    )
+                    .when(named, |this| {
+                        this.child(
+                            div()
+                                .min_w_0()
+                                .truncate()
+                                .text_size(rems_from_px(11.))
+                                .text_color(rgb(TEXT_DIM))
+                                .child(regex.text.clone()),
+                        )
+                    });
+                menu_row(
+                    index,
+                    false,
+                    content,
+                    cx.listener(move |view, _event: &MouseDownEvent, _window, cx| {
+                        view.type_regex(text.clone(), cx);
+                    }),
+                )
+                .into_any_element()
+            })
+            .collect()
+    };
+    render_menu(
+        "regex-menu",
+        rows,
+        REGEX_MENU_WIDTH,
+        |view, cx| view.set_regex_menu(false, cx),
+        window,
+        cx,
+    )
 }
 
 /// The title bar's empty part and the divine rate in it, once the market is loaded (EE2's ⇄ rate):

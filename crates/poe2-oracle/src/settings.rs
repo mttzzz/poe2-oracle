@@ -49,6 +49,8 @@ pub const XP_RATE_WINDOWS: [u16; 4] = [5, 10, 20, 30];
 /// How often the account's private leagues may be looked up again by themselves, in minutes
 /// ([`Settings::private_leagues_refresh_minutes`]); `0` is never.
 pub const PRIVATE_LEAGUE_REFRESHES: [u16; 3] = [15, 60, 360];
+/// The most saved regular expressions the settings keep ([`Settings::regexes`]).
+pub const MAX_REGEXES: usize = 64;
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 #[serde(default)]
@@ -110,6 +112,10 @@ pub struct Settings {
     /// [`MAX_QUICK_ACTIONS`].
     #[serde(deserialize_with = "or_default")]
     pub quick_actions: Vec<QuickAction>,
+    /// The player's saved regular expressions: a name to pick each by and the text the game's
+    /// stash search takes, at most [`MAX_REGEXES`].
+    #[serde(deserialize_with = "or_default")]
+    pub regexes: Vec<SavedRegex>,
     /// How far from the inventory, and from the stash, the player dragged the price panel; a side
     /// without a place keeps the panel against its side panel, EE2's placement.
     #[serde(deserialize_with = "or_default")]
@@ -146,6 +152,7 @@ impl Default for Settings {
                 text: "/hideout".to_owned(),
                 hotkey: None,
             }],
+            regexes: Vec::new(),
             panel_positions: PanelPositions::default(),
             tour_done: false,
         }
@@ -207,6 +214,14 @@ impl Settings {
             !action.text.is_empty()
         });
         self.quick_actions.truncate(MAX_QUICK_ACTIONS);
+        // A regular expression without a text is nothing to paste; the name may be empty, the
+        // text itself then names it in the list.
+        self.regexes.retain_mut(|regex| {
+            regex.name = regex.name.trim().to_owned();
+            regex.text = regex.text.trim().to_owned();
+            !regex.text.is_empty()
+        });
+        self.regexes.truncate(MAX_REGEXES);
         self
     }
 
@@ -242,6 +257,19 @@ pub enum QuickActionKind {
     ChatCommand,
     /// Pasted into the open stash's (or a vendor's) search box: Ctrl+F, the text, Enter.
     StashSearch,
+}
+
+/// A saved regular expression: what the player calls it and the text the game's stash search
+/// takes (a poe2.re regex). The name is for the player -- the list in the price panel shows it
+/// above the text, which is the text itself when there's no name.
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug, Default)]
+pub struct SavedRegex {
+    /// The name the player gives it; empty means the text names it.
+    #[serde(default)]
+    pub name: String,
+    /// The text pasted into the game's search box.
+    #[serde(default)]
+    pub text: String,
 }
 
 /// How the player rates a waystone modifier; a checked waystone shows its marked mods in the
@@ -1053,6 +1081,69 @@ mod tests {
                 // A kind this version doesn't know reads as a chat command.
                 (QuickActionKind::ChatCommand, "/remaining", None),
             ]
+        );
+    }
+
+    #[test]
+    fn saved_regular_expressions_keep_their_text_and_drop_the_empty_ones() {
+        let dir = TempDir::new();
+        let path = dir.settings_file();
+        write_file(
+            &path,
+            r#"{"regexes": [
+                {"name": " Runes ", "text": " r/\\bRune\\b/ "},
+                {"name": "", "text": ""},
+                {"text": "ilvl 84"}
+            ]}"#,
+        );
+        assert_eq!(
+            load_from(&path).regexes,
+            [
+                SavedRegex {
+                    name: "Runes".to_owned(),
+                    text: r"r/\bRune\b/".to_owned(),
+                },
+                SavedRegex {
+                    name: String::new(),
+                    text: "ilvl 84".to_owned(),
+                },
+            ],
+            "the name and the text are trimmed, the empty one is dropped"
+        );
+
+        let settings = Settings {
+            regexes: vec![SavedRegex {
+                name: "Runes".to_owned(),
+                text: r"r/\bRune\b/".to_owned(),
+            }],
+            ..Settings::default()
+        };
+        save_to(&path, &settings).expect("saves");
+        assert_eq!(
+            load_from(&path).regexes,
+            settings.regexes,
+            "they load back as they were saved"
+        );
+
+        // More than the settings keep: the first ones stay.
+        let many: Vec<SavedRegex> = (0..MAX_REGEXES + 5)
+            .map(|index| SavedRegex {
+                name: format!("{index}"),
+                text: format!("r/{index}/"),
+            })
+            .collect();
+        write_file(
+            &path,
+            &serde_json::to_string(&Settings {
+                regexes: many,
+                ..Settings::default()
+            })
+            .expect("json"),
+        );
+        assert_eq!(
+            load_from(&path).regexes.len(),
+            MAX_REGEXES,
+            "the list is capped"
         );
     }
 

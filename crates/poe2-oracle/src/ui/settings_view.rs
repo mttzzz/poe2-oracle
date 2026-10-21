@@ -57,7 +57,7 @@ use crate::report;
 use crate::session::{self, SessionStatus};
 use crate::settings::{
     self, AppIcon, ClientLanguage, Hotkey, HotkeyProblem, InterfaceLanguage, KeyName, LeagueChoice,
-    ListingStatusChoice, QuickActionKind, Settings,
+    ListingStatusChoice, QuickActionKind, SavedRegex, Settings,
 };
 use crate::tour::{Host, Stop};
 use crate::tr;
@@ -149,6 +149,7 @@ enum Section {
     General,
     PriceCheck,
     QuickActions,
+    Regexes,
     XpOverlay,
     Account,
     Help,
@@ -156,10 +157,11 @@ enum Section {
 }
 
 impl Section {
-    const ALL: [Section; 7] = [
+    const ALL: [Section; 8] = [
         Section::General,
         Section::PriceCheck,
         Section::QuickActions,
+        Section::Regexes,
         Section::XpOverlay,
         Section::Account,
         Section::Help,
@@ -171,6 +173,7 @@ impl Section {
             Section::General => tr!("General"),
             Section::PriceCheck => tr!("Price check"),
             Section::QuickActions => tr!("Quick actions"),
+            Section::Regexes => tr!("Regular expressions"),
             Section::XpOverlay => tr!("XP overlay"),
             Section::Account => tr!("Account"),
             Section::Help => tr!("Help"),
@@ -183,6 +186,7 @@ impl Section {
             Section::General => tr!("League, languages, scale, starting with Windows and updates"),
             Section::PriceCheck => tr!("Hotkey, sellers, the results table and closing the panel"),
             Section::QuickActions => tr!("Keys that type chat commands and searches into the game"),
+            Section::Regexes => tr!("Searches you saved, typed into the game's stash search"),
             Section::XpOverlay => tr!("Experience rate and map timer, on top of the game's panels"),
             Section::Account => {
                 tr!("Signing in to pathofexile.com: private leagues and “sum” rows")
@@ -233,6 +237,14 @@ struct ActionRow {
     recorder: FocusHandle,
 }
 
+/// A saved regular expression's row: what it will save, and the two fields its name and its
+/// search string are typed in.
+struct RegexRow {
+    draft: SavedRegex,
+    name_field: Entity<TextField>,
+    text_field: Entity<TextField>,
+}
+
 pub struct SettingsView {
     /// Whose settings these are: read as they stand on every render, changed through
     /// [`Self::change`].
@@ -279,6 +291,8 @@ pub struct SettingsView {
     /// The UI scale the window is sized for: it opens sized for the scale then, and a step of the
     /// scale sizes it again ([`Self::follow_scale`]).
     scaled_for: f32,
+    /// The player's saved regular expressions, one row each.
+    regexes: Vec<RegexRow>,
 }
 
 impl SettingsView {
@@ -288,7 +302,7 @@ impl SettingsView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let (actions, scale) = {
+        let (actions, regexes, scale) = {
             let settings = &app.read(cx).settings;
             (
                 settings
@@ -296,12 +310,17 @@ impl SettingsView {
                     .iter()
                     .map(ActionDraft::saved)
                     .collect::<Vec<_>>(),
+                settings.regexes.clone(),
                 settings.ui_scale,
             )
         };
         let actions = actions
             .into_iter()
             .map(|draft| Self::action_row(draft, window, cx))
+            .collect();
+        let regexes = regexes
+            .into_iter()
+            .map(|draft| Self::regex_row(draft, window, cx))
             .collect();
 
         // Anything that closes the window through `WM_CLOSE` -- Alt+F4, the taskbar -- closes it
@@ -387,6 +406,7 @@ impl SettingsView {
             topmost: None,
             auto_language: i18n::auto(),
             scaled_for: scale,
+            regexes,
         };
         view.sync_topmost(cx);
         view
@@ -405,6 +425,29 @@ impl SettingsView {
             draft,
             field,
             recorder: cx.focus_handle(),
+        }
+    }
+
+    /// A row for a saved regular expression: its name and its search string, each in a field that
+    /// tells the view when the player leaves it.
+    fn regex_row(draft: SavedRegex, window: &mut Window, cx: &mut Context<Self>) -> RegexRow {
+        let name = draft.name.clone();
+        let text = draft.text.clone();
+        let name_field = cx.new(|cx| TextField::new(name, || tr!("Name"), window, cx));
+        cx.subscribe(&name_field, |view, field, _: &Committed, cx| {
+            view.regex_committed(&field, cx);
+        })
+        .detach();
+        let text_field =
+            cx.new(|cx| TextField::new(text, || tr!("Search text, e.g. from poe2.re"), window, cx));
+        cx.subscribe(&text_field, |view, field, _: &Committed, cx| {
+            view.regex_committed(&field, cx);
+        })
+        .detach();
+        RegexRow {
+            draft,
+            name_field,
+            text_field,
         }
     }
 
@@ -482,9 +525,10 @@ impl SettingsView {
         crate::app::close_window(window, cx);
     }
 
-    /// Applies what the fields hold, typed but not yet left: the quick actions' texts. A field
-    /// reports only when it's left, so the window's close does this first, and so does quitting
-    /// the app (`app::quit`), which closes no window.
+    /// Applies what the fields hold, typed but not yet left: the quick actions' texts and the
+    /// regular expressions' names and search strings. A field reports only when it's left, so the
+    /// window's close does this first, and so does quitting the app (`app::quit`), which closes no
+    /// window.
     pub fn apply_typed(&mut self, cx: &mut Context<Self>) {
         let mut typed = false;
         for row in &mut self.actions {
@@ -497,6 +541,22 @@ impl SettingsView {
         if typed {
             self.apply_actions_noting(cx);
         }
+        let mut typed = false;
+        for row in &mut self.regexes {
+            let name = row.name_field.read(cx).text();
+            let text = row.text_field.read(cx).text();
+            if name != row.draft.name {
+                row.draft.name = name.to_owned();
+                typed = true;
+            }
+            if text != row.draft.text {
+                row.draft.text = text.to_owned();
+                typed = true;
+            }
+        }
+        if typed {
+            self.apply_regexes(cx);
+        }
     }
 
     /// A quick action's field was left with a new text.
@@ -507,6 +567,58 @@ impl SettingsView {
         };
         row.draft.text = text;
         self.apply_actions_noting(cx);
+        cx.notify();
+    }
+
+    /// Saves the regular expressions as the rows stand: the ones with a search string, in the
+    /// order the rows are in.
+    fn apply_regexes(&mut self, cx: &mut Context<Self>) {
+        let regexes: Vec<SavedRegex> = self
+            .regexes
+            .iter()
+            .filter(|row| !row.draft.text.is_empty())
+            .map(|row| row.draft.clone())
+            .collect();
+        self.change(cx, |settings| settings.regexes = regexes);
+    }
+
+    /// A regular expression's field was left with a new text.
+    fn regex_committed(&mut self, field: &Entity<TextField>, cx: &mut Context<Self>) {
+        let text = field.read(cx).text().to_owned();
+        let Some(row) = self
+            .regexes
+            .iter_mut()
+            .find(|row| row.name_field == *field || row.text_field == *field)
+        else {
+            return;
+        };
+        if row.name_field == *field {
+            row.draft.name = text;
+        } else {
+            row.draft.text = text;
+        }
+        self.apply_regexes(cx);
+        cx.notify();
+    }
+
+    /// A new row for a regular expression, ready for its search string.
+    fn add_regex(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.regexes.len() >= settings::MAX_REGEXES {
+            return;
+        }
+        let row = Self::regex_row(SavedRegex::default(), window, cx);
+        window.focus(&row.text_field.focus_handle(cx), cx);
+        self.regexes.push(row);
+        cx.notify();
+    }
+
+    /// Removes the regular expression in row `index`.
+    fn remove_regex(&mut self, index: usize, cx: &mut Context<Self>) {
+        if index >= self.regexes.len() {
+            return;
+        }
+        self.regexes.remove(index);
+        self.apply_regexes(cx);
         cx.notify();
     }
 
@@ -1094,6 +1206,7 @@ impl SettingsView {
             Section::QuickActions => self
                 .render_quick_actions(face, window, cx)
                 .into_any_element(),
+            Section::Regexes => self.render_regexes(face, cx).into_any_element(),
             Section::XpOverlay => self
                 .render_xp_overlay(settings, face, cx)
                 .into_any_element(),
@@ -1728,6 +1841,99 @@ impl SettingsView {
                     )),
             )
             .children(line)
+            .into_any_element()
+    }
+
+    /// The player's saved regular expressions: a row each -- its name, its search string and the
+    /// × that removes it -- and a button that adds one.
+    fn render_regexes(&self, face: &'static NameFont, cx: &Context<Self>) -> impl IntoElement {
+        let rows: Vec<AnyElement> = if self.regexes.is_empty() {
+            vec![
+                div()
+                    .px(rems_from_px(14.))
+                    .py(rems_from_px(12.))
+                    .text_color(rgb(TEXT_MUTED))
+                    .child(tr!("No regular expressions yet"))
+                    .into_any_element(),
+            ]
+        } else {
+            self.regexes
+                .iter()
+                .enumerate()
+                .map(|(index, row)| self.render_regex(index, row, cx))
+                .collect()
+        };
+        let can_add = self.regexes.len() < settings::MAX_REGEXES;
+        div()
+            .flex()
+            .flex_col()
+            .gap(rems_from_px(14.))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(rems_from_px(4.))
+                    .text_size(rems_from_px(13.))
+                    .child(div().text_color(rgb(TEXT_DIM)).child(tr!(
+                        "A regular expression goes into the game's stash search, the way a \
+                         quick action of the kind Stash does: the game must be in front, and its \
+                         stash or a vendor's window open. Pick one from the price panel's title \
+                         bar, the button marked “.*”."
+                    ))),
+            )
+            .child(card(rows))
+            .when(can_add, |this| {
+                this.child(div().flex().child(button(
+                    "add-regex",
+                    tr!("+ Add regular expression"),
+                    ButtonKind::Secondary,
+                    face,
+                    cx.listener(|view, _: &MouseDownEvent, window, cx| {
+                        view.add_regex(window, cx);
+                    }),
+                )))
+            })
+    }
+
+    /// One saved regular expression: its name, its search string and the × that removes it.
+    fn render_regex(&self, index: usize, row: &RegexRow, cx: &Context<Self>) -> AnyElement {
+        div()
+            .id(("regex", index))
+            .flex()
+            .flex_col()
+            .gap(rems_from_px(6.))
+            .px(rems_from_px(12.))
+            .py(rems_from_px(10.))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(rems_from_px(10.))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_1()
+                            .min_w_0()
+                            .child(row.name_field.clone()),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_grow(2.)
+                            .flex_shrink(1.)
+                            .flex_basis(relative(0.))
+                            .min_w(px(0.))
+                            .child(row.text_field.clone()),
+                    )
+                    .child(icon_button(
+                        "remove",
+                        "×",
+                        true,
+                        cx.listener(move |view, _: &MouseDownEvent, _, cx| {
+                            view.remove_regex(index, cx);
+                        }),
+                    )),
+            )
             .into_any_element()
     }
 

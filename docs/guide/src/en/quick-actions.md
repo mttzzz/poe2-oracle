@@ -48,6 +48,22 @@ puts the cursor in the window's search box, pastes the text and presses <kbd>Ent
 highlights the matching items. The search string is used exactly as you typed it. Tools such as
 poe2.re build such strings for you.
 
+## Regular expressions
+
+Regular expressions are the stash (or a vendor's) search strings you save to stop typing them
+every time — the ones poe2.re builds, for one. Set them up in the [settings](settings.md), section
+**Regular expressions**: each has a name (optional; without one the search string itself names it)
+and the search string. You can have up to 64.
+
+Pick one in the price panel: its title bar has a button marked `.*`, next to the gear **⚙**. It
+opens the list of what you saved, and the one you pick goes into the game exactly as a stash search
+quick action does: <kbd>Ctrl</kbd>+<kbd>F</kbd>, the text, <kbd>Enter</kbd>. The game must be in
+front and its stash or a vendor's window open, or the search box has nowhere to go.
+
+The text travels through the clipboard, so it arrives whole in any language and whatever your
+keyboard layout; your clipboard is put back right after. The price panel stays open where it is —
+<kbd>Esc</kbd> closes it.
+
 ## Commands that are never sent
 
 Some chat commands destroy something or change it for good. A mis-pressed key must not do that,

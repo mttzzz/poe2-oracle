@@ -10,13 +10,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Regular expressions you saved.** A player asked for a way to save the regular expressions he
+  searches his stash with and pick one at once (player report #17). The settings window has a new
+  section, **Regular expressions**: each entry has a name and the search string, up to 64 of them.
+  The price panel's title bar has a button marked `.*` that lists them, and picking one types it
+  into the game's stash search, the way a Stash quick action does: Ctrl+F, the text, Enter.
+
 ### Changed
 
 - **Waystones are searched by their properties.** A waystone was searched by its tier alone, its
   properties offered unchecked: a corrupted tier-15 rare with +67% item rarity and +140% waystone
   drop chance was compared with over 10,000 listings. Its item rarity, pack size, monster
   effectiveness and rarity and waystone drop chance are now searched as minimums, and so is how
-  many modifiers it has (**8 Modifiers**): that waystone's search finds 28 listings.
+  many modifiers it has (**8 Modifiers**): that waystone's search finds a few dozen listings
+  instead of more than 10,000.
 
 - **Searches take the trade site's invisible request limit into account.** Besides the limits the
   site publishes in its answers' headers, it keeps one it shows nowhere, and checking many items
