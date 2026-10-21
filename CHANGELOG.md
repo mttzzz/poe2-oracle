@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- ANCHOR: releases. The guide's "What's new" page shows every section below, up to ANCHOR_END. -->
 
-## [Unreleased]
+## [0.1.20] - 2026-10-21
 
 ### Added
 
@@ -354,6 +354,7 @@ digitally signed yet, so Windows may say "Windows protected your PC": click **Mo
   cache**.
 
 <!-- ANCHOR_END: releases. The version links stay below it, off that page: mdBook can't draw a heading that is a link. -->
+[0.1.20]: https://github.com/mttzzz/poe2-oracle/releases/tag/v0.1.20
 [0.1.19]: https://github.com/mttzzz/poe2-oracle/releases/tag/v0.1.19
 [0.1.18]: https://github.com/mttzzz/poe2-oracle/releases/tag/v0.1.18
 [0.1.17]: https://github.com/mttzzz/poe2-oracle/releases/tag/v0.1.17
