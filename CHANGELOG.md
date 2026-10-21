@@ -18,6 +18,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   expression without a key can be copied to the clipboard from the settings, and pasted into the
   game's search box by hand.
 
+### Changed
+
+- **The price panel's regular expressions picker is gone.** In 0.1.20 the price panel's title bar
+  had a button marked `.*` that listed the saved regular expressions and typed the one you picked
+  into the game's stash search. It only confused people: a regular expression now goes in by a key
+  of its own, or by the settings' **Copy to clipboard**.
+
 ## [0.1.20] - 2026-10-21
 
 ### Added
