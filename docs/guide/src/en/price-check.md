@@ -507,7 +507,6 @@ and listing fetches go out one after another. Past about 20 with no pause, the s
 next request and asks to wait about 10 minutes. PoE2 Oracle stays under it: past the 20th request
 in quick succession it holds searches back on its own, saying "PoE2 Oracle is holding the search
 back — one more request in this pace could have the trade site limit searches for a while. Try
-again in …", and one check goes through at most about once per half a minute until the pace
-recovers.
+again in …", and one check goes through at most about once a minute until the pace recovers.
 
 Repeating an identical search within two minutes does not send a new request.
