@@ -1,10 +1,10 @@
 {
     "window": "Settings",
-    "sections": ["General", "Price check", "Quick actions", "XP overlay", "Account", "Help", "What's new"],
+    "sections": ["General", "Price check", "Quick actions", "Regular expressions", "XP overlay", "Account", "Help", "What's new"],
     "section": 0,
     "summary": "League, languages, scale, starting with Windows and updates",
     "version": "version {version}",
-    "app_version": "0.1.4",
+    "app_version": "0.2.0",
     "groups": [
         {
             "title": "League and language",
@@ -67,7 +67,7 @@
                     "control": { "type": "switch", "on": true }
                 },
                 {
-                    "label": "Version {version} · game data 2026092601",
+                    "label": "Version {version} · game data 2026101202",
                     "note": ["Connected to oracle.pushka.biz", "You have the latest version"],
                     "control": { "type": "button", "label": "Check now", "kind": "secondary" }
                 }

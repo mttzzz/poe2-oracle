@@ -48,7 +48,7 @@ export async function render(data) {
     const shown = {
         ...data,
         version: named(data.version),
-        groups: data.groups.map((group) => ({
+        groups: (data.groups ?? []).map((group) => ({
             ...group,
             rows: group.rows.map((row) => ({ ...row, label: named(row.label) })),
         })),
@@ -101,7 +101,7 @@ function sidebar(data) {
 }
 
 function page(data) {
-    const groups = h("div", "oui-settings-page", data.groups.map(group));
+    const groups = h("div", "oui-settings-page", data.list ? list(data.list) : data.groups.map(group));
     const thumb = h("span", "oui-settings-thumb");
     const bar = h("span", { class: "oui-settings-bar", hidden: true }, thumb);
     groups.append(bar);
@@ -117,6 +117,48 @@ function page(data) {
             h("div", "oui-settings-rule", ornamentRule()),
         ),
         groups,
+    );
+}
+
+/**
+ * A list section -- the regular expressions: what they are and how they get in, then a row each
+ * (its name, its search string, its key, the copy button and the ×) and the button that adds one.
+ */
+function list({ intro, name_placeholder, empty_key, copy, add, rows }) {
+    return h(
+        "div",
+        "oui-settings-list",
+        h("div", "oui-settings-list-intro", intro),
+        h(
+            "div",
+            "oui-card",
+            rows.flatMap((row, index) => [
+                index > 0 && h("div", "oui-settings-hairline"),
+                regexRow(row, { name_placeholder, empty_key, copy }),
+            ]),
+        ),
+        h("div", "oui-settings-list-add", button(add)),
+    );
+}
+
+/** A regular expression's row: its name, its search string, its key, the copy button and the ×. */
+function regexRow({ name, text, keys }, { name_placeholder, empty_key, copy }) {
+    return h(
+        "div",
+        "oui-settings-regex",
+        h(
+            "span",
+            { class: "oui-settings-field oui-settings-field--name" },
+            name ? h("span", null, name) : h("span", "oui-settings-muted", name_placeholder),
+        ),
+        h("span", { class: "oui-settings-field oui-settings-field--text" }, h("span", null, text)),
+        h(
+            "span",
+            "oui-settings-recorder",
+            keys?.length ? keycaps(keys) : h("span", "oui-settings-muted", empty_key),
+        ),
+        button(copy),
+        h("span", "oui-settings-remove", "×"),
     );
 }
 

@@ -50,6 +50,8 @@ poe2.re build such strings for you.
 
 ## Regular expressions
 
+![The settings window, the Regular expressions section](../images/en/regular-expressions.webp)
+
 Regular expressions are the stash (or a vendor's) search strings you save to stop typing them
 every time — the ones poe2.re builds, for one. Set them up in the [settings](settings.md), section
 **Regular expressions**: each has a name (optional; without one the search string itself names it),

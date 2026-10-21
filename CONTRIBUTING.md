@@ -407,6 +407,16 @@ three of them together. Each is drawn in HTML and CSS after the app's own widget
 `site/ui/data/<part>.<en|ru>.json`. To show another item or other numbers, edit the JSON; when the
 app's look changes, change its drawing in the same pull request.
 
+**Every change that touches what the player sees goes with the drawings.** A new section, a new
+row, a new button, a renamed word, a new app version or a new game data version: the drawings
+follow the app, not the other way round, and a drawing that is out of date is a lie on the landing
+page. So after such a change, in the same pull request:
+
+- walk every drawing in `site/ui/data/` against the app it draws -- the words it shows, the rows and
+  controls it has, the version and the data version it names, the sections it lists in the sidebar;
+- change the drawing (or its data) to match, in both languages;
+- re-render the pictures (below), and let the guide and the README show the new ones.
+
 The README and the guide show the same drawings as images. After changing a drawing or its data,
 save them again (Node 22 or newer, and Chrome or Chromium; `CHROME` points to it if it's not on
 `PATH`):

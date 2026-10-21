@@ -357,3 +357,55 @@
 .oui-settings-muted {
     color: var(--text-muted);
 }
+
+/* A list section -- the regular expressions: what they are, a row each and the button that adds
+   one (the app's own section, crates/poe2-oracle/src/ui/settings_view.rs). */
+.oui-settings-list {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    gap: calc(10 * var(--u));
+}
+
+.oui-settings-list-intro {
+    color: var(--text-dim);
+    font-size: calc(13 * var(--u));
+    line-height: calc(20 * var(--u));
+}
+
+.oui-settings-list-add {
+    display: flex;
+}
+
+/* A regular expression's row: its name, its search string, its key, the copy button and the ×. */
+.oui-settings-regex {
+    display: flex;
+    align-items: center;
+    gap: calc(10 * var(--u));
+    padding: calc(10 * var(--u)) calc(12 * var(--u));
+}
+
+.oui-settings-field--name {
+    flex: 1 1 0;
+    width: auto;
+    min-width: 0;
+}
+
+.oui-settings-field--text {
+    flex: 2 1 0;
+    width: auto;
+    min-width: 0;
+}
+
+/* The × that removes the row (style.rs's `icon_button`). */
+.oui-settings-remove {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: calc(26 * var(--u));
+    height: calc(26 * var(--u));
+    border-radius: var(--control-radius);
+    color: var(--text-dim);
+    font-size: calc(15 * var(--u));
+}
