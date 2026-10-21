@@ -116,6 +116,65 @@ impl RateLimiter {
     }
 }
 
+/// GGG's limit on how often one client may call the trade API, which no response header shows: a
+/// bucket of about 22 requests, searches and fetches together, refilling about 1.8 a minute, past
+/// which the site refuses the next request with `429` and `Retry-After: 600`. The market
+/// collector measured it on 2026-09-29; player report #18 (2026-10-20) met it: the 33rd search or
+/// fetch in 5 min 50 s was refused for 600 s while every published window stood at a third of its
+/// cap or less. `Pace` keeps under it with a bucket of 20 refilling 1.8 a minute; the caller takes
+/// one request from it as each one goes out.
+#[derive(Debug, Clone)]
+pub struct Pace {
+    /// The requests in hand at `at`.
+    tokens: f64,
+    /// When `tokens` was counted; `None` while the bucket is full and untouched.
+    at: Option<Instant>,
+}
+
+impl Default for Pace {
+    fn default() -> Self {
+        Self {
+            tokens: Self::CAPACITY,
+            at: None,
+        }
+    }
+}
+
+impl Pace {
+    const CAPACITY: f64 = 20.0;
+    const PER_SEC: f64 = 1.8 / 60.0;
+
+    /// How long from now until `requests` more may go out; `None` if they may now.
+    pub fn wait_for(&self, requests: u32) -> Option<Duration> {
+        self.wait_for_at(requests, Instant::now())
+    }
+
+    fn wait_for_at(&self, requests: u32, now: Instant) -> Option<Duration> {
+        let short = f64::from(requests) - self.tokens_at(now);
+        (short > 0.0).then(|| Duration::from_secs_f64(short / Self::PER_SEC))
+    }
+
+    /// Counts one request going out now.
+    pub fn take(&mut self) {
+        self.take_at(Instant::now());
+    }
+
+    fn take_at(&mut self, now: Instant) {
+        self.tokens = self.tokens_at(now) - 1.0;
+        self.at = Some(now);
+    }
+
+    fn tokens_at(&self, now: Instant) -> f64 {
+        match self.at {
+            None => self.tokens,
+            Some(at) => {
+                let refilled = now.saturating_duration_since(at).as_secs_f64() * Self::PER_SEC;
+                (self.tokens + refilled).min(Self::CAPACITY)
+            }
+        }
+    }
+}
+
 /// The wait, in seconds from receipt, that one response implies (see
 /// [`RateLimiter::required_wait`]), or `None` if it carries no rate-limit information at all.
 /// Every rule family counts -- each restricts independently (e.g. `ip` and `account`). A
@@ -399,5 +458,51 @@ mod tests {
     fn malformed_triples_fail_to_parse() {
         assert_eq!(parse_windows("5:10:60,not-a-triple"), None);
         assert_eq!(parse_windows("1:10:0,1:60"), None);
+    }
+
+    #[test]
+    fn the_pace_lets_twenty_requests_through_then_one_every_33_seconds() {
+        let start = Instant::now();
+        let mut pace = Pace::default();
+        assert_eq!(pace.wait_for_at(20, start), None);
+        for _ in 0..19 {
+            pace.take_at(start);
+        }
+        // One left: a check's search and fetch need two, a lone fetch one.
+        assert_eq!(pace.wait_for_at(1, start), None);
+        let two = pace.wait_for_at(2, start).expect("a check waits");
+        assert_eq!(two.as_secs(), 33);
+        pace.take_at(start);
+        // Empty, it refills 1.8 a minute: one request per 33⅓ s.
+        assert!(pace.wait_for_at(1, start + secs(33)).is_some());
+        assert_eq!(pace.wait_for_at(1, start + secs(34)), None);
+        // An hour idle fills it again, and no more than full.
+        assert_eq!(pace.wait_for_at(20, start + secs(3600)), None);
+        assert!(pace.wait_for_at(21, start + secs(3600)).is_some());
+    }
+
+    #[test]
+    fn the_pace_waits_before_the_request_the_site_refused_in_report_18() {
+        // Player report #18 (2026-10-20): 33 searches and fetches from 18:56:38, in ms from the
+        // first. The site refused the last one, a search, for 600 s, while every published
+        // window stood at a third of its cap or less.
+        const RUN: [u64; 33] = [
+            0, 314, 2632, 2948, 27164, 27481, 34805, 35116, 48468, 48775, 55491, 55805, 94058,
+            94384, 96829, 97143, 100208, 100533, 270002, 270331, 274295, 274608, 289760, 290092,
+            293678, 293998, 318902, 319219, 326742, 327079, 342607, 342935, 350160,
+        ];
+        let start = Instant::now();
+        let mut pace = Pace::default();
+        let first_wait = RUN.iter().enumerate().position(|(i, &ms)| {
+            let at = start + Duration::from_millis(ms);
+            // Searches and fetches alternate, a search first; a search waits for its fetch too.
+            let wait = pace.wait_for_at(if i % 2 == 0 { 2 } else { 1 }, at);
+            pace.take_at(at);
+            wait.is_some()
+        });
+        assert!(
+            first_wait.is_some_and(|at| at < RUN.len() - 1),
+            "the pace let the refused request out: first wait at {first_wait:?}"
+        );
     }
 }

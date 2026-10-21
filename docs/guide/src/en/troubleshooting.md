@@ -73,13 +73,19 @@ search again: click **Search** or press <kbd>Enter</kbd> in a filter box.
 - "Trade API request limit — waiting 5s…" is normal: the trade site's limit is close, and the app
   waits a few seconds before searching.
 - "The trade site has limited searches for a while — try again in 9m 50s." means the trade site
-  has locked searches from your IP address for a while, often for minutes. PoE2 Oracle sends no
-  trade request until then. Wait that long, then search again; Currency Exchange prices keep
-  working.
+  has stopped taking search requests for a while, often for minutes. PoE2 Oracle sends no trade
+  request until then. Wait that long, then search again; Currency Exchange prices keep working.
+- "PoE2 Oracle is holding the search back: …" means besides the limits it publishes, the trade
+  site keeps one more — on how many searches and listing fetches go out in a row — and shows it in
+  no response header. PoE2 Oracle stays under it on its own and holds searches back for a while,
+  so as not to reach a refusal that asks for about ten minutes. The search runs again after the
+  time shown.
 
-The trade site counts every request from your IP address: the site in your browser and other trade
-tools use the same limits. Many checks in a row, or several tools at once, run into them sooner.
-See [Request limits](price-check.md#request-limits).
+Every request from your IP address drains the published limits (see
+[Request limits](price-check.md#request-limits)): the site in your browser and other trade tools
+use the same ones. Many checks in a row, or several tools at once, run into the unpublished one
+sooner: the app starts holding searches back on its own longer, and it waits the ten minutes
+outright once the site refuses.
 
 ## An item is not recognised
 

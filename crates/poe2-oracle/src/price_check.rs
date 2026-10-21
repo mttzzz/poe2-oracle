@@ -33,7 +33,7 @@ use poe2_domain::{ItemRarity, ParsedItem};
 use trade_client::catalog::{ItemTypeEntry, StaticCurrency, uniques_of_base};
 use trade_client::cx::{Market, MarketPrice};
 use trade_client::private_leagues::{self, PrivateLeague};
-use trade_client::rate_limit::RateLimiter;
+use trade_client::rate_limit::{Pace, RateLimiter};
 use trade_client::rates::PriceUnit;
 use trade_client::scout::ScoutPrices;
 use trade_client::whisper::{self, Action, Answer, Outcome};
@@ -324,6 +324,9 @@ impl Problem {
 pub enum SearchFailure {
     /// The trade site restricted this IP: the seconds until it takes requests again, if it said.
     RateLimited(Option<u64>),
+    /// The app holds the search back: the trade site's limit is all but used up, and one more
+    /// request could get the IP restricted. The seconds until it searches again.
+    Paused(u64),
     /// The trade API refused the request, with its HTTP status and message.
     Refused { status: u16, message: String },
     /// The site found the query too complex (`TradeApiError::is_too_complex`). With
@@ -342,8 +345,13 @@ impl SearchFailure {
     /// What a failed search's `err` means for the player; `weighted_sums`: whether the search had
     /// a checked weighted sum.
     fn of(err: &anyhow::Error, weighted_sums: bool) -> Self {
-        if let Some(RateLimitedFor(wait)) = err.downcast_ref::<RateLimitedFor>() {
-            return SearchFailure::RateLimited(Some(wait.as_secs()));
+        if let Some(limited) = err.downcast_ref::<RateLimitedFor>() {
+            let secs = limited.wait.as_secs();
+            return if limited.refused {
+                SearchFailure::RateLimited(Some(secs))
+            } else {
+                SearchFailure::Paused(secs)
+            };
         }
         if let Some(api) = err.downcast_ref::<TradeApiError>() {
             if api.is_rate_limited() {
@@ -370,6 +378,12 @@ impl SearchFailure {
     pub fn message(&self) -> String {
         match self {
             SearchFailure::RateLimited(retry_after_secs) => rate_limit_message(*retry_after_secs),
+            SearchFailure::Paused(secs) => tr!(
+                "PoE2 Oracle is holding the search back: one more request in this pace could \
+                 have the trade site limit searches for a while. Try again {when}.\n\nCurrency \
+                 Exchange prices still work.",
+                when = tr!("in {wait}", wait = i18n::duration_secs(*secs))
+            ),
             SearchFailure::Refused { status, message } => tr!(
                 "The trade API refused the request (HTTP {status}): {message}",
                 status = status,
@@ -640,6 +654,8 @@ pub struct PriceCheckApp {
     russian: SiteCatalog,
     /// One per `Endpoint`, indexed by it.
     limiters: [RateLimiter; 3],
+    /// The trade site's unpublished limit on searches and fetches together (`Pace`).
+    pace: Pace,
     advanced_mod_desc_key: VIRTUAL_KEY,
 
     pub bootstrap: BootstrapState,
@@ -778,6 +794,7 @@ impl PriceCheckApp {
             international: SiteCatalog::default(),
             russian: SiteCatalog::default(),
             limiters: Default::default(),
+            pace: Pace::default(),
             advanced_mod_desc_key: VIRTUAL_KEY(game_config::read().advanced_mod_desc_key),
             bootstrap: BootstrapState::Loading,
             item: None,
@@ -3544,20 +3561,33 @@ enum Endpoint {
     Whisper,
 }
 
-/// A request refused locally: the trade API's restriction outlasts `MAX_RATE_LIMIT_WAIT`.
+/// A request refused locally: the wait the trade API's limits ask for outlasts
+/// `MAX_RATE_LIMIT_WAIT`. `refused`: the site itself restricted the IP (a `429`, on any endpoint);
+/// otherwise the app holds back, a window of the site's limit one request from full. Player report
+/// #18 (2026-10-20): the app said the site had limited searches when only it had paused them.
 #[derive(Debug)]
-struct RateLimitedFor(Duration);
+struct RateLimitedFor {
+    wait: Duration,
+    refused: bool,
+}
 
 impl std::fmt::Display for RateLimitedFor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "trade API rate limit: {}s left", self.0.as_secs())
+        let why = if self.refused { "refused" } else { "held back" };
+        write!(
+            f,
+            "trade API rate limit ({why}): {}s left",
+            self.wait.as_secs()
+        )
     }
 }
 
 impl std::error::Error for RateLimitedFor {}
 
-/// A copy of `endpoint`'s limiter for the next request, after sitting out whatever wait it says
-/// the trade API needs first (shown in the panel meanwhile, if this is still the current search).
+/// A copy of `endpoint`'s limiter for the next request, after sitting out whatever wait the trade
+/// API needs first (shown in the panel meanwhile, if this is still the current search): its
+/// published limits (the limiter) and the unpublished one (`PriceCheckApp::pace`), by which a
+/// search waits until it and its fetch can both go out. The request is counted in the pace here.
 /// The network calls need `&mut RateLimiter` outside any `state.update` borrow, so each request
 /// works on this copy and `store_limiter` merges it back -- on failure too: a 429 teaches the
 /// limiter the restriction.
@@ -3567,12 +3597,25 @@ async fn limiter_for_request(
     generation: u64,
     endpoint: Endpoint,
 ) -> Result<RateLimiter> {
-    let wait = view.read_with(cx, |state, _| {
-        state.limiters[endpoint as usize].required_wait()
+    let paced = match endpoint {
+        Endpoint::Search => 1 + FETCH_PAGES as u32,
+        Endpoint::Fetch => 1,
+        Endpoint::Whisper => 0,
+    };
+    let (wait, refused) = view.read_with(cx, |state, _| {
+        let now = Instant::now();
+        let refused = state
+            .limiters
+            .iter()
+            .any(|limiter| limiter.refused_until().is_some_and(|until| until > now));
+        let wait = state.limiters[endpoint as usize]
+            .required_wait()
+            .max(state.pace.wait_for(paced));
+        (wait, refused)
     });
     if let Some(wait) = wait {
         if wait > MAX_RATE_LIMIT_WAIT {
-            return Err(RateLimitedFor(wait).into());
+            return Err(RateLimitedFor { wait, refused }.into());
         }
         show_search_state(
             view,
@@ -3585,7 +3628,12 @@ async fn limiter_for_request(
         cx.background_executor().timer(wait).await;
         show_search_state(view, cx, generation, SearchState::Searching);
     }
-    Ok(view.read_with(cx, |state, _| state.limiters[endpoint as usize].clone()))
+    Ok(view.update(cx, |state, _| {
+        if paced > 0 {
+            state.pace.take();
+        }
+        state.limiters[endpoint as usize].clone()
+    }))
 }
 
 fn show_search_state(
@@ -3637,18 +3685,18 @@ fn describe_parse_error(err: &ParseError) -> String {
     }
 }
 
-/// The trade site's refusal, said the way the player can act on it: when to try again, and that
-/// the limit counts every request from their IP -- the trade site open in their browser included
-/// -- while the market prices, which don't go through it, still work.
+/// The trade site's refusal, said the way the player can act on it: when to try again. Only the
+/// facts the log shows -- the site asked for a wait -- and that the market prices, which don't go
+/// through the trade API, still work. Player report #18 (2026-10-20): the player disputed what
+/// the site does with searches and whose requests it counts, so the message claims neither.
 fn rate_limit_message(retry_after_secs: Option<u64>) -> String {
     let when = match retry_after_secs {
         Some(secs) => tr!("in {wait}", wait = i18n::duration_secs(secs)),
         None => tr!("a little later").to_owned(),
     };
     tr!(
-        "The trade site has limited searches for a while — try again {when}.\n\nThe limit counts \
-         every request from your IP, your browser's included. Currency Exchange prices still \
-         work.",
+        "The trade site has limited searches for a while — try again {when}. Currency Exchange \
+         prices still work.",
         when = when
     )
 }

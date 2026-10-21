@@ -471,7 +471,8 @@ trade site."
 | "Searching…" | Searching. |
 | "Loading exchange prices…" | Loading the Currency Exchange's prices for an exchange item. |
 | "Trade API request limit — waiting Ns…" | The trade site's request limit is close; the app waits N seconds and then searches. |
-| "The trade site has limited searches for a while — try again in 9m 50s." | Searches are on hold: the trade site has locked searches from your IP address for a while, or its limit would need a wait longer than 15 seconds. Search again after that time; Currency Exchange prices keep working. See [Request limits](#request-limits). |
+| "The trade site has limited searches for a while — try again in 9m 50s." | Searches are on hold: the trade site has stopped taking search requests for a while, or its limit would need a wait longer than 15 seconds. Search again after that time; Currency Exchange prices keep working. See [Request limits](#request-limits). |
+| "PoE2 Oracle is holding the search back: …" | The app holds the search back itself to stay under the trade site's unpublished limit on searches and listing fetches in a row. The search runs again after the time shown. See [Request limits](#request-limits). |
 | "Can't reach the trade site — check your internet connection and try again." | The trade site could not be reached. Check your connection and search again. |
 | "The trade API refused the request (HTTP …): …" | The trade site refused the search; its own message follows. |
 | "The trade site searches the “sum” rows only for a signed-in account, and it isn't accepting this app's sign-in now…" | The search had a ticked **sum** row, and the trade site did not accept PoE2 Oracle's sign-in. **Search without sums** builds the rows again without sums, as a signed-out search does, and searches once; **Sign in** opens the pathofexile.com sign-in page. |
@@ -496,9 +497,17 @@ listings. PoE2 Oracle reads the limits from the site's answers:
   saying "Trade API request limit — waiting Ns…", and then searches by itself. It does not sit out
   a longer wait: the search stops with "The trade site has limited searches for a while — try again
   in …" and the time left;
-- when the trade site refuses a request, it locks your IP address out for a while, often for
-  minutes. PoE2 Oracle then sends no trade request at all until the lockout ends and says when to
-  try again: "The trade site has limited searches for a while — try again in 9m 50s." Currency
+- when the trade site refuses a request, it stops taking search requests for a while, often for
+  minutes. PoE2 Oracle then sends no trade request at all until the wait ends and says when to try
+  again: "The trade site has limited searches for a while — try again in 9m 50s." Currency
   Exchange prices keep working meanwhile.
+
+Besides the limits it publishes, the site keeps one more, in no response header: how many searches
+and listing fetches go out one after another. Past about 20 with no pause, the site refuses the
+next request and asks to wait about 10 minutes. PoE2 Oracle stays under it: past the 20th request
+in quick succession it holds searches back on its own, saying "PoE2 Oracle is holding the search
+back — one more request in this pace could have the trade site limit searches for a while. Try
+again in …", and one check goes through at most about once per half a minute until the pace
+recovers.
 
 Repeating an identical search within two minutes does not send a new request.

@@ -18,6 +18,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   effectiveness and rarity and waystone drop chance are now searched as minimums, and so is how
   many modifiers it has (**8 Modifiers**): that waystone's search finds 28 listings.
 
+- **Searches take the trade site's invisible request limit into account.** Besides the limits the
+  site publishes in its answers' headers, it keeps one it shows nowhere, and checking many items
+  quickly can reach it while every published window stands at a third of its cap: then the site
+  refuses the next request and asks for ten minutes of no searches at all (player report #18). The
+  app now counts its own searches and listing fetches in a row; once they run 20 deep, it holds
+  searches back until the pace can carry them, saying what it is doing instead of letting the site
+  refuse.
+
 ## [0.1.19] - 2026-10-19
 
 ### Fixed
