@@ -186,10 +186,11 @@ action** is below them. If another program holds a combination the actions press
 ## Regular expressions
 
 Section **Regular expressions**: the stash (or a vendor's) search strings you saved, each with a
-name (optional; without one the search string itself names it) and the search string, up to 64 of
-them; **+ Add regular expression** adds one and the **×** at the end of a row removes it. A row
-without a search string is not saved. Pick one in the price panel, with the button marked `.*` in
-its title bar. See [Quick actions](quick-actions.md).
+name (optional; without one the search string itself names it), the search string and a key, up
+to 64 of them; **+ Add regular expression** adds one and the **×** at the end of a row removes it. A
+row without a search string is not saved. A key types the expression into the game on its own; a
+key cannot be the price check's or another action's. Pick one in the price panel, with the button
+marked `.*` in its title bar. See [Quick actions](quick-actions.md).
 
 ## XP overlay
 

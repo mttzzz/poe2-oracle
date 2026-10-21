@@ -219,6 +219,8 @@ enum Recorder {
     PriceCheck,
     /// The quick action in this row.
     Action(usize),
+    /// The regular expression in this row.
+    Regex(usize),
 }
 
 /// The diagnostics report's progress, shown under its button.
@@ -237,12 +239,13 @@ struct ActionRow {
     recorder: FocusHandle,
 }
 
-/// A saved regular expression's row: what it will save, and the two fields its name and its
-/// search string are typed in.
+/// A saved regular expression's row: what it will save, the two fields its name and its search
+/// string are typed in, and its hotkey recorder's focus.
 struct RegexRow {
     draft: SavedRegex,
     name_field: Entity<TextField>,
     text_field: Entity<TextField>,
+    recorder: FocusHandle,
 }
 
 pub struct SettingsView {
@@ -448,6 +451,7 @@ impl SettingsView {
             draft,
             name_field,
             text_field,
+            recorder: cx.focus_handle(),
         }
     }
 
@@ -555,7 +559,7 @@ impl SettingsView {
             }
         }
         if typed {
-            self.apply_regexes(cx);
+            self.apply_regexes_noting(cx);
         }
     }
 
@@ -571,8 +575,9 @@ impl SettingsView {
     }
 
     /// Saves the regular expressions as the rows stand: the ones with a search string, in the
-    /// order the rows are in.
-    fn apply_regexes(&mut self, cx: &mut Context<Self>) {
+    /// order the rows are in. Returns the rows whose key the app refused -- another program
+    /// holds it -- each with the key refused; those rows now go without one, as the settings do.
+    fn apply_regexes(&mut self, cx: &mut Context<Self>) -> Vec<(usize, Hotkey)> {
         let regexes: Vec<SavedRegex> = self
             .regexes
             .iter()
@@ -580,6 +585,60 @@ impl SettingsView {
             .map(|row| row.draft.clone())
             .collect();
         self.change(cx, |settings| settings.regexes = regexes);
+        let taken: Vec<Option<Hotkey>> = self
+            .app
+            .read(cx)
+            .settings
+            .regexes
+            .iter()
+            .map(|regex| regex.hotkey)
+            .collect();
+        // The settings keep only the rows with a search string: the others are no rows of the
+        // list, and their keys are nobody's.
+        let saved: Vec<usize> = (0..self.regexes.len())
+            .filter(|index| !self.regexes[*index].draft.text.is_empty())
+            .collect();
+        let mut refused = Vec::new();
+        for (index, taken) in saved.into_iter().zip(taken) {
+            let row = &mut self.regexes[index];
+            if let Some(asked) = row.draft.hotkey
+                && taken != Some(asked)
+            {
+                refused.push((index, asked));
+                row.draft.hotkey = taken;
+            }
+        }
+        refused
+    }
+
+    /// [`Self::apply_regexes`], saying under each refused row why it went without its key.
+    fn apply_regexes_noting(&mut self, cx: &mut Context<Self>) {
+        for (index, asked) in self.apply_regexes(cx) {
+            self.refused = Some((Recorder::Regex(index), asked, None));
+        }
+    }
+
+    /// Gives the regular expression in row `index` `hotkey`, at once. One another program holds
+    /// is refused, and the expression keeps the key it had.
+    fn set_regex_hotkey(&mut self, index: usize, hotkey: Option<Hotkey>, cx: &mut Context<Self>) {
+        let Some(row) = self.regexes.get_mut(index) else {
+            return;
+        };
+        let previous = std::mem::replace(&mut row.draft.hotkey, hotkey);
+        if previous == hotkey {
+            return;
+        }
+        self.refused = None;
+        let refused = self.apply_regexes(cx);
+        if let Some(&(_, asked)) = refused.iter().find(|(refused, _)| *refused == index) {
+            self.regexes[index].draft.hotkey = previous;
+            // The refusal left the expression without one: its old one is held again.
+            if previous.is_some() {
+                self.apply_regexes(cx);
+            }
+            self.refused = Some((Recorder::Regex(index), asked, previous));
+        }
+        cx.notify();
     }
 
     /// A regular expression's field was left with a new text.
@@ -597,7 +656,7 @@ impl SettingsView {
         } else {
             row.draft.text = text;
         }
-        self.apply_regexes(cx);
+        self.apply_regexes_noting(cx);
         cx.notify();
     }
 
@@ -792,6 +851,7 @@ impl SettingsView {
         match recorder {
             Recorder::PriceCheck => Some(&self.recorder_focus),
             Recorder::Action(index) => self.actions.get(index).map(|row| &row.recorder),
+            Recorder::Regex(index) => self.regexes.get(index).map(|row| &row.recorder),
         }
     }
 
@@ -844,6 +904,12 @@ impl SettingsView {
                     self.set_action_hotkey(index, None, cx);
                     return;
                 }
+                // A regular expression may go without a key too.
+                ("backspace" | "delete", Recorder::Regex(index)) => {
+                    self.stop_capture(window, cx);
+                    self.set_regex_hotkey(index, None, cx);
+                    return;
+                }
                 _ => {}
             }
         }
@@ -853,6 +919,7 @@ impl SettingsView {
                 match recorder {
                     Recorder::PriceCheck => self.set_price_check_hotkey(hotkey, cx),
                     Recorder::Action(index) => self.set_action_hotkey(index, Some(hotkey), cx),
+                    Recorder::Regex(index) => self.set_regex_hotkey(index, Some(hotkey), cx),
                 }
             }
             Err(error) => {
@@ -873,6 +940,14 @@ impl SettingsView {
         });
         if taken {
             return Err(tr!("Another quick action already uses this combination"));
+        }
+        let taken = self.regexes.iter().enumerate().any(|(index, row)| {
+            recorder != Recorder::Regex(index) && row.draft.hotkey == Some(hotkey)
+        });
+        if taken {
+            return Err(tr!(
+                "Another regular expression already uses this combination"
+            ));
         }
         Ok(hotkey)
     }
@@ -1020,6 +1095,7 @@ impl SettingsView {
         let key = match which {
             Recorder::PriceCheck => "price-check-hotkey",
             Recorder::Action(_) => "keys",
+            Recorder::Regex(_) => "regex-keys",
         };
         div()
             .track_focus(&focus)
@@ -1206,7 +1282,7 @@ impl SettingsView {
             Section::QuickActions => self
                 .render_quick_actions(face, window, cx)
                 .into_any_element(),
-            Section::Regexes => self.render_regexes(face, cx).into_any_element(),
+            Section::Regexes => self.render_regexes(face, window, cx).into_any_element(),
             Section::XpOverlay => self
                 .render_xp_overlay(settings, face, cx)
                 .into_any_element(),
@@ -1844,9 +1920,14 @@ impl SettingsView {
             .into_any_element()
     }
 
-    /// The player's saved regular expressions: a row each -- its name, its search string and the
-    /// × that removes it -- and a button that adds one.
-    fn render_regexes(&self, face: &'static NameFont, cx: &Context<Self>) -> impl IntoElement {
+    /// The player's saved regular expressions: a row each -- its name, its search string, its key
+    /// and the × that removes it -- and a button that adds one.
+    fn render_regexes(
+        &self,
+        face: &'static NameFont,
+        window: &Window,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
         let rows: Vec<AnyElement> = if self.regexes.is_empty() {
             vec![
                 div()
@@ -1860,7 +1941,7 @@ impl SettingsView {
             self.regexes
                 .iter()
                 .enumerate()
-                .map(|(index, row)| self.render_regex(index, row, cx))
+                .map(|(index, row)| self.render_regex(index, row, window, cx))
                 .collect()
         };
         let can_add = self.regexes.len() < settings::MAX_REGEXES;
@@ -1878,7 +1959,7 @@ impl SettingsView {
                         "A regular expression goes into the game's stash search, the way a \
                          quick action of the kind Stash does: the game must be in front, and its \
                          stash or a vendor's window open. Pick one from the price panel's title \
-                         bar, the button marked “.*”."
+                         bar, the button marked “.*”, or give it a key and press that."
                     ))),
             )
             .child(card(rows))
@@ -1895,8 +1976,25 @@ impl SettingsView {
             })
     }
 
-    /// One saved regular expression: its name, its search string and the × that removes it.
-    fn render_regex(&self, index: usize, row: &RegexRow, cx: &Context<Self>) -> AnyElement {
+    /// One saved regular expression: its name, its search string, its key and the × that removes
+    /// it.
+    fn render_regex(
+        &self,
+        index: usize,
+        row: &RegexRow,
+        window: &Window,
+        cx: &Context<Self>,
+    ) -> AnyElement {
+        let capturing = row.recorder.is_focused(window);
+        let line = self.recorder_line(
+            Recorder::Regex(index),
+            capturing,
+            tr!(
+                "F1–F12, or Ctrl or Alt with a letter or digit · Backspace for no key · Esc keeps \
+                 the old one"
+            ),
+            None,
+        );
         div()
             .id(("regex", index))
             .flex()
@@ -1913,7 +2011,7 @@ impl SettingsView {
                         div()
                             .flex()
                             .flex_1()
-                            .min_w_0()
+                            .min_w(px(0.))
                             .child(row.name_field.clone()),
                     )
                     .child(
@@ -1925,6 +2023,13 @@ impl SettingsView {
                             .min_w(px(0.))
                             .child(row.text_field.clone()),
                     )
+                    .child(self.render_recorder(
+                        Recorder::Regex(index),
+                        row.draft.hotkey,
+                        tr!("no key"),
+                        window,
+                        cx,
+                    ))
                     .child(icon_button(
                         "remove",
                         "×",
@@ -1934,6 +2039,7 @@ impl SettingsView {
                         }),
                     )),
             )
+            .children(line)
             .into_any_element()
     }
 

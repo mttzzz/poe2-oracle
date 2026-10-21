@@ -61,7 +61,9 @@ use crate::platform::{
 use crate::report;
 use crate::roll_slider::{self, Handle, Slider};
 use crate::session::SessionStatus;
-use crate::settings::{self, Hotkey, LeagueChoice, QuickAction, Settings, WaystoneMark};
+use crate::settings::{
+    self, Hotkey, LeagueChoice, QuickAction, QuickActionKind, SavedRegex, Settings, WaystoneMark,
+};
 use crate::tr;
 use crate::ui::tour;
 use crate::unique_art;
@@ -1190,6 +1192,7 @@ impl PriceCheckApp {
         }
         let known: Vec<Hotkey> = std::iter::once(old.hotkey)
             .chain(old.quick_actions.iter().filter_map(|action| action.hotkey))
+            .chain(old.regexes.iter().filter_map(|regex| regex.hotkey))
             .collect();
         let free = |hotkey: Hotkey| {
             known.contains(&hotkey)
@@ -1213,6 +1216,14 @@ impl PriceCheckApp {
                 && (hotkey == self.settings.hotkey || !free(hotkey))
             {
                 action.hotkey = None;
+            }
+        }
+        for regex in &mut self.settings.regexes {
+            // The price check's hotkey may just have gone back to one an expression now has.
+            if let Some(hotkey) = regex.hotkey
+                && (hotkey == self.settings.hotkey || !free(hotkey))
+            {
+                regex.hotkey = None;
             }
         }
     }
@@ -1239,6 +1250,12 @@ impl PriceCheckApp {
                     .quick_actions
                     .iter()
                     .filter_map(|action| action.hotkey),
+            );
+            wanted.extend(
+                self.settings
+                    .regexes
+                    .iter()
+                    .filter_map(|regex| regex.hotkey),
             );
         }
         let Some(manager) = &self.hotkeys else {
@@ -1284,11 +1301,17 @@ impl PriceCheckApp {
         }
         // One press of a quick action's key types once (`quick_action::KEY_PRESSES`): the
         // keyboard hook counts the presses while any of their hotkeys is held, and only then.
-        esc_hook::count_presses(self.settings.quick_actions.iter().any(|action| {
-            action
-                .hotkey
-                .is_some_and(|hotkey| self.registered.contains(&hotkey))
-        }));
+        esc_hook::count_presses(
+            self.settings.quick_actions.iter().any(|action| {
+                action
+                    .hotkey
+                    .is_some_and(|hotkey| self.registered.contains(&hotkey))
+            }) || self.settings.regexes.iter().any(|regex| {
+                regex
+                    .hotkey
+                    .is_some_and(|hotkey| self.registered.contains(&hotkey))
+            }),
+        );
     }
 
     /// What a press of the hotkey with `id` is for. Nothing while the settings window is open:
@@ -1300,16 +1323,23 @@ impl PriceCheckApp {
         if id == self.settings.hotkey.to_global().id() {
             return Some(Pressed::PriceCheck);
         }
+        if let Some(action) = self.settings.quick_actions.iter().find(|action| {
+            action
+                .hotkey
+                .is_some_and(|hotkey| hotkey.to_global().id() == id)
+        }) {
+            return Some(Pressed::QuickAction(action.clone()));
+        }
         self.settings
-            .quick_actions
+            .regexes
             .iter()
-            .find(|action| {
-                action
+            .find(|regex| {
+                regex
                     .hotkey
                     .is_some_and(|hotkey| hotkey.to_global().id() == id)
             })
             .cloned()
-            .map(Pressed::QuickAction)
+            .map(Pressed::Regex)
     }
 
     /// The listings a search with `key` got within `SEARCH_CACHE_TTL`, if any.
@@ -2694,6 +2724,10 @@ pub fn register_hotkeys(cx: &mut App, view: Entity<PriceCheckApp>) -> Result<()>
                     // must not flood the chat -- the game disconnects for too many actions.
                     while presses.try_recv().is_ok() {}
                 }
+                Pressed::Regex(regex) => {
+                    run_regex(&view, regex, cx).await;
+                    while presses.try_recv().is_ok() {}
+                }
             }
             // The clipboard is the player's again: a restart held for it may go.
             view.update(cx, |state, cx| {
@@ -2732,11 +2766,38 @@ pub fn register_hotkeys(cx: &mut App, view: Entity<PriceCheckApp>) -> Result<()>
 enum Pressed {
     PriceCheck,
     QuickAction(QuickAction),
+    Regex(SavedRegex),
 }
 
 /// Types a quick action into the game (`game_chat`): its text through the clipboard, which gets
 /// the player's own content back right after.
 async fn run_quick_action(view: &Entity<PriceCheckApp>, action: QuickAction, cx: &mut AsyncApp) {
+    type_into_game(view, action, "quick action", cx).await;
+}
+
+/// Types a saved regular expression into the game's stash search: the same text and the same
+/// keys a quick action of the kind Stash types (Ctrl+F, the text, Enter), under the expression's
+/// own key.
+async fn run_regex(view: &Entity<PriceCheckApp>, regex: SavedRegex, cx: &mut AsyncApp) {
+    let Some(hotkey) = regex.hotkey else {
+        return;
+    };
+    let action = QuickAction {
+        kind: QuickActionKind::StashSearch,
+        text: regex.text,
+        hotkey: Some(hotkey),
+    };
+    type_into_game(view, action, "regular expression", cx).await;
+}
+
+/// Types `action` into the game: its text through the clipboard, which gets the player's own
+/// content back right after.
+async fn type_into_game(
+    view: &Entity<PriceCheckApp>,
+    action: QuickAction,
+    what: &str,
+    cx: &mut AsyncApp,
+) {
     // The hotkey is held only while the game is in front, but a press can race the player's
     // switch to another program, and must not type there.
     if game_window::foreground() != Foreground::Game {
@@ -2758,7 +2819,7 @@ async fn run_quick_action(view: &Entity<PriceCheckApp>, action: QuickAction, cx:
             held.push(key);
         }
     }
-    log::info!("{hotkey}: quick action ({:?})", action.kind);
+    log::info!("{hotkey}: {what} ({:?})", action.kind);
     game_chat::type_action(&action, &held, cx).await;
 }
 

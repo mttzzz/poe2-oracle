@@ -222,6 +222,17 @@ impl Settings {
             !regex.text.is_empty()
         });
         self.regexes.truncate(MAX_REGEXES);
+        // A regular expression's key, like a quick action's: only a usable one that nothing
+        // earlier -- the price check, an action, an earlier expression -- already has.
+        for regex in self.regexes.iter_mut() {
+            if let Some(hotkey) = regex.hotkey {
+                if hotkey.check().is_err() || taken.contains(&hotkey) {
+                    regex.hotkey = None;
+                } else {
+                    taken.push(hotkey);
+                }
+            }
+        }
         self
     }
 
@@ -270,6 +281,10 @@ pub struct SavedRegex {
     /// The text pasted into the game's search box.
     #[serde(default)]
     pub text: String,
+    /// The key that types it into the game, as a quick action's key types its text.
+    /// `None` until the player records one.
+    #[serde(default, deserialize_with = "or_default")]
+    pub hotkey: Option<Hotkey>,
 }
 
 /// How the player rates a waystone modifier; a checked waystone shows its marked mods in the
@@ -1102,10 +1117,12 @@ mod tests {
                 SavedRegex {
                     name: "Runes".to_owned(),
                     text: r"r/\bRune\b/".to_owned(),
+                    hotkey: None,
                 },
                 SavedRegex {
                     name: String::new(),
                     text: "ilvl 84".to_owned(),
+                    hotkey: None,
                 },
             ],
             "the name and the text are trimmed, the empty one is dropped"
@@ -1115,6 +1132,7 @@ mod tests {
             regexes: vec![SavedRegex {
                 name: "Runes".to_owned(),
                 text: r"r/\bRune\b/".to_owned(),
+                hotkey: None,
             }],
             ..Settings::default()
         };
@@ -1130,6 +1148,7 @@ mod tests {
             .map(|index| SavedRegex {
                 name: format!("{index}"),
                 text: format!("r/{index}/"),
+                hotkey: None,
             })
             .collect();
         write_file(
@@ -1144,6 +1163,51 @@ mod tests {
             load_from(&path).regexes.len(),
             MAX_REGEXES,
             "the list is capped"
+        );
+    }
+
+    #[test]
+    fn a_regular_expression_keeps_only_a_free_key() {
+        let dir = TempDir::new();
+        let path = dir.settings_file();
+        // The price check's key is Ctrl+E; F5 is asked for twice; a bare E is no key at all.
+        write_file(
+            &path,
+            r#"{"regexes": [
+                {"name": "one", "text": "r/one/", "hotkey": {"key": "F5"}},
+                {"name": "two", "text": "r/two/", "hotkey": {"key": "F5"}},
+                {"name": "three", "text": "r/three/", "hotkey": {"ctrl": true, "key": "E"}},
+                {"name": "four", "text": "r/four/", "hotkey": {"key": "E"}},
+                {"name": "five", "text": "r/five/", "hotkey": {"alt": true, "key": "7"}}
+            ]}"#,
+        );
+        let keys: Vec<Option<Hotkey>> = load_from(&path)
+            .regexes
+            .iter()
+            .map(|regex| regex.hotkey)
+            .collect();
+        assert_eq!(
+            keys,
+            [
+                Some(Hotkey {
+                    ctrl: false,
+                    shift: false,
+                    alt: false,
+                    key: key("F5"),
+                }),
+                // The same key again: the first one keeps it.
+                None,
+                // The price check's key.
+                None,
+                // A bare key isn't one.
+                None,
+                Some(Hotkey {
+                    ctrl: false,
+                    shift: false,
+                    alt: true,
+                    key: key("7"),
+                }),
+            ]
         );
     }
 
