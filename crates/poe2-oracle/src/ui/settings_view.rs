@@ -677,10 +677,12 @@ impl SettingsView {
     /// Puts the regular expression in row `index` into the clipboard, so the player can paste it
     /// into the game's search box himself. The row says so for a few seconds.
     fn copy_regex(&mut self, index: usize, cx: &mut Context<Self>) {
-        let Some(row) = self.regexes.get_mut(index) else {
+        let Some(row) = self.regexes.get(index) else {
             return;
         };
-        let text = row.draft.text.clone();
+        // What the field holds now, not what the row last committed: the player may have typed
+        // and gone straight for the button.
+        let text = row.text_field.read(cx).text().to_owned();
         if text.is_empty() {
             return;
         }
