@@ -4,7 +4,7 @@
     "section": 0,
     "summary": "Лига, языки, масштаб, запуск вместе с Windows и обновления",
     "version": "версия {version}",
-    "app_version": "0.2.0",
+    "app_version": "0.2.1",
     "groups": [
         {
             "title": "Лига и язык",

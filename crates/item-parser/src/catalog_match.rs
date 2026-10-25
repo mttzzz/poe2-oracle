@@ -499,11 +499,21 @@ fn resolve_span(
             Some(rest) => (rest, true),
             None => (joined, false),
         };
-        let runs = find_numeric_runs(text);
+        let mut runs = find_numeric_runs(text);
         let mod_type = modifier_type.trade_key();
-        let resolved = template_candidates(text, &runs)
-            .iter()
-            .find_map(|candidate| resolve_text(candidate, mod_type, cs, index))?;
+        let candidates = template_candidates(text, &runs);
+        let (resolved, literal) = candidates.iter().find_map(|(candidate, literal)| {
+            Some((resolve_text(candidate, mod_type, cs, index)?, *literal))
+        })?;
+        // A number the catalog's text has baked in is no roll: `1% increased Spirit Reservation
+        // Efficiency of Buff Skills per 100 Maximum Life` rolls at 1, not at 1 and 100's mean
+        // (player report #19), and `Defend with 200% of Armour` is a flag.
+        let mut position = 0;
+        runs.retain(|_| {
+            let rolls = literal & (1 << position) == 0;
+            position += 1;
+            rolls
+        });
         Some(stat_from(
             &resolved, category, &runs, unscalable, increased, index,
         ))
@@ -544,6 +554,7 @@ fn unresolved(line: &str, cs: &ClientStrings) -> ParsedStat {
     }
 }
 
+/// The stat `resolved` names, rolled at `runs`: the numbers its catalog text has a `#` for.
 fn stat_from<'a>(
     resolved: &Resolved<'a>,
     category: Option<&str>,
@@ -606,7 +617,8 @@ fn rolled_runs(runs: &[NumericRun]) -> &[NumericRun] {
 /// by their average -- EE2's `getRollOrMinmaxAvg` (`stat-translations.ts`) rolls two or four
 /// numbers at their mean and anything else at the first. Summing them instead (one stat per
 /// number, grouped downstream) doubled every such filter's bounds and emptied its searches. No
-/// runs at all is a flag stat (an `" — Unscalable Value"` line, a named allocation), rolled at 0.
+/// runs at all is a flag stat (an `" — Unscalable Value"` line, a named allocation, a stat whose
+/// catalog text has no `#`), rolled at 0.
 fn rolled(stat_id: Option<String>, text: String, runs: &[NumericRun]) -> ParsedStat {
     let rolled = rolled_runs(runs);
     // `sum` of no `f64`s is -0.0; a flag stat rolls at a plain 0.

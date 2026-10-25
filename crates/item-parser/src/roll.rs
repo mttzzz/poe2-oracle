@@ -79,29 +79,31 @@ pub fn find_numeric_runs(line: &str) -> Vec<NumericRun> {
 
 /// Every candidate templating of `line` against `runs`, most-templated first (all `#`, the
 /// common case) down to fully literal (no `#` at all) -- the partial-substitution trick real
-/// templates occasionally need when one number is baked in and the rest are roll placeholders.
-/// `runs.len()` is almost always 0-2 in practice, so the `2^N` combinations this enumerates are
-/// always cheap.
-pub fn template_candidates(line: &str, runs: &[NumericRun]) -> Vec<String> {
+/// templates need when a number is baked into the stat's text (`#% increased Spirit Reservation
+/// Efficiency of Buff Skills per 100 Maximum Life`). Each comes with the runs it keeps literal, bit
+/// `i` for `runs[i]`: a stat matched by it rolls at the other runs only, as EE2's
+/// `_statPlaceholderGenerator` passes on only the `values` it templated. `runs.len()` is almost
+/// always 0-2 in practice, so the `2^N` combinations this enumerates are always cheap.
+pub fn template_candidates(line: &str, runs: &[NumericRun]) -> Vec<(String, u32)> {
     if runs.is_empty() {
-        return vec![line.to_string()];
+        return vec![(line.to_string(), 0)];
     }
     let n = runs.len();
     let mut candidates = Vec::with_capacity(1 << n);
-    for mask in 0..(1u32 << n) {
+    for literal in 0..(1u32 << n) {
         let mut out = line.to_string();
         for (i, run) in runs.iter().enumerate().rev() {
-            if mask & (1 << i) != 0 {
+            if literal & (1 << i) != 0 {
                 // keep literal: leave the source text at this span untouched.
                 continue;
             }
             out.replace_range(run.span.0..run.span.1, "#");
         }
-        candidates.push(out);
+        candidates.push((out, literal));
     }
-    // Fully-templated (mask 0) is already first; de-duplicate in case a line has no digits
+    // Fully-templated (literal 0) is already first; de-duplicate in case a line has no digits
     // besides `#`-adjacent ones that coincide across masks (harmless either way, just avoids
     // redundant catalog lookups).
-    candidates.dedup();
+    candidates.dedup_by(|a, b| a.0 == b.0);
     candidates
 }

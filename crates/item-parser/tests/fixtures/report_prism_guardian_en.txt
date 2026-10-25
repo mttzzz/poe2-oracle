@@ -1,0 +1,27 @@
+Item Class: Shields
+Rarity: Unique
+Prism Guardian
+Intricate Crest Shield
+--------
+Block chance: 25%
+Armour: 317 (augmented)
+Energy Shield: 88 (augmented)
+--------
+Requires: Level 65, 48 (augmented) Str, 48 (augmented) Int
+--------
+Item Level: 83
+--------
+Grants Skill: Raise Shield
+--------
+{ Unique Modifier — Armour, Energy Shield }
+183(150-200)% increased Armour and Energy Shield
+{ Unique Modifier }
++50 to Spirit
+{ Unique Modifier — Attribute }
++22(20-30) to Dexterity
+{ Unique Modifier — Elemental, Fire, Cold, Lightning, Resistance }
++14(10-20)% to all Elemental Resistances
+{ Unique Modifier }
+1% increased Spirit Reservation Efficiency of Buff Skills per 100 Maximum Life
+--------
+When blood is paid, the weak think twice.

@@ -1,0 +1,30 @@
+Item Class: One Hand Maces
+Rarity: Unique
+Brutus' Lead Sprinkler
+Morning Star
+--------
+Quality: +11% (augmented)
+Physical Damage: 76-113 (augmented)
+Critical Hit Chance: 6.50%
+Attacks per Second: 1.52 (augmented)
+--------
+Requires: Level 45, 80 Str
+--------
+Item Level: 83
+--------
+Grants Skill: Level 18 Molten Shower
+--------
+{ Unique Modifier }
+Hits with this Weapon have 5% chance to Trigger Molten Shower per 25 Strength
+{ Unique Modifier }
+107(80-120)% increased Physical Damage
+{ Unique Modifier }
+5(5-10)% increased Attack Speed
+{ Unique Modifier }
++18(15-25) to Strength
+{ Unique Modifier }
+5 to 10 Added Attack Fire Damage per 25 Strength
+--------
+"A sprinkle of liquid encouragement is often
+required to garnish the perfect confession."
+- Brutus, Warden of Axiom

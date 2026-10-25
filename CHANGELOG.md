@@ -8,6 +8,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- ANCHOR: releases. The guide's "What's new" page shows every section below, up to ANCHOR_END. -->
 
+## [0.2.1] - 2026-10-25
+
+### Fixed
+
+- **Numbers written into a modifier's text.** A modifier whose text has a number of its own besides
+  the roll, such as the 100 in Prism Guardian's "1% increased Spirit Reservation Efficiency of Buff
+  Skills per 100 Maximum Life", was searched at the mean of the two: at least 50.5, and the shield
+  found no listing at all (player report #19). Only the rolled number counts now: the row searches
+  at least 1, and the shield finds 982 listings. A modifier with no rolled number, such as
+  Goregirdle's "Defend with 200% of Armour", was searched at least at the number in its text, which
+  the trade site doesn't keep for it; its row is now searched as present, without a number.
+  Goregirdle, Brutus' Lead Sprinkler and Doryani's Prototype found nothing either, and now find
+  their listings.
+
 ## [0.2.0] - 2026-10-21
 
 ### Added
@@ -371,6 +385,7 @@ digitally signed yet, so Windows may say "Windows protected your PC": click **Mo
   cache**.
 
 <!-- ANCHOR_END: releases. The version links stay below it, off that page: mdBook can't draw a heading that is a link. -->
+[0.2.1]: https://github.com/mttzzz/poe2-oracle/releases/tag/v0.2.1
 [0.2.0]: https://github.com/mttzzz/poe2-oracle/releases/tag/v0.2.0
 [0.1.20]: https://github.com/mttzzz/poe2-oracle/releases/tag/v0.1.20
 [0.1.19]: https://github.com/mttzzz/poe2-oracle/releases/tag/v0.1.19

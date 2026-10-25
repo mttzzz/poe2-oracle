@@ -1,0 +1,24 @@
+Item Class: Belts
+Rarity: Unique
+Goregirdle
+Plate Belt
+--------
+Requires: Level 24
+--------
+Item Level: 79
+--------
+{ Implicit Modifier }
++158(140-180) to Armour
+{ Implicit Modifier }
+Has 2(1-3) Charm Slots
+--------
+{ Unique Modifier }
++20(20-30) to Strength
+{ Unique Modifier }
+15.4(10-20) Life Regeneration per second
+{ Unique Modifier }
+Defend with 200% of Armour
+{ Unique Modifier }
+Maximum Physical Damage Reduction is 50%
+--------
+Bleeding just means you're still alive.

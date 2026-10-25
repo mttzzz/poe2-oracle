@@ -915,6 +915,54 @@ fn a_reported_corrupted_uniques_moved_fixed_value_is_read() {
 }
 
 #[test]
+fn a_number_baked_into_a_stats_text_is_not_its_roll() {
+    // Report #19, 2026-10-25 (0.2.0, EN client): Prism Guardian's «1% increased Spirit
+    // Reservation Efficiency of Buff Skills per 100 Maximum Life» rolled at 50.5, the mean of its
+    // 1 and the 100 the stat's own text has, and its row searched for at least 50.5, which no
+    // shield has (live, 2026-10-25: none at 50.5, 2482 at 1). Only a number the catalog's text
+    // has a `#` for is the roll, as in EE2. The other two items are live listings item-synth
+    // wrote, Goregirdle's fixed lines printed as the report prints its own, without a range. Ids
+    // and texts as the live catalog has them.
+    let catalog = stat_catalog(&[
+        (
+            "explicit.stat_3581035970",
+            "#% increased Spirit Reservation Efficiency of Buff Skills per 100 Maximum Life",
+        ),
+        (
+            "explicit.stat_4186798932",
+            "# to # Added Attack Fire Damage per 25 Strength",
+        ),
+        (
+            "explicit.stat_1867725690",
+            "Hits with this Weapon have #% chance to Trigger Molten Shower per 25 Strength",
+        ),
+        ("explicit.stat_3387008487", "Defend with 200% of Armour"),
+        (
+            "explicit.stat_3960211755",
+            "Maximum Physical Damage Reduction is 50%",
+        ),
+    ]);
+    let rolled = |filters: &[stat_filters::SearchFilter], hash: &str| {
+        hash_row(filters, hash)
+            .roll
+            .as_ref()
+            .map(|roll| (roll.value, roll.min))
+    };
+    let (_, shield) = reported("report_prism_guardian_en.txt", &catalog, None);
+    assert_eq!(rolled(&shield, "stat_3581035970"), Some((1.0, Some(1.0))));
+    // Two numbers with a `#` each beside a baked one roll at their mean: 5 to 10 at 7.5, not at
+    // the first number alone, nor at the mean of all three.
+    let (_, mace) = reported("brutus_lead_sprinkler_en.txt", &catalog, None);
+    assert_eq!(rolled(&mace, "stat_4186798932"), Some((7.5, Some(7.5))));
+    assert_eq!(rolled(&mace, "stat_1867725690"), Some((5.0, Some(5.0))));
+    // A text without a `#` is a flag, searched as there: at least 200, a number the site never
+    // stores for it (its listings carry 1), found no belt at all.
+    let (_, belt) = reported("goregirdle_en.txt", &catalog, None);
+    assert_eq!(rolled(&belt, "stat_3387008487"), None);
+    assert_eq!(rolled(&belt, "stat_3960211755"), None);
+}
+
+#[test]
 fn a_reported_unique_goes_among_uniques_cultivated_as_it_is() {
     // Report #8, 2026-10-11 (0.1.7, EN client): The Adorned at 101% was priced at 20 divine among
     // Vaal-cultivated ones («mutated» on the trade site), while those without start at hundreds.
