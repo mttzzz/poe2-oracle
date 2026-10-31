@@ -8,6 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- ANCHOR: releases. The guide's "What's new" page shows every section below, up to ANCHOR_END. -->
 
+## [0.2.2] - 2026-10-31
+
+### Fixed
+
+- **Expedition tablets with one buried Strongbox or one Vaal Relic.** A tablet whose modifier rolled
+  1 of 1 to 2, such as "Expeditions contain 1 buried Strongbox in Map" or "Expeditions contain 1
+  Vaal Relic in Map", showed that line as unread, and the panel had no row for it: the trade site
+  words these modifiers only with the 1 in their text, while the game's advanced copy prints the
+  roll with its range, "1(1-2)". The line is read now and searched as present, which finds the
+  tablets that have it.
+
 ## [0.2.1] - 2026-10-25
 
 ### Fixed
@@ -385,6 +396,7 @@ digitally signed yet, so Windows may say "Windows protected your PC": click **Mo
   cache**.
 
 <!-- ANCHOR_END: releases. The version links stay below it, off that page: mdBook can't draw a heading that is a link. -->
+[0.2.2]: https://github.com/mttzzz/poe2-oracle/releases/tag/v0.2.2
 [0.2.1]: https://github.com/mttzzz/poe2-oracle/releases/tag/v0.2.1
 [0.2.0]: https://github.com/mttzzz/poe2-oracle/releases/tag/v0.2.0
 [0.1.20]: https://github.com/mttzzz/poe2-oracle/releases/tag/v0.1.20

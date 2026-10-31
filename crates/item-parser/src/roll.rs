@@ -11,10 +11,13 @@
 /// fixed stat its corruption moved, `+2(3) to Level of all Spell Skills`, the fixed value in
 /// brackets -- or a bare `value` (a Unique-item fixed stat with no roll range prints just the
 /// number, no parens -- treated as `min == max == value`). `span` is the byte range in the source
-/// line this run occupied, for template substitution.
+/// line this run occupied, for template substitution; `bare` the part of it a text without the
+/// advanced copy's roll range prints: the `1` of `1(1-2)`, all of a bare `value` or of a
+/// `value(fixed)`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct NumericRun {
     pub span: (usize, usize),
+    pub bare: (usize, usize),
     pub value: f64,
     pub min: f64,
     pub max: f64,
@@ -46,28 +49,35 @@ pub fn find_numeric_runs(line: &str) -> Vec<NumericRun> {
         let whole = caps.get(0).expect("group 0 always present");
         let value: f64 = caps[1].parse().expect("regex guarantees numeric");
         let dp = caps[1].contains('.');
-        let (min, max, dp) = match (caps.get(2), caps.get(3)) {
+        let (min, max, dp, bare) = match (caps.get(2), caps.get(3)) {
             (Some(min_m), Some(max_m)) => {
+                let bare = caps.get(1).expect("group 1 always present");
                 let min: f64 = min_m.as_str().parse().expect("regex guarantees numeric");
                 let max: f64 = max_m.as_str().parse().expect("regex guarantees numeric");
                 let dp = dp || min_m.as_str().contains('.') || max_m.as_str().contains('.');
                 if min > max {
                     // "reduced"-phrased stats sometimes print their bound in descending order,
                     // e.g. `14(15-10)%` -- swap, do not treat as an error.
-                    (max, min, dp)
+                    (max, min, dp, (bare.start(), bare.end()))
                 } else {
-                    (min, max, dp)
+                    (min, max, dp, (bare.start(), bare.end()))
                 }
             }
             // `+2(3)`: the stat's fixed value, which corruption moved to the one before it.
             (Some(fixed_m), None) => {
                 let fixed: f64 = fixed_m.as_str().parse().expect("regex guarantees numeric");
-                (fixed, fixed, dp || fixed_m.as_str().contains('.'))
+                (
+                    fixed,
+                    fixed,
+                    dp || fixed_m.as_str().contains('.'),
+                    (whole.start(), whole.end()),
+                )
             }
-            _ => (value, value, dp),
+            _ => (value, value, dp, (whole.start(), whole.end())),
         };
         runs.push(NumericRun {
             span: (whole.start(), whole.end()),
+            bare,
             value,
             min,
             max,
@@ -82,8 +92,11 @@ pub fn find_numeric_runs(line: &str) -> Vec<NumericRun> {
 /// templates need when a number is baked into the stat's text (`#% increased Spirit Reservation
 /// Efficiency of Buff Skills per 100 Maximum Life`). Each comes with the runs it keeps literal, bit
 /// `i` for `runs[i]`: a stat matched by it rolls at the other runs only, as EE2's
-/// `_statPlaceholderGenerator` passes on only the `values` it templated. `runs.len()` is almost
-/// always 0-2 in practice, so the `2^N` combinations this enumerates are always cheap.
+/// `_statPlaceholderGenerator` passes on only the `values` it templated. A run kept literal is
+/// written bare, without its roll range: no catalog text prints one, and the live EN catalog words
+/// an Expedition tablet's buried Strongboxes, rolled 1 to 2, only as `Expeditions contain 1 buried
+/// Strongbox in Map` (2026-10-31), which the copy prints `1(1-2)`. `runs.len()` is almost always
+/// 0-2 in practice, so the `2^N` combinations this enumerates are always cheap.
 pub fn template_candidates(line: &str, runs: &[NumericRun]) -> Vec<(String, u32)> {
     if runs.is_empty() {
         return vec![(line.to_string(), 0)];
@@ -93,11 +106,12 @@ pub fn template_candidates(line: &str, runs: &[NumericRun]) -> Vec<(String, u32)
     for literal in 0..(1u32 << n) {
         let mut out = line.to_string();
         for (i, run) in runs.iter().enumerate().rev() {
-            if literal & (1 << i) != 0 {
-                // keep literal: leave the source text at this span untouched.
-                continue;
-            }
-            out.replace_range(run.span.0..run.span.1, "#");
+            let written = if literal & (1 << i) != 0 {
+                &line[run.bare.0..run.bare.1]
+            } else {
+                "#"
+            };
+            out.replace_range(run.span.0..run.span.1, written);
         }
         candidates.push((out, literal));
     }

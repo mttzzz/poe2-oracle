@@ -1,0 +1,19 @@
+Item Class: Tablet
+Rarity: Rare
+Empyrean Apex
+Expedition Tablet
+--------
+Item Level: 81
+--------
+{ Implicit Modifier }
+Adds a Kalguuran Expedition to a Map
+10 uses remaining
+--------
+{ Suffix Modifier "of Treasure" (Tier: 1) }
+Expeditions contain 1(1-2) buried Strongbox in Map
+{ Suffix Modifier "of the Past" (Tier: 1) }
+Expeditions contain 2(1-2) Vaal Relics in Map
+{ Prefix Modifier "Challenger's" (Tier: 1) }
+Monsters have 11(10-15)% increased Effectiveness
+{ Prefix Modifier "Azmeri's" (Tier: 1) }
+Map contains 1 additional Azmeri Spirit

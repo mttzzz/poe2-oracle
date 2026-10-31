@@ -963,6 +963,46 @@ fn a_number_baked_into_a_stats_text_is_not_its_roll() {
 }
 
 #[test]
+fn a_rolled_number_a_stats_text_bakes_in_is_read_without_its_range() {
+    // A live Expedition Tablet (a Forbidden Rites trade listing, 2026-09-28) in the advanced copy
+    // format: its «of Treasure» suffix prints `Expeditions contain 1(1-2) buried Strongbox in Map`,
+    // and the live EN catalog words that stat only as `Expeditions contain 1 buried Strongbox in
+    // Map` (2026-10-31). The line went unread and the tablet had no row for it: 27 of 700 tablets
+    // sampled then had such a line. Read, it is a flag, as any text without a `#`.
+    let catalog = stat_catalog(&[
+        (
+            "explicit.stat_181823691",
+            "Expeditions contain 1 buried Strongbox in Map",
+        ),
+        (
+            "explicit.stat_2852112245",
+            "Expeditions contain 1 Vaal Relic in Map",
+        ),
+        (
+            "explicit.stat_2065500219",
+            "Monsters have #% increased Effectiveness",
+        ),
+        (
+            "explicit.stat_358129101",
+            "Map contains # additional Azmeri Spirit",
+        ),
+    ]);
+    let (item, tablet) = reported(
+        "listing_expedition_tablet_buried_strongbox_en.txt",
+        &catalog,
+        None,
+    );
+    assert!(
+        item.unknown_mods
+            .iter()
+            .all(|(text, _)| !text.contains("Strongbox")),
+        "unread: {:?}",
+        item.unknown_mods
+    );
+    assert!(hash_row(&tablet, "stat_181823691").roll.is_none());
+}
+
+#[test]
 fn a_reported_unique_goes_among_uniques_cultivated_as_it_is() {
     // Report #8, 2026-10-11 (0.1.7, EN client): The Adorned at 101% was priced at 20 divine among
     // Vaal-cultivated ones («mutated» on the trade site), while those without start at hundreds.
