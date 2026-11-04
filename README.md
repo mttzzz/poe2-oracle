@@ -67,11 +67,14 @@ your password.
 3. Keep **Run PoE2 Oracle** ticked on the installer's last page. A short tour then shows the
    basics: in the game, point at an item and press `Ctrl+E`.
 
+Or install it with WinGet, in PowerShell or Command Prompt: `winget install mttzzz.PoE2Oracle`. It
+runs the same installer without its pages; then start PoE2 Oracle from the Start menu.
+
 The app runs in the background: you find it by its icon next to the clock. To uninstall it, open
 Windows Settings → Apps → Installed apps → PoE2 Oracle → Uninstall.
 
 **Official downloads.** PoE2 Oracle is only published at
-https://github.com/mttzzz/poe2-oracle/releases, https://oracle.pushka.biz/ and, once merged, WinGet
+https://github.com/mttzzz/poe2-oracle/releases, https://oracle.pushka.biz/ and WinGet
 (`winget install mttzzz.PoE2Oracle`). Copies elsewhere aren't mine.
 
 ## How it's made

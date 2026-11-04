@@ -70,12 +70,15 @@ Grinding Gear Games и не одобрен ею.
 3. На последней странице установщика оставьте галочку **«Запустить PoE2 Oracle»**. Короткое
    обучение покажет главное: наведите курсор на предмет в игре и нажмите `Ctrl+E`.
 
+Или установите через WinGet, в PowerShell или командной строке: `winget install mttzzz.PoE2Oracle`.
+Это тот же установщик, только без страниц; затем запустите PoE2 Oracle из меню «Пуск».
+
 Программа работает в фоне: её значок — в области уведомлений у часов. Чтобы удалить её, откройте
 Параметры Windows → Приложения → Установленные приложения → PoE2 Oracle → Удалить.
 
 **Официальные загрузки.** PoE2 Oracle публикуется только на
-https://github.com/mttzzz/poe2-oracle/releases, https://oracle.pushka.biz/ и, когда заявку примут, в
-WinGet (`winget install mttzzz.PoE2Oracle`). Копии в других местах — не мои.
+https://github.com/mttzzz/poe2-oracle/releases, https://oracle.pushka.biz/ и в WinGet
+(`winget install mttzzz.PoE2Oracle`). Копии в других местах — не мои.
 
 ## Как сделана PoE2 Oracle
 

@@ -55,6 +55,26 @@ not commonly downloaded; keep it.
 - If PoE2 Oracle is running, the installer says "PoE2 Oracle is running and will be closed to
   continue.": **OK** closes it, **Cancel** keeps you on the folder page.
 
+## Install with WinGet
+
+PoE2 Oracle is also in WinGet, the package manager that comes with Windows. In a terminal
+(PowerShell or Command Prompt), run:
+
+```powershell
+winget install mttzzz.PoE2Oracle
+```
+
+WinGet downloads the same installer from the project's GitHub release, checks its SHA-256 and runs
+it without its pages: for your Windows user, into the default folder, with **Update automatically**
+on (on a reinstall, as your settings have it) and **Start with Windows** as it was (off on a first
+install). What the app sends over the internet is in the [privacy policy](privacy.md). Then start
+**PoE2 Oracle** from the Start menu. There is no welcome, since it comes from the installer's last
+page, but the first start runs the tour described in [First start](#first-start).
+
+New versions reach WinGet some time after they're out on the site. With **Update automatically**
+on, the app updates itself either way; `winget upgrade mttzzz.PoE2Oracle` installs the newest
+version WinGet has.
+
 ## Set the game's display mode
 
 In the game's graphics options, set the display mode to **Windowed Fullscreen** (or Windowed).
