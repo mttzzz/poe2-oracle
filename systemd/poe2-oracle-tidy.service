@@ -1,0 +1,11 @@
+[Unit]
+Description=PoE2 Oracle: Cargo build output unused for 14 days and .tmp scratch unwritten for 30 days go (lanes/tidy.py)
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/projects/poe2-oracle
+# Только удаление файлов, ничего не собирает. Список того, что ушло, — в журнале юнита.
+ExecStart=/usr/bin/python3 %h/projects/poe2-oracle/lanes/tidy.py
+TimeoutStartSec=30min
+Nice=19
+IOSchedulingClass=idle

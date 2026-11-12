@@ -1,0 +1,11 @@
+[Unit]
+Description=PoE2 Oracle: tidy the checkouts once a day
+
+[Timer]
+# После ночной заливки снапшотов дорожек (01:30 UTC) и до ежедневного fstrim (03:30 UTC), чтобы TRIM
+# забрал освобождённые блоки в ту же ночь.
+OnCalendar=*-*-* 02:40:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target
