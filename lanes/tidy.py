@@ -17,11 +17,15 @@ leaves the old ones behind for good: on 12.11.2026 target/ held 54 GB, 5,808 uni
 alone, 20 builds of the app's test executable at 340 MB each among them. A file's atime says when
 it was last read (to within a day on a relatime mount), so a unit whose fingerprint nothing has
 read or written for UNIT_DAYS days goes, outputs and all, and so does an incremental cache
-untouched for as long; a build that needs one again builds it again. Anything that reads every
-file (grep -r over the checkout) makes all of it look used for UNIT_DAYS more days, so a target dir
-still over TARGET_CAP_GB after the sweep goes whole. Cargo locks .cargo-lock in a profile dir while
-it builds there: the sweep takes the same lock and leaves a busy dir to the next run. On a noatime
-mount reads leave no trace, so only the cap applies.
+untouched for as long; a build that needs one again builds it again. Reads count as the lane's
+pods make them: hive's own mount has been noatime since 12.11.2026, so a search on the host leaves
+no trace, while the pods read through the k3d node's bind mount of the checkouts, which is
+relatime (the node's /proc/self/mounts says so). A search inside a lane (grep -r through `lane
+exec`) still reads every file and makes all of it look used for UNIT_DAYS more days, so a target
+dir still over TARGET_CAP_GB after the sweep goes whole. A bind mount takes the flags of the mount
+it binds, so the node mounts the checkouts noatime too once it restarts: when the node says
+noatime, or does not answer, only the cap applies. Cargo locks .cargo-lock in a profile dir while
+it builds there: the sweep takes the same lock and leaves a busy dir to the next run.
 
 Scratch in .tmp/ nothing has written for SCRATCH_DAYS days; reads don't count here, a search
 through the checkout reads everything. A top-level entry goes whole, unless .tmp/KEEP names it: one
@@ -48,6 +52,9 @@ DAY = 86400
 # extension): libitem_parser-0274698eb08432f1.rlib, poe2_oracle-46da891be623ee2e, anyhow-02472fc0cb68ba3c.
 UNIT_HASH = re.compile(r"-([0-9a-f]{16})(?=\.|$)")
 TRASH = ".tidy-trash-"
+# The docker container that is the lanes' only node, where every build of a lane runs
+# (herdr-lanes src/bootstrap.ts: k3d-<cluster>-server-0).
+NODE = "k3d-lanes-server-0"
 
 
 def last_touch(path, reads):
@@ -125,17 +132,35 @@ def lock(profile):
     return fd
 
 
-def reads_leave_atime(path):
-    """Whether the filesystem holding `path` records reads: not mounted noatime."""
+def node_mounts():
+    """The mount table of the lanes' k3d node, the lines of its /proc/self/mounts: the pods get the
+    checkouts through the node's bind mounts, and the flags of those decide whether a build's reads
+    leave an atime. RuntimeError when the node does not answer."""
+    try:
+        done = subprocess.run(
+            ["docker", "exec", NODE, "cat", "/proc/self/mounts"], capture_output=True, text=True, timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise RuntimeError(f"docker exec {NODE}: {error}") from error
+    if done.returncode != 0:
+        raise RuntimeError(f"docker exec {NODE}: {done.stderr.strip()[:300] or done.returncode}")
+    return done.stdout.splitlines()
+
+
+def reads_leave_atime(path, mounts):
+    """Whether the mount that holds `path` in the table `mounts` (lines of a /proc/self/mounts)
+    records reads: not mounted noatime. A table with no mount for the path says nothing, so reads
+    are not trusted."""
     best, options = "", ""
-    with open("/proc/self/mounts") as mounts:
-        for line in mounts:
-            fields = line.split()
-            point = fields[1].replace("\\040", " ")
-            inside = str(path) == point or str(path).startswith(point.rstrip("/") + "/")
-            if inside and len(point) > len(best):
-                best, options = point, fields[3]
-    return "noatime" not in options.split(",")
+    for line in mounts:
+        fields = line.split()
+        if len(fields) < 4:
+            continue
+        point = fields[1].replace("\\040", " ")
+        inside = str(path) == point or str(path).startswith(point.rstrip("/") + "/")
+        if inside and len(point) > len(best):
+            best, options = point, fields[3]
+    return bool(best) and "noatime" not in options.split(",")
 
 
 def checkouts():
@@ -239,8 +264,9 @@ def wipe(target, trash):
     return True
 
 
-def tidy(checkout, dry_run, now):
-    """Tidies one checkout; returns the bytes freed (or that would be) and whether all went well."""
+def tidy(checkout, dry_run, now, mounts):
+    """Tidies one checkout; `mounts` is the mount table of the lanes' node (None when it did not
+    answer). Returns the bytes freed (or that would be) and whether all went well."""
     print(checkout)
     did = "would delete" if dry_run else "deleted"
     freed, ok, seen = 0, True, set()
@@ -259,9 +285,9 @@ def tidy(checkout, dry_run, now):
         freed += bytes_
         print(f"  {did} {entry.relative_to(checkout)}: {human(bytes_)}, untouched {(now - touched) / DAY:.0f} days")
 
-    atime = reads_leave_atime(checkout)
-    if not atime:
-        print(f"  ! mounted noatime: reads leave no trace, so only the cap of {TARGET_CAP_GB} GB applies")
+    atime = mounts is not None and reads_leave_atime(checkout, mounts)
+    if mounts is not None and not atime:
+        print(f"  ! the lanes' mount of it does not record reads: only the cap of {TARGET_CAP_GB} GB applies")
     for target in target_dirs(checkout):
         if any(target.is_relative_to(entry) for entry, _ in scratch):
             continue
@@ -312,8 +338,16 @@ def main():
         except BlockingIOError:
             sys.exit("tidy: another run is in progress")
         now, total, ok = time.time(), 0, True
+        try:
+            mounts = node_mounts()
+        except RuntimeError as error:
+            print(
+                f"! the lanes' node does not say how it mounts the checkouts ({error}): "
+                f"only the cap of {TARGET_CAP_GB} GB applies"
+            )
+            mounts, ok = None, False
         for checkout in checkouts():
-            freed, fine = tidy(checkout, args.dry_run, now)
+            freed, fine = tidy(checkout, args.dry_run, now, mounts)
             total, ok = total + freed, ok and fine
         print(f"{'would free' if args.dry_run else 'freed'} {human(total)}")
     sys.exit(0 if ok else 1)
