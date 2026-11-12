@@ -75,8 +75,12 @@ export PORT=3000
 export PUBLIC_URL=http://$LANE_HOST
 export SITE_DIR=site IMAGES_DIR=docs/guide/src/images GUIDE_DIR=$work/guide
 # Cargo's target dir under .tmp/, where it outlives the pod and the build never waits for the
-# runner's lock on target/. Cargo's home is the lane's (CARGO_HOME in lanes/lane.toml), shared with
-# the runner, so the app's GPUI git dependency is cloned once for both. The first start takes
-# minutes; the dev pod has only a readiness probe, which doesn't restart it.
-export CARGO_TARGET_DIR=$PWD/$work/target
+# runner's lock on target/. Cargo's home is under .tmp/ too: this pod mounts the checkout and
+# nothing else (herdr-lanes manifests/dev.yaml), so the node's volumes that lanes/lane.toml's [env]
+# points the runner at, Cargo's home and the sccache directory, are not here, and rustc runs
+# unwrapped (sccache dies on a cache directory it can't create, and the cc crate hands it the C
+# compiler's calls too). The first start takes minutes (the app's GPUI git dependency is cloned
+# into that home); the dev pod has only a readiness probe, which doesn't restart it.
+export CARGO_HOME=$PWD/.tmp/cargo-home CARGO_TARGET_DIR=$PWD/$work/target
+unset RUSTC_WRAPPER SCCACHE_DIR SCCACHE_CACHE_SIZE
 exec cargo run --release -p oracle-web

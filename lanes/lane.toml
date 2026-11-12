@@ -25,10 +25,33 @@ ref = "build:lanes/runner.Dockerfile"
 cmd = ["bash", "lanes/dev.sh"]
 health = "/healthz"
 
-# Домашний каталог Cargo — в .tmp/ чекаута, один на runner и dev-под: реестр и клон
-# git-зависимости GPUI переживают пересоздание подов и лежат в одном экземпляре, а не в слое
-# контейнера каждого пода. Неиспользуемое из него Cargo удаляет сам (пакеты, которых не трогали
-# от месяца до трёх). Сборки (target/, .tmp/lane-dev/target) и старый мусор .tmp/ раз в сутки
-# подметает lanes/tidy.py (таймер poe2-oracle-tidy на хосте).
+# Кэши — тома узла, которые монтирует runner каждой дорожки (herdr-lanes, manifests/runner.yaml):
+# один экземпляр на все ворктри, а не копия в каждом.
+#
+# Домашний каталог Cargo — /var/cache/lanes/cargo: реестр и клон git-зависимости GPUI качаются
+# один раз на узел, а не в .tmp/ каждого нового ворктри (там это около 4 минут сети и 1,7 ГБ
+# записи на SSD). Неиспользуемое из него Cargo удаляет сам (пакеты, которых не трогали от месяца
+# до трёх).
+#
+# sccache (бинарь — в lanes/runner.Dockerfile) складывает в /var/cache/lanes/sccache результаты
+# rustc и вызовов C-компилятора из build-скриптов (крейт cc шлёт их через RUSTC_WRAPPER), и
+# холодная сборка нового ворктри берёт готовое у прежних. В ключ входят пути исходников крейта,
+# рабочий каталог rustc и CARGO_HOME, поэтому домашний каталог Cargo у всех дорожек обязан быть
+# один и тот же: с .tmp/cargo-home у второго ворктри не совпал ни один ключ (замер 12.11.2026,
+# sccache 0.19.0, `cargo test --workspace --exclude poe2-oracle --no-run`: 0 попаданий из 664; с
+# общим каталогом 628, из них Rust 188 из 224). Не совпадают крейты проекта (у каждого ворктри
+# свой путь чекаута) и те, чей rustc читает OUT_DIR из target/ ворктри: serde, serde_core и всё,
+# что от них зависит. Путь sccache 0.19.0 для Rust не отбрасывает: SCCACHE_BASEDIRS для Rust
+# вошёл в main 02.11.2026, а в релиз не попал. Инкрементальную сборку sccache не кэширует,
+# поэтому CARGO_INCREMENTAL = "0" (то же, что incremental = false в Cargo.toml, но и для
+# release). Предел размера кэша каждый сервер sccache считает для себя.
+#
+# Dev-под этих томов не получает (он монтирует один чекаут): lanes/dev.sh берёт свой CARGO_HOME в
+# .tmp/cargo-home и запускает rustc без sccache. Сборки (target/, .tmp/lane-dev/target) и старый
+# мусор .tmp/ раз в сутки подметает lanes/tidy.py (таймер poe2-oracle-tidy на хосте).
 [env]
-CARGO_HOME = "${CHECKOUT_PATH}/.tmp/cargo-home"
+CARGO_HOME = "/var/cache/lanes/cargo"
+RUSTC_WRAPPER = "sccache"
+SCCACHE_DIR = "/var/cache/lanes/sccache"
+SCCACHE_CACHE_SIZE = "10G"
+CARGO_INCREMENTAL = "0"

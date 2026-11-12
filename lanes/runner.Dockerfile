@@ -16,6 +16,20 @@ RUN rustup target add x86_64-pc-windows-gnu
 # needs both.
 RUN rustup component add rustfmt clippy
 
+# sccache, the compiler wrapper of the lane's builds (lanes/lane.toml turns it on): it keeps the
+# output of each rustc call, and of the C compiler calls of the crates' build scripts (the cc crate
+# sends those through RUSTC_WRAPPER too), in the node's volume that every lane's runner mounts at
+# /var/cache/lanes/sccache, so what one lane has built another does not build again. A release's
+# static musl binary, checked against its sha256 (the release's .sha256 file says the same).
+ARG SCCACHE_VERSION=v0.19.0
+ARG SCCACHE_SHA256=aa73c7270c997894038c0d8f0d297865f57569e1687883322bc431713d4bb9dd
+RUN archive="sccache-${SCCACHE_VERSION}-x86_64-unknown-linux-musl" \
+ && curl -sSfL -o "/tmp/$archive.tar.gz" \
+      "https://github.com/mozilla/sccache/releases/download/${SCCACHE_VERSION}/$archive.tar.gz" \
+ && echo "${SCCACHE_SHA256}  /tmp/$archive.tar.gz" | sha256sum -c - \
+ && tar -xzf "/tmp/$archive.tar.gz" -C /usr/local/bin --strip-components=1 "$archive/sccache" \
+ && rm "/tmp/$archive.tar.gz"
+
 RUN useradd -m -u 1000 -s /bin/bash runner
 USER runner
 ENV HOME=/home/runner
