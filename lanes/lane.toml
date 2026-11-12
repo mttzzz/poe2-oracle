@@ -24,3 +24,11 @@ ref = "build:lanes/runner.Dockerfile"
 [dev]
 cmd = ["bash", "lanes/dev.sh"]
 health = "/healthz"
+
+# Домашний каталог Cargo — в .tmp/ чекаута, один на runner и dev-под: реестр и клон
+# git-зависимости GPUI переживают пересоздание подов и лежат в одном экземпляре, а не в слое
+# контейнера каждого пода. Неиспользуемое из него Cargo удаляет сам (пакеты, которых не трогали
+# от месяца до трёх). Сборки (target/, .tmp/lane-dev/target) и старый мусор .tmp/ раз в сутки
+# подметает lanes/tidy.py (таймер poe2-oracle-tidy на хосте).
+[env]
+CARGO_HOME = "${CHECKOUT_PATH}/.tmp/cargo-home"

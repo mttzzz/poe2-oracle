@@ -272,7 +272,9 @@ docker run --rm --user "$(id -u):$(id -g)" -v "$PWD":/workspace -w /workspace \
 
 `.ci-cargo-home` and `target` then hold the container's cargo cache and build output; delete them
 whenever you like. The maintainer runs the same container as a local "lane" (`lane exec -- cargo
-...`); you don't need that setup.
+...`); you don't need that setup. There Cargo's home is `.tmp/cargo-home`, and a daily timer runs
+`lanes/tidy.py`, which deletes the build output no build has used for two weeks and the scratch in
+`.tmp/` nothing has written for a month (`.tmp/KEEP` lists what stays).
 
 ## Code style
 

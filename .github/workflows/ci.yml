@@ -63,10 +63,10 @@ jobs:
       # windows-gnu build leaves it out. The app's test-only stand-in build (`--features stand-in`,
       # never in a release) gets a clippy pass of its own, so that its code keeps compiling.
       #
-      # No incremental state and no debug info (CARGO_INCREMENTAL, CARGO_PROFILE_DEV_DEBUG): CI builds
-      # each crate once and throws the result away, and without them the debug builds take a
-      # fraction of the disk and link faster. A failing test still names its file and line: panic
-      # locations don't come from debug info.
+      # No debug info at all (CARGO_PROFILE_DEV_DEBUG; the root Cargo.toml's dev profile keeps line
+      # tables and no incremental cache): CI builds each crate once and throws the result away, and
+      # without it the debug builds take less disk and link faster. A failing test still names its
+      # file and line: panic locations don't come from debug info.
       - name: cargo fmt / clippy / test / build (windows-gnu)
         run: |
           docker run --rm \
@@ -74,7 +74,6 @@ jobs:
             -v "$PWD":/workspace -w /workspace \
             -e CARGO_HOME=/workspace/.ci-cargo-home \
             -e HOME=/workspace/.ci-cargo-home \
-            -e CARGO_INCREMENTAL=0 \
             -e CARGO_PROFILE_DEV_DEBUG=0 \
             poe2-oracle-runner \
             bash -c '

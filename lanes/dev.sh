@@ -74,9 +74,9 @@ fi
 export PORT=3000
 export PUBLIC_URL=http://$LANE_HOST
 export SITE_DIR=site IMAGES_DIR=docs/guide/src/images GUIDE_DIR=$work/guide
-# Cargo's home and target dir under .tmp/, where they outlive the pod: resolving the workspace
-# clones the app's GPUI git dependency, which then happens on the first start only, and the build
-# never waits for the runner's lock on target/. The first start takes minutes; the dev pod has only
-# a readiness probe, which doesn't restart it.
-export CARGO_HOME=$PWD/$work/cargo-home CARGO_TARGET_DIR=$PWD/$work/target
+# Cargo's target dir under .tmp/, where it outlives the pod and the build never waits for the
+# runner's lock on target/. Cargo's home is the lane's (CARGO_HOME in lanes/lane.toml), shared with
+# the runner, so the app's GPUI git dependency is cloned once for both. The first start takes
+# minutes; the dev pod has only a readiness probe, which doesn't restart it.
+export CARGO_TARGET_DIR=$PWD/$work/target
 exec cargo run --release -p oracle-web

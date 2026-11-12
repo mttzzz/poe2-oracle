@@ -29,3 +29,17 @@ authors = ["mttzzz"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/mttzzz/poe2-oracle"
 homepage = "https://oracle.pushka.biz/"
+
+# Debug and test builds: line tables for the workspace's own crates (a backtrace still names file
+# and line), no debug info for dependencies, no incremental cache. With full debug info and the
+# incremental cache one checkout's target/ reached 54 GB by 12.11.2026, the app's test executable
+# alone 340 MB a build and its Windows dev exe 626 MB; with these the Linux tests and the Windows
+# dev build take 3.6 GB together, and the exe 163 MB. The incremental cache would rebuild the app's
+# tests after an edit in 1.3 s instead of 6 s, for 274 MB per kind of build. lanes/tidy.py deletes
+# what builds leave behind.
+[profile.dev]
+debug = "line-tables-only"
+incremental = false
+
+[profile.dev.package."*"]
+debug = false
