@@ -35,7 +35,7 @@ jobs:
   deploy:
     # The shared workflow is pinned to a commit, as in ai.pushka.biz: a moving ref would change
     # this deploy without a commit here. Moving the pin is its own commit, after reading the diff.
-    uses: mttzzz/github-deploy-template-workflow/.github/workflows/app.yml@51ea480eaa9032b626ba4e8769510c11f353e75f
+    uses: mttzzz/github-deploy-template-workflow/.github/workflows/app.yml@e35832fd7c5fde36631406fc6879b5cd58e2d91e
     with:
       app_name: oracle-pushka-biz
       helm_chart: app
