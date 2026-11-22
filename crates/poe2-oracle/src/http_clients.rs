@@ -1,11 +1,16 @@
 //! The HTTP clients the app builds at launch (`app::run`): its own, which nearly every request goes
-//! through, and the updater's, which has no read timeout.
+//! through, and the updater's, which has no read timeout. Both keep to the proxy Windows is set to
+//! use as that changes ([`ProxyFollowingClient`]).
 
+use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
-use http_client::HttpClient;
+use futures::future::BoxFuture;
+use http_client::http::HeaderValue;
+use http_client::{AsyncBody, HttpClient, Request, Response, Url};
+use parking_lot::Mutex;
 use reqwest_client::ReqwestClient;
 
 /// The app's HTTP clients. Both come from reqwest_client's constructor that takes a read timeout,
@@ -32,16 +37,158 @@ pub struct Clients {
 impl Clients {
     /// The app's client with `read_timeout`, the updater's without one.
     pub fn new(read_timeout: Duration) -> Result<Clients> {
-        let app = ReqwestClient::proxy_user_agent_and_read_timeout(
-            None,
-            crate::brand::USER_AGENT,
-            Some(read_timeout),
-        )?;
-        let updater = ReqwestClient::proxy_and_user_agent(None, crate::brand::USER_AGENT)?;
+        log::info!("Windows proxy: {}", ProxySetting::read());
+        let app = ProxyFollowingClient::new("the app's", ProxySetting::read, move || {
+            ReqwestClient::proxy_user_agent_and_read_timeout(
+                None,
+                crate::brand::USER_AGENT,
+                Some(read_timeout),
+            )
+        })?;
+        let updater = ProxyFollowingClient::new("the updater's", ProxySetting::read, || {
+            ReqwestClient::proxy_and_user_agent(None, crate::brand::USER_AGENT)
+        })?;
         Ok(Clients {
             app: Arc::new(app),
             updater: Arc::new(updater),
         })
+    }
+}
+
+/// The proxy Windows is set to use, as reqwest reads it when it builds a client: the current
+/// user's `ProxyEnable`, `ProxyServer` and `ProxyOverride` under
+/// `Software\Microsoft\Windows\CurrentVersion\Internet Settings` -- what Settings > Network &
+/// Internet > Proxy («Use a proxy server») writes, and what VPN and proxy programs switch on and off
+/// as they start and stop. A proxy the environment names (`HTTPS_PROXY` and the like) takes its
+/// place in reqwest, and the environment doesn't change while the app runs.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct ProxySetting {
+    enable: Option<u32>,
+    server: Option<String>,
+    exceptions: Option<String>,
+}
+
+impl ProxySetting {
+    /// The setting as it is now.
+    #[cfg(target_os = "windows")]
+    fn read() -> ProxySetting {
+        use windows::core::{PCWSTR, w};
+
+        use crate::platform::registry;
+
+        const KEY: PCWSTR = w!(r"Software\Microsoft\Windows\CurrentVersion\Internet Settings");
+        ProxySetting {
+            enable: registry::user_dword(KEY, w!("ProxyEnable")),
+            server: registry::user_string(KEY, w!("ProxyServer")),
+            exceptions: registry::user_string(KEY, w!("ProxyOverride")),
+        }
+    }
+
+    /// None: reqwest reads such a setting on Windows (and macOS) only.
+    #[cfg(not(target_os = "windows"))]
+    fn read() -> ProxySetting {
+        ProxySetting::default()
+    }
+
+    /// The proxy's address while reqwest sends through it: `ProxyServer` counts only with
+    /// `ProxyEnable` 1.
+    fn server(&self) -> Option<&str> {
+        self.server.as_deref().filter(|_| self.enable == Some(1))
+    }
+}
+
+/// "off", or "on, " and the proxy's address -- unless the address holds a user name and password,
+/// which stay out of the log.
+impl fmt::Display for ProxySetting {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.server() {
+            None => f.write_str("off"),
+            Some(server) if server.contains('@') => f.write_str("on, an address with a sign-in"),
+            Some(server) => write!(f, "on, {server}"),
+        }
+    }
+}
+
+/// One of the app's clients, kept to the proxy Windows is set to use now. reqwest reads that
+/// setting ([`ProxySetting`]) once, as it builds a client, and the client keeps it for good: one
+/// built while a VPN program had its proxy on sent every request to the proxy's port long after
+/// the program had stopped and nothing listened there -- each one refused (os error 10061) until
+/// the app restarted, while the browser, which follows the setting as it changes, reached the same
+/// sites (player report #20). So each request reads the setting first, and when it isn't the one
+/// the client was built under, a new client is built -- reqwest reading the setting anew -- for
+/// this request and the ones after it. What the old client has under way finishes in it.
+struct ProxyFollowingClient {
+    /// Whose requests these are, for the log: "the app's" or "the updater's".
+    name: &'static str,
+    read: Box<dyn Fn() -> ProxySetting + Send + Sync>,
+    build: Box<dyn Fn() -> Result<ReqwestClient> + Send + Sync>,
+    /// What each client `build` makes says of itself.
+    user_agent: Option<HeaderValue>,
+    proxy: Option<Url>,
+    built: Mutex<Built>,
+}
+
+/// The client in use, and the setting it was built under.
+struct Built {
+    setting: ProxySetting,
+    client: ReqwestClient,
+}
+
+impl ProxyFollowingClient {
+    fn new(
+        name: &'static str,
+        read: impl Fn() -> ProxySetting + Send + Sync + 'static,
+        build: impl Fn() -> Result<ReqwestClient> + Send + Sync + 'static,
+    ) -> Result<ProxyFollowingClient> {
+        // The setting before the client: should it change while reqwest reads it, the next request
+        // still finds it changed.
+        let setting = read();
+        let client = build()?;
+        Ok(ProxyFollowingClient {
+            name,
+            user_agent: client.user_agent().cloned(),
+            proxy: client.proxy().cloned(),
+            read: Box::new(read),
+            build: Box::new(build),
+            built: Mutex::new(Built { setting, client }),
+        })
+    }
+}
+
+impl HttpClient for ProxyFollowingClient {
+    fn user_agent(&self) -> Option<&HeaderValue> {
+        self.user_agent.as_ref()
+    }
+
+    fn proxy(&self) -> Option<&Url> {
+        self.proxy.as_ref()
+    }
+
+    fn send(
+        &self,
+        request: Request<AsyncBody>,
+    ) -> BoxFuture<'static, anyhow::Result<Response<AsyncBody>>> {
+        let setting = (self.read)();
+        let mut built = self.built.lock();
+        if built.setting != setting {
+            match (self.build)() {
+                Ok(client) => {
+                    log::info!(
+                        "Windows proxy now: {setting}: {} requests follow it",
+                        self.name
+                    );
+                    built.client = client;
+                }
+                // The same call built the first client, so this hardly happens; the old client
+                // goes on until the setting changes again.
+                Err(err) => log::warn!(
+                    "Windows proxy now: {setting}, but {} requests can't follow it: {err:#}",
+                    self.name
+                ),
+            }
+            built.setting = setting;
+        }
+        built.client.send(request)
     }
 }
 
@@ -56,10 +203,8 @@ mod tests {
 
     use anyhow::Context as _;
     use auto_update::{Version, test_support};
+    use futures::AsyncReadExt as _;
     use futures::executor::block_on;
-    use futures::future::BoxFuture;
-    use http_client::http::HeaderValue;
-    use http_client::{AsyncBody, Request, Response, Url};
     use oracle_protocol::{API_BASE, DOWNLOAD_PATH, installer_asset};
 
     use super::*;
@@ -200,5 +345,62 @@ mod tests {
             fetch_held_installer(clients.updater, hold).unwrap(),
             INSTALLER
         );
+    }
+
+    #[test]
+    fn a_client_follows_the_windows_proxy_setting_as_it_changes() {
+        let origin = serve(
+            vec![("/".into(), b"direct".to_vec())],
+            String::new(),
+            Duration::ZERO,
+        );
+        let url = format!("{origin}/");
+        // A proxy is asked for the whole address.
+        let proxy = serve(
+            vec![(url.clone(), b"through the proxy".to_vec())],
+            String::new(),
+            Duration::ZERO,
+        );
+        let on = ProxySetting {
+            enable: Some(1),
+            server: Some(proxy.trim_start_matches("http://").to_owned()),
+            exceptions: None,
+        };
+        // What Windows is set to now, and clients that, as reqwest does, send through the proxy
+        // it names as they're built.
+        let setting = Arc::new(Mutex::new(on.clone()));
+        let read = {
+            let setting = setting.clone();
+            move || setting.lock().clone()
+        };
+        let build = {
+            let setting = setting.clone();
+            move || {
+                let proxy = setting
+                    .lock()
+                    .server()
+                    .map(|server| Url::parse(&format!("http://{server}")))
+                    .transpose()?;
+                ReqwestClient::proxy_and_user_agent(proxy, crate::brand::USER_AGENT)
+            }
+        };
+        let client = ProxyFollowingClient::new("the test's", read, build).unwrap();
+        let get = || {
+            block_on(async {
+                let mut response = client.get(&url, AsyncBody::empty(), false).await?;
+                let mut body = String::new();
+                response.body_mut().read_to_string(&mut body).await?;
+                anyhow::Ok(body)
+            })
+            .unwrap()
+        };
+
+        assert_eq!(get(), "through the proxy");
+        // The VPN program stops, and its proxy is off...
+        *setting.lock() = ProxySetting::default();
+        assert_eq!(get(), "direct");
+        // ...and it starts again.
+        *setting.lock() = on;
+        assert_eq!(get(), "through the proxy");
     }
 }

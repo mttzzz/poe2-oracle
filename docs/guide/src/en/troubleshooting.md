@@ -68,6 +68,12 @@ could not be reached at all. Check your internet connection, whether the Path of
 up (it may be down for maintenance) and whether a firewall, VPN or proxy blocks PoE2 Oracle. Then
 search again: click **Search** or press <kbd>Enter</kbd> in a filter box.
 
+PoE2 Oracle connects through the proxy server Windows is set to use — Settings → Network &
+internet → Proxy, **Use a proxy server**, which some VPN and proxy programs turn on as they start
+and off as they close — and follows that setting as it changes, the way your browser does; while
+it's off, the app connects directly. A proxy setup script (**Use setup script**) isn't followed:
+the app then connects directly.
+
 ## Request limit messages
 
 - "Trade API request limit — waiting 5s…" is normal: the trade site's limit is close, and the app

@@ -44,6 +44,8 @@ pub mod paint_gate;
 #[cfg(target_os = "windows")]
 pub mod redraw_filter;
 #[cfg(target_os = "windows")]
+pub mod registry;
+#[cfg(target_os = "windows")]
 pub mod screen;
 #[cfg(target_os = "windows")]
 pub mod synth_input;

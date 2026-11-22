@@ -8,6 +8,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- ANCHOR: releases. The guide's "What's new" page shows every section below, up to ANCHOR_END. -->
 
+## [0.2.3] - 2026-11-22
+
+### Fixed
+
+- **Prices after a VPN or proxy is turned off.** PoE2 Oracle read the proxy server Windows is set
+  to use only once, when it started, and kept to it. If a proxy was on as it started — a VPN
+  program's, say — it went on sending every request to that proxy after it was turned off and
+  nothing answered there: every price check failed with "Can't reach the trade site" and "No
+  connection could be made because the target machine actively refused it. (os error 10061)" until
+  PoE2 Oracle was restarted, while the browser reached the trade site (player report #20). PoE2
+  Oracle now follows the Windows proxy setting as it changes, the way the browser does: through the
+  proxy while it's on, directly once it's off.
+
 ## [0.2.2] - 2026-10-31
 
 ### Fixed
@@ -396,6 +409,7 @@ digitally signed yet, so Windows may say "Windows protected your PC": click **Mo
   cache**.
 
 <!-- ANCHOR_END: releases. The version links stay below it, off that page: mdBook can't draw a heading that is a link. -->
+[0.2.3]: https://github.com/mttzzz/poe2-oracle/releases/tag/v0.2.3
 [0.2.2]: https://github.com/mttzzz/poe2-oracle/releases/tag/v0.2.2
 [0.2.1]: https://github.com/mttzzz/poe2-oracle/releases/tag/v0.2.1
 [0.2.0]: https://github.com/mttzzz/poe2-oracle/releases/tag/v0.2.0

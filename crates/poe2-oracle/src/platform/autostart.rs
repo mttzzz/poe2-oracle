@@ -15,14 +15,14 @@
 use std::os::windows::ffi::OsStrExt;
 
 use anyhow::{Context as _, Result};
-use windows::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_MORE_DATA, ERROR_SUCCESS};
+use windows::Win32::Foundation::ERROR_FILE_NOT_FOUND;
 use windows::Win32::System::Registry::{
-    HKEY_CURRENT_USER, REG_ROUTINE_FLAGS, REG_SZ, RRF_RT_REG_BINARY, RRF_RT_REG_SZ,
-    RegDeleteKeyValueW, RegGetValueW, RegSetKeyValueW,
+    HKEY_CURRENT_USER, REG_SZ, RRF_RT_REG_BINARY, RegDeleteKeyValueW, RegSetKeyValueW,
 };
 use windows::core::{PCWSTR, w};
 
 use crate::launch::AUTOSTART_ARG;
+use crate::platform::registry;
 
 const RUN_KEY: PCWSTR = w!(r"Software\Microsoft\Windows\CurrentVersion\Run");
 const STARTUP_APPROVED_KEY: PCWSTR =
@@ -57,19 +57,13 @@ pub fn set_autostart(enabled: bool) -> Result<()> {
 /// Whether Windows starts this executable at sign-in: the `Run` value launches it (an entry left
 /// by a copy elsewhere doesn't count) and Task Manager hasn't disabled it.
 pub fn autostart_enabled() -> bool {
-    let (Some(stored), Ok(expected)) = (read_value(RUN_KEY, RRF_RT_REG_SZ), run_command()) else {
+    let (Some(stored), Ok(expected)) = (registry::user_string(RUN_KEY, VALUE_NAME), run_command())
+    else {
         return false;
     };
-    let (units, _) = stored.as_chunks::<2>();
-    let stored: Vec<u16> = units
-        .iter()
-        .map(|&unit| u16::from_le_bytes(unit))
-        .take_while(|&unit| unit != 0)
-        .collect();
     // Windows paths compare case-insensitively.
-    let launches_this = String::from_utf16_lossy(&stored).to_lowercase()
-        == String::from_utf16_lossy(&expected).to_lowercase();
-    let disabled = read_value(STARTUP_APPROVED_KEY, RRF_RT_REG_BINARY)
+    let launches_this = stored.to_lowercase() == String::from_utf16_lossy(&expected).to_lowercase();
+    let disabled = registry::user_value(STARTUP_APPROVED_KEY, VALUE_NAME, RRF_RT_REG_BINARY)
         .and_then(|flags| flags.first().copied())
         .is_some_and(|flags| flags & 1 != 0);
     launches_this && !disabled
@@ -82,38 +76,6 @@ fn run_command() -> Result<Vec<u16>> {
     command.extend(exe.as_os_str().encode_wide());
     command.extend(format!("\" {AUTOSTART_ARG}").encode_utf16());
     Ok(command)
-}
-
-/// The data of this app's value under `HKCU\<subkey>`; `None` if it's missing, not of the type
-/// `flags` asks for, or unreadable.
-fn read_value(subkey: PCWSTR, flags: REG_ROUTINE_FLAGS) -> Option<Vec<u8>> {
-    let mut data: Vec<u8> = Vec::new();
-    loop {
-        let mut size = u32::try_from(data.len()).ok()?;
-        let buffer = (!data.is_empty()).then(|| data.as_mut_ptr().cast());
-        // SAFETY: `buffer`, when present, points at `size` writable bytes; without one the call
-        // only reports the size the data needs.
-        let status = unsafe {
-            RegGetValueW(
-                HKEY_CURRENT_USER,
-                subkey,
-                VALUE_NAME,
-                flags,
-                None,
-                buffer,
-                Some(&mut size),
-            )
-        };
-        match status {
-            ERROR_SUCCESS if buffer.is_some() || size == 0 => {
-                data.truncate(size as usize);
-                return Some(data);
-            }
-            // Only the size so far -- or the value grew since it was measured.
-            ERROR_SUCCESS | ERROR_MORE_DATA => data.resize(size as usize, 0),
-            _ => return None,
-        }
-    }
 }
 
 /// Deletes this app's value under `HKCU\<subkey>`; one that isn't there (or a missing key) is
