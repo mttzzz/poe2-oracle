@@ -73,8 +73,8 @@ crates/
                    release answers and the event stream the updater reads
   oracle-data/     the game data pack: the built-in tables' data version (data-version.txt), the
                    pack's zip format, and the tool that builds a pack in CI
-  oracle-web/      the oracle.pushka.biz service: site, guide, reports, update proxy and event
-                   stream, daily digest
+  oracle-web/      the oracle.pushka.biz service: site, guide, reports, update proxy, event
+                   stream and daily counters
   release-sign/    signs a release's SHA256SUMS in CI
 packaging/         release script, NSIS installer, data table generators (packaging/data)
 docs/guide/        the user guide: English and Russian mdBooks, served by oracle-web under /guide/
@@ -455,8 +455,8 @@ there under `reports/<issue>/` and linked in a comment, and a Telegram message; 
 app release and the latest data
 pack, with their files, from this repository's releases (`GITHUB_REPO`: `/api/v1/releases/latest`,
 `/api/v1/data/latest`, `/download/<tag>/<file>`, `/download/latest`); tells the running apps about
-both over an event stream (`/api/v1/events`); counts what the apps and the site's visitors do, as
-numbers per day ([below](#what-the-service-counts)); and posts a daily digest of them. What the app
+both over an event stream (`/api/v1/events`); and counts what the apps and the site's visitors do,
+as numbers per day ([below](#what-the-service-counts)). What the app
 and the service share is in `crates/oracle-protocol`: the service's address, the report, release and
 event types, and the report limits (`Report::check`, which both sides run).
 
@@ -493,16 +493,9 @@ It takes its settings from the environment, all optional:
 | `GITHUB_REPORTS_REPO` | `GITHUB_REPO` | The repository the report issues go to, `owner/name`, checked the same way; unset or blank, `GITHUB_REPO`. `deploy/values.yaml` sets the private `mttzzz/poe2-oracle-reports`, so reports stay private while this repository is public |
 | `GITHUB_API` | `https://api.github.com` | GitHub's REST API, trailing slash trimmed: every GitHub call, issues included, goes there with `GITHUB_TOKEN`. Only for a stand-in: the lane can point it at `lanes/fake-github.py` |
 | `LIST_RELEASES_EVERY` | `120` | How often the releases are listed, in whole seconds; under 5 or not a whole number stops the service at start with a configuration error |
-| `TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID` | — | The bot and the chat the reports and the digest go to; with either unset, nothing goes to Telegram |
-| `REDIS_URL` | — | Redis for the daily counters (kept 120 days), the report rate limits and the digest lock; unset, they're kept in memory and lost on a restart |
+| `TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID` | — | The bot and the chat the reports go to; with either unset, nothing goes to Telegram |
+| `REDIS_URL` | — | Redis for the daily counters (kept 120 days) and the report rate limits; unset, they're kept in memory and lost on a restart |
 | `RUST_LOG` | `info` | The log filter; the log goes to stdout |
-
-The digest goes out at 09:00 Moscow time, in Russian: the day before, each number followed, in
-brackets, by the same weekday a week earlier. It leads with four numbers, active installs
-(`uniq_app_day`), new installs (`install_new`), updates applied (every `update_applied_*` together)
-and site downloads (`download_site`), and lists the rest under them. A number that wasn't measured
-on a day shows «—», not 0. What is counted is under
-[What the service counts](#what-the-service-counts).
 
 `oracle-web stats [--days N]` prints the counters instead of serving: every counter of today in
 Moscow and of the N - 1 days before it (N from 1 to 120, the days the counters are kept; 60 unless
@@ -661,8 +654,8 @@ shows no page and writes no file.
 
 The maintainer tags the links he publishes with where they're published: `?from=` with a tag of
 `Source`. A page loaded with a tag counts a visit (`visit_<tag>`) and a visitor
-(`uniq_site_day_from_<tag>`); another tag, or none, counts only in `page_view` and `uniq_site_day`,
-and the digest names only the tags with a visit on either day. `/` redirects a Russian reader to
+(`uniq_site_day_from_<tag>`); another tag, or none, counts only in `page_view` and `uniq_site_day`.
+`/` redirects a Russian reader to
 `/ru/` with the query, and the visit counts where the page is served, so once. The download comes
 pages later than the visit, so the site's pages carry the tag along: `site/from.js`, a module on
 every page of the site, and the same block in `docs/guide/theme/guide.js` keep a `from` value

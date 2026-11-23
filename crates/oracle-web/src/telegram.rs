@@ -1,5 +1,5 @@
-//! The owner's Telegram: reports and the morning digest go to the chat `TELEGRAM_CHAT_ID` through
-//! the owner's tg-inbox bot (`TELEGRAM_TOKEN`).
+//! The owner's Telegram: reports go to the chat `TELEGRAM_CHAT_ID` through the owner's tg-inbox
+//! bot (`TELEGRAM_TOKEN`).
 //!
 //! The tg-inbox daemon long-polls that same bot. A `getUpdates` from here would take its updates
 //! away, and `setWebhook` or `deleteWebhook` would break its polling outright, so the only Bot API
@@ -120,17 +120,6 @@ impl Telegram {
 
     pub fn configured(&self) -> bool {
         self.bot.is_some()
-    }
-
-    /// Sends `html`, Telegram HTML with every outside string passed through [`escape`], once.
-    pub async fn send_message(&self, html: &str) -> Result<(), Failure> {
-        let Some(bot) = &self.bot else {
-            info!(text = html, "dry run: would send a Telegram message");
-            return Ok(());
-        };
-        self.call(bot, Method::SendMessage, message(bot, html), true)
-            .await
-            .map(drop)
     }
 
     /// Sends `post` once, for a sender waiting on it: a "too many requests" isn't waited out.

@@ -1,6 +1,6 @@
-//! Moscow calendar days. The counters, the daily report limits and the morning digest all follow
-//! the owner's clock, and Moscow has kept UTC+3 all year since 2014: a fixed offset is exact, and
-//! no time-zone database is needed.
+//! Moscow calendar days. The counters and the daily report limits follow the owner's clock, and
+//! Moscow has kept UTC+3 all year since 2014: a fixed offset is exact, and no time-zone database
+//! is needed.
 
 use std::fmt;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -119,16 +119,6 @@ impl fmt::Display for Week {
     }
 }
 
-/// `hour`:00 in Moscow next after `unix`.
-pub fn next_hour_of_day(unix: i64, hour: i64) -> i64 {
-    let today = Day::of(unix).start() + hour * 3600;
-    if today > unix {
-        today
-    } else {
-        today + DAY_SECS
-    }
-}
-
 /// `YYYY-MM-DD-HHMMSS` in Moscow: names a report's files when it has no issue number.
 pub fn stamp(unix: i64) -> String {
     let secs = (unix + OFFSET_SECS).rem_euclid(DAY_SECS);
@@ -220,17 +210,6 @@ mod tests {
         assert_eq!(march.minus(1).to_string(), "2024-02-29");
         assert_eq!(march.minus(1).weekday(), 3, "2024-02-29 was a Thursday");
         assert_eq!(saturday.minus(268).to_string(), "2026-01-01");
-    }
-
-    #[test]
-    fn the_next_nine_oclock_in_moscow() {
-        let nine = MOSCOW_MIDNIGHT + 9 * 3600;
-        assert_eq!(next_hour_of_day(MOSCOW_MIDNIGHT, 9), nine);
-        assert_eq!(next_hour_of_day(nine - 1, 9), nine);
-        // At nine sharp the next one is tomorrow's: a digest never goes twice for one moment.
-        assert_eq!(next_hour_of_day(nine, 9), nine + DAY_SECS);
-        // 23:30 in Moscow is 20:30 UTC, still the previous UTC evening.
-        assert_eq!(next_hour_of_day(MOSCOW_MIDNIGHT - 1800, 9), nine);
     }
 
     #[test]

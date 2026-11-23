@@ -634,7 +634,7 @@ mod tests {
         panic!("still redirected at {path}");
     }
 
-    /// The visits the links tagged `tag` brought today, as the morning digest counts them.
+    /// The visits the links tagged `tag` brought today, as the day's counter holds them.
     async fn visits(app: &App, tag: &str) -> u64 {
         let now = moscow::now();
         let key = format!("oracle:stat:visit_{tag}:{}", moscow::Day::of(now));

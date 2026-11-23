@@ -17,8 +17,8 @@
 //!   as soon as it lists them, so a new release reaches them within minutes ([`events`]);
 //! - it counts what happens per Moscow day -- downloads, stream connections, update checks, reports,
 //!   the site's pages and its visits from tagged links, and how many different installs and
-//!   visitors there were, kept as hashes under salts that expire with their day -- and every
-//!   morning posts the day before to the owner's Telegram ([`stats`], [`distinct`], [`digest`]).
+//!   visitors there were, kept as hashes under salts that expire with their day -- for
+//!   `oracle-web stats` to print ([`stats`], [`distinct`]).
 //!
 //! Everything is configured from the environment ([`Config::from_env`]). Without a GitHub or a
 //! Telegram token the service runs dry on that side: it logs what it would have sent and sends
@@ -28,7 +28,6 @@
 //! when the lane has test releases to offer.
 
 mod agent;
-mod digest;
 mod distinct;
 mod events;
 mod github;
@@ -375,10 +374,10 @@ pub async fn run(config: Config) -> Result<(), Box<dyn Error + Send + Sync>> {
     serve(listener, config, shutdown_signal()).await
 }
 
-/// Serves `config` on `listener`, with the release listing and the morning digest running
-/// alongside, until `stop` resolves -- for [`run`], [`WITHDRAW_DELAY`] after SIGTERM, or at once
-/// on Ctrl+C. Then it stops taking connections: the event streams end at once, and the requests
-/// in flight and the reports still passing on get [`DRAIN_LIMIT`] to finish.
+/// Serves `config` on `listener`, with the release listing running alongside, until `stop`
+/// resolves -- for [`run`], [`WITHDRAW_DELAY`] after SIGTERM, or at once on Ctrl+C. Then it stops
+/// taking connections: the event streams end at once, and the requests in flight and the reports
+/// still passing on get [`DRAIN_LIMIT`] to finish.
 pub async fn serve(
     listener: TcpListener,
     config: Config,
@@ -413,7 +412,6 @@ pub async fn serve(
         event_streams = app.streams.at_once(),
         "serving"
     );
-    let digest = tokio::spawn(digest::post_digests(app.clone()));
     let listing = tokio::spawn(releases::refresh(app.clone(), list_releases_every));
     let draining = Arc::new(Notify::new());
     let stopping = {
@@ -455,7 +453,6 @@ pub async fn serve(
             DRAIN_LIMIT.as_secs()
         );
     }
-    digest.abort();
     listing.abort();
     info!("stopped");
     Ok(())

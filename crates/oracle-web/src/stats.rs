@@ -6,10 +6,8 @@
 //! name in `oracle:names:<YYYY-MM-DD>`, where a readout that knows only Redis finds them. The
 //! distinct counts -- how many different installs and visitors, not how many times ([`Uniq`]) --
 //! are HyperLogLog sketches of hashes under a salt of their period ([`crate::distinct`]). Which
-//! request moves which counter is [`crate::usage`]'s. At 09:00 in Moscow the digest
-//! ([`crate::digest`]) posts the day before to the owner's Telegram, each number beside the same
-//! weekday a week earlier. `oracle-web stats` prints every counter of the last days as JSON
-//! ([`read_out`]).
+//! request moves which counter is [`crate::usage`]'s. `oracle-web stats` prints every counter of
+//! the last days as JSON ([`read_out`]).
 
 use std::borrow::Cow;
 use std::sync::{Arc, LazyLock};
@@ -295,6 +293,8 @@ pub struct Snapshot {
     counts: Vec<(String, u64)>,
 }
 
+/// What tests read of a day's counts; the readout serializes them whole.
+#[cfg(test)]
 impl Snapshot {
     /// A counter's count that day, 0 when it isn't there.
     pub fn get(&self, name: &str) -> u64 {
@@ -315,18 +315,6 @@ impl Snapshot {
     /// The sum of the counters whose names start with `prefix`.
     pub fn sum(&self, prefix: &str) -> u64 {
         self.with(prefix).map(|(_, count)| count).sum()
-    }
-
-    /// A day's counts as given, everything else 0, for tests.
-    #[cfg(test)]
-    pub fn with_counts(day: Day, counts: &[(&str, u64)]) -> Snapshot {
-        Snapshot {
-            day,
-            counts: counts
-                .iter()
-                .map(|(name, count)| ((*name).to_owned(), *count))
-                .collect(),
-        }
     }
 }
 

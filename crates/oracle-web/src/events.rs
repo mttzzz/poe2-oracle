@@ -371,7 +371,7 @@ mod tests {
         request
     }
 
-    /// The streams opened today, as the morning digest counts them.
+    /// The streams opened today, as the day's counter holds them.
     async fn counted_today(app: &App) -> u64 {
         let now = moscow::now();
         let key = format!("oracle:stat:event_stream:{}", moscow::Day::of(now));

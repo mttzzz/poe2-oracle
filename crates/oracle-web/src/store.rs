@@ -1,5 +1,5 @@
-//! Where counters live -- the daily statistics, the report rate limits, the digest's lock: in Redis
-//! when `REDIS_URL` names one, so that every replica shares them and a restart keeps them, else in
+//! Where counters live -- the daily statistics and the report rate limits: in Redis when
+//! `REDIS_URL` names one, so that every replica shares them and a restart keeps them, else in
 //! this process's memory. Redis failing never fails a request: the call is logged and the request
 //! goes on as if the counter weren't there. A lost count or a skipped limit is better than players'
 //! reports bouncing off a Redis hiccup.
@@ -296,36 +296,6 @@ impl Store {
                     Err(error) => {
                         warn!(%error, "Redis: report let through without its rate limits");
                         Ok(())
-                    }
-                }
-            }
-        }
-    }
-
-    /// Takes `key` until `expires_at` if nobody holds it: whether this caller got it. When Redis
-    /// fails the caller gets it, so a Redis outage can't silence what the key guards.
-    pub async fn claim(&self, key: &str, expires_at: i64, now: i64) -> bool {
-        match self {
-            Store::Memory(memory) => {
-                let mut memory = memory.lock();
-                if memory.value(key, now) > 0 {
-                    return false;
-                }
-                memory.increment(key, expires_at, now);
-                true
-            }
-            Store::Redis(redis) => {
-                let mut set = redis::cmd("SET");
-                set.arg(key)
-                    .arg(1)
-                    .arg("NX")
-                    .arg("EX")
-                    .arg((expires_at - now).max(1));
-                match within(set.query_async::<Option<String>>(&mut redis.clone())).await {
-                    Ok(taken) => taken.is_some(),
-                    Err(error) => {
-                        warn!(%error, key, "Redis: taking the key without its lock");
-                        true
                     }
                 }
             }
