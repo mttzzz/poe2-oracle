@@ -53,9 +53,10 @@ contact.
 oracle.pushka.biz passes each report on to the developer and keeps none of it itself:
 
 - as an issue in a private GitHub repository, kept apart from the app's source code, with
-  everything above but the diagnostics report;
-- as one Telegram message to the developer, with the diagnostics report and the item's or the
-  crash's text in the file attached to it.
+  everything above: the diagnostics report and the item's or the crash's text are files in that
+  repository, linked from the issue;
+- as one Telegram message telling the developer a report came in, with a link to the issue. Only
+  when GitHub can't take the files do they go to Telegram instead, attached to that message.
 
 Only the developer reads them. You need no account, on GitHub or anywhere else.
 

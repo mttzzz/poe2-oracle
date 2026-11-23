@@ -1,7 +1,8 @@
 //! GitHub's REST API as the service uses it: an issue per report (with its labels) in the
-//! reports' repository (`GITHUB_REPORTS_REPO`, else `GITHUB_REPO`), and the app repository's
-//! releases and their files (`GITHUB_REPO`). Every call carries the owner's fine-grained token
-//! (`GITHUB_TOKEN`: Issues read/write, Contents read). Without one, issues are only logged and
+//! reports' repository (`GITHUB_REPORTS_REPO`, else `GITHUB_REPO`), the report's files committed
+//! there under `reports/<issue>/` and linked in a comment on it, and the app repository's releases
+//! and their files (`GITHUB_REPO`). Every call carries the owner's fine-grained token
+//! (`GITHUB_TOKEN`: Issues read/write, Contents read/write). Without one, issues are only logged and
 //! there is no release to offer.
 
 use std::collections::HashSet;

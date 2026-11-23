@@ -83,8 +83,8 @@ pub struct Config {
     /// from `/images/` and the books from `/guide/images/`.
     pub images_dir: PathBuf,
     /// `GITHUB_TOKEN`: the owner's fine-grained token for [`Config::github_repo`] and
-    /// [`Config::github_reports_repo`], with Contents read (the releases) and Issues read/write
-    /// (the reports).
+    /// [`Config::github_reports_repo`], with Contents read/write (the releases, and a report's files
+    /// committed to the reports' repository) and Issues read/write (the reports and their comments).
     pub github_token: Option<String>,
     /// `GITHUB_REPO`: `owner/name` of the repository the releases come from, and the reports go to
     /// when [`Config::github_reports_repo`] names none.

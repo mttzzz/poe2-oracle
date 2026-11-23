@@ -43,8 +43,8 @@ for what you're happy to share with everyone.
    client language.
 
 Reports from the app and the site reach only the maintainer: oracle.pushka.biz files each one as an
-issue in a private repository and sends a Telegram message, the diagnostics zip to Telegram only.
-Issues opened in this repository are public.
+issue in a private repository, with its diagnostics zip committed there too, and sends a Telegram
+message. Issues opened in this repository are public.
 
 **Never post** passwords, your pathofexile.com session cookie (`POESESSID`) or any other token in
 reports, logs or screenshots: whoever has them can act as you on the site.
@@ -450,7 +450,9 @@ cargo run -p poe2-oracle --example plate_art -- site/ui/img
 `crates/oracle-web` is the service at oracle.pushka.biz. It serves the landing pages (`site/`), the
 guide (`docs/guide`, a book per language) and its images; takes reports on `POST /api/v1/reports`
 and passes each one on to the maintainer, as an issue in the private reports repository
-(`GITHUB_REPORTS_REPO`) and a Telegram message; serves the latest app release and the latest data
+(`GITHUB_REPORTS_REPO`) with its files (the diagnostics zip, the item's or crash's text) committed
+there under `reports/<issue>/` and linked in a comment, and a Telegram message; serves the latest
+app release and the latest data
 pack, with their files, from this repository's releases (`GITHUB_REPO`: `/api/v1/releases/latest`,
 `/api/v1/data/latest`, `/download/<tag>/<file>`, `/download/latest`); tells the running apps about
 both over an event stream (`/api/v1/events`); counts what the apps and the site's visitors do, as
@@ -486,7 +488,7 @@ It takes its settings from the environment, all optional:
 | `SITE_DIR` | `/app/site` | The landing pages (`site/`); a `404.html` there is the 404 page |
 | `GUIDE_DIR` | `/app/guide` | The built guide (`docs/guide/build.sh`): a book per language in `en/` and `ru/`, served under `/guide/en/` and `/guide/ru/`; each answers a missing page with its own `404.html` |
 | `IMAGES_DIR` | `/app/images` | `docs/guide/src/images`, served under `/images/` and `/guide/images/` |
-| `GITHUB_TOKEN` | — | One fine-grained token for both repositories, `GITHUB_REPO` and `GITHUB_REPORTS_REPO` (in production `mttzzz/poe2-oracle` and `mttzzz/poe2-oracle-reports`): Contents read, to list the releases and download their files; Issues read and write, to file the report issues and create their labels; Metadata read. GitHub gives a token's permissions on every repository it selects. Unset: no issues are filed, `/api/v1/releases/latest`, `/api/v1/data/latest` and `/download` answer 503, and the event stream announces no versions |
+| `GITHUB_TOKEN` | — | One fine-grained token for both repositories, `GITHUB_REPO` and `GITHUB_REPORTS_REPO` (in production `mttzzz/poe2-oracle` and `mttzzz/poe2-oracle-reports`): Contents read and write, to list the releases and download their files, and to commit a report's files (its diagnostics zip, the item's or crash's text) under `reports/<issue>/` in the reports repository; Issues read and write, to file the report issues, create their labels and comment the files' links; Metadata read. GitHub gives a token's permissions on every repository it selects. Without Contents write a report's files go to Telegram instead. Unset: no issues are filed, `/api/v1/releases/latest`, `/api/v1/data/latest` and `/download` answer 503, and the event stream announces no versions |
 | `GITHUB_REPO` | `mttzzz/poe2-oracle` | The repository the releases come from, `owner/name`; anything else stops the service at start with a configuration error |
 | `GITHUB_REPORTS_REPO` | `GITHUB_REPO` | The repository the report issues go to, `owner/name`, checked the same way; unset or blank, `GITHUB_REPO`. `deploy/values.yaml` sets the private `mttzzz/poe2-oracle-reports`, so reports stay private while this repository is public |
 | `GITHUB_API` | `https://api.github.com` | GitHub's REST API, trailing slash trimmed: every GitHub call, issues included, goes there with `GITHUB_TOKEN`. Only for a stand-in: the lane can point it at `lanes/fake-github.py` |
