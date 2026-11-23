@@ -8,6 +8,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- ANCHOR: releases. The guide's "What's new" page shows every section below, up to ANCHOR_END. -->
 
+## [0.2.4] - 2026-11-23
+
+### Fixed
+
+- **Russian boots.** The game now calls the boots item class «Сапоги» in Russian, where it used
+  to say «Обувь», and PoE2 Oracle didn't know the new name: every Russian boot stopped at "unknown
+  item class «Сапоги»" (player report #21). Both names are read now.
+- **Russian items while "Game client language" is set to English.** PoE2 Oracle took the game
+  client's language from that setting rather than from the item itself, so with the setting on
+  English it read a Russian item as English and gave up: "Couldn't read the item: only the English
+  and Russian game clients are supported" (player report #21). It now reads every item in the
+  language the game copied it in, whatever the setting says.
+
 ## [0.2.3] - 2026-11-22
 
 ### Fixed
@@ -409,6 +422,7 @@ digitally signed yet, so Windows may say "Windows protected your PC": click **Mo
   cache**.
 
 <!-- ANCHOR_END: releases. The version links stay below it, off that page: mdBook can't draw a heading that is a link. -->
+[0.2.4]: https://github.com/mttzzz/poe2-oracle/releases/tag/v0.2.4
 [0.2.3]: https://github.com/mttzzz/poe2-oracle/releases/tag/v0.2.3
 [0.2.2]: https://github.com/mttzzz/poe2-oracle/releases/tag/v0.2.2
 [0.2.1]: https://github.com/mttzzz/poe2-oracle/releases/tag/v0.2.1
