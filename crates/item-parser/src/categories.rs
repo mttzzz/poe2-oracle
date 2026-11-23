@@ -192,9 +192,29 @@ pub static ITEM_CLASSES: &[ItemClass] = &[
     class("Pinnacle Keys", "Верховные ключи", Some("map.bosskey")),
 ];
 
-/// The class an `Item Class:` value names in `language`'s client.
+/// RU client class relabels seen *after* the 2026-09-22 [`ITEM_CLASSES`] dump, from player reports:
+/// the game's current `Name` paired with the `Name` the dump recorded, so [`find`] resolves the new
+/// text through the unchanged dump. The dump stays verbatim (a test holds it to `itemclasses.tsv`);
+/// these corrections live apart from it. A patch that renames a class surfaces first as
+/// [`crate::ParseError::UnrecognizedItemClass`] on a report, then gets a row here.
+///
+/// - «Обувь» → «Сапоги»: report #21 (2026-11-23). GGG moved the boots class to PoE1's own term
+///   (the trade site already labelled it «Сапоги»).
+const RU_RELABELS: &[(&str, &str)] = &[("Сапоги", "Обувь")];
+
+/// The class an `Item Class:` value names in `language`'s client -- the 2026-09-22 dump first, then,
+/// for Russian, a post-dump relabel ([`RU_RELABELS`]) resolved through the dump.
 pub fn find(language: ItemLanguage, name: &str) -> Option<&'static ItemClass> {
-    ITEM_CLASSES
+    if let Some(class) = ITEM_CLASSES
         .iter()
         .find(|class| class.name(language) == name)
+    {
+        return Some(class);
+    }
+    if language == ItemLanguage::Russian
+        && let Some(&(_, dumped)) = RU_RELABELS.iter().find(|(current, _)| *current == name)
+    {
+        return ITEM_CLASSES.iter().find(|class| class.ru == dumped);
+    }
+    None
 }

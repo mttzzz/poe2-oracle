@@ -697,6 +697,35 @@ fn ru_live_magic_boots_resolve_the_games_own_item_class() {
 }
 
 #[test]
+fn report21_russian_unique_boots_parse_despite_a_relabeled_class() {
+    // Player report #21 (2026-11-23): a Russian unique boots the app rejected as "not recognized".
+    // Two causes, fixed here and in price_check::item_site -- the copied text is Russian while the
+    // client-language setting was English (the text's own language must win: item_site), and GGG
+    // relabeled the RU boots class «Обувь» → «Сапоги» after the 2026-09-22 dump
+    // (categories::RU_RELABELS).
+    let text = std::fs::read_to_string(format!(
+        "{}/tests/fixtures/ru_unique_boots_report21.txt",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .unwrap();
+    // The copied text names its own language: Russian is detected whatever the setting says.
+    assert_eq!(
+        item_parser::detect_item_language(&text),
+        Some(ItemLanguage::Russian)
+    );
+    let item = parse_clipboard(&text, ItemLanguage::Russian, &test_catalog()).expect("parses");
+    assert_eq!(item.name, "Бастион Оберна");
+    assert_eq!(item.rarity, Some(ItemRarity::Unique));
+    assert_eq!(
+        item.category.as_ref().map(|c| c.id.as_str()),
+        Some("armour.boots"),
+        "the relabeled «Сапоги» boots class resolves"
+    );
+    assert_eq!(item.item_level, Some(77));
+    assert_eq!(item.mods.len(), 6, "all six unique properties are read");
+}
+
+#[test]
 fn language_mismatch_is_reported_not_misparsed() {
     let text = std::fs::read_to_string(format!(
         "{}/tests/fixtures/normal_item_en.txt",

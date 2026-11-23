@@ -3168,12 +3168,15 @@ fn save_unparsed(dir: &Path, text: &str, reason: UnparsedReason) -> Result<PathB
     Ok(path)
 }
 
-/// Which parser language and trade site `text` belongs to: the client language the player set
-/// (`Settings::client_language`), else the one detected from the text -- `None` for a client
-/// language this app can't parse (the poll accepts every language, so this is a real, reportable
-/// case).
+/// Which parser language and trade site `text` belongs to. The copied item's first line names its
+/// language unambiguously (`item_parser::detect_item_language`), so it decides: a `client_language`
+/// the player set that disagrees with the item in hand (report #21 -- a Russian client left on
+/// English) must not make the app reject an item it can plainly read. `forced`
+/// (`Settings::client_language`) is only a fallback for text with no language marker at all. `None`
+/// for a client language this app can't parse (the poll accepts every language, so this is a real,
+/// reportable case).
 fn item_site(text: &str, forced: Option<ItemLanguage>) -> Option<(ItemLanguage, TradeSite)> {
-    match forced.or_else(|| item_parser::detect_item_language(text))? {
+    match item_parser::detect_item_language(text).or(forced)? {
         ItemLanguage::English => Some((ItemLanguage::English, TradeSite::International)),
         ItemLanguage::Russian => Some((ItemLanguage::Russian, TradeSite::Russian)),
     }
@@ -3767,4 +3770,42 @@ fn ctrl_is_down() -> bool {
     // returns a `u16`-repr `SHORT` in the `windows` crate, so a "negative" (high-bit-set) value
     // is the down state.
     (unsafe { GetAsyncKeyState(VK_CONTROL.0.into()) } as i16) < 0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const RU_ITEM: &str = "Класс предмета: Сапоги\r\nРедкость: Уникальный\r\nБастион Оберна\r\n";
+    const EN_ITEM: &str = "Item Class: Gloves\r\nRarity: Rare\r\nName\r\n";
+
+    #[test]
+    fn item_site_follows_the_copied_items_language_over_a_mismatched_setting() {
+        // Report #21: a Russian item while the client-language setting is English. The text's own
+        // language wins, so the item is parsed in Russian (Russian trade site), not rejected.
+        assert_eq!(
+            item_site(RU_ITEM, Some(ItemLanguage::English)),
+            Some((ItemLanguage::Russian, TradeSite::Russian))
+        );
+        // The symmetric mismatch is handled too.
+        assert_eq!(
+            item_site(EN_ITEM, Some(ItemLanguage::Russian)),
+            Some((ItemLanguage::English, TradeSite::International))
+        );
+        // Auto (no forced language) and the matching settings resolve the same way.
+        assert_eq!(
+            item_site(RU_ITEM, None),
+            Some((ItemLanguage::Russian, TradeSite::Russian))
+        );
+        assert_eq!(
+            item_site(EN_ITEM, None),
+            Some((ItemLanguage::English, TradeSite::International))
+        );
+        // Text with no language marker at all falls back to the forced setting, else None.
+        assert_eq!(
+            item_site("not an item", Some(ItemLanguage::Russian)),
+            Some((ItemLanguage::Russian, TradeSite::Russian))
+        );
+        assert_eq!(item_site("not an item", None), None);
+    }
 }
