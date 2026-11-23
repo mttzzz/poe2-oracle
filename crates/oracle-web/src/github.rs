@@ -7,9 +7,11 @@
 use std::collections::HashSet;
 use std::time::Duration;
 
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD;
 use reqwest::{Client, Method, RequestBuilder, Response, StatusCode, header};
 use serde::Deserialize;
-use serde::de::DeserializeOwned;
+use serde::de::{DeserializeOwned, IgnoredAny};
 use serde_json::json;
 use tokio::sync::Mutex;
 use tracing::{debug, info, warn};
@@ -19,6 +21,9 @@ use crate::upstream::describe;
 const API_VERSION: &str = "2022-11-28";
 /// An API call: an issue or a label to create, a page of releases to read.
 const CALL_TIMEOUT: Duration = Duration::from_secs(10);
+/// The most a report's file (its diagnostics zip, up to 8 MiB) gets to be committed: nobody waits
+/// on it, so longer than [`CALL_TIMEOUT`].
+const CONTENT_TIMEOUT: Duration = Duration::from_secs(30);
 /// How many releases a page of the list holds: GitHub's most.
 pub const RELEASES_PER_PAGE: usize = 100;
 
@@ -331,6 +336,45 @@ impl GitHub {
             Err(refusal(response).await)
         }
     }
+
+    /// Commits `bytes` to `path` in `repo` in one commit, `message`, and gives back the file's URL
+    /// on GitHub. A report's file the issue body can't carry whole -- its diagnostics zip, the
+    /// item's or crash's text -- goes to `reports/<issue>/` this way, and the issue's comment links
+    /// it. Standard base64 in the JSON, as GitHub's Contents API takes it.
+    pub async fn commit_file(
+        &self,
+        repo: &str,
+        path: &str,
+        message: &str,
+        bytes: &[u8],
+    ) -> Result<String, String> {
+        let token = self.token.as_deref().ok_or("no GitHub token")?;
+        let sent = self
+            .call(Method::PUT, repo, &format!("contents/{path}"), token)
+            .timeout(CONTENT_TIMEOUT)
+            .json(&json!({ "message": message, "content": STANDARD.encode(bytes) }))
+            .send()
+            .await;
+        let committed: Committed = answer(sent).await?;
+        Ok(committed.content.html_url)
+    }
+
+    /// Adds `body` as a comment on issue `number` in `repo`.
+    pub async fn comment(&self, repo: &str, number: u64, body: &str) -> Result<(), String> {
+        let token = self.token.as_deref().ok_or("no GitHub token")?;
+        let sent = self
+            .call(
+                Method::POST,
+                repo,
+                &format!("issues/{number}/comments"),
+                token,
+            )
+            .timeout(CALL_TIMEOUT)
+            .json(&json!({ "body": body }))
+            .send()
+            .await;
+        answer::<IgnoredAny>(sent).await.map(drop)
+    }
 }
 
 enum Created {
@@ -344,6 +388,17 @@ enum Created {
 #[derive(Deserialize)]
 struct Named {
     name: String,
+}
+
+/// GitHub's answer to a committed file: the file's URL on GitHub, for the issue's comment.
+#[derive(Deserialize)]
+struct Committed {
+    content: CommittedFile,
+}
+
+#[derive(Deserialize)]
+struct CommittedFile {
+    html_url: String,
 }
 
 /// GitHub's error JSON.

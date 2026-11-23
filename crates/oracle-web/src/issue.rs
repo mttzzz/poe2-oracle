@@ -66,9 +66,10 @@ pub fn title(report: &Report) -> String {
     prefix + &shorten(&subject, room)
 }
 
-/// The issue's body. `telegram` says whether the report's files also go to Telegram, which the
-/// body tells about the diagnostics zip and about texts cut here.
-pub fn body(report: &Report, telegram: bool) -> String {
+/// The issue's body: the report's context and text, the item's and crash's text (cut here when
+/// huge, with the whole in the attachment), and a footer on the diagnostics zip. The files
+/// themselves go to the reports' repository or Telegram ([`crate::reports`]).
+pub fn body(report: &Report) -> String {
     let mut head = String::new();
     let source = match report.source {
         ReportSource::App => "сообщение из программы",
@@ -115,7 +116,7 @@ pub fn body(report: &Report, telegram: bool) -> String {
         .crash
         .as_deref()
         .map(|crash| ("\n#### Вылет\n\n".to_owned(), crash));
-    let footer = footer(report, telegram);
+    let footer = footer(report);
     let fixed = width(&head)
         + item.as_ref().map_or(0, |(heading, _)| width(heading))
         + crash.as_ref().map_or(0, |(heading, _)| width(heading))
@@ -131,11 +132,7 @@ pub fn body(report: &Report, telegram: bool) -> String {
             .map_or(0, |(_, text)| width(&fenced(text, usize::MAX, ""))),
     ];
     let [item_room, crash_room] = share(room, wants);
-    let whole = if telegram {
-        "; целиком — в Telegram"
-    } else {
-        ""
-    };
+    let whole = "; целиком — во вложении";
 
     let mut body = head;
     if let Some((heading, text)) = item {
@@ -151,19 +148,16 @@ pub fn body(report: &Report, telegram: bool) -> String {
     body
 }
 
-/// Where the diagnostics zip went. The issue can't carry it: GitHub's API takes no attachments.
-fn footer(report: &Report, telegram: bool) -> String {
-    match (&report.diagnostics, telegram) {
-        (Some(zip), true) => format!(
-            "📎 Диагностика (zip, {}) — в Telegram, в сообщении об этом отчёте.\n",
+/// The footer on the diagnostics zip. The issue body can't carry it: it's committed to the
+/// reports' repository and linked in a comment, or sent to Telegram when that can't be done.
+fn footer(report: &Report) -> String {
+    match &report.diagnostics {
+        Some(zip) => format!(
+            "📎 Диагностика (zip, {}) — во вложении к отчёту.\n",
             size(zip.len())
         ),
-        (Some(zip), false) => format!(
-            "📎 Диагностика (zip, {}) не сохранилась: Telegram не настроен.\n",
-            size(zip.len())
-        ),
-        (None, _) if report.source == ReportSource::App => "Диагностику не приложили.\n".to_owned(),
-        (None, _) => String::new(),
+        None if report.source == ReportSource::App => "Диагностику не приложили.\n".to_owned(),
+        None => String::new(),
     }
 }
 
@@ -371,13 +365,13 @@ mod tests {
     #[test]
     fn a_code_fence_in_the_text_cannot_close_the_block() {
         let text = "до\n```\n# Заголовок @mttzzz <b>html</b>\n```\nпосле";
-        let body = body(&report(ReportKind::Bug, text), true);
+        let body = body(&report(ReportKind::Bug, text));
         assert!(
             body.contains(&format!("\n````text\n{text}\n````\n")),
             "{body}"
         );
         // The longest run inside decides the fence, whatever it is.
-        let body = super::body(&report(ReportKind::Bug, "a ````` b"), true);
+        let body = super::body(&report(ReportKind::Bug, "a ````` b"));
         assert!(body.contains("``````text\na ````` b\n``````\n"), "{body}");
     }
 
@@ -389,7 +383,7 @@ mod tests {
         assert_eq!(code("tg: @nick\n# heading"), "`tg: @nick # heading`");
         let mut with_contact = report(ReportKind::Bug, "текст");
         with_contact.contact = Some("  ```@evil```  ".to_owned());
-        assert!(body(&with_contact, true).contains("- Контакт: ```` ```@evil``` ````\n"));
+        assert!(body(&with_contact).contains("- Контакт: ```` ```@evil``` ````\n"));
     }
 
     #[test]
@@ -397,7 +391,7 @@ mod tests {
         let mut bug = report(ReportKind::Bug, "Не открывается панель");
         bug.contact = Some("tg @player".to_owned());
         bug.diagnostics = Some(vec![0; 1_300_000]);
-        let body = body(&bug, true);
+        let body = body(&bug);
         for line in [
             "**Ошибка** — сообщение из программы\n",
             "- Версия: `0.1.0`\n",
@@ -407,7 +401,7 @@ mod tests {
             "- Лига: `Forbidden Rites`\n",
             "- Масштаб интерфейса: 1.25\n",
             "- Контакт: `tg @player`\n",
-            "📎 Диагностика (zip, 1,2 МБ) — в Telegram, в сообщении об этом отчёте.\n",
+            "📎 Диагностика (zip, 1,2 МБ) — во вложении к отчёту.\n",
         ] {
             assert!(body.contains(line), "no {line:?} in\n{body}");
         }
@@ -415,7 +409,7 @@ mod tests {
         let mut site = report(ReportKind::Idea, "Идея");
         site.source = ReportSource::Site;
         site.app = None;
-        let body = super::body(&site, true);
+        let body = super::body(&site);
         assert!(body.starts_with("**Идея** — сообщение с сайта\n\n- Контакт: не оставлен\n"));
         assert!(!body.contains("Диагностик"));
     }
@@ -432,9 +426,9 @@ mod tests {
         // Four-byte characters: two UTF-16 units each.
         crash.crash = Some("😀".repeat(MAX_CRASH_BYTES / 4));
         crash.diagnostics = Some(vec![0; 10]);
-        let body = body(&crash, true);
+        let body = body(&crash);
         assert!(width(&body) <= BODY_LIMIT, "{} units", width(&body));
-        assert!(body.contains("символов; целиком — в Telegram._\n"));
+        assert!(body.contains("символов; целиком — во вложении._\n"));
         // The text itself is never cut.
         assert!(body.contains(&"т".repeat(MAX_TEXT_CHARS)));
     }
@@ -447,7 +441,7 @@ mod tests {
             name: "Кольцо".to_owned(),
             text: text.clone(),
         });
-        let body = body(&item, true);
+        let body = body(&item);
         assert!(body.contains(&format!(
             "#### Предмет: `Кольцо`\n\n```text\n{}\n```\n",
             text.trim_end()

@@ -2,7 +2,6 @@
 //! by servers on 127.0.0.1 that record every request they get.
 
 use std::hash::{DefaultHasher, Hash as _, Hasher as _};
-use std::io::{Cursor, Read as _};
 use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
@@ -14,6 +13,8 @@ use axum::body::Bytes;
 use axum::extract::Request;
 use axum::http::{HeaderMap, Method, StatusCode, header};
 use axum::response::{IntoResponse, Response};
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD;
 use oracle_protocol::{
     AppContext, MAX_BODY_BYTES, Release, Report, ReportItem, ReportKind, ReportSource,
 };
@@ -210,6 +211,20 @@ fn github(releases: Releases) -> impl Answer {
                 StatusCode::CREATED,
                 json!({ "number": 42, "html_url": format!("https://github.com/{repo}/issues/42") }),
             ),
+            ("PUT", _, _) if call.starts_with("contents/") => json(
+                StatusCode::CREATED,
+                json!({
+                    "content": {
+                        "html_url": format!(
+                            "https://github.com/{repo}/blob/main/{}",
+                            &call["contents/".len()..]
+                        )
+                    }
+                }),
+            ),
+            ("POST", _, _) if call.starts_with("issues/") && call.ends_with("/comments") => {
+                json(StatusCode::CREATED, json!({ "id": 1 }))
+            }
             // The list, with a validator: asked with it and unchanged, it's a bare 304.
             ("GET", LISTING, _) => {
                 let body = serde_json::to_vec(&*releases.lock()).unwrap();
@@ -543,22 +558,9 @@ fn form_text(body: &[u8], name: &str) -> String {
     String::from_utf8(form_part(body, &format!("name=\"{name}\"\r\n")).to_vec()).unwrap()
 }
 
-/// The file `name` of a multipart form `body`.
-fn form_file<'a>(body: &'a [u8], name: &str) -> &'a [u8] {
-    form_part(body, &format!("filename=\"{name}\""))
-}
-
-/// The file `name` in `zip`.
-fn zipped(zip: &mut zip::ZipArchive<Cursor<&[u8]>>, name: &str) -> Vec<u8> {
-    let mut bytes = Vec::new();
-    zip.by_name(name).unwrap().read_to_end(&mut bytes).unwrap();
-    bytes
-}
-
-/// The posts with a file `telegram` was sent, once there are `count`: with the issue open, they go
-/// after the sender's answer.
-async fn documents(telegram: &StandIn, count: usize) -> Vec<Seen> {
-    let path = format!("/bot{BOT}/sendDocument");
+/// The messages (no file) `telegram` was sent, once there are `count`.
+async fn messages(telegram: &StandIn, count: usize) -> Vec<Seen> {
+    let path = format!("/bot{BOT}/sendMessage");
     for _ in 0..500 {
         let sent = telegram.requests_to(Method::POST, &path);
         if sent.len() >= count {
@@ -567,6 +569,17 @@ async fn documents(telegram: &StandIn, count: usize) -> Vec<Seen> {
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
     telegram.requests_to(Method::POST, &path)
+}
+
+/// Polls `f` until it yields a value, every 10 ms for up to 5 s.
+async fn eventually<T>(mut f: impl FnMut() -> Option<T>) -> T {
+    for _ in 0..500 {
+        if let Some(value) = f() {
+            return value;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    panic!("the condition never held");
 }
 
 /// A connection to the service that has sent the head of a report -- `length` bytes of JSON from
@@ -592,7 +605,7 @@ async fn read_answer(stream: &mut TcpStream) -> String {
 }
 
 #[tokio::test]
-async fn a_report_reaches_github_and_telegram_in_one_post() {
+async fn a_report_with_files_puts_them_in_github_and_sends_a_message() {
     let service = start(false, false, false).await;
     let mut report = app_report(ReportKind::Item, "Цена странная\nвторая строка");
     report.item = Some(ReportItem {
@@ -604,7 +617,8 @@ async fn a_report_reaches_github_and_telegram_in_one_post() {
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(response.json::<Value>().await.unwrap(), json!({ "id": 42 }));
 
-    // The missing labels were created once, then the issue opened with both.
+    // The missing labels were created once, then the issue opened with both; its footer sends the
+    // reader to the attachment, not to Telegram.
     let created: Vec<Value> = service
         .github
         .requests_to(Method::POST, "/repos/mttzzz/poe2-oracle/labels")
@@ -631,55 +645,78 @@ async fn a_report_reaches_github_and_telegram_in_one_post() {
         "{body}"
     );
     assert!(
-        body.contains("Диагностика (zip, 22 Б) — в Telegram"),
+        body.contains("Диагностика (zip, 22 Б) — во вложении к отчёту"),
         "{body}"
     );
 
-    // Telegram: one post (owner 2026-10-18), the report's files in one zip with the message
-    // linking the issue as its caption.
-    let post = &documents(&service.telegram, 1).await[0];
-    let bot = format!("/bot{BOT}");
-    let paths: Vec<String> = service
-        .telegram
-        .seen()
-        .into_iter()
-        .map(|seen| seen.path)
-        .collect();
+    // The files are committed under reports/42/, each as it came, and linked in one comment.
+    let comment: Seen = eventually(|| {
+        service
+            .github
+            .requests_to(Method::POST, "/repos/mttzzz/poe2-oracle/issues/42/comments")
+            .into_iter()
+            .next()
+    })
+    .await;
+    let committed = |name: &str| -> Vec<u8> {
+        let put = service
+            .github
+            .requests_to(
+                Method::PUT,
+                &format!("/repos/mttzzz/poe2-oracle/contents/reports/42/{name}"),
+            )
+            .pop()
+            .unwrap_or_else(|| panic!("{name} wasn't committed"));
+        let json: Value = serde_json::from_slice(&put.body).unwrap();
+        STANDARD.decode(json["content"].as_str().unwrap()).unwrap()
+    };
     assert_eq!(
-        paths,
-        [format!("{bot}/sendDocument")],
-        "nothing but the post"
-    );
-    assert_eq!(form_text(&post.body, "chat_id"), "1001");
-    assert_eq!(form_text(&post.body, "parse_mode"), "HTML");
-    let caption = form_text(&post.body, "caption");
-    assert!(
-        caption.starts_with(
-            "💎 <b>Предмет</b> · из программы\n#42 · v0.1.0 · интерфейс ru, клиент en\n"
-        ),
-        "{caption}"
-    );
-    assert!(
-        caption.ends_with(
-            "📎 диагностика, 22 Б · текст предмета\n\
-             <a href=\"https://github.com/mttzzz/poe2-oracle/issues/42\">Issue #42 на GitHub</a>"
-        ),
-        "{caption}"
-    );
-    // The item's text whole, and the player's zip as it came.
-    let mut zip =
-        zip::ZipArchive::new(Cursor::new(form_file(&post.body, "report-42.zip"))).unwrap();
-    let mut names: Vec<&str> = zip.file_names().collect();
-    names.sort_unstable();
-    assert_eq!(names, ["diagnostics-42.zip", "item-42.txt"]);
-    assert_eq!(
-        zipped(&mut zip, "item-42.txt"),
-        b"Item Class: Helmets\r\nRarity: Rare"
-    );
-    assert_eq!(
-        zipped(&mut zip, "diagnostics-42.zip"),
+        committed("diagnostics-42.zip"),
         b"PK\x03\x04 a diagnostics zip"
     );
+    assert_eq!(
+        committed("item-42.txt"),
+        b"Item Class: Helmets\r\nRarity: Rare"
+    );
+    let comment_json: Value = serde_json::from_slice(&comment.body).unwrap();
+    let comment_text = comment_json["body"].as_str().unwrap();
+    for part in [
+        "[diagnostics-42.zip](https://github.com/mttzzz/poe2-oracle/blob/main/reports/42/diagnostics-42.zip)",
+        "диагностика, 22 Б",
+        "[item-42.txt](https://github.com/mttzzz/poe2-oracle/blob/main/reports/42/item-42.txt)",
+        "текст предмета",
+    ] {
+        assert!(
+            comment_text.contains(part),
+            "no {part:?} in\n{comment_text}"
+        );
+    }
+
+    // Telegram: one message, no file; it links the issue and carries no file line.
+    let posts = messages(&service.telegram, 1).await;
+    assert_eq!(posts.len(), 1);
+    assert!(
+        service
+            .telegram
+            .requests_to(Method::POST, &format!("/bot{BOT}/sendDocument"))
+            .is_empty(),
+        "nothing goes to Telegram as a file"
+    );
+    let message: Value = serde_json::from_slice(&posts[0].body).unwrap();
+    let text = message["text"].as_str().unwrap();
+    assert!(
+        text.starts_with(
+            "💎 <b>Предмет</b> · из программы\n#42 · v0.1.0 · интерфейс ru, клиент en\n"
+        ),
+        "{text}"
+    );
+    assert!(
+        text.contains(
+            "<a href=\"https://github.com/mttzzz/poe2-oracle/issues/42\">Issue #42 на GitHub</a>"
+        ),
+        "{text}"
+    );
+    assert!(!text.contains("📎"), "no file line: {text}");
 }
 
 #[tokio::test]
@@ -777,11 +814,11 @@ async fn a_post_telegram_refuses_is_tried_again_after_the_answer() {
     let mut report = app_report(ReportKind::Bug, "Панель не открывается");
     report.diagnostics = Some(b"PK\x03\x04 a diagnostics zip".to_vec());
 
-    // Telegram floods the first post: the sender has its answer once the issue is open, and
-    // another try gets the post through.
+    // The issue opens and the zip goes to GitHub; Telegram floods the notification once, and the
+    // sender -- already answered -- gets it through on another try.
     let refused = Arc::new(AtomicBool::new(false));
     let service = start_with(false, false, false, move |seen: &Seen| {
-        if seen.path.ends_with("/sendDocument") && !refused.swap(true, Ordering::SeqCst) {
+        if seen.path.ends_with("/sendMessage") && !refused.swap(true, Ordering::SeqCst) {
             return flooded(0);
         }
         telegram(seen)
@@ -790,20 +827,29 @@ async fn a_post_telegram_refuses_is_tried_again_after_the_answer() {
     let response = service.post(&report, "203.0.113.6").await;
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(response.json::<Value>().await.unwrap(), json!({ "id": 42 }));
-    let posts = documents(&service.telegram, 2).await;
+    let posts = messages(&service.telegram, 2).await;
     assert_eq!(posts.len(), 2, "tried again");
-    assert_eq!(
-        form_file(&posts[1].body, "report-42.zip"),
-        b"PK\x03\x04 a diagnostics zip"
-    );
+    let message: Value = serde_json::from_slice(&posts[1].body).unwrap();
     assert!(
-        form_text(&posts[1].body, "caption").starts_with("🐞 <b>Ошибка</b>"),
-        "the message goes with it"
+        message["text"]
+            .as_str()
+            .unwrap()
+            .starts_with("🐞 <b>Ошибка</b>"),
+        "{message:?}"
     );
-    let messages = service
-        .telegram
-        .requests_to(Method::POST, &format!("/bot{BOT}/sendMessage"));
-    assert!(messages.is_empty(), "the post is the only message");
+    // The diagnostics zip went to the repository, never to Telegram.
+    let committed = service.github.requests_to(
+        Method::PUT,
+        "/repos/mttzzz/poe2-oracle/contents/reports/42/diagnostics-42.zip",
+    );
+    assert_eq!(committed.len(), 1);
+    assert!(
+        service
+            .telegram
+            .requests_to(Method::POST, &format!("/bot{BOT}/sendDocument"))
+            .is_empty(),
+        "no file to Telegram"
+    );
 }
 
 #[tokio::test]
@@ -838,10 +884,10 @@ async fn reports_past_the_ones_being_read_wait_their_turn() {
 
 #[tokio::test]
 async fn a_report_with_a_zip_keeps_its_place_until_the_zip_has_gone() {
-    // Telegram takes messages, but floods on files and asks for two seconds each time: every zip
-    // stays with the service through the tries at sending it.
+    // The zips are committed to GitHub, then Telegram floods the notification and asks for two
+    // seconds each time: every report with a zip stays with the service through the tries at it.
     let service = start_with(false, false, false, |seen: &Seen| {
-        if seen.path.ends_with("/sendDocument") {
+        if seen.path.ends_with("/sendMessage") {
             return flooded(2);
         }
         telegram(seen)

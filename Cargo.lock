@@ -4544,6 +4544,7 @@ name = "oracle-web"
 version = "0.2.3"
 dependencies = [
  "axum",
+ "base64",
  "futures-util",
  "getrandom 0.3.4",
  "http-body-util",

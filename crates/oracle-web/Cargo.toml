@@ -57,6 +57,9 @@ percent-encoding = "2"
 # The salts of the distinct counts, and the random wait after midnight of a stream that stays open,
 # from the system's random source, as `release-sign` draws its seed. Already in the tree.
 getrandom = "0.3"
+# The Contents API carries a report's committed file as standard base64 -- the diagnostics zip, the
+# item's or crash's text -- so the issue links them instead of Telegram. Already in the tree.
+base64 = "0.22"
 
 [dev-dependencies]
 # The static-site tests serve throwaway directories.

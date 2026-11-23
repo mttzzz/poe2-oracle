@@ -5,14 +5,16 @@
 //! ([`crate::limits`]) before anything leaves the service. Its body is read only when a report
 //! from its sender could pass the limits, and only while one of the [`REPORTS_AT_ONCE`] places
 //! for reports in memory is free; a report with a diagnostics zip keeps its place until the zip
-//! has gone to Telegram, so zips waiting on a slow Telegram can't pile up either.
-//! Then both channels get it: the issue first, so Telegram's post can link it; then one post to
-//! the owner (2026-10-18: one message per report, not one more per file), the report's message
-//! or, when the report has files -- the diagnostics zip, the item's or crash's text, which an
-//! issue can't carry whole -- one file with the message as its caption, several bundled in one
-//! zip. The sender hears 200 once the issue is open, or, when GitHub failed, once Telegram took
-//! the post; 503 only when both failed -- then nothing was kept, and trying again later is the
-//! right thing to do.
+//! has gone -- to the reports' repository or, failing that, to Telegram -- so zips waiting on a
+//! slow upload can't pile up either.
+//! The issue goes first, for the report's text and context. With it open, the report's files --
+//! the diagnostics zip, the item's or crash's text, which an issue can't carry whole -- are
+//! committed to the reports' repository under `reports/<issue>/` and linked in a comment, and one
+//! post (2026-10-18: one message per report) goes to the owner's Telegram: the report's message
+//! alone. Without an issue, without a token, or when GitHub refuses the files, they go to Telegram
+//! instead, as that one post's file. The sender hears 200 once the issue is open, or, when GitHub
+//! failed, once Telegram took the post; 503 only when both failed -- then nothing was kept, and
+//! trying again later is the right thing to do.
 
 use std::fmt::{self, Display, Write as _};
 use std::io::{Cursor, Write as _};
@@ -34,7 +36,7 @@ use tracing::{Instrument as _, Span, error, info, warn};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
-use crate::github::Filing;
+use crate::github::{Filing, GitHub};
 use crate::stats::{self, Stat};
 use crate::telegram::{self, Attachment, Post};
 use crate::{App, REPORTS_AT_ONCE, issue, limits, moscow, short};
@@ -160,18 +162,21 @@ pub async fn submit(State(app): State<Arc<App>>, request: Request) -> Response {
     }
 }
 
-/// Passes `report` on to GitHub and Telegram. `answer` gets the issue's number (0 without one)
-/// once either took it, `None` when both failed. The sender waits on Telegram only when GitHub
-/// failed; otherwise the post goes after the answer, with more tries. `place`, the report's place
-/// in memory when it has a zip, is given back once the post is settled.
+/// Passes `report` on. The issue goes first ([`GITHUB_LIMIT`]), for the report's text and context;
+/// `answer` gets its number (0 without one) once GitHub or Telegram took the report, `None` when
+/// both failed. With the issue open, the report's files -- the diagnostics zip, the item's or
+/// crash's text -- are committed to the reports' repository under `reports/<issue>/` and linked in
+/// a comment, and one Telegram post, the report's message alone, goes to the owner. Without an
+/// issue, without a token, or when GitHub refuses the files, the files go to Telegram instead, as
+/// that post's file; the sender waits on that one try only when GitHub failed. `place`, the
+/// report's place in memory when it has a zip, is given back once everything is settled.
 async fn pass_on(
     app: Arc<App>,
     mut report: Report,
     answer: oneshot::Sender<Option<u64>>,
     place: Option<OwnedSemaphorePermit>,
 ) {
-    let telegram_on = app.telegram.configured();
-    let body = issue::body(&report, telegram_on);
+    let body = issue::body(&report);
     let title = issue::title(&report);
     let filing = match tokio::time::timeout(
         GITHUB_LIMIT,
@@ -181,7 +186,7 @@ async fn pass_on(
     {
         Ok(filing) => filing,
         Err(_) => {
-            warn!("GitHub took too long; the report goes to Telegram whole");
+            warn!("GitHub took too long; the report's files go to Telegram");
             Filing::Failed
         }
     };
@@ -194,123 +199,249 @@ async fn pass_on(
         .as_ref()
         .map_or_else(|| "-".to_owned(), |app| short(&app.version, 40));
     let zip_bytes = report.diagnostics.as_ref().map_or(0, Vec::len);
-    // Named after the issue or else the moment, the post's file still says which report it is.
+    let github = match &filing {
+        Filing::Opened(_) => "issue",
+        Filing::DryRun => "dry run",
+        Filing::Failed => "failed",
+    };
+    // Named after the issue or else the moment, the files still say which report they are.
     let tag = match &filing {
         Filing::Opened(issue) => issue.number.to_string(),
         Filing::DryRun | Filing::Failed => moscow::stamp(moscow::now()),
     };
     let kind = report.kind;
     let source = report.source;
-    let post = report_post(&mut report, &filing, body, &tag);
-    // Without the issue, the post is all that keeps the report: the sender waits on one try.
+
+    // The report's message, and -- for the files that may go to Telegram -- the caption that names
+    // them: both built while the report still holds its item and crash.
+    let descriptions = file_descriptions(&report, &filing);
+    let attached = (!descriptions.is_empty()).then(|| descriptions.join(" · "));
+    let message = telegram::report_message(&report, &filing, None);
+    let caption = telegram::report_message(&report, &filing, attached.as_deref());
+
+    // The files an issue body can't carry whole, taken out of the report.
+    let files = report_files(&mut report, &filing, &body, &tag, descriptions);
+
+    // Without an issue, the files and the post are all that keep the report: the sender waits on one
+    // try at the post, which carries them.
     let waited = if filing.took() {
         None
     } else {
-        Some(app.telegram.send_post(&post).await)
+        Some(
+            app.telegram
+                .send_post(&telegram_post(&caption, &files, &tag))
+                .await,
+        )
     };
     if let Some(Err(problem)) = &waited {
         warn!(%problem, "Telegram didn't take the report's post");
     }
 
-    let github = match &filing {
-        Filing::Opened(_) => "issue",
-        Filing::DryRun => "dry run",
-        Filing::Failed => "failed",
-    };
-    let telegram = match (&waited, telegram_on) {
-        (None, _) => "after the answer",
-        (Some(Ok(())), true) => "sent",
-        (Some(Ok(())), false) => "dry run",
-        (Some(Err(_)), _) => "failed",
-    };
     let taken = filing.took() || matches!(waited, Some(Ok(())));
-    if taken {
-        info!(kind = ?kind, source = ?source, version, issue = id, github, telegram, zip_bytes, "report passed on");
-        stats::count(&app, Stat::Report(kind));
-    } else {
+    if !taken {
         warn!(kind = ?kind, source = ?source, version, zip_bytes, "report lost: GitHub and Telegram both failed");
     }
     // The sender may have hung up; the report goes on regardless.
     let _ = answer.send(taken.then_some(id));
-    if taken && waited.is_none() {
-        // Nobody waits any more: the post gets more tries.
-        if let Err(problem) = app.telegram.deliver_post(&post).await {
-            error!(issue = id, %problem, "the report's post never reached Telegram");
-        }
+    if !taken {
+        return;
     }
-    drop(post);
+    stats::count(&app, Stat::Report(kind));
+
+    if waited.is_some() {
+        // GitHub didn't take the report: the post with the files already went, waited on.
+        info!(kind = ?kind, source = ?source, version, issue = id, github, telegram = "with files", zip_bytes, "report passed on");
+        return;
+    }
+
+    // With the issue open, the files go to the reports' repository, linked in a comment, and
+    // Telegram gets the message alone. When that can't be done -- a dry run, or GitHub refusing a
+    // file -- the files go to Telegram with the post instead, so nothing is lost. Nobody waits.
+    let attached_to_github = match &filing {
+        Filing::Opened(issue) if !files.is_empty() => {
+            attach(&app.github, app.github.reports_repo(), issue.number, &files).await
+        }
+        _ => files.is_empty(),
+    };
+    let post = if attached_to_github {
+        Post {
+            html: message,
+            file: None,
+        }
+    } else {
+        telegram_post(&caption, &files, &tag)
+    };
+    let delivered = app.telegram.deliver_post(&post).await;
+    if let Err(problem) = &delivered {
+        error!(issue = id, %problem, "the report's post never reached Telegram");
+    }
+    info!(
+        kind = ?kind,
+        source = ?source,
+        version,
+        issue = id,
+        github,
+        attached = attached_to_github,
+        posted = delivered.is_ok(),
+        zip_bytes,
+        "report passed on"
+    );
     drop(place);
 }
 
-/// The one Telegram post a report makes: its message, and its files -- the issue's body when GitHub
-/// didn't take it, the diagnostics zip, the item's text, the crash's -- as the post's one file:
-/// alone as it is, several in one zip ([`bundle`]). The message says what the file holds.
-fn report_post(report: &mut Report, filing: &Filing, body: String, tag: &str) -> Post {
-    let mut texts = Vec::new();
-    let mut holds = Vec::new();
+/// Commits the report's `files` to `repo` under `reports/<number>/` and comments the links on issue
+/// `number`. `false` when a commit or the comment failed: then the files go to Telegram instead, so
+/// nothing is lost (a file committed before the failure is simply there twice).
+async fn attach(github: &GitHub, repo: &str, number: u64, files: &[ReportFile]) -> bool {
+    let mut links = Vec::with_capacity(files.len());
+    for file in files {
+        let path = format!("reports/{number}/{}", file.name);
+        let message = format!("report #{number}: {}", file.name);
+        match github.commit_file(repo, &path, &message, &file.bytes).await {
+            Ok(url) => links.push((file, url)),
+            Err(problem) => {
+                warn!(issue = number, file = %file.name, %problem, "couldn't commit a report file; the files go to Telegram");
+                return false;
+            }
+        }
+    }
+    match github
+        .comment(repo, number, &attachments_comment(&links))
+        .await
+    {
+        Ok(()) => true,
+        Err(problem) => {
+            warn!(issue = number, %problem, "couldn't comment the attachments; the files go to Telegram");
+            false
+        }
+    }
+}
+
+/// The issue comment that links the committed `files`.
+fn attachments_comment(links: &[(&ReportFile, String)]) -> String {
+    let mut out = String::from("📎 Вложения отчёта (в репозитории):\n\n");
+    for (file, url) in links {
+        let _ = writeln!(out, "- [{}]({}) — {}", file.name, url, file.holds);
+    }
+    out
+}
+
+/// A file a report carries that the issue body can't hold whole: the diagnostics zip, the item's or
+/// crash's text, or -- when GitHub didn't open an issue -- the whole report as Markdown. Committed
+/// to the reports' repository, or sent to Telegram.
+struct ReportFile {
+    name: String,
+    mime: &'static str,
+    bytes: Bytes,
+    /// What it holds, for the issue's comment and the Telegram caption: `диагностика, 54 КБ`.
+    holds: String,
+}
+
+/// What each of the report's files holds, in the order [`report_files`] builds them: the whole
+/// report (only without an issue), the diagnostics zip, the item's text, the crash's text.
+fn file_descriptions(report: &Report, filing: &Filing) -> Vec<String> {
+    let mut out = Vec::new();
     if let Filing::Failed = filing {
-        texts.push(Attachment {
-            name: format!("report-{tag}.md"),
-            mime: "text/markdown; charset=utf-8",
-            bytes: Bytes::from(body),
-        });
-        holds.push("отчёт целиком".to_owned());
+        out.push("отчёт целиком".to_owned());
     }
     if let Some(zip) = &report.diagnostics {
-        holds.push(format!("диагностика, {}", issue::size(zip.len())));
+        out.push(format!("диагностика, {}", issue::size(zip.len())));
     }
     if report.item.is_some() {
-        holds.push("текст предмета".to_owned());
+        out.push("текст предмета".to_owned());
     }
     if report.crash.is_some() {
-        holds.push("текст вылета".to_owned());
+        out.push("текст вылета".to_owned());
     }
-    let attached = (!holds.is_empty()).then(|| holds.join(" · "));
-    let html = telegram::report_message(report, filing, attached.as_deref());
+    out
+}
 
+/// The report's files, taken out of it, each paired with its description from [`file_descriptions`]
+/// (same order). The diagnostics zip stays as it is; the item's and crash's text become `.txt`; the
+/// whole report, only without an issue to hold it, becomes `.md`.
+fn report_files(
+    report: &mut Report,
+    filing: &Filing,
+    body: &str,
+    tag: &str,
+    descriptions: Vec<String>,
+) -> Vec<ReportFile> {
+    let mut holds = descriptions.into_iter();
+    let mut files = Vec::new();
+    if let Filing::Failed = filing {
+        files.push(ReportFile {
+            name: format!("report-{tag}.md"),
+            mime: "text/markdown; charset=utf-8",
+            bytes: Bytes::from(body.to_owned()),
+            holds: holds.next().unwrap_or_default(),
+        });
+    }
+    if let Some(zip) = report.diagnostics.take() {
+        files.push(ReportFile {
+            name: format!("diagnostics-{tag}.zip"),
+            mime: "application/zip",
+            bytes: Bytes::from(zip),
+            holds: holds.next().unwrap_or_default(),
+        });
+    }
     if let Some(item) = report.item.take() {
-        texts.push(Attachment {
+        files.push(ReportFile {
             name: format!("item-{tag}.txt"),
             mime: "text/plain; charset=utf-8",
             bytes: Bytes::from(item.text),
+            holds: holds.next().unwrap_or_default(),
         });
     }
     if let Some(crash) = report.crash.take() {
-        texts.push(Attachment {
+        files.push(ReportFile {
             name: format!("crash-{tag}.txt"),
             mime: "text/plain; charset=utf-8",
             bytes: Bytes::from(crash),
+            holds: holds.next().unwrap_or_default(),
         });
     }
-    let diagnostics = report.diagnostics.take().map(Bytes::from);
-    let file = match (diagnostics, texts.len()) {
-        (None, 0) => None,
-        (Some(zip), 0) => Some(Attachment {
+    files
+}
+
+/// The Telegram post for a report whose files go to Telegram: the diagnostics zip alone as it is, a
+/// single text as it is, or several files bundled in one zip ([`bundle`]), with `caption` -- the
+/// message naming what the file holds -- as the caption.
+fn telegram_post(caption: &str, files: &[ReportFile], tag: &str) -> Post {
+    let diagnostics = files.iter().find(|file| file.mime == "application/zip");
+    let texts: Vec<&ReportFile> = files
+        .iter()
+        .filter(|file| file.mime != "application/zip")
+        .collect();
+    let file = match (diagnostics, texts.as_slice()) {
+        (None, []) => None,
+        (Some(zip), []) => Some(Attachment {
             name: format!("report-{tag}.zip"),
             mime: "application/zip",
-            bytes: zip,
+            bytes: zip.bytes.clone(),
         }),
-        (None, 1) => texts.pop(),
-        (diagnostics, _) => Some(bundle(texts, diagnostics, tag)),
+        (None, [text]) => Some(Attachment {
+            name: text.name.clone(),
+            mime: text.mime,
+            bytes: text.bytes.clone(),
+        }),
+        (diagnostics, texts) => Some(bundle(texts, diagnostics, tag)),
     };
-    Post { html, file }
+    Post {
+        html: caption.to_owned(),
+        file,
+    }
 }
 
 /// `texts` and the `diagnostics` zip in one zip, `report-<tag>.zip`, every file stored as it is:
-/// the diagnostics go in whole as `diagnostics-<tag>.zip`, already compressed and never read here.
-fn bundle(texts: Vec<Attachment>, diagnostics: Option<Bytes>, tag: &str) -> Attachment {
+/// the diagnostics go in whole, already compressed and never read here.
+fn bundle(texts: &[&ReportFile], diagnostics: Option<&ReportFile>, tag: &str) -> Attachment {
     let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
     let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
-    let diagnostics = diagnostics.map(|bytes| (format!("diagnostics-{tag}.zip"), bytes));
-    let files = texts
-        .into_iter()
-        .map(|text| (text.name, text.bytes))
-        .chain(diagnostics);
     // Into memory, a few files of at most 8 MiB together: nothing a zip refuses.
-    for (name, bytes) in files {
-        zip.start_file(name, stored)
+    for file in texts.iter().copied().chain(diagnostics) {
+        zip.start_file(file.name.clone(), stored)
             .expect("a report's file names are valid in a zip");
-        zip.write_all(&bytes)
+        zip.write_all(&file.bytes)
             .expect("a zip in memory takes the bytes");
     }
     let bytes = zip.finish().expect("a zip in memory finishes").into_inner();
