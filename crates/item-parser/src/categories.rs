@@ -192,11 +192,15 @@ pub static ITEM_CLASSES: &[ItemClass] = &[
     class("Pinnacle Keys", "Верховные ключи", Some("map.bosskey")),
 ];
 
-/// RU client class relabels seen *after* the 2026-09-22 [`ITEM_CLASSES`] dump, from player reports:
-/// the game's current `Name` paired with the `Name` the dump recorded, so [`find`] resolves the new
-/// text through the unchanged dump. The dump stays verbatim (a test holds it to `itemclasses.tsv`);
-/// these corrections live apart from it. A patch that renames a class surfaces first as
+/// RU client class relabels seen *after* the 2026-09-22 [`ITEM_CLASSES`] dump: the game's current
+/// `Name` paired with the `Name` the dump recorded, so [`find`] resolves the new text through the
+/// unchanged dump. The dump stays verbatim (a test holds it to `itemclasses.tsv`); these corrections
+/// live apart from it. A patch that renames a class surfaces first as
 /// [`crate::ParseError::UnrecognizedItemClass`] on a report, then gets a row here.
+///
+/// Checked against the whole `ItemClasses` table of patch 0.5.5.10 (2026-11-23, both languages,
+/// exported from the patch CDN with `pathofexile-dat`): boots is the only class renamed since the
+/// dump, in Russian only, and none were added or removed.
 ///
 /// - «Обувь» → «Сапоги»: report #21 (2026-11-23). GGG moved the boots class to PoE1's own term
 ///   (the trade site already labelled it «Сапоги»).
